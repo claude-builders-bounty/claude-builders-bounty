@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# claude-review -- Analyze a GitHub PR and output a structured review.
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+#        claude-review --pr owner/repo#123
+
+show_help() {
+  echo "Usage: claude-review --pr <url-or-shorthand>"
+  echo ""
+  echo "Examples:"
+  echo "  claude-review --pr https://github.com/owner/repo/pull/123"
+  echo "  claude-review --pr owner/repo#123"
+  echo ""
+  echo "Requires: gh CLI (authenticated), claude CLI"
+  exit 0
+}
+
+PR_REF=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_REF="$2"; shift 2 ;;
+    --help|-h) show_help ;;
+    *) echo "Unknown arg: $1"; show_help ;;
+  esac
+done
+
+if [[ -z "$PR_REF" ]]; then
+  echo "Error: --pr is required"
+  show_help
+fi
+
+# Parse PR reference into owner/repo and number
+if [[ "$PR_REF" =~ ^https://github.com/([^/]+/[^/]+)/pull/([0-9]+) ]]; then
+  REPO="${BASH_REMATCH[1]}"
+  PR_NUM="${BASH_REMATCH[2]}"
+elif [[ "$PR_REF" =~ ^([^/]+/[^#]+)#([0-9]+)$ ]]; then
+  REPO="${BASH_REMATCH[1]}"
+  PR_NUM="${BASH_REMATCH[2]}"
+else
+  echo "Error: couldn't parse PR reference: $PR_REF"
+  echo "Expected: https://github.com/owner/repo/pull/123 or owner/repo#123"
+  exit 1
+fi
+
+echo "Fetching PR #${PR_NUM} from ${REPO}..." >&2
+
+# Get PR metadata
+PR_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json title,body,additions,deletions,changedFiles,files,commits)
+PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
+PR_BODY=$(echo "$PR_JSON" | jq -r '.body // "No description"')
+ADDITIONS=$(echo "$PR_JSON" | jq -r '.additions')
+DELETIONS=$(echo "$PR_JSON" | jq -r '.deletions')
+CHANGED=$(echo "$PR_JSON" | jq -r '.changedFiles')
+FILES=$(echo "$PR_JSON" | jq -r '[.files[].path] | join(", ")')
+
+# Get the diff
+DIFF=$(gh pr diff "$PR_NUM" --repo "$REPO" 2>/dev/null | head -3000)
+
+# Build prompt
+PROMPT=$(cat <<PROMPT_EOF
+Review this GitHub pull request and provide a structured analysis.
+
+## PR Metadata
+- Title: ${PR_TITLE}
+- Files changed: ${CHANGED} (+${ADDITIONS} -${DELETIONS})
+- Files: ${FILES}
+
+## PR Description
+${PR_BODY}
+
+## Diff (truncated to 3000 chars)
+${DIFF}
+
+## Instructions
+Provide your review in this exact format:
+
+### Summary
+2-3 sentences describing what this PR does and why.
+
+### Risks
+Bullet list of potential issues, bugs, security concerns, or things that could break. If none, say "No significant risks identified."
+
+### Suggestions
+Bullet list of concrete improvements. Be specific -- reference file names and line numbers where possible. If the PR looks solid, say so and suggest minor polish if any.
+
+### Confidence
+One of: **Low** (not enough context to review properly), **Medium** (reasonable review but may miss domain-specific issues), **High** (clear changes, confident in assessment).
+
+Keep it concise. Don't pad. If the PR is fine, say it's fine.
+PROMPT_EOF
+)
+
+# Run through Claude Code in non-interactive mode
+claude -p "$PROMPT" --output-format text 2>/dev/null \
+  || claude --print "$PROMPT" 2>/dev/null \
+  || echo "$PROMPT"  # Fallback: just print the prompt for manual use
