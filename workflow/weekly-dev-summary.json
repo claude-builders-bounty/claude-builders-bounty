@@ -1,0 +1,312 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "weekday": [
+                "5"
+              ]
+            }
+          ]
+        }
+      },
+      "id": "cron-weekly",
+      "name": "Weekly Friday Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "repoOwner",
+              "value": "={{$env.GITHUB_REPO_OWNER || 'openai'}}",
+              "type": "string"
+            },
+            {
+              "name": "repoName",
+              "value": "={{$env.GITHUB_REPO_NAME || 'openai-node'}}",
+              "type": "string"
+            },
+            {
+              "name": "language",
+              "value": "={{$env.SUMMARY_LANGUAGE || 'EN'}}",
+              "type": "string"
+            },
+            {
+              "name": "deliveryMode",
+              "value": "={{$env.DELIVERY_MODE || 'discord'}}",
+              "type": "string"
+            },
+            {
+              "name": "githubBase",
+              "value": "={{'https://api.github.com/repos/' + ($env.GITHUB_REPO_OWNER || 'openai') + '/' + ($env.GITHUB_REPO_NAME || 'openai-node')}}",
+              "type": "string"
+            },
+            {
+              "name": "sinceDate",
+              "value": "={{$now.minus({days: 7}).toISO()}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$json.githubBase + '/commits?since=' + encodeURIComponent($json.sinceDate) + '&per_page=20'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $env.GITHUB_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$json.githubBase + '/issues?state=closed&since=' + encodeURIComponent($json.sinceDate) + '&per_page=20'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $env.GITHUB_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$json.githubBase + '/pulls?state=closed&sort=updated&direction=desc&per_page=20'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $env.GITHUB_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Closed PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const [commits, issues, prs] = $input.all();\nconst merged = (prs.json || []).filter(pr => pr.merged_at);\nreturn [{ json: {\n  repo: `${$('Set Config').first().json.repoOwner}/${$('Set Config').first().json.repoName}`,\n  sinceDate: $('Set Config').first().json.sinceDate,\n  language: $('Set Config').first().json.language,\n  commits: (commits.json || []).slice(0, 10).map(c => ({ sha: c.sha?.slice(0,7), message: c.commit?.message })),\n  issues: (issues.json || []).filter(i => !i.pull_request).slice(0, 10).map(i => ({ title: i.title, number: i.number })),\n  mergedPrs: merged.slice(0, 10).map(pr => ({ title: pr.title, number: pr.number }))\n}}];"
+      },
+      "id": "shape-weekly-data",
+      "name": "Shape Weekly Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "sendBody": true,
+        "contentType": "json",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$env.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 900
+            },
+            {
+              "name": "messages",
+              "value": "={{ [{ role: 'user', content: 'Write a concise weekly narrative engineering summary in ' + $json.language + ' for repo ' + $json.repo + '. Include shipped work, closed issues, merged PRs, themes, and suggested follow-up. Data: ' + JSON.stringify($json) }] }}"
+            }
+          ]
+        }
+      },
+      "id": "claude-summary",
+      "name": "Generate Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $json;\nconst text = payload.content?.[0]?.text || 'No summary generated';\nreturn [{ json: { summary: text, deliveryMode: $('Set Config').first().json.deliveryMode } }];"
+      },
+      "id": "extract-summary",
+      "name": "Extract Summary Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.deliveryMode}}",
+              "operation": "equal",
+              "value2": "discord"
+            }
+          ]
+        }
+      },
+      "id": "route-delivery",
+      "name": "Discord or Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.DISCORD_WEBHOOK_URL}}",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$json.summary}}"
+            }
+          ]
+        }
+      },
+      "id": "send-discord",
+      "name": "Send Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1990,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.EMAIL_FROM}}",
+        "toEmail": "={{$env.EMAIL_TO}}",
+        "subject": "={{'Weekly dev summary - ' + $now.toFormat('yyyy-LL-dd')}}",
+        "emailType": "text",
+        "message": "={{$json.summary}}"
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1990,
+        380
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Friday Trigger": {
+      "main": [[{ "node": "Set Config", "type": "main", "index": 0 }]]
+    },
+    "Set Config": {
+      "main": [
+        [{ "node": "Fetch Commits", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Closed Issues", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Closed PRs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Commits": { "main": [[{ "node": "Shape Weekly Data", "type": "main", "index": 0 }]] },
+    "Fetch Closed Issues": { "main": [[{ "node": "Shape Weekly Data", "type": "main", "index": 1 }]] },
+    "Fetch Closed PRs": { "main": [[{ "node": "Shape Weekly Data", "type": "main", "index": 2 }]] },
+    "Shape Weekly Data": { "main": [[{ "node": "Generate Claude Summary", "type": "main", "index": 0 }]] },
+    "Generate Claude Summary": { "main": [[{ "node": "Extract Summary Text", "type": "main", "index": 0 }]] },
+    "Extract Summary Text": { "main": [[{ "node": "Discord or Email?", "type": "main", "index": 0 }]] },
+    "Discord or Email?": {
+      "main": [
+        [{ "node": "Send Discord Webhook", "type": "main", "index": 0 }],
+        [{ "node": "Send Email", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}
