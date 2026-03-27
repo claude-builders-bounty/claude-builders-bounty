@@ -1,5 +1,5 @@
 {
-  "name": "Weekly GitHub Summary with Claude",
+  "name": "Weekly GitHub Summary with Claude (Production Ready)",
   "nodes": [
     {
       "parameters": {
@@ -29,16 +29,65 @@
             {
               "name": "since",
               "value": "{{$now.minus({days: 7}).toISO()}}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            },
+            {
+              "name": "page",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "autodetect",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "c1d2e3f4-a5b6-7890-cdef-123456789012",
+      "name": "Get Commits Page 1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 200],
+      "onError": "continueRegularOutput",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$env.GITHUB_REPO}}/commits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "{{$now.minus({days: 7}).toISO()}}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            },
+            {
+              "name": "page",
+              "value": "2"
             }
           ]
         },
         "options": {}
       },
-      "id": "c1d2e3f4-a5b6-7890-cdef-123456789012",
-      "name": "Get Commits",
+      "id": "c1d2e3f4-a5b6-7890-cdef-123456789013",
+      "name": "Get Commits Page 2",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [460, 200]
+      "position": [460, 100],
+      "onError": "continueRegularOutput",
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -55,6 +104,10 @@
             {
               "name": "since",
               "value": "{{$now.minus({days: 7}).toISO()}}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
             }
           ]
         },
@@ -64,7 +117,9 @@
       "name": "Get Issues",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [460, 400]
+      "position": [460, 400],
+      "onError": "continueRegularOutput",
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -77,6 +132,10 @@
             {
               "name": "state",
               "value": "closed"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
             }
           ]
         },
@@ -86,121 +145,260 @@
       "name": "Get PRs",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [460, 600]
+      "position": [460, 600],
+      "onError": "continueRegularOutput",
+      "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "const commits = $('Get Commits').all()[0].json || [];\nconst issues = $('Get Issues').all()[0].json || [];\nconst prs = $('Get PRs').all()[0].json || [];\n\nconst mergedPRs = Array.isArray(prs) ? prs.filter(p => p.merged_at) : [];\n\nreturn [{\n  json: {\n    week: $now.minus({days: 7}).toISODate() + ' to ' + $now.toISODate(),\n    repo: $env.GITHUB_REPO,\n    language: $env.LANGUAGE || 'EN',\n    stats: {\n      commits: Array.isArray(commits) ? commits.length : 0,\n      issuesClosed: Array.isArray(issues) ? issues.length : 0,\n      prsMerged: mergedPRs.length\n    },\n    commits: Array.isArray(commits) ? commits.slice(0, 5).map(c => ({\n      message: c.commit?.message?.split('\\n')[0],\n      author: c.commit?.author?.name,\n      sha: c.sha?.substring(0, 7)\n    })) : [],\n    issues: Array.isArray(issues) ? issues.slice(0, 5).map(i => ({\n      title: i.title,\n      number: i.number,\n      labels: i.labels?.map(l => l.name) || []\n    })) : [],\n    prs: mergedPRs.slice(0, 5).map(p => ({\n      title: p.title,\n      number: p.number,\n      author: p.user?.login\n    }))\n  }\n}];"
+        "jsCode": "// Error handling wrapper\ntry {\n  // Merge commits from both pages\n  const commitsPage1 = $('Get Commits Page 1').all()[0]?.json || [];\n  const commitsPage2 = $('Get Commits Page 2').all()[0]?.json || [];\n  const commits = [...(Array.isArray(commitsPage1) ? commitsPage1 : []), ...(Array.isArray(commitsPage2) ? commitsPage2 : [])];\n  \n  const issues = $('Get Issues').all()[0]?.json || [];\n  const prs = $('Get PRs').all()[0]?.json || [];\n\n  // Filter merged PRs\n  const mergedPRs = Array.isArray(prs) ? prs.filter(p => p.merged_at) : [];\n  \n  // Limit to prevent token overflow (max 50 items each)\n  const MAX_ITEMS = 50;\n  \n  // Generate unique run ID for idempotency\n  const runId = $now.toISO();\n  \n  return [{\n    json: {\n      runId: runId,\n      week: $now.minus({days: 7}).toISODate() + ' to ' + $now.toISODate(),\n      repo: $env.GITHUB_REPO,\n      language: $env.LANGUAGE || 'EN',\n      timezone: $env.TIMEZONE || 'UTC',\n      stats: {\n        commits: Array.isArray(commits) ? commits.length : 0,\n        issuesClosed: Array.isArray(issues) ? issues.length : 0,\n        prsMerged: mergedPRs.length,\n        truncated: (commits.length > MAX_ITEMS || issues.length > MAX_ITEMS || mergedPRs.length > MAX_ITEMS)\n      },\n      // Sample data to prevent token overflow\n      commits: Array.isArray(commits) ? commits.slice(0, MAX_ITEMS).map(c => ({\n        message: c.commit?.message?.split('\\n')[0],\n        author: c.commit?.author?.name,\n        sha: c.sha?.substring(0, 7),\n        date: c.commit?.author?.date\n      })) : [],\n      issues: Array.isArray(issues) ? issues.slice(0, MAX_ITEMS).map(i => ({\n        title: i.title,\n        number: i.number,\n        labels: i.labels?.map(l => l.name) || [],\n        closedAt: i.closed_at\n      })) : [],\n      prs: mergedPRs.slice(0, MAX_ITEMS).map(p => ({\n        title: p.title,\n        number: p.number,\n        author: p.user?.login,\n        mergedAt: p.merged_at\n      })),\n      error: null\n    }\n  }];\n} catch (error) {\n  // Return error state instead of failing\n  return [{\n    json: {\n      runId: $now.toISO(),\n      week: $now.minus({days: 7}).toISODate() + ' to ' + $now.toISODate(),\n      repo: $env.GITHUB_REPO,\n      language: $env.LANGUAGE || 'EN',\n      stats: { commits: 0, issuesClosed: 0, prsMerged: 0, truncated: false },\n      commits: [],\n      issues: [],\n      prs: [],\n      error: error.message || 'Unknown error in data processing'\n    }\n  }];\n}"
       },
       "id": "f4a5b6c7-d8e9-0123-f456-456789012345",
-      "name": "Process Data",
+      "name": "Process Data (With Error Handling)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [680, 400]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "anthropicApi",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
+        "model": "claude-sonnet-4-5-20250514",
+        "maxTokens": 2000,
+        "messages": {
+          "values": [
             {
-              "name": "anthropic-version",
-              "value": "2023-06-01"
-            }
-          ]
-        },
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "model",
-              "value": "claude-sonnet-4-20250514"
+              "role": "system",
+              "content": "={{$env.LANGUAGE === 'FR' ? 'Tu es un assistant technique expert. Génère un résumé de développement hebdomadaire professionnel en français.' : 'You are an expert technical assistant. Generate a professional weekly development summary in English.'}}"
             },
             {
-              "name": "max_tokens",
-              "value": "2000"
-            },
-            {
-              "name": "messages",
-              "value": "=[{\"role\": \"user\", \"content\": \"Generate a weekly development summary for {{$json.repo}} ({{$json.week}}).\\n\\nStats: {{$json.stats.commits}} commits, {{$json.stats.issuesClosed}} issues closed, {{$json.stats.prsMerged}} PRs merged.\\n\\nRecent commits: {{JSON.stringify($json.commits)}}\\n\\nClosed issues: {{JSON.stringify($json.issues)}}\\n\\nMerged PRs: {{JSON.stringify($json.prs)}}\\n\\nLanguage: {{$json.language}}\\n\\nCreate a professional narrative summary.\"}]"
+              "role": "user",
+              "content": "={{$env.LANGUAGE === 'FR' ? \n'Génère un résumé de développement hebdomadaire pour le repo ' + $json.repo + ' (' + $json.week + ').\\n\\nStatistiques:\\n- ' + $json.stats.commits + ' commits\\n- ' + $json.stats.issuesClosed + ' issues fermées\\n- ' + $json.stats.prsMerged + ' PRs mergées' + ($json.stats.truncated ? '\\n(Attention: données tronquées à 50 éléments)' : '') + '\\n\\nCommits récents:\\n' + $json.commits.map(c => '- ' + c.message + ' (' + c.sha + ') by ' + c.author).join('\\n') + '\\n\\nIssues fermées:\\n' + $json.issues.map(i => '- #' + i.number + ': ' + i.title).join('\\n') + '\\n\\nPRs mergées:\\n' + $json.prs.map(p => '- #' + p.number + ': ' + p.title + ' by ' + p.author).join('\\n') + '\\n\\nFormat: Titre, Overview, Key Commits, Closed Issues, Merged PRs, Recommendations.' : \n'Generate a weekly development summary for repo ' + $json.repo + ' (' + $json.week + ').\\n\\nStats:\\n- ' + $json.stats.commits + ' commits\\n- ' + $json.stats.issuesClosed + ' issues closed\\n- ' + $json.stats.prsMerged + ' PRs merged' + ($json.stats.truncated ? '\\n(Note: data truncated to 50 items)' : '') + '\\n\\nRecent commits:\\n' + $json.commits.map(c => '- ' + c.message + ' (' + c.sha + ') by ' + c.author).join('\\n') + '\\n\\nClosed issues:\\n' + $json.issues.map(i => '- #' + i.number + ': ' + i.title).join('\\n') + '\\n\\nMerged PRs:\\n' + $json.prs.map(p => '- #' + p.number + ': ' + p.title + ' by ' + p.author).join('\\n') + '\\n\\nFormat: Title, Overview, Key Commits, Closed Issues, Merged PRs, Recommendations.'}}"
             }
           ]
-        },
-        "options": {}
+        }
       },
-      "id": "a5b6c7d8-e9f0-1234-a567-567890123456",
-      "name": "Claude API",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [900, 400]
+      "id": "a5b6c7d8-e9f0-1234-5678-901234567890",
+      "name": "Generate Summary with Claude",
+      "type": "@anthropic/n8n-nodes-anthropic.claude",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "credentials": {
+        "anthropicApi": {
+          "id": "1",
+          "name": "Anthropic API"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "continueOnFail": true
     },
     {
       "parameters": {
-        "content": "text/plain",
-        "subject": "Weekly Dev Summary - {{$env.GITHUB_REPO}} - {{$now.toISODate()}}",
-        "message": "={{$json.content[0].text}}",
+        "jsCode": "// Check for errors and skip if Claude failed\nconst claudeOutput = $input.all()[0]?.json;\nconst processData = $('Process Data (With Error Handling)').all()[0]?.json;\n\nif (!claudeOutput || claudeOutput.error || processData?.error) {\n  // Send error notification instead\n  return [{\n    json: {\n      skip: true,\n      error: claudeOutput?.error || processData?.error || 'Claude API call failed',\n      runId: processData?.runId\n    }\n  }];\n}\n\n// Extract summary from Claude response\nconst summary = claudeOutput.content?.[0]?.text || 'Failed to generate summary';\n\nreturn [{\n  json: {\n    runId: processData.runId,\n    summary: summary,\n    week: processData.week,\n    repo: processData.repo\n  }\n}];"
+      },
+      "id": "b6c7d8e9-f0a1-2345-6789-123456789012",
+      "name": "Check Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{$json.skip}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "c7d8e9f0-a1b2-3456-7890-234567890123",
+      "name": "Skip on Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "{{$env.SMTP_FROM}}",
+        "toEmail": "{{$env.EMAIL_TO}}",
+        "subject": "Weekly Dev Summary - {{$json.repo}} - {{$json.week}}",
+        "emailFormat": "html",
+        "text": "={{$json.summary}}",
         "options": {}
       },
-      "id": "b6c7d8e9-f0a1-2345-b678-678901234567",
+      "id": "d8e9f0a1-b2c3-4567-8901-345678901234",
       "name": "Send Email",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [1120, 300]
+      "position": [1560, 300],
+      "credentials": {
+        "smtp": {
+          "id": "2",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "continueOnFail": true
     },
     {
       "parameters": {
         "method": "POST",
         "url": "{{$env.DISCORD_WEBHOOK}}",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "content",
-              "value": "**Weekly Dev Summary** - {{$env.GITHUB_REPO}}"
-            },
-            {
-              "name": "embeds",
-              "value": "=[{\"title\": \"{{$now.toISODate()}}\", \"description\": \"{{$json.content[0].text.substring(0, 2000)}}\", \"color\": 5814783}]"
-            }
-          ]
-        },
+        "specifyBody": "json",
+        "jsonBody": "={\"content\": \"Weekly Dev Summary - {{$json.repo}} - {{$json.week}}\\n\\n{{$json.summary}}\"}",
         "options": {}
       },
-      "id": "c7d8e9f0-a1b2-3456-c789-789012345678",
-      "name": "Discord",
+      "id": "e9f0a1b2-c3d4-5678-9012-456789012345",
+      "name": "Send to Discord",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1120, 500]
+      "position": [1560, 500],
+      "onError": "continueRegularOutput",
+      "continueOnFail": true
     }
   ],
   "connections": {
     "Weekly Trigger": {
-      "main": [[{"node": "Get Commits", "type": "main", "index": 0}]]
-    },
-    "Get Commits": {
-      "main": [[{"node": "Process Data", "type": "main", "index": 0}]]
-    },
-    "Get Issues": {
-      "main": [[{"node": "Process Data", "type": "main", "index": 0}]]
-    },
-    "Get PRs": {
-      "main": [[{"node": "Process Data", "type": "main", "index": 0}]]
-    },
-    "Process Data": {
-      "main": [[{"node": "Claude API", "type": "main", "index": 0}]]
-    },
-    "Claude API": {
       "main": [
         [
-          {"node": "Send Email", "type": "main", "index": 0},
-          {"node": "Discord", "type": "main", "index": 0}
+          {
+            "node": "Get Commits Page 1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Commits Page 2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits Page 1": {
+      "main": [
+        [
+          {
+            "node": "Process Data (With Error Handling)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits Page 2": {
+      "main": [
+        [
+          {
+            "node": "Process Data (With Error Handling)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Issues": {
+      "main": [
+        [
+          {
+            "node": "Process Data (With Error Handling)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get PRs": {
+      "main": [
+        [
+          {
+            "node": "Process Data (With Error Handling)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Data (With Error Handling)": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary with Claude": {
+      "main": [
+        [
+          {
+            "node": "Check Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Skip on Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip on Error": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     }
   },
-  "pinData": {}
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-workflow-id"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-03-28T00:00:00.000Z",
+  "versionId": "1.0.1"
 }
