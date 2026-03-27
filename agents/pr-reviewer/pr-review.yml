@@ -1,0 +1,107 @@
+## GitHub Action Workflow: Claude PR Review
+##
+## To use this workflow, copy this file to:
+##   .github/workflows/pr-review.yml
+##
+## Required secrets:
+##   - ANTHROPIC_API_KEY: Your Anthropic API key
+##   - GITHUB_TOKEN: Provided automatically by GitHub Actions
+
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Fetch PR diff and metadata
+        id: pr-data
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+
+          echo "Fetching PR #${PR_NUMBER} from ${REPO}..."
+
+          # Get PR metadata
+          PR_TITLE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json title --jq '.title')
+          PR_AUTHOR=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json author --jq '.author.login')
+          PR_BODY=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json body --jq '.body')
+          PR_URL="${{ github.event.pull_request.html_url }}"
+
+          # Get diff (truncate if too large to avoid token limits)
+          PR_DIFF=$(gh pr diff "$PR_NUMBER" --repo "$REPO" | head -n 3000)
+
+          # Save to temp files for the next step
+          echo "$PR_TITLE" > /tmp/pr_title.txt
+          echo "$PR_AUTHOR" > /tmp/pr_author.txt
+          echo "$PR_BODY" > /tmp/pr_body.txt
+          echo "$PR_URL" > /tmp/pr_url.txt
+          echo "$PR_DIFF" > /tmp/pr_diff.txt
+
+      - name: Build review prompt
+        run: |
+          PROMPT_TEMPLATE="agents/pr-reviewer/review-prompt.md"
+
+          PR_TITLE=$(cat /tmp/pr_title.txt)
+          PR_AUTHOR=$(cat /tmp/pr_author.txt)
+          PR_BODY=$(cat /tmp/pr_body.txt)
+          PR_URL=$(cat /tmp/pr_url.txt)
+          PR_DIFF=$(cat /tmp/pr_diff.txt)
+          TODAY=$(date +%Y-%m-%d)
+
+          if [ -f "$PROMPT_TEMPLATE" ]; then
+            PROMPT=$(cat "$PROMPT_TEMPLATE")
+          else
+            PROMPT="Review this PR. Title: {{PR_TITLE}}, Author: {{PR_AUTHOR}}, URL: {{PR_URL}}. Diff: {{PR_DIFF}}"
+          fi
+
+          # Replace placeholders with actual PR data
+          PROMPT="${PROMPT//\{\{PR_TITLE\}\}/$PR_TITLE}"
+          PROMPT="${PROMPT//\{\{PR_AUTHOR\}\}/$PR_AUTHOR}"
+          PROMPT="${PROMPT//\{\{PR_URL\}\}/$PR_URL}"
+          PROMPT="${PROMPT//\{\{DATE\}\}/$TODAY}"
+          PROMPT="${PROMPT//\{\{PR_BODY\}\}/$PR_BODY}"
+          PROMPT="${PROMPT//\{\{PR_DIFF\}\}/$PR_DIFF}"
+
+          echo "$PROMPT" > /tmp/review_prompt.txt
+
+      - name: Run Claude review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          REVIEW=$(cat /tmp/review_prompt.txt | claude --print 2>/dev/null || echo "Claude review failed. Check ANTHROPIC_API_KEY secret.")
+          echo "$REVIEW" > /tmp/review_output.md
+
+      - name: Post review as PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+
+          # Prepend a header so it is clear the comment is automated
+          {
+            echo "<!-- claude-pr-review -->"
+            echo "> Automated review by **claude-review** (Claude Code PR Reviewer Agent)"
+            echo ""
+            cat /tmp/review_output.md
+          } > /tmp/review_comment.md
+
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file /tmp/review_comment.md
