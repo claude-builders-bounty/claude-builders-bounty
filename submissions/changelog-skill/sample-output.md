@@ -1,0 +1,374 @@
+# Changelog
+
+## [Unreleased] - 2026-03-26
+
+### Added
+- Add whale tracker with Helius API + bot upsell
+- Add Solana token safety checker with bot upsell
+- Add SOL profit calculator with live price + bot promo
+- Add 5 more: number format, CSS units, word freq, color blend, CSS minify
+- Add 5 more: whitespace cleaner, text reverse, hex viewer, line sorter, json minify
+- Add 5 more tools: quote gen, favicon check, tw-to-css, viewport, timestamp
+- Add 7 tools to reach 100 tools milestone!
+- Add htaccess gen, image gallery, image resizer
+- Add email signature gen, link extractor, JSON escape
+- Add CSV viewer with sorting
+- Add pixel art editor and todo list
+- Add CSS variables / design system generator
+- Add JWT token decoder
+- Add any-base number converter (2-36)
+- Add text hash generator (SHA-1, SHA-256, SHA-512)
+- Add case converter - 400 pages milestone!
+- Add HTML stripper, string length calc, URL encoder/decoder
+- Add markdown to HTML converter and JSON validator
+- Add regex builder and color format converter
+- Add Tailwind CSS color palette reference
+- Add CSS specificity calculator
+- Add UTM campaign URL builder
+- Add clip-path generator and data size converter
+- Add meta tag generator with Google preview
+- Add placeholder image generator
+- Add CSS text gradient generator
+- Add secure password generator
+- Add CSS filter generator with presets
+- Add epoch/unix timestamp converter
+- Add keyboard shortcuts reference
+- Add HTTP status code reference
+- Add Git cheatsheet with searchable commands
+- Add JSON path finder and regex cheatsheet
+- Add CSS animation generator with 18 presets
+- Add markdown editor with live preview
+- Add IP geolocation lookup tool
+- Add WiFi QR generator and typing speed challenge
+- Add savings goal calculator
+- Add BMR and TDEE calculator
+- Add electricity cost calculator
+- Add focus timer with pomodoro presets
+- Add CSS transition generator
+- Add GitHub profile README generator
+- Add color harmony generator
+- Add JSON prettifier and minifier
+- Add CSS box shadow generator
+- Add Unicode character search and copy
+- Add aspect ratio calculator
+- Add CSS grid playground and text diff checker
+- Add URL slug generator
+- Add CSS flexbox playground
+- Add HTML entity encoder/decoder
+- Add lorem ipsum generator
+- Add countdown timer to any date
+- Add random color generator with palette lock
+- Add what is my IP address tool
+- Add online notepad with auto-save
+- Add favicon generator from emoji/text
+- Add WCAG color contrast checker
+- Add JWT generator tool
+- Add cron expression explainer
+- Add CSS border radius generator
+- Add markdown table generator
+- Add JSON to CSV converter and text-to-speech tool
+- Add image color extractor tool
+- Add internet speed test tool
+- Add screen resolution detector
+- Add percentage calculator
+- Add reading time calculator
+- Add emoji search and copy tool
+- Add password strength checker
+- Add ASCII art text generator
+- Add hex to color name finder
+- Add binary/hex/octal number converter
+- Add Morse code translator and Roman numeral converter
+- Add pixel converter and CSS gradient generator tools
+- Add 8 new tools: budget tracker, barcode gen, subnet calc, minesweeper, wordle, tax calc, sudoku, download calc
+- Add learn-solana course + job-alerts pages
+- Add Learn Solana 7-day course landing page — lead gen for bot users
+- Add Freelance Job Alerts SaaS landing page — Telegram notifications for freelancers
+- Add sleep calculator
+- Add sleep calculator — optimal sleep/wake times based on 90-min cycles
+- Add sleep calculator — optimal sleep/wake times based on 90-min sleep cycles
+- Add calorie calculator — BMR, TDEE, macros, lose/maintain/gain goals
+- Add pregnancy due date calculator — weeks, trimester, progress, milestones
+- Add electricity cost calculator — watts, hours, rate with appliance presets
+- Add dog age calculator — breed size-adjusted dog to human years conversion
+- Add Hangman game with developer-themed words, ASCII art gallows
+- Add CSS color names reference — all 148 named colors with hex, search, copy
+- Add Snake game — classic SVG snake with score tracking, arrow keys + touch
+- Add special characters & symbols browser — arrows, math, currency, music, 200+ symbols
+- Add math solver — expression calculator + quadratic equation solver (ax²+bx+c)
+- Add 2048 game — classic puzzle with score tracking, arrow keys + on-screen buttons
+- Add Never Have I Ever party game — 25 questions, random order
+- Add zodiac sign calculator — find sign by birthday, elements, ruling planets, traits
+- Add recipe scaler — scale ingredients for any serving size, fraction display
+- Add meditation timer with breathing guide + habit tracker with streaks & 7-day history
+- Add flashcard maker — create, study, flip, shuffle flashcards
+- Add emoji picker (7 categories, 100+ emojis) + drawing pad (canvas, colors, export PNG)
+- Add number-to-words, text case converter (12 cases), typing speed test — HIT 300 PAGES!
+- Add Tic Tac Toe (AI with minimax) + Rock Paper Scissors — classic games
+- Add love calculator — fun compatibility test by name, gradient UI
+- Add WiFi QR code generator — share WiFi password via scannable QR
+- Add random name generator — male, female, unisex, fantasy with last names
+- Add Truth or Dare game — 40 questions/dares, random picker, party game
+- Add Would You Rather game — 20 questions with voting and percentages
+- Add spin-the-wheel random picker with SVG wheel, presets, animations
+- Add coin flip + dice roller — massive search volume utility tools
+- Add image cropper with aspect ratio presets, custom dimensions, PNG download
+- Add image resizer with social media presets, quality control, JPG/PNG/WebP export
+- Add text repeater — repeat text up to 10K times with custom separators
+- Add text-to-PDF converter using browser print-to-PDF
+- Add fancy text generator — 12 Unicode styles for Instagram/Twitter/TikTok
+- Add text-to-binary/hex/octal/morse converter with encode+decode
+- Add IndexNow key verification file for Bing/Yandex indexing
+- Add grammar checker — spelling, grammar, style analysis with 50+ corrections
+- Add plagiarism checker — sentence analysis, uniqueness score, highlight matches
+- Add paraphrasing tool — formal/casual/shorter modes with word replacements
+- Add meme generator — custom text, image upload, Impact font, PNG download
+- Add cover letter generator — 4 templates (standard, creative, career change, internship)
+- Add font preview/tester — 21 system fonts, size/weight/color/spacing controls
+- Add color picker with HEX/RGB/HSL/RGBA/CSS/Tailwind values + shade generator
+- Add email subject line tester — 9-point analysis, spam check, inbox preview
+- Add domain name checker — check availability across 10 TLDs via DNS
+- Add business name generator — 6 industries, custom keywords, save favorites
+- Add Instagram caption generator — 48 captions, 6 categories, tap to copy
+- Add Instagram bio generator — 18 templates, 6 categories, IG preview
+- Add hashtag generator for Instagram/Twitter/TikTok — 8 categories, custom topics
+- Add LinkedIn post generator with 6 viral templates + live preview
+- Add YouTube thumbnail previewer — test thumbnails in search/sidebar/mobile views
+- Add Social Scheduler SaaS (0.1 SOL/mo) + Tweet/Thread Generator with 8 viral templates
+- Add CSS gradient generator
+- Add CSS gradient generator with linear/radial/conic, multi-stop, 6 presets
+- Add JSON diff tool — compare two JSON objects, highlight additions/removals/changes
+- Add README badge generator with shields.io presets, custom colors, logos, styles
+- Add AI image prompt generator for Midjourney/DALL-E/Stable Diffusion
+- Add working web scraping API endpoint — extracts title, meta, links, images, text, headings
+- Add web scraping API product page (0.1 SOL/1000 requests)
+- Add API Monitor SaaS landing page (0.05 SOL/mo) + free SEO Audit tool with scoring
+- Add HTML live preview editor with split/code/preview views
+- Add SQL to MongoDB converter with SELECT/INSERT/UPDATE/DELETE support
+- Add NPM package size checker (bundlephobia alternative)
+- Add SOL Scanner Chrome Extension landing page — token risk analysis on DexScreener/Birdeye
+- Add package.json generator with Express/Next.js/CLI presets
+- Add .env file generator and GitHub Actions workflow generator — 100 new tools this session!
+- Add API key generator with Stripe/OpenAI/GitHub/AWS presets
+- Add regex-to-English explainer — understand any regex in plain language
+- Add TypeScript playground — write and run TS code in browser
+- Add CORS tester — check CORS headers and preflight for any URL
+- Add JSON Schema generator — auto-detect types from JSON data
+- Add webhook tester — send HTTP requests to any URL with custom headers/body
+- Add AI prompt engineering toolkit product page (0.15 SOL, 100+ prompts)
+- Add hosting comparison page (Vercel, Netlify, Railway, Render, Fly, Cloudflare)
+- Add OG image generator (4 templates, 1200x630 export) + health API endpoint
+- Add newsletter page, CSS-to-Tailwind converter
+- Add SOL Tap game landing page + Telegram Bot Template product page (0.3 SOL)
+- Add Tailwind to CSS converter with 100+ class mappings
+- Add SVG editor with live preview, templates, SVG/PNG export
+- Add JSON editor with tree view, format, minify, sort keys
+- Add terms of service generator with customizable sections
+- Add color blindness simulator — protanopia, deuteranopia, tritanopia, achromatopsia
+- Add privacy policy generator — GDPR/CCPA compliant templates
+- Add Open Graph preview — see how URLs look on Facebook, Twitter, LinkedIn
+- Add meta tag generator with SEO, Open Graph, Twitter Cards and Google preview
+- Add JSON to TypeScript converter with nested interface generation
+- Add CSP (Content Security Policy) generator with visual directive builder
+- Add IP address lookup with geolocation, ISP, timezone
+- Add Docker Compose generator with presets (Node+Mongo, Postgres, WordPress, Nginx)
+- Add Nginx config generator — SSL, proxy, gzip, caching, security, CORS, rate limiting
+- Add .htaccess generator — HTTPS, gzip, caching, security headers, redirects
+- Add sitemap.xml generator with download
+- Add SSL certificate checker and HTTP header analyzer
+- Add GitHub profile viewer, DNS lookup, WHOIS lookup — 3 high-demand network tools
+- Add crypto swap page with ChangeNOW widget (0.4% revenue per swap) + 930 price pages live
+- Add 930 crypto/fiat price conversion pages (programmatic SEO) — SOL, BTC, ETH, 31 tokens x 30 pairs each with live CoinGecko prices
+- Add date calculator (days between, add/subtract days)
+- Add loan calculator (auto, personal, student loans)
+- Add PayPal fee calculator, CSS clip-path generator with 12 shape presets
+- Add Markdown-to-HTML converter and CSS specificity calculator
+- Add Stripe fee calculator and salary calculator — high-volume finance tools
+- Add YAML validator, XML formatter, update tool count to 200+
+- Add font size converter (px/rem/em/pt/vw) and HTML-to-Markdown converter
+- Add Chrome extension landing page with feature showcase
+- Add daily developer quote page — recurring visitor driver
+- Add JSON-CSV converter, HTML minifier, JS minifier — 3 high-demand tools
+- Add glassmorphism generator, email validator, CSS text shadow generator
+- Add timezone converter with 20 global time zones
+- Add text to image generator with social media presets (Twitter, Instagram, YouTube, Facebook, OG)
+- Add countdown timer and world clock — high-traffic utility tools
+- Add random number generator (coin flip, dice roll) and GPA calculator
+- Add unit converter (8 categories) and scientific calculator with trig/log/memory
+- Add free public API page with 4 endpoints (quotes, jokes, passwords, placeholder) + API routes
+- Add character counter, age calculator, percentage calculator - high-volume general tools
+- Add 5 high-traffic general tools: mortgage calculator, BMI calculator, tip calculator, compound interest, stopwatch/timer
+- Add 5 SEO-critical tools: regex tester, UUID generator, timestamp converter, color converter, QR code generator
+- Add 6 high-SEO tools: lorem ipsum, hash generator, JWT decoder, base64 encoder, URL encoder, password generator
+- Add 5 more tools: text compare/diff, markdown preview, CSS animation generator, crontab builder, SQL formatter
+- Add 6 more tools: JSON formatter, text-to-speech, speech-to-text, image-to-base64, code formatter, pixel art editor
+- Add 10 high-value tools: AI writer, resume builder, invoice generator, link shortener, color palette generator, README generator, HTML-to-JSX, SVG-to-CSS, CSS grid generator, flexbox generator
+- Add .env viewer — paste env file, see formatted table
+- Add API tester — Postman alternative in browser, high engagement tool
+- Add blog, about page, marketplace, speed test, dev quiz — trust signals + engagement
+- Add marketplace, speed test, developer quiz — 3 new revenue/engagement tools
+- Add cron expression explainer — visual breakdown of cron syntax
+- Add JWT creator + base converter — 830+ URLs
+- Add number base converter — binary/octal/decimal/hex
+- Add whiteboard drawing tool — high engagement, saves as PNG
+- Add todo list tool — saves locally, repeat visits
+- Add quick notes tool — auto-saves locally, repeat visits = more ads
+- Add color name finder — closest named color from hex
+- Add tech detector, README generator — 810+ URLs
+- Add live HTML/CSS/JS code playground — high engagement, high time-on-site
+- Add token research tool — deep dive with safety score, holder analysis — 805+ URLs
+- Add font pair suggester + calculator — approaching 800 URLs
+- Add CSV viewer + robots.txt generator — 795+ URLs
+- Add OG preview, image compressor — 790+ URLs
+- Add .gitignore generator + npm name checker — 785+ URLs
+- Add GitHub README gen + text case converter — 780+ URLs
+- Add JSON path finder + responsive design tester — 775+ URLs
+- Add border-radius gen, text diff, color palette gen — 770+ URLs
+- Add interactive tech stack picker — quiz format, highly shareable
+- Add project idea generator — promotes our templates and tools organically
+- Add typing speed test — engagement tool, keeps users on site
+- Add Pomodoro timer — keeps users on site longer = more ad revenue
+- Add SEO checklist tool — interactive, tracks progress, high search volume
+- Add unified pricing page — ALL paid offerings in one place for max conversion
+- Add changelog page — shows active development, builds trust, SEO fresh content signal
+- Add floating CTA bar on ALL 750+ pages — drives to trading bot, store, alpha
+- Add alpha signals page, Telegram community page, deals, submit-tool — 750+ URLs
+- Add deals page, submit-tool page (B2B sponsorship), dev tool deals — new revenue: sponsored listings 0.5 SOL/mo
+- Add API docs, keyboard shortcuts, Notion templates, startup toolkit, ASCII art, jobs, animations — 740+ URLs
+- Add Notion templates, startup toolkit, ASCII art generator — 735+ URLs, new markets
+- Add CSS animations library — 8 copy-paste animations
+- Add crypto dev job board — 0.5 SOL per listing
+- Add privacy tools, daily dev tip, merch, store, resources — 720+ URLs
+- Add merch page, digital store, resources, 5 tools-for-role pages — 715+ URLs
+- Add digital store + developer resources page — new revenue funnels
+- Add regex pattern library (18 patterns) + snippets + URL shortener — 705+ URLs
+- Add URL shortener API + 5 snippet pages (JS/Python/CSS/React/Bash) + redirect interstitial — 700+ URLs
+- Add 4 interview prep pages (JS, React, Python, SQL) — 694+ URLs
+- Add 18 'how to' pages — the #1 searched format on Google
+- Add 6 quick tutorial pages (JS, Python, Git, React, CSS, TS) — SEO + ads
+- Add 8 tech comparison pages (React vs Vue, Python vs JS, etc.) — massive SEO
+- Add 8 language cheat sheets (JS, Python, Git, React, CSS, TS, SQL, Bash) — SEO gold
+- Add 30 SEO landing pages: '[tool] online free' — programmatic redirects
+- Add 40 converter pages to sitemap — programmatic SEO for long-tail keywords
+- Add programmatic SEO: 40 converter pages from single template — targets long-tail keywords
+- Add contrast checker — WCAG accessibility tool — 90 pages!
+- Add invoice generator with SOL payment links
+- Add Link-in-Bio generator with SOL tips (5% platform fee on tips)
+- Add uptime check API + publish article
+- Add uptime monitor SaaS — recurring revenue product (0.05-0.3 SOL/mo)
+- Add markdown editor with live preview — 86 pages
+- Add JSON validator + Hex/RGB converter — 85 pages
+- Add screen size checker with Tailwind breakpoints
+- Add meme generator — viral shareable tool
+- Add portfolio tracker + token launch service — 80+ pages
+- Add token launch service — 0.2/1/3 SOL tiers with promotion bundles
+- Add cURL command builder — another dev staple
+- Add HTTP status code reference — dev staple search term
+- Add regex cheat sheet + more tools, 77 pages total
+- Add emoji picker tool — high search volume
+- Add Tailwind CSS color palette reference — massive search volume
+- Add CSS box shadow generator
+- Add word counter + password generation API
+- Add User Agent parser tool
+- Add What Is My IP tool — extremely high search volume
+- Add JSON to TypeScript converter — popular dev tool search
+- Add placeholder image page with docs
+- Add favicon generator + placeholder image API — web dev tools
+- Add meta tag generator — SEO tool for web devs
+- Add CSS gradient generator — high-volume web dev tool
+- Add free random data API (quotes, facts, colors, UUID) — new audience
+- Add Solana Webhooks service page — real-time alerts SaaS (0.05-0.5 SOL/mo)
+- Add RPC status checker — dev tool + SEO
+- Add create token page — funnels to bot /create + DeFi toolkit product
+- Add vanity address generator — new paid product (0.01-0.2 SOL)
+- Add SOL/USD converter — top search keyword
+- Add staking calculator — high-search SEO page
+- Add transaction history viewer — SEO tool
+- Add NFT checker tool — SEO funnel
+- Add airdrop checker tool — SEO funnel to bot
+- Add Solana price tracker + token lookup — SEO page
+- Add Solana wallet balance checker tool — SEO traffic driver with cross-links to all products
+- Add bot template marketplace at /templates — 6 products from 0.3-1 SOL
+- Add Sol Pay Button Generator + Checkout page (2% platform fee per tx)
+- Add Whale Tracker landing page + Sniper service page
+- Add Sniper-as-a-Service landing page with 3 pricing tiers
+- Add /hire to navigation, sitemap, homepage CTA, and SEO metadata
+- Add automation-kit to download and success routes
+- Add Social Media Automation Kit product page () + Stripe checkout
+- Add error detail to Stripe checkout for debugging
+- Add SEO parasite pages for token safety searches + updated sitemap
+- Add scarcity pricing, SEO parasite pages, Stripe price updates
+- Add Stripe checkout, fix lazy init for build
+- Add white-label payment tiers and sitemap updates
+- Add code review tool and white-label bot sales page
+- Add staking calculator, SOL converter, gas tracker - SEO pages
+- Add airdrop tracker page - SEO for upcoming solana airdrops
+- Add programmatic token SEO pages + paid scanning API v1
+- Add Solana Trading Course (0.5 SOL) + Bot Builder Kit (1 SOL) products
+- Add RSS rewrite aliases: /feed.xml, /rss.xml, /feed
+- Add README with support section
+- Add FUNDING.yml for GitHub Sponsors
+- Add RSS feed API endpoint for Twitter auto-posting
+- Add 23 programmatic SEO conversion pages
+- Add paid token scanning API with registration and docs page
+- Add 5 new developer tools: HTML encoder, CSS minifier, number base converter, text counter, epoch converter
+- Add sponsorship/advertising page with pricing tiers
+- Add server-side payment verification, download API, services page, bundle deal, and product page updates
+- Add link-in-bio page at /links
+- Add sitemap.xml and robots.txt for SEO
+- Add Solana Trading Guide product page (0.2 SOL)
+- Add Solana DeFi Toolkit product page (0.3 SOL)
+- Add Solana bot source code product page (2 SOL)
+- Add SOL payment checkout to grid bot and prompt pack pages
+- Add product cards for Grid Bot and Prompt Pack on homepage
+- Add landing pages for SOL Grid Bot () and Prompt Pack () Gumroad products
+- Add volume bot and daily digest features to landing page
+- Add Solana trading bot CTA banners to all Solana tool pages
+- Add Solana trading bot landing page
+- Add Telegram bot banner and SEO updates
+- Add paid token safety scanner, SEO canonical URLs, JSON-LD structured data
+- Add Phantom wallet tip button, Solana web3.js dependency
+- Add Solana token lookup and wallet checker tools, SOL tip jar
+
+### Changed
+- Update homepage hero: 265+ tools, add CTA buttons for extension/APIs/crypto
+- Update homepage: add New Tools showcase section with 27 new tools, update structured data count
+- Update sitemap with ALL 130 static pages + 570 programmatic = 800+ total URLs indexed
+- Update sitemap with json-to-ts, ip, useragent
+- Update sitemap with all new tools
+- Update sitemap with vanity address, create token, RPC status pages
+- Update sitemap with all new Solana tool pages for Google indexing
+- Update sol-bot landing: Mini App link, 50% referral boost, dual CTAs
+- Update build info
+- Enhance wallet tracker: full portfolio view with token holdings + SEO
+- Enhance sol-scan: free token scanner with SEO + bot funnel
+- Update sol-bot landing page with premium tier and token promotion features
+
+### Removed
+- Remove .env from tracking, add to gitignore
+
+### Other
+- Fix unicode search - remove problematic chars
+- Deploy learn-solana + job-alerts
+- Fix sitemap duplicates, deploy sleep calculator + all pending
+- CSS gradient generator + more tools
+- Fix TypeScript type error in package.json generator
+- Fix JSX namespace error in JSON editor
+- Fix DNS lookup TypeScript type error
+- Make price pages dynamic (on-demand) to avoid Vercel hobby build timeout — all 992 price pages still work, just render on first visit instead of pre-built
+- Fix build: update params to Promise type (Next.js 16), fix pretty() empty string handling
+- Sitemap: ALL 146 static pages + 570 programmatic = 716+ indexed URLs
+- Revamp hire page with specific service packages and SOL pricing
+- ADD ADSTERRA ADS TO ALL 638+ PAGES — popunder ad on every page view = ad revenue
+- MEGA: Generate 500+ programmatic converter pages from unit combinations
+- Trigger redeploy
+- Clean up attribution, fix arb wording, update stats
+- Rewrite /hire portfolio page — fix all 8 audit issues
+- Fix Stripe checkout: trim secret key to remove invisible chars
+- Switch Stripe checkout to raw fetch API (fixes Vercel SDK network issue)
+- Fix Stripe SDK config for serverless: increase timeout and retries
+- Trigger redeploy with Stripe key
+- Use Helius RPC for faster payment verification and token scanning
+- trigger redeploy
+- Expand SEO keywords for sol-bot landing page
+- Fix: add gitignore, add all 20 tool pages
+- Initial commit: 14 developer tools
