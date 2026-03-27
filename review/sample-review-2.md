@@ -1,0 +1,57 @@
+I can only review what's in the provided diff — the backend files are in the truncated portion. I'll review what I can see and flag concerns about the backend based on the PR description.
+
+---
+
+## Summary
+
+Adds SFTP and FTP as backup destination types alongside S3 in Dokploy. Introduces a `destinationType` discriminator column, conditional form UI with type-specific validation, and (per description) centralizes rclone command generation with `getRcloneFlags()`/`getRcloneRemote()` helpers. The 8274-line snapshot JSON inflates the diff — actual code changes are much smaller.
+
+## Risks
+
+**Security (Critical — backend not visible in truncated diff, needs manual verification):**
+
+- **Shell injection via SFTP/FTP credentials**: The PR description mentions "shell-escaping for SFTP/FTP credential values." I cannot verify the implementation of `getRcloneFlags()` or `getRcloneRemote()` in `utils/backups/utils.ts`. If shell escaping is done via string interpolation + manual escaping rather than passing arguments as array elements to `execSync`/`spawn`, this is a command injection vector. A username like `user; rm -rf /` would be catastrophic. **You must verify the escaping implementation.**
+
+- **Password stored in DB after `rclone obscure`**: `rclone obscure` is reversible (it's XOR-based obfuscation, not encryption). The PR description says passwords are "obscured via rclone obscure before DB storage." This is fine for rclone's usage pattern, but the DB column is plain `text` with no encryption at rest. Existing S3 `secretAccessKey` has the same issue, so this is consistent but worth noting.
+
+- **`handleTestConnection` sends raw password to backend** (`handle-destinations.tsx:~260-280`): The password field value is sent directly via `testConnection()` mutation. Verify the backend doesn't log this or return it in error messages.
+
+**Frontend:**
+
+- **No form reset on type switch** (`handle-destinations.tsx:~165`): When user switches from S3 to SFTP, S3 field values remain in the form state. If they switch back, stale values persist. More importantly, when submitting an SFTP destination, stale S3 values (`accessKeyId`, `secretAccessKey`, `bucket`) are sent as empty strings to the backend (`onSubmit` at ~193: `accessKey: data.accessKeyId || ""`). These empty strings get stored in the DB. Not a bug per se but creates dirty data.
+
+- **Validation gap for `password` on SFTP/FTP** (`handle-destinations.tsx:~84-100`): The `superRefine` only requires `host` and `username` for SFTP/FTP — password is optional. But `handleTestConnection` at ~252 validates `["host", "username", "password"]`. Inconsistency: you can *save* without a password but can't *test* without one. SFTP key-based auth is a valid use case where no password is needed — but then test connection would always fail.
+
+- **Port field has no range validation** (`handle-destinations.tsx:~67`): `z.coerce.number().optional()` accepts negative numbers, zero, or 99999. Should be constrained to 1-65535.
+
+**Migration:**
+
+- **Migration filename mismatch**: File is `0150_add_destination_types.sql` but the snapshot JSON `id` is `"0155_add_destination_types"`. This inconsistency may cause drizzle-kit to complain or create a broken migration chain. Verify the `_journal.json` entry matches.
+
+- **No newline at end of file** in `0150_add_destination_types.sql` — minor, but some tools complain.
+
+**Architecture:**
+
+- **25 files changed for what could be simpler**: Every backup/restore module (`compose.ts`, `postgres.ts`, `mongo.ts`, `mysql.ts`, `mariadb.ts`, `web-server.ts` + restore equivalents + volume-backup equivalents) was touched. The PR description says they now call `getRcloneFlags()`/`getRcloneRemote()`. This refactor is good, but I can't verify if the old inline S3 logic was fully and correctly replaced in all ~14 modules.
+
+## Suggestions
+
+1. **Verify shell escaping in `getRcloneFlags()`** — this is the highest-priority item. The function should either use `child_process.spawn` with array arguments (safe) or use a proven escaping library. Manual `shellEscape()` functions are error-prone.
+
+2. **Add port range validation**: Change `z.coerce.number().optional()` to `z.coerce.number().min(1).max(65535).optional()`.
+
+3. **Reset irrelevant fields on type switch**: Add a `useEffect` watching `destinationType` that clears the fields of the other type, or at minimum don't send irrelevant fields in `onSubmit`.
+
+4. **Reconcile password validation**: Either make password optional in `handleTestConnection` too (for SSH key auth), or make it required in the schema for SFTP/FTP. Pick one behavior.
+
+5. **Fix migration ID mismatch**: Ensure `0150_snapshot.json`'s `id` field and `_journal.json` are consistent with the SQL filename.
+
+6. **Consider a discriminated union in Zod** instead of `superRefine`. Using `z.discriminatedUnion("destinationType", [...])` would be cleaner and give better type narrowing.
+
+7. **The snapshot JSON adds 8274 lines** — verify this was generated by `drizzle-kit generate` and not hand-edited. If hand-edited, regenerate it.
+
+## Confidence
+
+**Score: Medium**
+
+The visible frontend code is solid and well-structured. However, the most critical code — shell command construction, password handling, and the rclone integration in `utils/backups/utils.ts` — is entirely in the truncated portion of the diff. The security posture of this PR hinges on that file. I'd want to verify the shell escaping implementation before approving.
