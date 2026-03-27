@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# pre-tool-use hook — blocks destructive bash commands before execution
+# Claude Code hooks format: reads JSON from stdin, exits 2 to block
+set -euo pipefail
+
+LOG_FILE="${HOME}/.claude/hooks/blocked.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+
+# Read the tool use event from stdin
+INPUT=$(cat)
+
+# Only inspect Bash tool calls
+TOOL_NAME=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
+if [[ "$TOOL_NAME" != "Bash" ]]; then
+  exit 0
+fi
+
+# Extract the command being executed
+COMMAND=$(echo "$INPUT" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+params = data.get('tool_params', {})
+print(params.get('command', ''))
+" 2>/dev/null || echo "")
+
+if [[ -z "$COMMAND" ]]; then
+  exit 0
+fi
+
+# Normalize: lowercase for case-insensitive SQL matching
+COMMAND_LOWER=$(echo "$COMMAND" | tr '[:upper:]' '[:lower:]')
+
+BLOCKED=""
+REASON=""
+
+# --- Pattern checks ---
+
+# 1. rm -rf (recursive force delete)
+if echo "$COMMAND" | grep -qE '(^|[;&|]\s*)rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|--recursive\s+--force|-[a-zA-Z]*f[a-zA-Z]*r)'; then
+  BLOCKED="rm -rf"
+  REASON="Recursive force delete can permanently destroy files and directories"
+fi
+
+# 2. DROP TABLE (SQL — destroys entire table)
+if [[ -z "$BLOCKED" ]] && echo "$COMMAND_LOWER" | grep -qE 'drop\s+table'; then
+  BLOCKED="DROP TABLE"
+  REASON="Drops an entire database table, causing irreversible data loss"
+fi
+
+# 3. TRUNCATE (SQL — removes all rows)
+if [[ -z "$BLOCKED" ]] && echo "$COMMAND_LOWER" | grep -qE 'truncate\s+(table\s+)?\w'; then
+  BLOCKED="TRUNCATE"
+  REASON="Truncates all rows from a table without logging, causing irreversible data loss"
+fi
+
+# 4. git push --force (overwrites remote history)
+if [[ -z "$BLOCKED" ]] && echo "$COMMAND" | grep -qE 'git\s+push\s+.*(-f|--force|--force-with-lease)'; then
+  BLOCKED="git push --force"
+  REASON="Force-pushing overwrites remote git history and can destroy teammates' work"
+fi
+
+# 5. DELETE FROM without WHERE (removes ALL rows)
+if [[ -z "$BLOCKED" ]] && echo "$COMMAND_LOWER" | grep -qE 'delete\s+from\s+' && ! echo "$COMMAND_LOWER" | grep -qE 'delete\s+from\s+\S+\s+where\s'; then
+  BLOCKED="DELETE FROM without WHERE"
+  REASON="Deletes every row in the table — likely unintentional without a WHERE clause"
+fi
+
+# --- If blocked, log and reject ---
+
+if [[ -n "$BLOCKED" ]]; then
+  TIMESTAMP=$(date -u "+%Y-%m-%dT%H:%M:%SZ")
+  PROJECT_PATH=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('project_path', '$(pwd)'))" 2>/dev/null || echo "$(pwd)")
+
+  # Append to log
+  echo "[$TIMESTAMP] BLOCKED: $BLOCKED | command: $COMMAND | project: $PROJECT_PATH" >> "$LOG_FILE"
+
+  # Output reason for Claude (JSON to stderr as per hooks spec)
+  cat <<EOF
+BLOCKED: Destructive command detected — $BLOCKED
+
+Reason: $REASON
+
+The command was:
+  $COMMAND
+
+This attempt has been logged to $LOG_FILE.
+To proceed, please use a safer alternative or ask the user for explicit confirmation.
+EOF
+
+  exit 2
+fi
+
+# Command is safe — allow
+exit 0
