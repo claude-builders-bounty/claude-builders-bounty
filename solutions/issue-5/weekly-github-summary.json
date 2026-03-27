@@ -1,0 +1,206 @@
+{
+  "name": "Weekly GitHub Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "b1a2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$env.GITHUB_REPO}}/commits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "{{$now.minus({days: 7}).toISO()}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1d2e3f4-a5b6-7890-cdef-123456789012",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$env.GITHUB_REPO}}/issues",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "{{$now.minus({days: 7}).toISO()}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d2e3f4a5-b6c7-8901-def2-234567890123",
+      "name": "Get Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$env.GITHUB_REPO}}/pulls",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e3f4a5b6-c7d8-9012-ef34-345678901234",
+      "name": "Get PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Get Commits').all()[0].json || [];\nconst issues = $('Get Issues').all()[0].json || [];\nconst prs = $('Get PRs').all()[0].json || [];\n\nconst mergedPRs = Array.isArray(prs) ? prs.filter(p => p.merged_at) : [];\n\nreturn [{\n  json: {\n    week: $now.minus({days: 7}).toISODate() + ' to ' + $now.toISODate(),\n    repo: $env.GITHUB_REPO,\n    language: $env.LANGUAGE || 'EN',\n    stats: {\n      commits: Array.isArray(commits) ? commits.length : 0,\n      issuesClosed: Array.isArray(issues) ? issues.length : 0,\n      prsMerged: mergedPRs.length\n    },\n    commits: Array.isArray(commits) ? commits.slice(0, 5).map(c => ({\n      message: c.commit?.message?.split('\\n')[0],\n      author: c.commit?.author?.name,\n      sha: c.sha?.substring(0, 7)\n    })) : [],\n    issues: Array.isArray(issues) ? issues.slice(0, 5).map(i => ({\n      title: i.title,\n      number: i.number,\n      labels: i.labels?.map(l => l.name) || []\n    })) : [],\n    prs: mergedPRs.slice(0, 5).map(p => ({\n      title: p.title,\n      number: p.number,\n      author: p.user?.login\n    }))\n  }\n}];"
+      },
+      "id": "f4a5b6c7-d8e9-0123-f456-456789012345",
+      "name": "Process Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "2000"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"Generate a weekly development summary for {{$json.repo}} ({{$json.week}}).\\n\\nStats: {{$json.stats.commits}} commits, {{$json.stats.issuesClosed}} issues closed, {{$json.stats.prsMerged}} PRs merged.\\n\\nRecent commits: {{JSON.stringify($json.commits)}}\\n\\nClosed issues: {{JSON.stringify($json.issues)}}\\n\\nMerged PRs: {{JSON.stringify($json.prs)}}\\n\\nLanguage: {{$json.language}}\\n\\nCreate a professional narrative summary.\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a5b6c7d8-e9f0-1234-a567-567890123456",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "content": "text/plain",
+        "subject": "Weekly Dev Summary - {{$env.GITHUB_REPO}} - {{$now.toISODate()}}",
+        "message": "={{$json.content[0].text}}",
+        "options": {}
+      },
+      "id": "b6c7d8e9-f0a1-2345-b678-678901234567",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{$env.DISCORD_WEBHOOK}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "**Weekly Dev Summary** - {{$env.GITHUB_REPO}}"
+            },
+            {
+              "name": "embeds",
+              "value": "=[{\"title\": \"{{$now.toISODate()}}\", \"description\": \"{{$json.content[0].text.substring(0, 2000)}}\", \"color\": 5814783}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c7d8e9f0-a1b2-3456-c789-789012345678",
+      "name": "Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 500]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [[{"node": "Get Commits", "type": "main", "index": 0}]]
+    },
+    "Get Commits": {
+      "main": [[{"node": "Process Data", "type": "main", "index": 0}]]
+    },
+    "Get Issues": {
+      "main": [[{"node": "Process Data", "type": "main", "index": 0}]]
+    },
+    "Get PRs": {
+      "main": [[{"node": "Process Data", "type": "main", "index": 0}]]
+    },
+    "Process Data": {
+      "main": [[{"node": "Claude API", "type": "main", "index": 0}]]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {"node": "Send Email", "type": "main", "index": 0},
+          {"node": "Discord", "type": "main", "index": 0}
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}
