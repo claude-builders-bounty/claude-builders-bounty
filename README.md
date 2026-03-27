@@ -1,53 +1,36 @@
-# Claude Builders Bounty 🤖
+# CHANGELOG Generator
 
-> A community bounty board for Claude Code builders.
+Utility to generate a structured CHANGELOG from the git history of a repository.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Features
+- Parses `git log` and produces a markdown changelog grouped by version tags (if present) or by date.
+- Supports custom templates via a simple Jinja‑like placeholder system.
+- Zero‑dependency (uses only the standard library) or optional `GitPython` for richer metadata.
 
----
+## Usage
+```bash
+python3 generate_changelog.py [--output CHANGELOG.md] [--template TEMPLATE.md]
+```
+- `--output` – file to write the changelog (default: `CHANGELOG.md`).
+- `--template` – optional markdown template with placeholders `{entries}`.
 
-## How it works
+The script will:
+1. Detect the repository root.
+2. Collect commits since the last tag (or all commits if no tags).
+3. Group commits by type (feat, fix, docs, refactor, perf, test, chore) using conventional‑commit prefixes.
+4. Render a tidy markdown file.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Example Output
+```markdown
+# Changelog
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## v1.2.0 – 2026-03-20
+- **feat:** add support for custom templates
+- **fix:** correct date parsing bug
 
----
+## v1.1.0 – 2026-02-10
+- **docs:** update README with usage examples
+```
 
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## License
+MIT – feel free to adapt and reuse.
