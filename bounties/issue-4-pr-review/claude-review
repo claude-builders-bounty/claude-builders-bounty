@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""claude-review — PR review agent that generates structured Markdown review comments.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr 123 --repo owner/repo
+    claude-review --pr https://github.com/owner/repo/pull/123 --token YOUR_GITHUB_TOKEN
+
+Output: Structured Markdown review to stdout.
+"""
+
+import argparse
+import json
+import os
+import sys
+import urllib.request
+import urllib.error
+import re
+from datetime import datetime
+
+
+# ── GitHub API helpers ────────────────────────────────────────────────────────
+
+def github_api(url, token=None):
+    """Make a GitHub API request and return parsed JSON."""
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "claude-review/1.0",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()[:200]
+        print(f"[ERROR] GitHub API {e.code}: {body}", file=sys.stderr)
+        return None
+
+
+def parse_pr_url(url):
+    """Extract owner, repo, and PR number from a GitHub PR URL."""
+    # Support: https://github.com/owner/repo/pull/123 or just a number
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    if m:
+        return m.group(1), m.group(2), int(m.group(3))
+    if url.isdigit():
+        return None, None, int(url)
+    return None, None, None
+
+
+def fetch_pr_data(owner, repo, number, token=None):
+    """Fetch PR details, diff, and changed files."""
+    base = "https://api.github.com"
+
+    # PR metadata
+    pr = github_api(f"{base}/repos/{owner}/{repo}/pulls/{number}", token)
+    if not pr:
+        return None
+
+    # Files changed (includes patch)
+    files = github_api(f"{base}/repos/{owner}/{repo}/pulls/{number}/files?per_page=100", token)
+    if not files:
+        files = []
+
+    return {"pr": pr, "files": files}
+
+
+# ── Analysis engine ───────────────────────────────────────────────────────────
+
+RISK_PATTERNS = [
+    (r"\beval\s*\(", "eval() call — potential code injection", "High"),
+    (r"\bexec\s*\(", "exec() call — potential command injection", "High"),
+    (r"\bshell_exec\s*\(", "shell_exec() call — potential command injection", "High"),
+    (r"\bsubprocess\.(call|run|Popen)\b", "subprocess shell execution — check for shell=True", "Medium"),
+    (r"\bos\.system\s*\(", "os.system() call — potential command injection", "High"),
+    (r"\b(sql|query|execute).*\+\s*['\"]", "String concatenation in SQL — possible SQL injection", "High"),
+    (r"\b(innerHTML|dangerouslySetInnerHTML|v-html)\b", "Direct HTML rendering — XSS risk", "High"),
+    (r"\b(password|secret|api_key|private_key)\s*=\s*['\"]", "Hardcoded credential detected", "High"),
+    (r"\.env\b", "Environment file referenced — ensure not committed", "Medium"),
+    (r"\bDELETE\s+FROM\b(?!\s+WHERE\b)", "DELETE without WHERE clause — will delete all rows", "High"),
+    (r"\bDROP\s+(TABLE|DATABASE)\b", "Destructive SQL operation", "High"),
+    (r"rm\s+-rf\b", "Recursive force delete — destructive operation", "High"),
+    (r"git\s+push\s+--force\b", "Force push — rewrites remote history", "Medium"),
+    (r"\bfetch\(|\.json\(\)", "Network request — check for error handling and timeout", "Low"),
+    (r"\bTODO\b|\bFIXME\b|\bHACK\b", "Unresolved marker found — consider addressing", "Low"),
+    (r"console\.(log|debug|info)\b", "Console logging in production code", "Low"),
+    (r"except\s*:", "Bare except clause — catches all exceptions including SystemExit", "Medium"),
+    (r"\bsetTimeout\b|\bsetInterval\b", "Timer found — check for cleanup on unmount", "Low"),
+]
+
+IMPROVEMENT_PATTERNS = [
+    (r"function\s+\w+\s*\([^)]{5,}\)", "Complex function signature — consider splitting into smaller functions"),
+    (r"if.*if.*if.*if", "Deeply nested conditionals — consider early returns or guard clauses"),
+    (r"\.then\(.*\.then\(.*\.then\(", "Promise chain nesting — consider async/await"),
+    (r"for.*for.*for", "Nested loops — consider using map/filter/reduce or extracting"),
+    (r"// .* http", "URL in comment — consider moving to documentation or config"),
+    (r"import.*from\s+['\"]\.\.\/\.\.\/\.\.\/", "Deep relative import — consider path aliases"),
+]
+
+
+def analyze_diff(files):
+    """Analyze changed files for risks and improvements."""
+    risks = []
+    improvements = []
+    total_additions = 0
+    total_deletions = 0
+    file_count = 0
+
+    for f in files:
+        patch = f.get("patch", "") or ""
+        filename = f.get("filename", "")
+        total_additions += f.get("additions", 0)
+        total_deletions += f.get("deletions", 0)
+        file_count += 1
+
+        # Skip binary files
+        if not patch:
+            continue
+
+        # Check risk patterns
+        for pattern, message, severity in RISK_PATTERNS:
+            matches = list(re.finditer(pattern, patch, re.IGNORECASE))
+            if matches:
+                # Deduplicate: only report once per file per pattern
+                risks.append({
+                    "file": filename,
+                    "message": message,
+                    "severity": severity,
+                    "count": len(matches),
+                })
+
+        # Check improvement patterns
+        for pattern, message in IMPROVEMENT_PATTERNS:
+            if re.search(pattern, patch, re.IGNORECASE):
+                improvements.append({"file": filename, "message": message})
+
+    # Deduplicate risks by (file, message)
+    seen = set()
+    unique_risks = []
+    for r in risks:
+        key = (r["file"], r["message"])
+        if key not in seen:
+            seen.add(key)
+            unique_risks.append(r)
+
+    # Deduplicate improvements
+    seen = set()
+    unique_improvements = []
+    for i in improvements:
+        key = (i["file"], i["message"])
+        if key not in seen:
+            seen.add(key)
+            unique_improvements.append(i)
+
+    return unique_risks, unique_improvements, total_additions, total_deletions, file_count
+
+
+def assess_confidence(risks, improvements):
+    """Assess overall review confidence based on findings."""
+    high_risks = [r for r in risks if r["severity"] == "High"]
+    if high_risks:
+        return "Low"
+    if risks:
+        return "Medium"
+    return "High"
+
+
+def generate_summary(pr, risks, improvements, additions, deletions, file_count):
+    """Generate a 2-3 sentence summary of changes."""
+    title = pr.get("title", "Unknown")
+    author = pr.get("user", {}).get("login", "unknown")
+    changed = pr.get("changed_files", file_count)
+    labels = [l["name"] for l in pr.get("labels", [])]
+
+    parts = [f"This PR by @{author} modifies {changed} file{'s' if changed != 1 else ''}"]
+    parts.append(f"(+{additions}/-{deletions} lines)")
+    if labels:
+        parts.append(f"with labels: {', '.join(labels)}")
+    parts.append(f"titled \"{title}\".")
+
+    if risks:
+        high = [r for r in risks if r["severity"] == "High"]
+        if high:
+            parts.append(f"Contains **{len(high)} high-severity risk(s)** that should be addressed before merge.")
+        else:
+            parts.append(f"Contains {len(risks)} potential concern(s) worth reviewing.")
+    else:
+        parts.append("No significant risks detected.")
+
+    return " ".join(parts)
+
+
+# ── Output formatting ─────────────────────────────────────────────────────────
+
+def format_review(pr, risks, improvements, confidence, summary):
+    """Format the review as structured Markdown."""
+    lines = []
+    lines.append("## PR Review")
+    lines.append("")
+    lines.append(f"**PR**: [{pr.get('title', '')}]({pr.get('html_url', '')})")
+    lines.append(f"**Author**: @{pr.get('user', {}).get('login', 'unknown')}")
+    lines.append(f"**Branch**: `{pr.get('head', {}).get('ref', '')}` → `{pr.get('base', {}).get('ref', '')}`")
+    lines.append("")
+
+    # Summary
+    lines.append("### Summary")
+    lines.append("")
+    lines.append(summary)
+    lines.append("")
+
+    # Risks
+    if risks:
+        lines.append("### Risks")
+        lines.append("")
+        for r in risks:
+            icon = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}.get(r["severity"], "⚪")
+            lines.append(f"- {icon} **[{r['severity']}]** `{r['file']}`: {r['message']}")
+            if r.get("count", 1) > 1:
+                lines.append(f"  - *Found {r['count']} occurrence(s)*")
+        lines.append("")
+
+    # Improvements
+    if improvements:
+        lines.append("### Improvement Suggestions")
+        lines.append("")
+        for i in improvements:
+            lines.append(f"- 💡 `{i['file']}`: {i['message']}")
+        lines.append("")
+
+    # Confidence
+    icon = {"High": "🟢", "Medium": "🟡", "Low": "🔴"}.get(confidence, "⚪")
+    lines.append(f"### Confidence: {icon} {confidence}")
+    lines.append("")
+    lines.append("---")
+    lines.append(f"*Generated by claude-review on {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}*")
+
+    return "\n".join(lines)
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Review a GitHub PR and generate structured Markdown output",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--pr", required=True, help="PR URL or number")
+    parser.add_argument("--repo", default="", help="owner/repo (required if --pr is a number)")
+    parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN", ""),
+                        help="GitHub token (or set GITHUB_TOKEN env var)")
+    parser.add_argument("--json", action="store_true", help="Output as JSON instead of Markdown")
+    args = parser.parse_args()
+
+    owner, repo, number = parse_pr_url(args.pr)
+    if not owner:
+        owner, _, repo = (args.repo or "").partition("/")
+        if not owner or not repo:
+            print("[ERROR] Could not determine repo. Use --repo owner/repo or full PR URL.", file=sys.stderr)
+            sys.exit(1)
+    if not number:
+        print("[ERROR] Could not determine PR number.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Reviewing {owner}/{repo}#{number}...", file=sys.stderr)
+
+    data = fetch_pr_data(owner, repo, number, args.token)
+    if not data:
+        print("[ERROR] Failed to fetch PR data.", file=sys.stderr)
+        sys.exit(1)
+
+    pr = data["pr"]
+    risks, improvements, additions, deletions, file_count = analyze_diff(data["files"])
+    confidence = assess_confidence(risks, improvements)
+    summary = generate_summary(pr, risks, improvements, additions, deletions, file_count)
+
+    if args.json:
+        output = {
+            "pr": {"number": number, "title": pr.get("title"), "author": pr.get("user", {}).get("login"),
+                   "url": pr.get("html_url"), "base": pr.get("base", {}).get("ref"),
+                   "head": pr.get("head", {}).get("ref")},
+            "summary": summary,
+            "risks": risks,
+            "improvements": improvements,
+            "confidence": confidence,
+            "stats": {"files": file_count, "additions": additions, "deletions": deletions},
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        print(format_review(pr, risks, improvements, confidence, summary))
+
+    # Exit with error code if high risks found
+    if any(r["severity"] == "High" for r in risks):
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()
