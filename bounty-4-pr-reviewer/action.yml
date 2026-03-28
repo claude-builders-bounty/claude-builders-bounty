@@ -1,0 +1,69 @@
+name: 'Claude PR Reviewer'
+description: 'AI-powered PR review using Claude'
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get PR diff
+        id: diff
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+          echo "lines=$(wc -l < /tmp/pr.diff | tr -d ' ')" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run review
+        id: review
+        run: |
+          DIFF=$(head -500 /tmp/pr.diff)
+          REVIEW=$(claude -p --model sonnet --max-budget-usd 0.10 --no-session-persistence \
+            "You are a senior code reviewer. Analyze this PR diff and produce a structured review.
+
+          PR Title: ${{ github.event.pull_request.title }}
+
+          Diff:
+          \`\`\`diff
+          ${DIFF}
+          \`\`\`
+
+          Output format:
+          ### Summary
+          [2-3 sentences]
+
+          ### Identified Risks
+          - [Risk 1 or: No significant risks]
+
+          ### Improvement Suggestions
+          - [Suggestion 1 or: No suggestions]
+
+          ### Confidence Score
+          [Low/Medium/High] — [reason]")
+
+          echo "$REVIEW" > /tmp/review.md
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post review comment
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "## 🤖 Claude Code Review
+
+          $(cat /tmp/review.md)
+
+          ---
+          *Automated review by [claude-review](https://github.com/claude-builders-bounty/claude-builders-bounty)*"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
