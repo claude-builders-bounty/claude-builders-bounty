@@ -18,28 +18,31 @@ from datetime import datetime
 # Log file location
 LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
 
-# Destructive patterns to block
+# Destructive patterns to block (16+ patterns)
 DESTRUCTIVE_PATTERNS = [
-    # Filesystem destruction
+    # Filesystem destruction (4 patterns)
     (r'rm\s+(-[rf]+\s+)*(-[rf]+\s+)*(/|\*|\.\.|~)', 'rm -rf: Recursive force delete'),
     (r'rm\s+-rf\s+', 'rm -rf: Recursive force delete'),
     (r'rm\s+--no-preserve-root\s+', 'rm --no-preserve-root: System root deletion'),
+    (r'rm\s+-rf\s+/\s*$', 'rm -rf /: Root deletion'),
     
-    # Database destruction
+    # Database destruction (4 patterns)
     (r'DROP\s+TABLE\s+', 'DROP TABLE: Database table deletion'),
+    (r'DROP\s+DATABASE\s+', 'DROP DATABASE: Database deletion'),
     (r'TRUNCATE\s+(TABLE\s+)?', 'TRUNCATE: Database table truncation'),
     (r'DELETE\s+FROM\s+\w+\s*(;|--|/\*|$)', 'DELETE FROM without WHERE: Full table deletion'),
     
-    # Git destruction
+    # Git destruction (2 patterns)
     (r'git\s+push\s+--force', 'git push --force: Force push (rewrites history)'),
     (r'git\s+push\s+-f\s+', 'git push -f: Force push (rewrites history)'),
     
-    # System destruction
+    # System destruction (4 patterns)
     (r'mkfs\.', 'mkfs: Filesystem format'),
     (r'dd\s+.*of=/dev/', 'dd to /dev: Disk write'),
     (r':\(\)\{\s*:\|\:&\s*\};:', 'Fork bomb'),
+    (r'>\s*/dev/sd[a-z]', 'Redirect to disk: Disk overwrite'),
     
-    # Permission/ownership destruction
+    # Permission/ownership (2 patterns)
     (r'chmod\s+-R\s+777\s+/', 'chmod -R 777 /: System-wide permissions'),
     (r'chown\s+-R\s+', 'chown -R: Recursive ownership change (potential risk)'),
 ]
