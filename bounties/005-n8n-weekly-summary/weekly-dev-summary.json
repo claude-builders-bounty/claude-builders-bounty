@@ -1,0 +1,323 @@
+{
+  "name": "Weekly Dev Summary - GitHub + Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weekday",
+              "mode": "every",
+              "value": 5
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getCommits",
+        "owner": "={{ $json.githubOwner }}",
+        "repository": "={{ $json.githubRepo }}",
+        "since": "={{ $json.weekStart }}",
+        "until": "={{ $json.weekEnd }}"
+      },
+      "id": "github-commits",
+      "name": "GitHub - Get Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        650,
+        150
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_API_CREDENTIAL",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "owner": "={{ $('Set Config').item.json.githubOwner }}",
+        "repository": "={{ $('Set Config').item.json.githubRepo }}",
+        "returnAll": true,
+        "filters": {
+          "state": "closed",
+          "since": "={{ $('Set Config').item.json.weekStart }}"
+        }
+      },
+      "id": "github-issues",
+      "name": "GitHub - Get Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_API_CREDENTIAL",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "owner": "={{ $('Set Config').item.json.githubOwner }}",
+        "repository": "={{ $('Set Config').item.json.githubRepo }}",
+        "returnAll": true,
+        "filters": {
+          "state": "closed"
+        }
+      },
+      "id": "github-prs",
+      "name": "GitHub - Get Merged PRs",
+      "type": "n8n-nodes-base.githubPullRequest",
+      "typeVersion": 1,
+      "position": [
+        650,
+        450
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_API_CREDENTIAL",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"githubOwner\": \"{{ $env.GITHUB_OWNER || 'your-org' }}\",\n  \"githubRepo\": \"{{ $env.GITHUB_REPO || 'your-repo' }}\",\n  \"destinationChannel\": \"{{ $env.SLACK_CHANNEL || '#general' }}\",\n  \"emailRecipients\": \"{{ $env.EMAIL_RECIPIENTS || 'team@example.com' }}\",\n  \"language\": \"{{ $env.LANGUAGE || 'EN' }}\",\n  \"weekStart\": \"={{ DateTime.now().minus({days: 7}).toISO() }}\",\n  \"weekEnd\": \"={{ DateTime.now().toISO() }}\"\n}"
+      },
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get inputs from previous nodes\nconst commits = $input.all()[0]?.json || [];\nconst issues = $input.all()[1]?.json || [];\nconst prs = $input.all()[2]?.json || [];\n\n// Get config from Set Config node\nconst config = $items('Set Config')[0].json;\nconst { githubOwner, githubRepo, language, weekStart, weekEnd } = config;\n\n// Calculate week label\nconst weekLabel = `${new Date(weekStart).toLocaleDateString()} - ${new Date(weekEnd).toLocaleDateString()}`;\n\n// Filter data for the current week\nconst weekStartDate = new Date(weekStart);\nconst weekEndDate = new Date(weekEnd);\n\nconst filterByDate = (items, dateField) => {\n  return items.filter(item => {\n    const date = new Date(item[dateField] || item.created_at);\n    return date >= weekStartDate && date <= weekEndDate;\n  });\n};\n\nconst weeklyCommits = filterByDate(commits, 'commit.author.date');\nconst weeklyIssues = filterByDate(issues, 'closed_at');\nconst weeklyPRs = filterByDate(prs, 'merged_at');\n\n// Extract contributor stats\nconst contributorStats = {};\nweeklyCommits.forEach(commit => {\n  const author = commit.commit?.author?.name || commit.author?.login || 'Unknown';\n  contributorStats[author] = (contributorStats[author] || 0) + 1;\n});\n\nconst topContributors = Object.entries(contributorStats)\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 5);\n\n// Build the prompt for Claude\nconst languageInstruction = language === 'FR' \n  ? 'Écris le résumé en français.' \n  : 'Write the summary in English.';\n\nconst prompt = `Generate a weekly development summary for the repository ${githubOwner}/${githubRepo}.\n\nWEEK: ${weekLabel}\n\nACTIVITY DATA:\n- Commits: ${weeklyCommits.length}\n- Closed Issues: ${weeklyIssues.length}\n- Merged Pull Requests: ${weeklyPRs.length}\n\nTOP CONTRIBUTORS:\n${topContributors.map(([name, count]) => `- ${name}: ${count} commits`).join('\\n')}\n\nCLOSED ISSUES:\n${weeklyIssues.slice(0, 10).map(i => `- #${i.number}: ${i.title}`).join('\\n')}\n\nMERGED PULL REQUESTS:\n${weeklyPRs.slice(0, 10).map(p => `- #${p.number}: ${p.title} by @${p.user?.login}`).join('\\n')}\n\nRECENT COMMITS:\n${weeklyCommits.slice(0, 10).map(c => `- ${c.commit?.message?.split('\\n')[0]} (${c.commit?.author?.name})`).join('\\n')}\n\nINSTRUCTIONS:\nWrite a friendly, professional weekly summary suitable for a team standup or newsletter.\nInclude:\n1. A brief opening with total stats\n2. Key highlights (major PRs, important fixes)\n3. Contributor recognition\n4. A closing with next week anticipation\n\nKeep it concise (200-300 words) and engaging.\n${languageInstruction}`;\n\nreturn [{\n  json: {\n    prompt: prompt,\n    stats: {\n      commits: weeklyCommits.length,\n      issues: weeklyIssues.length,\n      prs: weeklyPRs.length,\n      contributors: topContributors\n    },\n    weekLabel: weekLabel,\n    config: config\n  }\n}];"
+      },
+      "id": "code-aggregate",
+      "name": "Code - Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "message": [
+            {
+              "role": "system",
+              "content": "You are a technical writer creating weekly development summaries. Summarize the week's GitHub activity in a clear, narrative format suitable for a team standup or newsletter."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.prompt }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-api",
+      "name": "Claude API - Generate Summary",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "ANTHROPIC_API_CREDENTIAL",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Config').item.json.destinationChannel }}",
+        "text": "={{ $json.content[0].text }}",
+        "options": {}
+      },
+      "id": "slack-send",
+      "name": "Slack - Send Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [
+        1250,
+        200
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "SLACK_API_CREDENTIAL",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{ $('Set Config').item.json.emailRecipients }}",
+        "subject": "Weekly Dev Summary - {{ $('Set Config').item.json.githubRepo }} ({{ $json.weekLabel }})",
+        "contentType": "text",
+        "message": "={{ $json.summaryText }}"
+      },
+      "id": "email-send",
+      "name": "Email - Send Summary",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1250,
+        400
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "SMTP_CREDENTIAL",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Weekly",
+      "id": "weekly-tag",
+      "createdAt": "2025-03-26T00:00:00.000Z",
+      "updatedAt": "2025-03-26T00:00:00.000Z"
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "GitHub - Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub - Get Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub - Get Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub - Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Code - Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub - Get Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Code - Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub - Get Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Code - Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Claude API - Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API - Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Slack - Send Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email - Send Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
