@@ -22,6 +22,23 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
     exit 1
 fi
 
+# Check if repo has any commits
+if ! git rev-parse HEAD > /dev/null 2>&1; then
+    echo -e "${YELLOW}Warning: Repository has no commits yet${NC}"
+    # Create empty CHANGELOG
+    cat > "$OUTPUT_FILE" << 'EOF'
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [v0.1.0] - TBD
+
+No changes recorded yet.
+EOF
+    echo -e "${GREEN}✅ Created empty CHANGELOG (no commits yet)${NC}"
+    exit 0
+fi
+
 # Get the last tag (or use initial commit if no tags)
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
