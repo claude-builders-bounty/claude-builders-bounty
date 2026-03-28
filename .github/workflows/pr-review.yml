@@ -1,0 +1,63 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write   # needed to post comments
+  contents: read
+
+jobs:
+  review:
+    name: Claude Code Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Install gh CLI (already present on ubuntu-latest, but pin version) ──
+      - name: Set up gh CLI
+        run: |
+          gh --version
+
+      # ── Install Python dependencies ──────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install anthropic
+
+      # ── Run claude-review ────────────────────────────────────────────────────
+      - name: Run Claude PR Review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python agents/pr-reviewer/claude_review.py \
+            --pr "${{ github.event.pull_request.html_url }}" \
+            --post-comment \
+            --output /tmp/review-output.md
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+        # Allow the step to finish even if exit code is 1 or 2 (medium/high risk)
+        continue-on-error: true
+
+      # ── Upload review as artifact ─────────────────────────────────────────────
+      - name: Upload review artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: claude-review-${{ github.event.pull_request.number }}
+          path: /tmp/review-output.md
+          retention-days: 30
+
+      # ── Gate on high risk ─────────────────────────────────────────────────────
+      - name: Fail on HIGH risk
+        if: steps.review.outputs.exit_code == '2'
+        run: |
+          echo "::error::Claude review flagged this PR as HIGH risk. Review the posted comment before merging."
+          exit 2
