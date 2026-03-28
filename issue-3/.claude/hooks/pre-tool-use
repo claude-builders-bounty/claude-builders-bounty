@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INPUT="${1:-${CLAUDE_TOOL_INPUT:-}}"
+PROJECT_PATH="${PWD}"
+LOG_FILE="$HOME/.claude/hooks/blocked.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+
+normalize() { echo "$1" | tr '\n' ' ' | sed 's/  */ /g'; }
+CMD="$(normalize "$INPUT")"
+LCMD="$(echo "$CMD" | tr '[:upper:]' '[:lower:]')"
+
+BLOCK_REASON=""
+if [[ "$LCMD" =~ rm[[:space:]]+-rf ]]; then BLOCK_REASON="blocked rm -rf"; fi
+if [[ "$LCMD" =~ drop[[:space:]]+table ]]; then BLOCK_REASON="blocked DROP TABLE"; fi
+if [[ "$LCMD" =~ git[[:space:]]+push[[:space:]]+--force ]]; then BLOCK_REASON="blocked git push --force"; fi
+if [[ "$LCMD" =~ truncate[[:space:]] ]]; then BLOCK_REASON="blocked TRUNCATE"; fi
+if [[ "$LCMD" =~ delete[[:space:]]+from ]] && [[ ! "$LCMD" =~ where[[:space:]] ]]; then
+  BLOCK_REASON="blocked DELETE FROM without WHERE"
+fi
+
+if [[ -n "$BLOCK_REASON" ]]; then
+  TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  echo "$TS | $PROJECT_PATH | $CMD | $BLOCK_REASON" >> "$LOG_FILE"
+  echo "BLOCKED: $BLOCK_REASON. This command is destructive and denied by pre-tool-use hook." >&2
+  exit 2
+fi
+
+exit 0
