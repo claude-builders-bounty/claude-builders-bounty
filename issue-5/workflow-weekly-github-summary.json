@@ -1,0 +1,164 @@
+{
+  "name": "Weekly GitHub Narrative Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-weekly",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {"name": "owner", "value": "={{$env.GITHUB_OWNER || 'owner'}}"},
+            {"name": "repo", "value": "={{$env.GITHUB_REPO || 'repo'}}"},
+            {"name": "language", "value": "={{$env.SUMMARY_LANGUAGE || 'EN'}}"},
+            {"name": "destinationWebhook", "value": "={{$env.DESTINATION_WEBHOOK || ''}}"},
+            {"name": "since", "value": "={{$now.minus({days: 7}).toISO()}}"},
+            {"name": "until", "value": "={{$now.toISO()}}"}
+          ]
+        }
+      },
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{`https://api.github.com/repos/${$json.owner}/${$json.repo}/commits?since=${$json.since}&until=${$json.until}&per_page=100`}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Accept", "value": "application/vnd.github+json"},
+            {"name": "Authorization", "value": "={{`Bearer ${$env.GITHUB_TOKEN}`}}"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 140]
+    },
+    {
+      "parameters": {
+        "url": "={{`https://api.github.com/repos/${$json.owner}/${$json.repo}/issues?state=closed&since=${$json.since}&per_page=100`}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Accept", "value": "application/vnd.github+json"},
+            {"name": "Authorization", "value": "={{`Bearer ${$env.GITHUB_TOKEN}`}}"}
+          ]
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{`https://api.github.com/repos/${$json.owner}/${$json.repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Accept", "value": "application/vnd.github+json"},
+            {"name": "Authorization", "value": "={{`Bearer ${$env.GITHUB_TOKEN}`}}"}
+          ]
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 460]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll"
+      },
+      "id": "merge-data",
+      "name": "Merge Weekly Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $items('Fetch Commits', 0, 0)[0].json;\nconst issues = $items('Fetch Closed Issues', 0, 0)[0].json.filter(i => !i.pull_request);\nconst prs = $items('Fetch Merged PRs', 0, 0)[0].json.filter(pr => pr.merged_at);\nconst cfg = $items('Set Config', 0, 0)[0].json;\nconst commitLines = commits.slice(0, 20).map(c => `- ${c.commit.message.split('\\n')[0]} (@${c.author?.login || 'unknown'})`).join('\\n');\nconst issueLines = issues.slice(0, 20).map(i => `- #${i.number}: ${i.title}`).join('\\n');\nconst prLines = prs.slice(0, 20).map(pr => `- #${pr.number}: ${pr.title} (by @${pr.user?.login || 'unknown'})`).join('\\n');\nconst prompt = `You are a technical editor. Write a concise weekly narrative summary in ${cfg.language}.\\nRepository: ${cfg.owner}/${cfg.repo}.\\nWindow: ${cfg.since} to ${cfg.until}.\\n\\nInclude sections: Highlights, Commits, Closed Issues, Merged PRs, Risks, Next Week Focus.\\n\\nCommits:\\n${commitLines || '- none'}\\n\\nClosed Issues:\\n${issueLines || '- none'}\\n\\nMerged PRs:\\n${prLines || '- none'}`;\nreturn [{ json: { ...cfg, commits_count: commits.length, issues_count: issues.length, merged_prs_count: prs.length, prompt } }];"
+      },
+      "id": "compose-prompt",
+      "name": "Compose Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1180, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "content-type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: 'claude-sonnet-4-20250514',\n  max_tokens: 900,\n  messages: [{ role: 'user', content: $json.prompt }]\n} }}"
+      },
+      "id": "claude-summary",
+      "name": "Generate Narrative (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1420, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$item(0).$node['Set Config'].json.destinationWebhook}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { text: `📊 Weekly summary for ${$item(0).$node['Set Config'].json.owner}/${$item(0).$node['Set Config'].json.repo}\\n\\n${$json.content?.[0]?.text || 'No summary generated'}` } }}"
+      },
+      "id": "send-slack-webhook",
+      "name": "Send to Slack/Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1660, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {"main": [[{"node": "Set Config", "type": "main", "index": 0}]]},
+    "Set Config": {"main": [[{"node": "Fetch Commits", "type": "main", "index": 0}, {"node": "Fetch Closed Issues", "type": "main", "index": 0}, {"node": "Fetch Merged PRs", "type": "main", "index": 0}]]},
+    "Fetch Commits": {"main": [[{"node": "Merge Weekly Data", "type": "main", "index": 0}]]},
+    "Fetch Closed Issues": {"main": [[{"node": "Merge Weekly Data", "type": "main", "index": 1}]]},
+    "Fetch Merged PRs": {"main": [[{"node": "Merge Weekly Data", "type": "main", "index": 2}]]},
+    "Merge Weekly Data": {"main": [[{"node": "Compose Claude Prompt", "type": "main", "index": 0}]]},
+    "Compose Claude Prompt": {"main": [[{"node": "Generate Narrative (Claude)", "type": "main", "index": 0}]]},
+    "Generate Narrative (Claude)": {"main": [[{"node": "Send to Slack/Discord Webhook", "type": "main", "index": 0}]]}
+  },
+  "settings": {},
+  "active": false,
+  "versionId": "issue-5-v1"
+}
