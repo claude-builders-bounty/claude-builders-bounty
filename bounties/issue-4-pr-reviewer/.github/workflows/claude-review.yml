@@ -1,0 +1,71 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  pr-review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Download claude-review
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/pino12033/claude-builders-bounty/main/bounties/issue-4-pr-reviewer/claude-review.js \
+            -o claude-review.js
+          chmod +x claude-review.js
+
+      - name: Run AI PR Review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL="https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
+          echo "Reviewing $PR_URL..."
+          
+          node claude-review.js \
+            --pr "$PR_URL" \
+            --provider anthropic \
+            > review-output.md 2>review-log.txt
+          
+          echo "Review generated:"
+          cat review-output.md
+          
+          # Store for next step
+          echo "review-file=review-output.md" >> $GITHUB_OUTPUT
+
+      - name: Post review as PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('review-output.md', 'utf8');
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: review,
+            });
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-review-${{ github.event.pull_request.number }}
+          path: |
+            review-output.md
+            review-log.txt
