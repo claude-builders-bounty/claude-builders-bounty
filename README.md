@@ -1,53 +1,100 @@
-# Claude Builders Bounty 🤖
+# Changelog Generator
 
-> A community bounty board for Claude Code builders.
+Generate structured `CHANGELOG.md` from git history with automatic categorization.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation
 
----
+```bash
+# Clone or download
+curl -O https://raw.githubusercontent.com/yourusername/changelog-generator/main/changelog.py
 
-## How it works
+# Make executable
+chmod +x changelog.py
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Usage
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+### Basic Usage
 
----
+```bash
+# Generate changelog since last tag
+python changelog.py
 
-## Active Bounties
+# Generate since specific tag
+python changelog.py --since v1.0.0
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# Generate from beginning of history
+python changelog.py --all
 
----
+# Custom output file
+python changelog.py --output RELEASE_NOTES.md
+```
 
-## Rules
+## Features
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+- ✅ Auto-categorizes commits into: Added / Fixed / Changed / Removed
+- ✅ Supports conventional commits (`feat:`, `fix:`, `docs:`, etc.)
+- ✅ Auto-detects non-conventional commits by keywords
+- ✅ Emoji prefixes for visual scanning
+- ✅ BREAKING change detection
+- ✅ Scope extraction for organized output
+- ✅ Prepends to existing CHANGELOG.md
 
----
+## Categorization Rules
 
-## Community
+| Commit Type | Category | Emoji |
+|-------------|----------|-------|
+| `feat`, `feature` | Added | ✨ |
+| `fix`, `bugfix` | Fixed | 🐛 |
+| `docs`, `doc` | Changed | 📝 |
+| `style` | Changed | 💄 |
+| `refactor` | Changed | ♻️ |
+| `perf` | Changed | ⚡ |
+| `test` | Changed | ✅ |
+| `chore` | Changed | 🔧 |
+| `revert` | Removed | ⏪ |
+| `remove`, `delete` | Removed | 🗑️ |
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Example Output
 
----
+```markdown
+# Changelog
 
-*Started by the Claude builder community · March 2026 · MIT License*
+All notable changes to this project will be documented in this file.
+
+## [v1.2.0] - 2026-03-28
+
+### Added
+- ✨ Add user authentication system
+- ✨ **api**: Implement rate limiting
+
+### Fixed
+- 🐛 Fix memory leak in data processing
+- 🐛 **auth**: Correct token expiration handling
+
+### Changed
+- 🔧 Update dependencies to latest versions
+- ♻️ **utils**: Refactor string utilities
+
+### Removed
+- 🗑️ Drop support for Node 16
+```
+
+## Testing
+
+Tested on this repository:
+
+```bash
+python changelog.py --all --output TEST_CHANGELOG.md
+```
+
+See `TEST_CHANGELOG.md` for sample output.
+
+## Requirements
+
+- Python 3.7+
+- Git repository
+
+## License
+
+MIT

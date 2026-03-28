@@ -1,0 +1,135 @@
+#!/bin/bash
+# generate-changelog
+# Automatically generates a structured CHANGELOG.md from git history
+# Usage: ./generate-changelog [output-file]
+
+set -e
+
+OUTPUT_FILE="${1:-CHANGELOG.md}"
+REPO_URL=$(git remote get-url origin 2>/dev/null | sed 's/\.git$//' | sed 's/git@github.com:/https:\/\/github.com\//' || echo "")
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${GREEN}📝 Generating CHANGELOG...${NC}"
+
+# Get the last tag, or use the first commit if no tags
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
+
+# Get commits since last tag
+COMMITS=$(git log "$LAST_TAG"..HEAD --pretty=format:"%s|%h|%an" --reverse 2>/dev/null || echo "")
+
+if [ -z "$COMMITS" ]; then
+    echo -e "${YELLOW}No new commits since $LAST_TAG${NC}"
+    exit 0
+fi
+
+# Initialize categories
+declare -a ADDED=()
+declare -a FIXED=()
+declare -a CHANGED=()
+declare -a REMOVED=()
+declare -a OTHER=()
+
+# Categorize commits
+while IFS='|' read -r message hash author; do
+    # Skip merge commits
+    [[ "$message" == Merge* ]] && continue
+    
+    # Extract PR number if present
+    PR_NUMBER=$(echo "$message" | grep -oE '#[0-9]+' || echo "")
+    
+    # Clean message
+    clean_message=$(echo "$message" | sed 's/^(.*)//g' | sed 's/^[a-z]*://gi' | sed 's/^ *//g')
+    
+    # Build commit link
+    if [ -n "$REPO_URL" ]; then
+        COMMIT_LINK="[$hash]($REPO_URL/commit/$hash)"
+    else
+        COMMIT_LINK="\`$hash\`"
+    fi
+    
+    formatted="- $clean_message ($COMMIT_LINK by $author)"
+    
+    # Categorize based on conventional commits
+    if [[ "$message" =~ ^feat|^[a-z]+:.*add|^[a-z]+:.*implement|^[a-z]+:.*new ]]; then
+        ADDED+=("$formatted")
+    elif [[ "$message" =~ ^fix|^[a-z]+:.*fix|^[a-z]+:.*bug|^[a-z]+:.*repair ]]; then
+        FIXED+=("$formatted")
+    elif [[ "$message" =~ ^refactor|^[a-z]+:.*update|^[a-z]+:.*change|^[a-z]+:.*improve ]]; then
+        CHANGED+=("$formatted")
+    elif [[ "$message" =~ ^remove|^[a-z]+:.*remove|^[a-z]+:.*delete|^[a-z]+:.*drop ]]; then
+        REMOVED+=("$formatted")
+    else
+        OTHER+=("$formatted")
+    fi
+done <<< "$COMMITS"
+
+# Generate version info
+VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "unreleased")
+DATE=$(date +%Y-%m-%d)
+
+# Build changelog content
+CHANGELOG="# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n"
+CHANGELOG+="The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),\n"
+CHANGELOG+="and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n\n"
+CHANGELOG+="## [Unreleased] - $DATE\n\n"
+
+# Add sections if they have content
+if [ ${#ADDED[@]} -gt 0 ]; then
+    CHANGELOG+="### Added\n\n"
+    for item in "${ADDED[@]}"; do
+        CHANGELOG+="$item\n"
+    done
+    CHANGELOG+="\n"
+fi
+
+if [ ${#FIXED[@]} -gt 0 ]; then
+    CHANGELOG+="### Fixed\n\n"
+    for item in "${FIXED[@]}"; do
+        CHANGELOG+="$item\n"
+    done
+    CHANGELOG+="\n"
+fi
+
+if [ ${#CHANGED[@]} -gt 0 ]; then
+    CHANGELOG+="### Changed\n\n"
+    for item in "${CHANGED[@]}"; do
+        CHANGELOG+="$item\n"
+    done
+    CHANGELOG+="\n"
+fi
+
+if [ ${#REMOVED[@]} -gt 0 ]; then
+    CHANGELOG+="### Removed\n\n"
+    for item in "${REMOVED[@]}"; do
+        CHANGELOG+="$item\n"
+    done
+    CHANGELOG+="\n"
+fi
+
+if [ ${#OTHER[@]} -gt 0 ]; then
+    CHANGELOG+="### Other\n\n"
+    for item in "${OTHER[@]}"; do
+        CHANGELOG+="$item\n"
+    done
+    CHANGELOG+="\n"
+fi
+
+# Check if existing changelog exists
+if [ -f "$OUTPUT_FILE" ]; then
+    # Preserve existing content (after the first version)
+    EXISTING=$(tail -n +$(grep -n "^## \[" "$OUTPUT_FILE" | head -2 | tail -1 | cut -d: -f1) "$OUTPUT_FILE" 2>/dev/null || echo "")
+    if [ -n "$EXISTING" ]; then
+        CHANGELOG+="$EXISTING"
+    fi
+fi
+
+# Write changelog
+echo -e "$CHANGELOG" > "$OUTPUT_FILE"
+
+echo -e "${GREEN}✅ CHANGELOG generated: $OUTPUT_FILE${NC}"
+echo -e "${GREEN}   Categories: Added(${#ADDED[@]}) Fixed(${#FIXED[@]}) Changed(${#CHANGED[@]}) Removed(${#REMOVED[@]}) Other(${#OTHER[@]})${NC}"
