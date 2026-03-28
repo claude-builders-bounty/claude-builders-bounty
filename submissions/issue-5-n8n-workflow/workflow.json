@@ -1,0 +1,295 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude API)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "triggerAtDay": [5]
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Every Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-repo",
+              "name": "GITHUB_REPO",
+              "value": "owner/repo",
+              "type": "string"
+            },
+            {
+              "id": "cfg-token",
+              "name": "GITHUB_TOKEN",
+              "value": "={{ $env.GITHUB_TOKEN }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-anthropic",
+              "name": "ANTHROPIC_API_KEY",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-language",
+              "name": "LANGUAGE",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "cfg-delivery",
+              "name": "DELIVERY",
+              "value": "discord",
+              "type": "string"
+            },
+            {
+              "id": "cfg-discord-webhook",
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "={{ $env.DISCORD_WEBHOOK_URL }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-slack-webhook",
+              "name": "SLACK_WEBHOOK_URL",
+              "value": "={{ $env.SLACK_WEBHOOK_URL }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "node-config",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [470, 300],
+      "notes": "EDIT THESE VALUES:\n- GITHUB_REPO: 'owner/repo'\n- LANGUAGE: 'EN' or 'FR'\n- DELIVERY: 'discord' or 'slack'\n- Set webhook URLs in env vars or directly here"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fetch GitHub activity for the past 7 days\nconst repo = $input.first().json.GITHUB_REPO;\nconst token = $input.first().json.GITHUB_TOKEN;\nconst since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();\n\nconst headers = {\n  'Accept': 'application/vnd.github+json',\n  'X-GitHub-Api-Version': '2022-11-28',\n  'User-Agent': 'n8n-weekly-summary/1.0',\n};\nif (token && token !== '$env.GITHUB_TOKEN') {\n  headers['Authorization'] = `Bearer ${token}`;\n}\n\nasync function githubGet(path) {\n  const res = await fetch(`https://api.github.com${path}`, { headers });\n  if (!res.ok) throw new Error(`GitHub API error ${res.status} for ${path}`);\n  return res.json();\n}\n\n// Parallel fetch of commits, closed issues, merged PRs\nconst [commits, issues, prs, repoInfo] = await Promise.all([\n  githubGet(`/repos/${repo}/commits?since=${since}&per_page=50`).catch(() => []),\n  githubGet(`/repos/${repo}/issues?state=closed&since=${since}&per_page=50`).catch(() => []),\n  githubGet(`/repos/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=50`).catch(() => []),\n  githubGet(`/repos/${repo}`).catch(() => ({})),\n]);\n\n// Filter PRs merged in last 7 days\nconst mergedPrs = prs.filter(pr =>\n  pr.merged_at && new Date(pr.merged_at) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)\n);\n\n// Real issues (not PRs)\nconst realIssues = issues.filter(i => !i.pull_request);\n\n// Top contributors by commit count\nconst authorMap = {};\nfor (const c of commits) {\n  const name = c.commit?.author?.name || 'Unknown';\n  authorMap[name] = (authorMap[name] || 0) + 1;\n}\nconst topContributors = Object.entries(authorMap)\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 5)\n  .map(([name, count]) => `${name} (${count})`);\n\n// Build commit summary (most recent 10)\nconst commitSummary = commits.slice(0, 10).map(c => ({\n  sha: c.sha?.slice(0, 7),\n  message: c.commit?.message?.split('\\n')[0]?.slice(0, 80),\n  author: c.commit?.author?.name,\n  date: c.commit?.author?.date?.slice(0, 10),\n}));\n\n// Build PR summary\nconst prSummary = mergedPrs.slice(0, 10).map(pr => ({\n  number: pr.number,\n  title: pr.title?.slice(0, 80),\n  author: pr.user?.login,\n  merged_at: pr.merged_at?.slice(0, 10),\n}));\n\n// Build issues summary\nconst issuesSummary = realIssues.slice(0, 10).map(i => ({\n  number: i.number,\n  title: i.title?.slice(0, 80),\n  closed_at: i.closed_at?.slice(0, 10),\n}));\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    repo,\n    since: since.slice(0, 10),\n    stats: {\n      commits: commits.length,\n      merged_prs: mergedPrs.length,\n      closed_issues: realIssues.length,\n      top_contributors: topContributors,\n    },\n    commit_summary: commitSummary,\n    pr_summary: prSummary,\n    issues_summary: issuesSummary,\n    repo_stars: repoInfo.stargazers_count || 0,\n    repo_description: repoInfo.description || '',\n  }\n}];"
+      },
+      "id": "node-github",
+      "name": "Fetch GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": ($json.LANGUAGE === 'FR' ?\n      \"Tu es un rédacteur technique. Rédige un résumé narratif hebdomadaire de l'activité du dépôt GitHub '\" + $json.repo + \"'.\\n\\n\" :\n      \"You are a technical writer. Write a weekly narrative summary of GitHub repository '\" + $json.repo + \"' activity.\\n\\n\"\n    ) +\n    \"Stats for the week (\" + $json.since + \" → today):\\n\" +\n    \"- Commits: \" + $json.stats.commits + \"\\n\" +\n    \"- Merged PRs: \" + $json.stats.merged_prs + \"\\n\" +\n    \"- Closed issues: \" + $json.stats.closed_issues + \"\\n\" +\n    \"- Top contributors: \" + $json.stats.top_contributors.join(', ') + \"\\n\\n\" +\n    \"Recent commits:\\n\" + $json.commit_summary.map(c => '- [' + c.sha + '] ' + c.message + ' (' + c.author + ')').join('\\n') + \"\\n\\n\" +\n    \"Merged PRs:\\n\" + ($json.pr_summary.length > 0 ? $json.pr_summary.map(p => '- #' + p.number + ' ' + p.title + ' by @' + p.author).join('\\n') : '(none)') + \"\\n\\n\" +\n    \"Closed issues:\\n\" + ($json.issues_summary.length > 0 ? $json.issues_summary.map(i => '- #' + i.number + ' ' + i.title).join('\\n') : '(none)') + \"\\n\\n\" +\n    ($json.LANGUAGE === 'FR' ?\n      \"Écris 3-4 paragraphes fluides décrivant: (1) l'avancement global, (2) les changements notables, (3) les tendances. Reste factuel et concis. Max 300 mots.\" :\n      \"Write 3-4 flowing paragraphs covering: (1) overall progress, (2) notable changes, (3) trends. Keep it factual and concise. Max 300 words.\"\n    )\n  }]\n} }}"
+      },
+      "id": "node-claude",
+      "name": "Generate Narrative (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// Extract Claude's narrative from API response\nconst narrative = data.content?.[0]?.text ||\n  data.choices?.[0]?.message?.content ||\n  '(narrative unavailable)';\n\n// Keep original config fields\nconst config = {\n  GITHUB_REPO: data.GITHUB_REPO || '',\n  LANGUAGE: data.LANGUAGE || 'EN',\n  DELIVERY: data.DELIVERY || 'discord',\n  DISCORD_WEBHOOK_URL: data.DISCORD_WEBHOOK_URL || '',\n  SLACK_WEBHOOK_URL: data.SLACK_WEBHOOK_URL || '',\n  repo: data.repo || data.GITHUB_REPO || '',\n  since: data.since || '',\n  stats: data.stats || {},\n  repo_stars: data.repo_stars || 0,\n};\n\nconst weekLabel = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD\nconst statsLine = config.LANGUAGE === 'FR'\n  ? `📊 **${config.stats.commits || 0}** commits · **${config.stats.merged_prs || 0}** PRs fusionnées · **${config.stats.closed_issues || 0}** issues fermées`\n  : `📊 **${config.stats.commits || 0}** commits · **${config.stats.merged_prs || 0}** PRs merged · **${config.stats.closed_issues || 0}** issues closed`;\n\nconst contributorsLine = (config.stats.top_contributors || []).length > 0\n  ? (config.LANGUAGE === 'FR' ? '👥 Top contributeurs: ' : '👥 Top contributors: ') + config.stats.top_contributors.join(', ')\n  : '';\n\n// Discord payload\nconst discordPayload = {\n  embeds: [{\n    title: config.LANGUAGE === 'FR'\n      ? `📅 Résumé hebdomadaire — ${config.repo}`\n      : `📅 Weekly Dev Summary — ${config.repo}`,\n    description: narrative.slice(0, 4000),\n    color: 0x5865F2,\n    fields: [\n      { name: '\\u200b', value: statsLine, inline: false },\n      ...(contributorsLine ? [{ name: '\\u200b', value: contributorsLine, inline: false }] : []),\n    ],\n    footer: {\n      text: config.LANGUAGE === 'FR'\n        ? `Semaine du ${config.since} · ${config.repo_stars}⭐`\n        : `Week of ${config.since} · ${config.repo_stars}⭐`,\n    },\n    timestamp: new Date().toISOString(),\n  }]\n};\n\n// Slack payload (mrkdwn)\nconst slackText = (config.LANGUAGE === 'FR'\n  ? `*📅 Résumé hebdomadaire — ${config.repo}*\\n\\n`\n  : `*📅 Weekly Dev Summary — ${config.repo}*\\n\\n`\n) + narrative + `\\n\\n${statsLine}` + (contributorsLine ? `\\n${contributorsLine}` : '');\n\nconst slackPayload = {\n  text: slackText.slice(0, 3000),\n  unfurl_links: false,\n};\n\nreturn [{\n  json: {\n    ...config,\n    narrative,\n    discord_payload: JSON.stringify(discordPayload),\n    slack_payload: JSON.stringify(slackPayload),\n    week_label: weekLabel,\n  }\n}];"
+      },
+      "id": "node-format",
+      "name": "Format Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.DELIVERY }}",
+              "rightValue": "slack",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      },
+      "id": "node-route",
+      "name": "Discord or Slack?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.DISCORD_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.discord_payload }}"
+      },
+      "id": "node-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1570, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.SLACK_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.slack_payload }}"
+      },
+      "id": "node-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1570, 400]
+    }
+  ],
+  "connections": {
+    "Every Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Activity": {
+      "main": [
+        [
+          {
+            "node": "Generate Narrative (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Narrative (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Format Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Message": {
+      "main": [
+        [
+          {
+            "node": "Discord or Slack?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord or Slack?": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-03-29T00:00:00.000Z",
+  "versionId": "1"
+}
