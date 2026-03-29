@@ -1,53 +1,47 @@
-# Claude Builders Bounty 🤖
+# SKILL: Generate a Structured CHANGELOG from Git History
 
-> A community bounty board for Claude Code builders.
+Create a `SKILL.md` and `changelog.sh` that automatically generates a `CHANGELOG.md` from a project's git history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Files
 
----
+- `SKILL.md` — Claude Code skill documentation
+- `changelog.sh` — Bash script implementation
 
-## How it works
+## Setup (3 Steps)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+**Step 1 — Install**
+```bash
+# Copy changelog.sh to your project
+curl -fsSL https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/skill/changelog-generator/changelog.sh -o changelog.sh
+chmod +x changelog.sh
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+**Step 2 — Run**
+```bash
+# Generate changelog from last git tag
+./changelog.sh
 
----
+# Or from a specific tag
+./changelog.sh --since-tag v1.0.0
 
-## Active Bounties
+# Output to custom file
+./changelog.sh --output HISTORY.md
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+**Step 3 — Commit & Done**
+```bash
+git add CHANGELOG.md
+git commit -m "docs: update changelog"
+```
 
----
+## Features
 
-## Rules
+- Auto-categorizes commits: Added / Fixed / Changed / Removed / Security
+- Uses conventional commit prefixes (feat:, fix:, refactor:, etc.)
+- Falls back to content analysis for non-prefixed commits
+- Outputs Keep a Changelog 1.0.0 compatible format
+- Works with any git tag or from beginning of history
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Sample Output
 
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+See [`SAMPLE_CHANGELOG.md`](./SAMPLE_CHANGELOG.md) for an example output.
