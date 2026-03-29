@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# claude-review — Automated PR review agent using Claude Code
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=review.sh
+source "${SCRIPT_DIR}/review.sh"
+
+VERSION="1.0.0"
+
+usage() {
+  cat <<'USAGE'
+claude-review — Automated PR review agent
+
+USAGE:
+  claude-review --pr <url>          Review a GitHub pull request
+  claude-review --pr <url> --post   Review and post comment to the PR
+  claude-review --version           Show version
+  claude-review --help              Show this help
+
+EXAMPLES:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --post
+  claude-review --pr https://github.com/owner/repo/pull/123 > review.md
+
+REQUIREMENTS:
+  - gh (GitHub CLI, authenticated)
+  - claude (Claude Code CLI)
+USAGE
+}
+
+main() {
+  local pr_url=""
+  local post_comment=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --pr)
+        pr_url="${2:-}"
+        if [[ -z "$pr_url" ]]; then
+          err "Missing URL after --pr"
+          usage
+          exit 1
+        fi
+        shift 2
+        ;;
+      --post)
+        post_comment=true
+        shift
+        ;;
+      --version)
+        echo "claude-review ${VERSION}"
+        exit 0
+        ;;
+      --help|-h)
+        usage
+        exit 0
+        ;;
+      *)
+        err "Unknown option: $1"
+        usage
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ -z "$pr_url" ]]; then
+    err "Missing required --pr argument"
+    usage
+    exit 1
+  fi
+
+  check_dependencies
+  parse_pr_url "$pr_url"
+  review_output="$(run_review "$OWNER" "$REPO" "$PR_NUMBER")"
+
+  echo "$review_output"
+
+  if [[ "$post_comment" == true ]]; then
+    log "Posting review comment to PR #${PR_NUMBER}..."
+    gh pr comment "$PR_NUMBER" --repo "${OWNER}/${REPO}" --body "$review_output"
+    log "Comment posted successfully."
+  fi
+}
+
+main "$@"

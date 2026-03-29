@@ -1,0 +1,107 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Only one review per PR at a time; cancel stale runs
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Fetch PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          REPO=${{ github.repository }}
+
+          # Get metadata
+          gh pr view "$PR_NUMBER" --repo "$REPO" \
+            --json title,body,author,baseRefName,headRefName,additions,deletions,changedFiles,files \
+            > /tmp/pr-metadata.json
+
+          # Get diff (truncate to ~1500 lines to stay within context limits)
+          gh pr diff "$PR_NUMBER" --repo "$REPO" > /tmp/pr-diff.txt
+          TOTAL_LINES=$(wc -l < /tmp/pr-diff.txt)
+          if [ "$TOTAL_LINES" -gt 1500 ]; then
+            head -n 1500 /tmp/pr-diff.txt > /tmp/pr-diff-truncated.txt
+            echo "" >> /tmp/pr-diff-truncated.txt
+            echo "[... diff truncated: ${TOTAL_LINES} total lines, showing first 1500 ...]" >> /tmp/pr-diff-truncated.txt
+            mv /tmp/pr-diff-truncated.txt /tmp/pr-diff.txt
+          fi
+
+      - name: Run Claude review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          METADATA=$(cat /tmp/pr-metadata.json)
+          DIFF=$(cat /tmp/pr-diff.txt)
+
+          PROMPT=$(cat <<'REVIEW_PROMPT'
+          You are an expert code reviewer. Analyze the following GitHub pull request and provide a structured review.
+
+          ## PR Metadata
+          ```json
+          REVIEW_PROMPT
+          )
+
+          PROMPT="${PROMPT}
+          ${METADATA}
+          \`\`\`
+
+          ## PR Diff
+          \`\`\`diff
+          ${DIFF}
+          \`\`\`
+
+          ## Instructions
+          Produce your review in EXACTLY this Markdown format — no extra sections, no wrapping fences:
+
+          ## Summary
+          <2-3 sentence summary of what this PR does and why>
+
+          ## Risks
+          <bulleted list of identified risks, security concerns, or potential issues. If none, say \"No significant risks identified.\">
+
+          ## Suggestions
+          <bulleted list of concrete improvement suggestions. If the code looks good, say \"No major suggestions — code looks solid.\">
+
+          ## Confidence
+          <exactly one of: **Low**, **Medium**, or **High**>
+
+          <1 sentence justification for the confidence score>
+
+          ---
+          *Automated review by [claude-review](https://github.com/claude-builders-bounty/claude-builders-bounty)*"
+
+          REVIEW=$(echo "$PROMPT" | claude -p --output-format text)
+
+          # Write to file for the comment step
+          echo "$REVIEW" > /tmp/review-output.md
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          REPO=${{ github.repository }}
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file /tmp/review-output.md
