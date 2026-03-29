@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+#
+# claude-review - PR reviewer using Claude Code
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+#
+
+set -euo pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Configuration
+CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+OUTPUT_DIR="${OUTPUT_DIR:-.claude-reviews}"
+
+# Parse arguments
+PR_URL=""
+OUTPUT_FILE=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --pr)
+      PR_URL="$2"
+      shift 2
+      ;;
+    --output)
+      OUTPUT_FILE="$2"
+      shift 2
+      ;;
+    --help)
+      echo "Usage: claude-review --pr <PR_URL> [--output <FILE>]"
+      echo ""
+      echo "Arguments:"
+      echo "  --pr     GitHub PR URL (required)"
+      echo "  --output Output file (default: auto-generated in .claude-reviews/)"
+      echo ""
+      echo "Environment:"
+      echo "  CLAUDE_BIN   Path to Claude Code binary (default: claude)"
+      echo "  OUTPUT_DIR   Directory for review outputs (default: .claude-reviews)"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
+# Validate PR URL
+if [[ -z "$PR_URL" ]]; then
+  echo -e "${RED}Error: --pr <URL> is required${NC}"
+  exit 1
+fi
+
+# Extract owner, repo, PR number from URL
+if [[ ! "$PR_URL" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+  echo -e "${RED}Error: Invalid GitHub PR URL${NC}"
+  exit 1
+fi
+
+OWNER="${BASH_REMATCH[1]}"
+REPO="${BASH_REMATCH[2]}"
+PR_NUM="${BASH_REMATCH[3]}"
+
+echo -e "${GREEN}Reviewing PR #${PR_NUM} from ${OWNER}/${REPO}...${NC}"
+
+# Create output directory
+mkdir -p "$OUTPUT_DIR"
+
+# Default output file
+if [[ -z "$OUTPUT_FILE" ]]; then
+  OUTPUT_FILE="${OUTPUT_DIR}/${OWNER}-${REPO}-${PR_NUM}.md"
+fi
+
+# Fetch PR diff
+echo -e "${YELLOW}Fetching PR diff...${NC}"
+DIFF_FILE="/tmp/pr-${PR_NUM}.diff"
+
+if ! gh pr diff "$PR_NUM" --repo="${OWNER}/${REPO}" > "$DIFF_FILE"; then
+  echo -e "${RED}Error: Failed to fetch PR diff. Is gh CLI authenticated?${NC}"
+  exit 1
+fi
+
+DIFF_CONTENT=$(cat "$DIFF_FILE")
+DIFF_SIZE=$(wc -l < "$DIFF_FILE")
+
+echo -e "${GREEN}Fetched ${DIFF_SIZE} lines of diff${NC}"
+
+# Fetch PR metadata
+echo -e "${YELLOW}Fetching PR metadata...${NC}"
+PR_METADATA=$(gh pr view "$PR_NUM" --repo="${OWNER}/${REPO}" --json title,body,author,createdAt,files)
+
+PR_TITLE=$(echo "$PR_METADATA" | jq -r '.title')
+PR_BODY=$(echo "$PR_METADATA" | jq -r '.body')
+PR_AUTHOR=$(echo "$PR_METADATA" | jq -r '.author.login')
+PR_DATE=$(echo "$PR_METADATA" | jq -r '.createdAt')
+FILES_CHANGED=$(echo "$PR_METADATA" | jq -r '.files | length')
+
+# Create review prompt
+REVIEW_PROMPT=$(cat <<EOF
+You are an expert code reviewer. Analyze the following Pull Request and provide a structured review.
+
+**PR Metadata:**
+- Title: ${PR_TITLE}
+- Author: ${PR_AUTHOR}
+- Created: ${PR_DATE}
+- Files changed: ${FILES_CHANGED}
+
+**PR Description:**
+${PR_BODY}
+
+**Diff:**
+\`\`\`diff
+${DIFF_CONTENT}
+\`\`\`
+
+**Your task:**
+Provide a structured Markdown review with the following sections:
+
+## Summary
+2-3 sentences describing what this PR does and its overall impact.
+
+## Changes Overview
+Bullet list of major changes by file/component.
+
+## Identified Risks
+List potential issues, bugs, security concerns, or performance problems. Be specific with line numbers when possible.
+
+## Improvement Suggestions
+Actionable recommendations to improve code quality, readability, or maintainability.
+
+## Confidence Score
+Choose one: Low | Medium | High
+
+Explain your confidence level briefly (e.g., "High - straightforward refactor with good test coverage").
+
+---
+
+Be thorough but concise. Focus on actionable feedback.
+EOF
+)
+
+# Save prompt to temp file
+PROMPT_FILE="/tmp/pr-review-prompt-${PR_NUM}.txt"
+echo "$REVIEW_PROMPT" > "$PROMPT_FILE"
+
+# Run Claude Code
+echo -e "${YELLOW}Analyzing with Claude Code...${NC}"
+
+if command -v claude &> /dev/null; then
+  # Use official Claude Code CLI if available
+  claude --print "$PROMPT_FILE" > "$OUTPUT_FILE"
+else
+  # Fallback: Try oracle CLI (common alternative)
+  if command -v oracle &> /dev/null; then
+    oracle -p "$PROMPT_FILE" > "$OUTPUT_FILE"
+  else
+    echo -e "${RED}Error: Claude Code CLI not found. Install claude or oracle CLI.${NC}"
+    echo "Prompt saved to: $PROMPT_FILE"
+    echo "Run manually: claude --print $PROMPT_FILE"
+    exit 1
+  fi
+fi
+
+# Clean up
+rm -f "$DIFF_FILE" "$PROMPT_FILE"
+
+# Output result
+echo -e "${GREEN}Review complete!${NC}"
+echo "Output saved to: $OUTPUT_FILE"
+echo ""
+echo "---"
+cat "$OUTPUT_FILE"
+echo "---"
+
+# Optionally post to GitHub (if --post flag is added in the future)
+if [[ "${POST_TO_GH:-false}" == "true" ]]; then
+  echo -e "${YELLOW}Posting review to GitHub...${NC}"
+  gh pr comment "$PR_NUM" --repo="${OWNER}/${REPO}" --body-file="$OUTPUT_FILE"
+  echo -e "${GREEN}Posted to PR #${PR_NUM}${NC}"
+fi

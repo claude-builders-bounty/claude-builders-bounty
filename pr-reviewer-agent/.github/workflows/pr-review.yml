@@ -1,0 +1,60 @@
+name: Automated PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR reviewer
+        uses: actions/checkout@v4
+        with:
+          repository: claude-builders-bounty/claude-builders-bounty
+          path: reviewer
+          sparse-checkout: |
+            pr-reviewer-agent
+
+      - name: Install Claude Code
+        run: |
+          # Install Oracle CLI (Claude Code alternative for CI)
+          npm install -g @anthropic-ai/claude-code
+          # Or use oracle CLI: npm install -g oracle-cli
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Authenticate GitHub CLI
+        run: gh auth setup-git
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run PR Review
+        run: |
+          chmod +x reviewer/pr-reviewer-agent/claude-review
+          reviewer/pr-reviewer-agent/claude-review \
+            --pr https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }} \
+            --output review.md
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post Review Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('review.md', 'utf8');
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `## 🤖 Automated Code Review\n\n${review}\n\n---\n*Powered by Claude Code*`
+            });
