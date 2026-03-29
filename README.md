@@ -1,53 +1,77 @@
-# Claude Builders Bounty 🤖
+# Generate Changelog
 
-> A community bounty board for Claude Code builders.
+A bash script that automatically generates a structured `CHANGELOG.md` from a project's git history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Features
 
----
+- 📊 Auto-categorizes commits: Added / Fixed / Changed / Removed / Docs / Tests / Security
+- 🔗 Links PR numbers to GitHub PR pages
+- 🏷️ Works with or without git tags
+- 📅 Includes date in version header
+- 🎨 Follows Keep a Changelog format
 
-## How it works
+## Installation
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+```bash
+# Clone or download
+curl -O https://raw.githubusercontent.com/yourusername/generate-changelog/main/generate-changelog.sh
+chmod +x generate-changelog.sh
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+# Optional: Add to PATH
+sudo mv generate-changelog.sh /usr/local/bin/generate-changelog
+```
 
----
+## Usage
 
-## Active Bounties
+### Basic
+```bash
+./generate-changelog.sh
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### Custom output file
+```bash
+./generate-changelog.sh RELEASE_NOTES.md
+```
 
----
+### With Claude Code
+```
+/generate-changelog
+```
 
-## Rules
+## How It Works
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+1. Detects commits since the last git tag (or all commits if no tags)
+2. Categorizes based on commit message prefixes:
+   - `feat:` → 🚀 Added
+   - `fix:` → 🐛 Fixed
+   - `refactor:`/`update:` → 🔧 Changed
+   - `remove:` → 🗑️ Removed
+   - `docs:` → 📚 Documentation
+   - `test:` → 🧪 Tests
+   - `security:` → 🔒 Security
+3. Extracts PR numbers (#123) and creates links
+4. Outputs formatted Markdown
 
----
+## Example Output
 
-## Community
+```markdown
+# Changelog
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## [2024-03-29]
 
----
+### 🚀 Added
+- New user authentication system [#45](https://github.com/user/repo/pull/45)
+- Dark mode support [#42](https://github.com/user/repo/pull/42)
 
-*Started by the Claude builder community · March 2026 · MIT License*
+### 🐛 Fixed
+- Login timeout issue [#44](https://github.com/user/repo/pull/44)
+```
+
+## Requirements
+
+- Bash 4.0+
+- Git
+
+## License
+
+MIT
