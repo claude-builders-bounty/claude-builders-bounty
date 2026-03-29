@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""
+claude-review — AI-powered PR reviewer.
+
+Analyzes a GitHub PR diff via the Anthropic API and prints a structured
+Markdown review (summary, risks, suggestions, confidence score).
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr https://github.com/owner/repo/pull/123 --post
+    claude-review --pr https://github.com/owner/repo/pull/123 -o review.md
+
+Requirements:
+    - gh CLI (authenticated)
+    - ANTHROPIC_API_KEY env var
+    - Python 3.8+
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import ssl
+import subprocess
+import sys
+import urllib.request
+from typing import Any, Dict, List, Optional
+
+
+# ── GitHub ──────────────────────────────────────────────────────────────
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    if not m:
+        print(f"Error: invalid PR URL: {url}", file=sys.stderr)
+        sys.exit(1)
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def _gh(*args: str) -> str:
+    r = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        print(f"gh error: {r.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
+    return r.stdout
+
+
+def fetch_diff(owner: str, repo: str, number: int) -> str:
+    return _gh("pr", "diff", str(number), "--repo", f"{owner}/{repo}")
+
+
+def fetch_meta(owner: str, repo: str, number: int) -> Dict[str, Any]:
+    raw = _gh(
+        "pr", "view", str(number), "--repo", f"{owner}/{repo}",
+        "--json", "title,body,author,createdAt,files,additions,deletions,changedFiles",
+    )
+    return json.loads(raw)
+
+
+def post_comment(owner: str, repo: str, number: int, body: str) -> None:
+    _gh("pr", "comment", str(number), "--repo", f"{owner}/{repo}", "--body", body)
+
+
+# ── Anthropic API ───────────────────────────────────────────────────────
+
+def call_claude(prompt: str, model: str, api_key: str) -> str:
+    """Call the Anthropic messages API and return the text response."""
+    url = "https://api.anthropic.com/v1/messages"
+    payload = json.dumps({
+        "model": model,
+        "max_tokens": 4096,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    }
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    ctx = ssl.create_default_context()
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=120) as resp:
+            body = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode()
+        print(f"Anthropic API error {e.code}: {detail}", file=sys.stderr)
+        sys.exit(1)
+    return "".join(
+        block.get("text", "")
+        for block in body.get("content", [])
+        if block.get("type") == "text"
+    )
+
+
+# ── Prompt ──────────────────────────────────────────────────────────────
+
+REVIEW_TEMPLATE = """\
+You are a senior code reviewer reviewing a pull request.
+
+**PR:** {title} (by {author}, {date})
+**Stats:** {files} files changed, {additions} additions, {deletions} deletions
+
+**Description:**
+{description}
+
+**Diff:**
+```diff
+{diff}
+```
+
+Write a structured Markdown review with these exact sections:
+
+## Summary
+2–3 sentences: what does this PR do and why?
+
+## Identified Risks
+- List bugs, security issues, or performance problems
+- Reference file names and line ranges
+- If none, say "No significant risks identified" — do not fabricate issues
+
+## Improvement Suggestions
+- Actionable recommendations, prioritized by impact
+
+## Confidence Score
+Pick one: **Low** / **Medium** / **High**
+
+Be concise. Don't pad. Don't say "great job" or "nice work"."""
+
+
+def build_prompt(meta: Dict[str, Any], diff: str) -> str:
+    return REVIEW_TEMPLATE.format(
+        title=meta.get("title", ""),
+        author=meta.get("author", {}).get("login", "unknown"),
+        date=meta.get("createdAt", ""),
+        files=meta.get("changedFiles", 0),
+        additions=meta.get("additions", 0),
+        deletions=meta.get("deletions", 0),
+        description=meta.get("body") or "(no description)",
+        diff=diff[:100_000],
+    )
+
+
+# ── Main ────────────────────────────────────────────────────────────────
+
+def run(pr_url: str, output: Optional[str], post: bool, model: str) -> str:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY env var is not set.", file=sys.stderr)
+        sys.exit(1)
+
+    owner, repo, number = parse_pr_url(pr_url)
+
+    print(f"→ Fetching {owner}/{repo}#{number}...", file=sys.stderr)
+    diff = fetch_diff(owner, repo, number)
+    meta = fetch_meta(owner, repo, number)
+
+    print(f"→ Analyzing {len(diff)} chars of diff ({model})...", file=sys.stderr)
+    prompt = build_prompt(meta, diff)
+    review = call_claude(prompt, model, api_key)
+
+    out_path = output or f".claude-reviews/{owner}-{repo}-{number}.md"
+    out_dir = os.path.dirname(out_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    with open(out_path, "w") as f:
+        f.write(review)
+    print(f"→ Saved to {out_path}", file=sys.stderr)
+
+    if post:
+        print("→ Posting comment...", file=sys.stderr)
+        post_comment(owner, repo, number, review)
+        print("→ Posted.", file=sys.stderr)
+
+    return review
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="AI-powered PR reviewer using Claude.",
+        usage="claude-review --pr <URL> [-o FILE] [--post] [--model MODEL]",
+    )
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--output", default=None, help="Output file path")
+    parser.add_argument(
+        "--post", action="store_true",
+        help="Post the review as a PR comment",
+    )
+    parser.add_argument(
+        "--model", default="claude-sonnet-4-20250514",
+        help="Claude model (default: claude-sonnet-4-20250514)",
+    )
+    args = parser.parse_args()
+
+    model = os.environ.get("CLAUDE_MODEL", args.model)
+    review = run(args.pr, args.output, args.post, model)
+    print(review)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# generate-changelog — produce CHANGELOG.md from git history.
+#
+# Usage:
+#   generate-changelog                    # from last tag to HEAD
+#   generate-changelog 1.2.0..HEAD        # custom range
+#   generate-changelog --init              # full history from first commit
+#
+set -euo pipefail
+
+RANGE=""
+INIT=false
+
+case "${1:-}" in
+  --init|-i)   INIT=true ;;
+  --help|-h)   echo "Usage: generate-changelog [RANGE|--init]"; exit 0 ;;
+  *)           RANGE="${1:-}" ;;
+esac
+
+# ── Determine range ─────────────────────────────────────────────────────
+
+if $INIT; then
+  FIRST=$(git rev-list --max-parents=0 HEAD | head -1)
+  RANGE="${FIRST}..HEAD"
+elif [ -z "$RANGE" ]; then
+  LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+  if [ -n "$LAST_TAG" ]; then
+    RANGE="${LAST_TAG}..HEAD"
+  else
+    FIRST=$(git rev-list --max-parents=0 HEAD | head -1)
+    RANGE="${FIRST}..HEAD"
+  fi
+fi
+
+# ── Collect commits ─────────────────────────────────────────────────────
+
+ADDED=""
+FIXED=""
+CHANGED=""
+REMOVED=""
+
+while IFS= read -r line; do
+  hash=$(echo "$line" | cut -d'	' -f1)
+  msg=$(echo "$line" | cut -d'	' -f2-)
+
+  # Strip leading type prefix
+  clean=$(echo "$msg" | sed -E 's/^(feat|fix|change|remove|refactor|chore|docs|style|perf|test|build|ci)(\([^)]*\))?:\s*//I')
+
+  # Classify
+  case "$(echo "$msg" | tr '[:upper:]' '[:lower:]')" in
+    feat*|feature*|add*|create*|implement*|introduce*|support*)
+      ADDED="${ADDED}- ${clean} ([\`${hash:0:7}\`](https://github.com/$(git remote get-url origin 2>/dev/null | sed 's/.*github.com[:/]\(.*\)\.git/\1/' || echo 'user/repo')/commit/${hash:0:7}))
+"
+      ;;
+    fix*|bug*|patch*|repair*|resolve*|correct*|handle*|address*)
+      FIXED="${FIXED}- ${clean} ([\`${hash:0:7}\`])
+"
+      ;;
+    change*|update*|modify*|improve*|refactor*|rename*|move*|migrate*|enhance*|upgrade*)
+      CHANGED="${CHANGED}- ${clean} ([\`${hash:0:7}\`])
+"
+      ;;
+    remove*|delete*|drop*|strip*|eliminate*|deprecate*|clean*)
+      REMOVED="${REMOVED}- ${clean} ([\`${hash:0:7}\`])
+"
+      ;;
+    *)
+      CHANGED="${CHANGED}- ${clean} ([\`${hash:0:7}\`])
+"
+      ;;
+  esac
+done < <(git log "$RANGE" --pretty=format:"%h	%s" --no-merges 2>/dev/null)
+
+# ── Output ──────────────────────────────────────────────────────────────
+
+TODAY=$(date +%Y-%m-%d)
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+NEXT_VERSION="Unreleased"
+
+if [ -n "$LAST_TAG" ]; then
+  # Bump patch version
+  NEXT_VERSION=$(echo "$LAST_TAG" | perl -pe 's/(\d+)$/$1+1/e')
+fi
+
+{
+  echo "# Changelog"
+  echo ""
+  echo "## [${NEXT_VERSION}] - ${TODAY}"
+  echo ""
+
+  if [ -n "$ADDED" ]; then
+    echo "### Added"
+    echo "$ADDED"
+  fi
+  if [ -n "$FIXED" ]; then
+    echo "### Fixed"
+    echo "$FIXED"
+  fi
+  if [ -n "$CHANGED" ]; then
+    echo "### Changed"
+    echo "$CHANGED"
+  fi
+  if [ -n "$REMOVED" ]; then
+    echo "### Removed"
+    echo "$REMOVED"
+  fi
+
+  # Append existing changelog content if present
+  if [ -f CHANGELOG.md ]; then
+    echo ""
+    tail -n +3 CHANGELOG.md
+  fi
+}
