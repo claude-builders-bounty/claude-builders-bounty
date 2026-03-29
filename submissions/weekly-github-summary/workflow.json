@@ -1,0 +1,335 @@
+{
+  "name": "Weekly GitHub Dev Summary → Claude → Discord",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every Friday at 17:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compute date range: past 7 days\nconst now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst since = sevenDaysAgo.toISOString();\nconst until = now.toISOString();\n\n// Read configurable variables\nconst repo = $vars.GITHUB_REPO || 'owner/repo';\nconst language = ($vars.SUMMARY_LANGUAGE || 'EN').toUpperCase();\n\nreturn [{\n  json: {\n    repo,\n    since,\n    until,\n    language,\n    since_display: sevenDaysAgo.toISOString().substring(0, 10),\n    until_display: now.toISOString().substring(0, 10)\n  }\n}];"
+      },
+      "id": "init-vars",
+      "name": "Init Variables",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.until }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 160]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Init Variables').first().json.repo }}/issues",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $('Init Variables').first().json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Init Variables').first().json.repo }}/pulls",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 440]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate data from all three GitHub API calls\nconst vars = $('Init Variables').first().json;\nconst since = new Date(vars.since);\nconst until = new Date(vars.until);\n\n// --- Commits ---\nconst commitsRaw = $('Fetch GitHub Commits').first().json;\nconst commitsArray = Array.isArray(commitsRaw) ? commitsRaw : [];\nconst commits = commitsArray.map(c => ({\n  sha: (c.sha || '').substring(0, 7),\n  message: (c.commit && c.commit.message ? c.commit.message.split('\\n')[0] : 'No message').substring(0, 120),\n  author: c.commit && c.commit.author ? c.commit.author.name : 'Unknown',\n  date: c.commit && c.commit.author ? c.commit.author.date : ''\n}));\n\n// --- Closed Issues (exclude PRs which also appear as issues) ---\nconst issuesRaw = $('Fetch Closed Issues').first().json;\nconst issuesArray = Array.isArray(issuesRaw) ? issuesRaw : [];\nconst closedSince = issuesArray.filter(i => {\n  if (i.pull_request) return false; // skip PRs\n  const closedAt = i.closed_at ? new Date(i.closed_at) : null;\n  return closedAt && closedAt >= since && closedAt <= until;\n});\nconst issues = closedSince.map(i => ({\n  number: i.number,\n  title: (i.title || 'No title').substring(0, 120),\n  closed_at: i.closed_at ? i.closed_at.substring(0, 10) : '',\n  author: i.user ? i.user.login : 'Unknown'\n}));\n\n// --- Merged PRs ---\nconst prsRaw = $('Fetch Merged PRs').first().json;\nconst prsArray = Array.isArray(prsRaw) ? prsRaw : [];\nconst mergedPRs = prsArray.filter(pr => {\n  if (!pr.merged_at) return false;\n  const mergedAt = new Date(pr.merged_at);\n  return mergedAt >= since && mergedAt <= until;\n});\nconst prs = mergedPRs.map(pr => ({\n  number: pr.number,\n  title: (pr.title || 'No title').substring(0, 120),\n  merged_at: pr.merged_at ? pr.merged_at.substring(0, 10) : '',\n  author: pr.user ? pr.user.login : 'Unknown'\n}));\n\n// Build text blocks for the prompt\nconst commitLines = commits.length > 0\n  ? commits.map(c => `- [${c.sha}] ${c.message} (by ${c.author})`).join('\\n')\n  : '- No commits this week';\n\nconst issueLines = issues.length > 0\n  ? issues.map(i => `- #${i.number}: ${i.title} (closed ${i.closed_at} by ${i.author})`).join('\\n')\n  : '- No issues closed this week';\n\nconst prLines = prs.length > 0\n  ? prs.map(pr => `- #${pr.number}: ${pr.title} (merged ${pr.merged_at} by ${pr.author})`).join('\\n')\n  : '- No PRs merged this week';\n\nreturn [{\n  json: {\n    repo: vars.repo,\n    period: `${vars.since_display} → ${vars.until_display}`,\n    language: vars.language,\n    commit_count: commits.length,\n    issue_count: issues.length,\n    pr_count: prs.length,\n    commit_lines: commitLines,\n    issue_lines: issueLines,\n    pr_lines: prLines\n  }\n}];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build the Claude prompt based on language setting\nconst data = $input.first().json;\nconst lang = data.language === 'FR' ? 'French' : 'English';\n\nconst systemPrompt = `You are a technical writer that creates clear, engaging weekly development summaries for software teams. Write in ${lang}.`;\n\nconst userPrompt = `Generate a weekly development summary for the repository \"${data.repo}\" covering the period ${data.period}.\n\nHere is the raw activity data:\n\n## Commits (${data.commit_count} total)\n${data.commit_lines}\n\n## Closed Issues (${data.issue_count} total)\n${data.issue_lines}\n\n## Merged Pull Requests (${data.pr_count} total)\n${data.pr_lines}\n\nWrite a concise narrative summary (3-5 paragraphs) that:\n1. Highlights the most important work accomplished this week\n2. Groups related commits/PRs into themes when possible\n3. Calls out any notable bug fixes or closed issues\n4. Ends with a brief outlook or observation\n\nUse Markdown formatting. Keep it under 600 words. Write in ${lang}.`;\n\nreturn [{\n  json: {\n    ...data,\n    system_prompt: systemPrompt,\n    user_prompt: userPrompt\n  }\n}];"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $vars.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"system\": \"{{ $json.system_prompt }}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.user_prompt.replace(/\"/g, '\\\\\"').replace(/\\n/g, '\\\\n') }}\"\n    }\n  ]\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract summary from Claude response and format Discord message\nconst claudeResponse = $input.first().json;\nconst data = $('Build Claude Prompt').first().json;\n\nlet summary = '';\nif (claudeResponse.content && claudeResponse.content.length > 0) {\n  summary = claudeResponse.content[0].text || 'No summary generated.';\n} else if (claudeResponse.error) {\n  summary = `Error from Claude API: ${claudeResponse.error.message || JSON.stringify(claudeResponse.error)}`;\n} else {\n  summary = 'No summary generated.';\n}\n\n// Discord embed format\nconst discordPayload = {\n  username: 'GitHub Dev Summary Bot',\n  avatar_url: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',\n  embeds: [\n    {\n      title: `Weekly Dev Summary — ${data.repo}`,\n      description: summary.substring(0, 4000),\n      color: 5814783,\n      fields: [\n        {\n          name: 'Period',\n          value: data.period,\n          inline: true\n        },\n        {\n          name: 'Commits',\n          value: String(data.commit_count),\n          inline: true\n        },\n        {\n          name: 'Closed Issues',\n          value: String(data.issue_count),\n          inline: true\n        },\n        {\n          name: 'Merged PRs',\n          value: String(data.pr_count),\n          inline: true\n        },\n        {\n          name: 'Language',\n          value: data.language,\n          inline: true\n        }\n      ],\n      footer: {\n        text: 'Powered by Claude (claude-sonnet-4-20250514) via n8n'\n      },\n      timestamp: new Date().toISOString()\n    }\n  ]\n};\n\nreturn [{ json: discordPayload }];"
+      },
+      "id": "format-discord",
+      "name": "Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.DISCORD_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "Every Friday at 17:00": {
+      "main": [
+        [{ "node": "Init Variables", "type": "main", "index": 0 }]
+      ]
+    },
+    "Init Variables": {
+      "main": [
+        [
+          { "node": "Fetch GitHub Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch GitHub Commits": {
+      "main": [
+        [{ "node": "Aggregate GitHub Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [{ "node": "Aggregate GitHub Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [{ "node": "Aggregate GitHub Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate GitHub Data": {
+      "main": [
+        [{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [{ "node": "Call Claude API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [{ "node": "Format Discord Message", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Discord Message": {
+      "main": [
+        [{ "node": "Send to Discord", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": ["github", "claude", "discord", "weekly", "dev-summary", "ai"],
+  "meta": {
+    "instanceId": "claude-builders-bounty",
+    "templateCredsSetupCompleted": false
+  },
+  "id": "workflow-weekly-github-summary",
+  "versionId": "1.0.0",
+  "_readme": {
+    "description": "Every Friday at 17:00, fetches commits, closed issues, and merged PRs from a GitHub repository for the past 7 days, sends the data to Claude API (claude-sonnet-4-20250514) to generate a narrative dev summary, then posts it to a Discord channel via webhook.",
+    "variables": [
+      "GITHUB_TOKEN — Personal Access Token with repo scope",
+      "GITHUB_REPO — Repository in owner/repo format (e.g. vercel/next.js)",
+      "DISCORD_WEBHOOK_URL — Full Discord webhook URL",
+      "CLAUDE_API_KEY — Anthropic API key",
+      "SUMMARY_LANGUAGE — EN or FR (default: EN)"
+    ]
+  }
+}
