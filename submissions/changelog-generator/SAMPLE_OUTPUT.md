@@ -1,0 +1,255 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased] (since v2026.3.24)
+
+### Added
+- Add anthropic claude cli migration
+- Pluginize cli inference backends
+- Add Microsoft Foundry provider with Entra ID authentication (#51973)
+- Add video generation core infrastructure and extend image generation parameters (#53681)
+- Add json schema to cli tool (#54523)
+
+### Fixed
+- Fix: treat HTTP 500 as a transient failover error (#55332)
+- Apply security fix (#53414)
+- Match guild-level entries in Discord exec allowlist (#55175)
+- Isolate claude MCP config
+- Clamp copilot auth refresh overflow (#55360) (thanks @michael-abdo)
+- Restore reveal-to-edit raw config flow
+- Route memory test harness through plugin sdk
+- Use stream-json output for Claude CLI backend to prevent watchdog timeouts
+- Preserve CLI session ID in text output mode
+- Discord: fix stale-socket reconnect crash from uncaught reconnect-exhausted error
+- Use claude-cli backend in tools-disabled regression test
+- Remove unconditional "Tools are disabled" prompt injection in CLI runner
+- Harden discord gateway cleanup (#55373) (thanks @Takhoffman)
+- Guard gateway cleanup races
+- Fix CI after compat re-exports
+- Prevent double TTS playback when system voice times out (#53511)
+- Unify claude cli imported tool messages
+- Repair discord and telegram follow-ups
+- Skip cli backends in models auth warnings
+- Backfill claude cli chat history
+- Export shared channel action enum helpers
+- Format discord provider follow-up
+- Restore discord provider test seams
+- Classify "Failed to extract accountId from token" as auth error for failover (#27055) (#55206)
+- Clean up discord harness types
+- Repair discord harness regressions
+- Preserve cli sessions across model changes
+- Repair discord message handler tests
+- Repair discord regression tests
+- Auto-load bundled plugin capabilities from config refs
+- Dedupe gateway session resolve visibility
+- Keep spawned session owners in live events
+- Expose spawned session owners in sessions list
+- Expose parent session keys in sessions list
+- Include dashboard children in owner filters
+- Keep plugin HTTP runtime scopes least-privileged (#55284)
+- Refresh plugin sdk api baseline
+- Preserve reset cli session linkage
+- Preserve reset acp session metadata
+- Preserve reset channel identity
+- Preserve reset session behavior config
+- Preserve reset spawn context
+- Preserve reset elevated level
+- Preserve reset spawn depth
+- Preserve reset ownership metadata
+- Preserve metadata on voice session touches
+- Unwrap quoted wrapper messages
+- Prefer freshest duplicate store matches
+- Avoid duplicate ACP Telegram finals (#55173)
+- Throttle webhook auth guesses (#55133)
+- Fix portable stderr capture and env leakage (#55184)
+- Refactor sendMessageBlueBubbles to use resolveBlueBubblesServerAccount and enhance private network handling in tests
+- Replace stale canonical duplicate rows
+- Prefer freshest duplicate row promotion
+- Enable group participant enrichment by default, add fallback fetch and handle field aliases
+- Fix bluebubbles attachment ssrf expectations
+- Surface provider-specific rate limit error message (#54433) (#54512)
+- Auto-allow private network for local serverUrl and add allowPrivateNetwork to channel schema
+- Align feedback invoke authorization (#55108)
+- Enforce session_status guard after sessionId resolution (#55105)
+- Force fresh gateway reconnects (#54697)
+- Route fetch calls through fetchWithSsrFGuard (#53929)
+- Add slack upload-file action (#54987) (thanks @kevinlin-openai)
+- Wire microsoft foundry into contract registry
+- Route codex responses over websocket and preserve tool warnings (#53702) (thanks @Nanako0129)
+- Restore inbound image embedding for CLI routed BlueBubbles turns (#51373)
+- Skip allowlist warning for config paths
+- Drop fromMe echoes in self-chat DMs using outbound ID tracking (#54570)
+- Support OpenAI Codex media understanding (#54829) (thanks @neeravmakwana)
+- Restore image-tool generic provider fallback (#54858) (thanks @MonkeyLeeT)
+- Auto-enable configured channel plugins in routed CLI commands (#54809) (thanks @neeravmakwana)
+- Restore Kimi Code under Moonshot setup (#54619) (thanks @sparkyrider)
+- Restore CLI message transcript mirroring (#54187) (thanks @KevInTheCloud5617)
+- Use provider-aware context window lookup (#54796) (thanks @neeravmakwana)
+- Tighten systemd duplicate gateway detection (#45328) (thanks @gregretkowski)
+- Resolve telegram token fallback for binding-created accounts (#54362) (thanks @openperf)
+- Clarify allowFrom policy error (#54850)
+- Deliver verbose tool summaries in Telegram forum topics (#43236) (thanks @frankbuild)
+- Thread resolved cfg through reply delivery send calls (#48347)
+- Allow msteams feedback and welcome config keys (#54679)
+- Block silent reconnect scope-upgrade escalation (#54694)
+- Make buttons schema optional in message tool (#54418)
+- Tools.web.fetch.maxResponseBytes #53397 (#53401)
+- Enforce localRoots sandbox on Feishu docx upload file reads (#54693)
+- Restore main green
+- Apply host-env blocklist to auth-profile env refs in daemon install (#54627)
+- Enforce operator.admin scope on /voice set config writes (#54461)
+- Trigger compaction on LLM timeout with high context usage (#46417)
+- Reject path traversal and home-dir patterns in media parse layer (#54642)
+- Per-model cooldown scope, stepped backoff, and user-facing rate-limit message (#49834)
+- Fix windows tmp root assertions
+- Fix/telegram writeback admin scope gate (#54561)
+- Surface safeguard cancel reasons and clarify /compact skips (#51072)
+- Mid-turn 429 rate limit silent no-reply and context engine registration failure (#50930)
+- Stop leaking reply tags in iMessage outbound text (#39512) (thanks @mvanhorn)
+
+### Changed
+- Wire discord monitor runtime seams
+- Align discord lifecycle shutdown expectations
+- Split discord monitor startup and lifecycle
+- Stabilize discord monitor ci mocks
+- Tighten discord lifecycle gateway mocks
+- Refresh planner batching expectations
+- Restore memory test seams (#55324) (thanks @joelnishanth)
+- Finish browser test path cleanup
+- Move browser tests into plugin
+- Centralize discord gateway ownership
+- Require legacy config migration on read
+- Move memory engine into memory plugin
+- Share top-level setup dm policies
+- Share build copy script helpers
+- Share config section card rendering
+- Share matrix state file path helper
+- Share directory config listers
+- Format profiles service test
+- Refresh extension batch expectations
+- Optimize cold import paths
+- Dedupe config heading
+- Refresh generated baselines
+- Explain anthropic claude cli migration
+- Clean memory plugin host boundary
+- Genericize speech provider config surface
+- Finish browser compat untangle
+- Share plugin entry exports
+- Share usage metrics timeslice walker
+- Share config path traversal helper
+- Share tts auto mode normalization
+- Route memory runtime through memory plugin
+- Plugin-own speech provider config
+- Switch browser ownership to bundled plugin
+- Add browser plugin runtime package
+- Move memory plugin state into plugin host
+- Split claude cli history import pipeline
+- Split memory-core plugin helpers
+- Share planner and sandbox test helpers
+- Add memory-core extension sources
+- Move memory tooling into memory-core extension
+- Move memory flush ownership into memory plugin
+- Simplify bundled plugin contracts
+- Speed up shared extension test batches
+- Share speech normalization helpers
+- Clean plugin capability boundaries
+- Dedupe telegram polling session harness
+- Split telegram polling and sdk surfaces
+- Dedupe discord provider proxy overrides
+- Dedupe cli runner session reuse
+- Eliminate remaining clone seams
+- Split cli agent command coverage
+- Share discord monitor fixtures
+- Telegram: rebuild transport after stalled polling cycles
+- Speed up test parallelism
+- Reduce remaining clone seams
+- Dedupe extension channel fixtures
+- Share cli command and discord test helpers
+- Strip MiniMax live scaffolding
+- Share cli and doctor test helpers
+- Share slack and telegram action helpers
+- Share discord outbound session routing
+- Share browser and sandbox helpers
+- Optimize windows test shard fanout (#55261)
+- Share plugin setup helpers
+- Share auto-reply typing helpers
+- Share cli and channel setup fixtures
+- Gateway: require requester ownership for HTTP session kills (#55308)
+- Dedupe extension channel fixtures
+- Dedupe gateway and binding helpers
+- Gateway: align HTTP session history scopes (#55285)
+- Bluebubbles: honor reaction mention gating (#55283)
+- Dedupe secrets and guardrail fixtures
+- Gateway: require pairing for backend scope upgrades (#55286)
+- Gateway: require caller scope for subagent session deletion (#55281)
+- Normalize ui slash executor formatting
+- Dedupe ui chat seams
+- Dedupe matrix setup seams
+- Share plugin auth and ui storage fixtures
+- Note guest openclaw shim in parallels skill
+- Add docker cli-backend smoke
+- Share auto-reply reply helpers
+- Overlap isolated channel runs with shared lane
+- Share ui reconnect and storage helpers
+- Share gateway authz and watchdog fixtures
+- Share matrix migration fixtures
+- Telegram: throttle repeated webhook auth guesses (#55142)
+- Dedupe remaining agent test seams
+- Enable local channel planner parallelism on node 25
+- Share subagent and policy test fixtures
+- Make docker release tag-driven
+- Dedupe config compatibility fixtures
+- Share msteams monitor and pi runner fixtures
+- Speed up channel test runs
+- Improve test runner help text (#55227)
+- Synology-chat: throttle webhook token guesses (#55141)
+- Dedupe web search provider fixtures
+- Share redact and approval fixtures
+- Share pi compaction fixtures
+- Dedupe foundry auth fixtures
+- Share matrix and telegram dedupe helpers
+- Share web media loader
+- Dedupe msteams graph actions
+- Update PR template review guidance
+- Add beta blocker contributor guidance (#55199)
+- Initialize providers in lazy manager tests
+- Feishu: reject legacy raw card command payloads (#55130)
+- Google Chat: require stable group ids (#55131)
+- ACP: sanitize terminal tool titles (#55137)
+- Prepare 2026.3.25 unreleased
+- Sync config baseline
+- Add beta release testing guidance
+- Matrix: gate verification notices on DM access (#55122)
+- Telegram: enforce DM auth for callbacks (#55112)
+- Feishu: validate webhook signatures before parsing (#55083)
+- Add lockfile entry for `extensions/microsoft-foundry`
+- BlueBubbles: enrich group participants with local Contacts names (#54984)
+- Update plugin sdk api baseline
+- Refresh config baseline for microsoft foundry
+- Docs: rename modelstudio.md to qwen_modelstudio.md, add Standard API endpoints (#54407)
+- Msteams: add search message action (#54832)
+- Msteams: fetch thread history via Graph API for channel replies (#51643)
+- Revert "feat: add video generation core infrastructure and extend image generation parameters (#53681)" (#54943)
+- Collapse preflight manifest routing (#54773)
+- Add WeChat channel via official Tencent iLink Bot plugin (#52131) (thanks @MonkeyLeeT)
+- Introduce planner-backed test runner, stabilize local builds (#54650)
+- Filter untrusted CWD .env entries before OpenClaw startup (#54631)
+- Trigger preflight compaction from transcript estimates when usage is stale (#49479)
+- OpenShell: exclude hooks/ from mirror sync (#54657)
+- Block reset-profile on lower-privilege browser request surfaces (#54618)
+- Plugin-runtime: expose runHeartbeatOnce in system API (#40299)
+- Keep vitest on forks only
+- Telegram: ignore self-authored DM message updates (#54530)
+- Update appcast for 2026.3.24
+
+### Removed
+- Remove stale README-header.png packlist entry (#55325)
+- Remove core browser test duplicates
+- Remove legacy browser bridge entrypoints
+- Remove browser compat shadow tree
+- Remove Qwen OAuth integration (qwen-portal-auth) (#52709)
+- Remove tool policy facade (#54684)
+
