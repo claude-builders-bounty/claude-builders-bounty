@@ -1,53 +1,87 @@
-# Claude Builders Bounty 🤖
+# GitHub Weekly Summary - n8n Workflow
 
-> A community bounty board for Claude Code builders.
+Bounty #212 - $200
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Overview
 
----
+Automated weekly GitHub development summary powered by n8n + Claude API. Delivers a narrative summary of commits, issues, and PRs to Discord every Friday.
 
-## How it works
+## Features
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+- ✅ **Weekly cron trigger** - Fridays at 5:00 PM UTC
+- ✅ **GitHub API integration** - Fetches commits, closed issues, merged PRs (last 7 days)
+- ✅ **Claude AI summarization** - Generates narrative summary using Claude Sonnet
+- ✅ **Discord delivery** - Sends formatted embed to Discord webhook
+- ✅ **Configurable** - Environment variables for all settings
+- ✅ **Multi-language** - Supports EN/FR summaries
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Quick Setup (5 Steps)
 
----
+### 1. Import Workflow
 
-## Active Bounties
+1. Open n8n
+2. Go to **Workflows** → **Import from File**
+3. Select `github-weekly-summary.workflow.json`
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### 2. Set Environment Variables
 
----
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `GITHUB_OWNER` | GitHub org/user | `my-org` |
+| `GITHUB_REPO` | Repository name | `my-repo` |
+| `GITHUB_TOKEN` | GitHub Personal Access Token | `ghp_xxx` |
+| `ANTHROPIC_API_KEY` | Claude API key | `sk-ant-xxx` |
+| `DISCORD_WEBHOOK_URL` | Discord webhook | `https://discord.com/api/webhooks/...` |
+| `LANGUAGE` | Summary language (optional) | `en` or `fr` |
 
-## Rules
+### 3. Configure Credentials
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+In n8n:
+- **GitHub API**: Add your GitHub token
+- **Anthropic API**: Add your Claude API key
 
----
+### 4. Activate Workflow
 
-## Community
+Toggle the workflow to **Active**
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### 5. Test
 
----
+Click **Execute Workflow** on the Schedule Trigger node to test immediately.
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## Expected Output
+
+Discord message example:
+```
+📊 Weekly GitHub Summary (Mar 22-29, 2026)
+
+This week saw 47 commits across 3 branches, with 12 issues closed and 8 PRs merged. 
+Key highlights include the new authentication system deployment and performance 
+optimizations to the API layer...
+```
+
+## Customization
+
+### Change Schedule
+
+Edit the Schedule Trigger node:
+- Default: Every Friday at 5:00 PM UTC
+- Cron: `0 17 * * 5`
+
+### Slack Integration
+
+Replace Discord Webhook node with Slack node:
+1. Add Slack app to your workspace
+2. Create incoming webhook
+3. Use Slack node instead of Webhook
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| No data fetched | Check GITHUB_TOKEN permissions (repo scope) |
+| Claude API error | Verify ANTHROPIC_API_KEY is valid |
+| Discord not receiving | Test webhook URL with curl |
+
+## License
+
+MIT - Created for claude-builders-bounty #212
