@@ -34,27 +34,29 @@ bash generate-changelog.sh /path/to/repo CHANGELOG.md
 
 ## Sample Output
 
+**Tested on:** [claude-builders-bounty](https://github.com/claude-builders-bounty/claude-builders-bounty)
+
 ```markdown
 # Changelog
 
-## [Unreleased]
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [2026-03-29]
 
 ### Added
-- feat: add user authentication
-- feat(search): implement full-text search
-
-### Fixed
-- fix(api): handle null response from payment gateway
-- fix(ui): resolve flash of unstyled content
+- feat(template): add CLAUDE.md for Next.js + SQLite SaaS projects
+- feat(hook): add pre-tool-use hook that blocks destructive bash commands
+- feat: add CHANGELOG generator skill
+- feat: initial README with bounty board
 
 ### Changed
-- chore(deps): upgrade dependencies
-- docs: update API documentation
-- refactor(core): simplify token validation
-
-### Removed
-- refactor!: remove deprecated v1 API endpoints
+- Initial commit
 ```
+
+**Generated on claude-builders-bounty repo with:** `bash generate-changelog.sh /path/to/repo CHANGELOG.md`
 
 ## Requirements
 
