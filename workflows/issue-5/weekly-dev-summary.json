@@ -1,0 +1,190 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/commits",
+        "options": {
+          "qs": {
+            "per_page": 30
+          },
+          "headers": {
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer ={{ $vars.GITHUB_TOKEN }}"
+          }
+        }
+      },
+      "id": "github-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 150]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/issues?state=closed&per_page=30",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer ={{ $vars.GITHUB_TOKEN }}"
+          }
+        }
+      },
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/pulls?state=closed&per_page=30",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer ={{ $vars.GITHUB_TOKEN }}"
+          }
+        }
+      },
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate data from GitHub APIs and filter to last 7 days\nconst allInput = $input.all();\nconst commitsData = allInput[0].json;\nconst issuesData = allInput[1].json;\nconst prsData = allInput[2].json;\n\nconst sevenDaysAgo = new Date();\nsevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);\n\nconst commits = (Array.isArray(commitsData) ? commitsData : [])\n  .filter(c => new Date(c.commit.author.date) >= sevenDaysAgo)\n  .map(c => ({\n    sha: c.sha.slice(0,7),\n    message: c.commit.message.split('\\n')[0],\n    author: c.commit.author.name\n  }));\n\nconst issues = (Array.isArray(issuesData) ? issuesData : [])\n  .filter(i => !i.pull_request && i.closed_at && new Date(i.closed_at) >= sevenDaysAgo)\n  .map(i => ({\n    number: i.number,\n    title: i.title,\n    labels: (i.labels || []).map(l => l.name),\n    url: i.html_url\n  }));\n\nconst prs = (Array.isArray(prsData) ? prsData : [])\n  .filter(pr => pr.merged_at && new Date(pr.merged_at) >= sevenDaysAgo)\n  .map(pr => ({\n    number: pr.number,\n    title: pr.title,\n    author: pr.user.login,\n    url: pr.html_url\n  }));\n\nconst language = $vars.LANGUAGE || 'EN';\n\nreturn [{\n  json: {\n    commits,\n    issues,\n    prs,\n    language,\n    stats: {\n      commits: commits.length,\n      issues: issues.length,\n      prs: prs.length\n    },\n    // Build prompt for Claude\n    prompt: language === 'JA'\n      ? this.getJapanesePrompt(commits, issues, prs)\n      : this.getEnglishPrompt(commits, issues, prs)\n  }\n}];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate & Filter Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $vars.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1024
+            },
+            {
+              "name": "system",
+              "value": "You are a developer relations specialist who writes concise, engaging weekly dev summaries. Write in a friendly but professional tone. Format output as clean Markdown."
+            },
+            {
+              "name": "messages",
+              "value": "[{\"role\": \"user\", \"content\": \"={{ $json.prompt }}\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.DISCORD_WEBHOOK_URL }}",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={\n  \"username\": \"Dev Summary Bot\",\n  \"avatar_url\": \"https://i.imgur.com/afk.png\",\n  \"content\": \"📊 **Weekly Dev Summary**\\n\\n={{ $json.content[0].text }}\"\n}",
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Discord Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          { "node": "Get Commits", "type": "main", "index": 0 },
+          { "node": "Get Closed Issues", "type": "main", "index": 0 },
+          { "node": "Get Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [{ "node": "Aggregate & Filter Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Closed Issues": {
+      "main": [
+        [{ "node": "Aggregate & Filter Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Merged PRs": {
+      "main": [
+        [{ "node": "Aggregate & Filter Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate & Filter Data": {
+      "main": [
+        [{ "node": "Claude API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [{ "node": "Discord Notification", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-03-29T15:00:00Z",
+  "versionId": "v1"
+}
