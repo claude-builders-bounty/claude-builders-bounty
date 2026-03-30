@@ -1,0 +1,61 @@
+name: Weekly Dev Summary Trigger
+
+on:
+  # Run every Friday at 5pm UTC
+  schedule:
+    - cron: '0 17 * * 5'
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      github_owner:
+        description: 'GitHub owner/org'
+        required: true
+        default: 'claude-builders-bounty'
+      github_repo:
+        description: 'Repository name'
+        required: true
+        default: 'claude-builders-bounty'
+      language:
+        description: 'Summary language'
+        required: false
+        default: 'English'
+      n8n_webhook_url:
+        description: 'n8n webhook URL (or set N8N_WEBHOOK_URL secret)'
+        required: false
+        default: ''
+
+jobs:
+  trigger-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger n8n Workflow
+        run: |
+          WEBHOOK_URL="${N8N_WEBHOOK_URL:-{{ inputs.n8n_webhook_url }}}"
+          
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "Error: N8N_WEBHOOK_URL not set. Please configure the n8n webhook URL."
+            exit 1
+          fi
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"owner\": \"${{ inputs.github_owner }}\",
+              \"repo\": \"${{ inputs.github_repo }}\",
+              \"language\": \"${{ inputs.language }}\"
+            }")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "n8n Response HTTP: $HTTP_CODE"
+          echo "n8n Response Body: $BODY"
+
+          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
+            echo "✅ n8n workflow triggered successfully"
+          else
+            echo "❌ n8n trigger failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+        env:
+          N8N_WEBHOOK_URL: ${{ secrets.N8N_WEBHOOK_URL }}
