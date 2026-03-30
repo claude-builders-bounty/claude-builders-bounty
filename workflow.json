@@ -1,0 +1,183 @@
+{
+  "name": "GitHub Weekly Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cron",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$vars.GITHUB_API_URL}}/repos/={{$vars.GITHUB_REPO}}/commits",
+        "options": {
+          "qs": {
+            "since": "={{$json.lastWeek}}",
+            "per_page": "100"
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [300, 100],
+      "notes": "Fetches commits from GitHub API since last week"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$vars.GITHUB_API_URL}}/repos/={{$vars.GITHUB_REPO}}/issues",
+        "options": {
+          "qs": {
+            "state": "closed",
+            "since": "={{$json.lastWeek}}",
+            "per_page": "100"
+          }
+        }
+      },
+      "id": "fetch-closed-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [300, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$vars.GITHUB_API_URL}}/repos/={{$vars.GITHUB_REPO}}/pulls",
+        "options": {
+          "qs": {
+            "state": "merged",
+            "since": "={{$json.lastWeek}}",
+            "per_page": "100"
+          }
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate summary prompt\nconst commits = $input.first().json;\nconst issues = $input.all()[1].json;\nconst prs = $input.all()[2].json;\n\nconst commitCount = Array.isArray(commits) ? commits.length : 0;\nconst issueCount = Array.isArray(issues) ? issues.length : 0;\nconst prCount = Array.isArray(prs) ? prs.length : 0;\n\nconst commitList = Array.isArray(commits) ? commits.slice(0, 5).map(c => `- ${c.commit.message.split('\\n')[0]}`).join('\\n') : 'None';\nconst issueList = Array.isArray(issues) ? issues.slice(0, 5).map(i => `- #${i.number}: ${i.title}`).join('\\n') : 'None';\nconst prList = Array.isArray(prs) ? prs.slice(0, 5).map(p => `- #${p.number}: ${p.title}`).join('\\n') : 'None';\n\nconst prompt = `Generate a weekly summary for repository {{$vars.GITHUB_REPO}}.\n\n## This Week's Activity:\n- Commits: ${commitCount}\n- Closed Issues: ${issueCount}\n- Merged PRs: ${prCount}\n\n## Recent Commits:\n${commitList}\n\n## Recent Closed Issues:\n${issueList}\n\n## Recent Merged PRs:\n${prList}\n\nWrite a brief narrative summary in {{$vars.LANGUAGE}} language. Use a friendly, informative tone.`;\n\nreturn { json: { prompt, commitCount, issueCount, prCount } };"
+      },
+      "id": "format-data",
+      "name": "Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "values": {
+            "role": {
+              "__rl": true,
+              "value": "user"
+            },
+            "content": {
+              "__rl": true,
+              "value": "={{$json.prompt}}"
+            }
+          },
+          "options": {
+            "prefix": {
+              "__rl": true,
+              "value": "={{$json}}"
+            }
+          }
+        },
+        "options": {}
+      },
+      "id": "claude-api",
+      "name": "Generate Summary (Claude)",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [700, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.DISCORD_WEBHOOK}}",
+        "method": "POST",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$json}}"
+            }
+          ]
+        }
+      },
+      "id": "discord-webhook",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.discordWebhook",
+      "typeVersion": 1,
+      "position": [900, 200],
+      "notes": "Set DISCORD_WEBHOOK in variables or use Email node instead"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          { "node": "Fetch Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [{ "node": "Format Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [{ "node": "Format Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [{ "node": "Format Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Data": {
+      "main": [
+        [{ "node": "Generate Summary (Claude)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Generate Summary (Claude)": {
+      "main": [
+        [{ "node": "Send to Discord", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "variables": {
+      "GITHUB_API_URL": "https://api.github.com",
+      "GITHUB_REPO": "owner/repo",
+      "GITHUB_TOKEN": "your_github_token",
+      "CLAUDE_API_KEY": "your_claude_api_key",
+      "DISCORD_WEBHOOK": "your_discord_webhook_url",
+      "LANGUAGE": "EN"
+    }
+  }
+}
