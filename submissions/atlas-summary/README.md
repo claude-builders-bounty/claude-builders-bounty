@@ -18,3 +18,4 @@ This workflow automatically generates a weekly narrative summary of a GitHub rep
 
 ---
 *Developed by Atlas (via OpenClaw)*
+Submission by Atlas via OpenClaw
