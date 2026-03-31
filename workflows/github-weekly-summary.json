@@ -1,0 +1,209 @@
+{
+  "name": "GitHub Weekly Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "trigger-weekly",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repo_api }}/commits",
+        "qs": {
+          "since": "={{ $now.minus(7, 'days').toISO() }}",
+          "per_page": "100"
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [470, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repo_api }}/issues?state=closed&since={{ $now.minus(7, 'days').toISO() }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [470, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repo_api }}/pulls?state=closed&sort=updated&direction=desc&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [470, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.first().json;\nconst issues = $('Fetch Closed Issues').first().json;\nconst prs = $('Fetch Merged PRs').first().json;\n\n// Filter merged PRs\nconst mergedPRs = Array.isArray(prs) ? prs.filter(p => p.merged_at) : [];\n\n// Summarize\nconst commitList = (Array.isArray(commits) ? commits : []).map(c =>\n  `- ${c.sha?.slice(0,7)}: ${c.commit?.message?.split('\\n')[0]}`\n).join('\\n');\n\nconst issueList = (Array.isArray(issues) ? issues : []).map(i =>\n  `- #${i.number}: ${i.title}`\n).join('\\n');\n\nconst prList = mergedPRs.map(p =>\n  `- #${p.number}: ${p.title} (by ${p.user?.login})`\n).join('\\n');\n\nreturn [{\n  json: {\n    commit_count: Array.isArray(commits) ? commits.length : 0,\n    issue_count: Array.isArray(issues) ? issues.length : 0,\n    pr_count: mergedPRs.length,\n    commit_summary: commitList || 'No commits this week.',\n    issue_summary: issueList || 'No issues closed this week.',\n    pr_summary: prList || 'No PRs merged this week.'\n  }\n}];"
+      },
+      "id": "summarize-data",
+      "name": "Summarize Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headers": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "body": {
+          "parameters": [
+            {
+              "name": "body",
+              "value": "={\"model\":\"claude-sonnet-4-20250514\",\"max_tokens\":2048,\"messages\":[{\"role\":\"user\",\"content\":\"Generate a weekly development summary narrative for the GitHub repo.\n\n## Activity This Week\n\n### Commits ({{ $json.commit_count }})\n{{ $json.commit_summary }}\n\n### Closed Issues ({{ $json.issue_count }})\n{{ $json.issue_summary }}\n\n### Merged PRs ({{ $json.pr_count }})\n{{ $json.pr_summary }}\n\nWrite a friendly, engaging weekly summary in {{ $('Set Variables').item.json.language === 'FR' ? 'French' : 'English' }}. Use emoji. Highlight key achievements and thank contributors.\"}]}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [920, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook_url }}",
+        "body": {
+          "parameters": [
+            {
+              "name": "body",
+              "value": "={\"content\": \"{{ $json.summary_text }}\"}"
+            }
+          ]
+        }
+      },
+      "id": "send-webhook",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1140, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "github_repo",
+              "value": "={{ $env.GITHUB_REPO || 'octocat/Hello-World' }}",
+              "type": "string"
+            },
+            {
+              "name": "repo_api",
+              "value": "=https://api.github.com/repos/{{ $json.github_repo }}",
+              "type": "string"
+            },
+            {
+              "name": "webhook_url",
+              "value": "={{ $env.DISCORD_WEBHOOK || '' }}",
+              "type": "string"
+            },
+            {
+              "name": "language",
+              "value": "={{ $env.SUMMARY_LANG || 'EN' }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-variables",
+      "name": "Set Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "summary_text",
+              "value": "={{ $json.content[0].text }}",
+              "type": "string"
+            },
+            {
+              "name": "webhook_url",
+              "value": "={{ $('Set Variables').item.json.webhook_url }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "extract-summary",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1140, 200]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [[{"node": "Set Variables", "type": "main", "index": 0}]]
+    },
+    "Set Variables": {
+      "main": [
+        [
+          {"node": "Fetch Commits", "type": "main", "index": 0},
+          {"node": "Fetch Closed Issues", "type": "main", "index": 0},
+          {"node": "Fetch Merged PRs", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{"node": "Summarize Data", "type": "main", "index": 0}]]
+    },
+    "Summarize Data": {
+      "main": [[{"node": "Call Claude API", "type": "main", "index": 0}]]
+    },
+    "Call Claude API": {
+      "main": [[{"node": "Extract Summary", "type": "main", "index": 0}]]
+    },
+    "Extract Summary": {
+      "main": [[{"node": "Send to Discord/Slack", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    { "name": "github" },
+    { "name": "weekly-summary" },
+    { "name": "claude-api" }
+  ]
+}
