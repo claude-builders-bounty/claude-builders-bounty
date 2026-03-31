@@ -1,0 +1,455 @@
+#!/usr/bin/env python3
+"""
+claude-review — Claude Code PR Review Agent
+Reviews a GitHub PR using the Anthropic API and posts structured Markdown feedback.
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr owner/repo/123
+  claude-review --pr owner/repo/123 --post
+  claude-review --pr owner/repo/123 --inline
+  claude-review --pr owner/repo/123 --post --inline
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import textwrap
+import urllib.request
+import urllib.error
+from dataclasses import dataclass
+from typing import Optional
+
+VERSION = "1.0.0"
+DEFAULT_MODEL = "claude-sonnet-4-20250514"
+MAX_DIFF_BYTES = 80_000  # ~80 KB keeps us well within context limits
+
+
+# ---------------------------------------------------------------------------
+# GitHub helpers
+# ---------------------------------------------------------------------------
+
+def gh_get(path: str, token: str) -> dict:
+    url = f"https://api.github.com{path}"
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "claude-review/1.0",
+    })
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"GitHub API error {e.code} for {path}: {body}", file=sys.stderr)
+        sys.exit(1)
+
+
+def gh_get_raw(path: str, accept: str, token: str) -> str:
+    url = f"https://api.github.com{path}"
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": accept,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "claude-review/1.0",
+    })
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"GitHub API error {e.code}: {body}", file=sys.stderr)
+        sys.exit(1)
+
+
+def gh_post(path: str, payload: dict, token: str) -> dict:
+    url = f"https://api.github.com{path}"
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, method="POST", headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "claude-review/1.0",
+    })
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"GitHub API error {e.code}: {body}", file=sys.stderr)
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Anthropic helpers
+# ---------------------------------------------------------------------------
+
+def call_claude(prompt: str, api_key: str, model: str) -> str:
+    url = "https://api.anthropic.com/v1/messages"
+    payload = {
+        "model": model,
+        "max_tokens": 4096,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, method="POST", headers={
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req) as resp:
+            result = json.loads(resp.read())
+            return result["content"][0]["text"]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"Anthropic API error {e.code}: {body}", file=sys.stderr)
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# PR parsing
+# ---------------------------------------------------------------------------
+
+def parse_pr_ref(ref: str) -> tuple[str, str, int]:
+    """Return (owner, repo, pr_number) from URL or owner/repo/number."""
+    # Full URL: https://github.com/owner/repo/pull/123
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", ref)
+    if m:
+        return m.group(1), m.group(2), int(m.group(3))
+    # Short form: owner/repo/123
+    m = re.match(r"([^/]+)/([^/]+)/(\d+)$", ref)
+    if m:
+        return m.group(1), m.group(2), int(m.group(3))
+    print(f"Cannot parse PR reference: {ref}", file=sys.stderr)
+    print("Expected: https://github.com/owner/repo/pull/123  or  owner/repo/123", file=sys.stderr)
+    sys.exit(1)
+
+
+@dataclass
+class PRInfo:
+    owner: str
+    repo: str
+    number: int
+    title: str
+    body: str
+    author: str
+    base_branch: str
+    head_branch: str
+    diff: str
+    files: list[dict]
+    additions: int
+    deletions: int
+    changed_files: int
+
+
+def fetch_pr(owner: str, repo: str, number: int, token: str) -> PRInfo:
+    pr = gh_get(f"/repos/{owner}/{repo}/pulls/{number}", token)
+    diff = gh_get_raw(
+        f"/repos/{owner}/{repo}/pulls/{number}",
+        "application/vnd.github.diff",
+        token,
+    )
+    files = gh_get(f"/repos/{owner}/{repo}/pulls/{number}/files", token)
+
+    # Truncate diff if too large, keeping the most relevant parts
+    if len(diff.encode()) > MAX_DIFF_BYTES:
+        diff = diff.encode()[:MAX_DIFF_BYTES].decode("utf-8", errors="replace")
+        diff += "\n\n[... diff truncated — showing first 80 KB ...]"
+
+    return PRInfo(
+        owner=owner,
+        repo=repo,
+        number=number,
+        title=pr.get("title", ""),
+        body=pr.get("body") or "",
+        author=pr.get("user", {}).get("login", "unknown"),
+        base_branch=pr.get("base", {}).get("ref", ""),
+        head_branch=pr.get("head", {}).get("ref", ""),
+        diff=diff,
+        files=files if isinstance(files, list) else [],
+        additions=pr.get("additions", 0),
+        deletions=pr.get("deletions", 0),
+        changed_files=pr.get("changed_files", 0),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Inline comment helpers
+# ---------------------------------------------------------------------------
+
+def parse_diff_positions(diff: str) -> list[dict]:
+    """
+    Parse the unified diff and return a list of hunk positions suitable for
+    GitHub pull_request review inline comments.
+
+    Each entry: {path, position, line (absolute), side, snippet}
+    """
+    positions = []
+    current_file = None
+    position = 0  # 1-based position within the diff hunk
+
+    for raw_line in diff.splitlines():
+        # New file in diff
+        if raw_line.startswith("+++ b/"):
+            current_file = raw_line[6:]
+            position = 0
+            continue
+        if raw_line.startswith("---") or raw_line.startswith("diff "):
+            continue
+        if raw_line.startswith("@@"):
+            position = 0  # reset hunk position counter
+            # Extract new file start line from @@ -a,b +c,d @@
+            m = re.search(r"\+(\d+)", raw_line)
+            _new_start = int(m.group(1)) if m else 1
+            position += 1
+            continue
+        if current_file is None:
+            continue
+        if raw_line.startswith("+") or raw_line.startswith(" "):
+            position += 1
+            if raw_line.startswith("+"):
+                positions.append({
+                    "path": current_file,
+                    "position": position,
+                    "snippet": raw_line[1:].strip(),
+                })
+        # Lines starting with "-" are context for GitHub but don't advance position
+
+    return positions
+
+
+def build_inline_review_prompt(pr: PRInfo, positions: list[dict]) -> str:
+    file_list = "\n".join(f"  - {f['filename']} (+{f['additions']} -{f['deletions']})"
+                          for f in pr.files[:20])
+
+    pos_sample = json.dumps(positions[:50], indent=2)
+
+    return textwrap.dedent(f"""
+    You are a senior software engineer reviewing a GitHub Pull Request.
+
+    ## PR Details
+    - **Title**: {pr.title}
+    - **Author**: {pr.author}
+    - **Branch**: `{pr.head_branch}` → `{pr.base_branch}`
+    - **Stats**: +{pr.additions} -{pr.deletions} across {pr.changed_files} files
+
+    ## PR Description
+    {pr.body or "(no description provided)"}
+
+    ## Changed Files
+    {file_list}
+
+    ## Diff (added lines with their diff positions)
+    ```json
+    {pos_sample}
+    ```
+
+    Full diff:
+    ```diff
+    {pr.diff[:40000]}
+    ```
+
+    ## Task
+    Identify up to 8 specific lines in the diff that warrant an inline comment.
+    For each, output a JSON object on its own line (NDJSON):
+
+    {{"path": "src/foo.ts", "position": 12, "body": "**[Risk]** This value is user-controlled and not sanitized — consider `encodeURIComponent()` before use."}}
+
+    Rules:
+    - Only reference positions that exist in the positions array above.
+    - Categories: [Risk], [Suggestion], [Nitpick], [Question]
+    - Be specific — quote the exact code concern.
+    - Do NOT emit any other text. Output ONLY the NDJSON lines.
+    """).strip()
+
+
+def build_summary_review_prompt(pr: PRInfo) -> str:
+    file_list = "\n".join(f"  - {f['filename']} (+{f['additions']} -{f['deletions']})"
+                          for f in pr.files[:20])
+
+    return textwrap.dedent(f"""
+    You are a senior software engineer reviewing a GitHub Pull Request.
+    Provide a thorough, structured code review in Markdown.
+
+    ## PR Details
+    - **Title**: {pr.title}
+    - **Author**: {pr.author}
+    - **Branch**: `{pr.head_branch}` → `{pr.base_branch}`
+    - **Stats**: +{pr.additions} -{pr.deletions} across {pr.changed_files} files
+
+    ## PR Description
+    {pr.body or "(no description provided)"}
+
+    ## Changed Files
+    {file_list}
+
+    ## Diff
+    ```diff
+    {pr.diff}
+    ```
+
+    ## Output Format (Markdown, use exactly these headings)
+
+    # Code Review — {pr.owner}/{pr.repo}#{pr.number}
+
+    ## Summary
+    2–3 sentences describing the nature and purpose of the changes.
+
+    ## Identified Risks
+    Bullet list. Each item: risk type (Security / Logic / Performance / Data Loss / None),
+    description, and affected file:line if known.
+    If none: write "No significant risks identified."
+
+    ## Improvement Suggestions
+    Numbered list. Concrete, actionable, with code snippets where helpful.
+    If none: write "No suggestions — changes look good."
+
+    ## Confidence Score
+    One of: **Low** / **Medium** / **High**
+    One sentence justification.
+
+    Be direct and useful. Avoid generic praise.
+    """).strip()
+
+
+# ---------------------------------------------------------------------------
+# Output & posting
+# ---------------------------------------------------------------------------
+
+def post_review_comment(pr: PRInfo, body: str, token: str) -> str:
+    result = gh_post(
+        f"/repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments",
+        {"body": body},
+        token,
+    )
+    return result.get("html_url", "")
+
+
+def post_inline_comments(pr: PRInfo, inline_json: str, summary: str, token: str) -> str:
+    """
+    Create a pull request review with inline comments + summary body.
+    Uses the Reviews API so all inline comments appear in one review event.
+    """
+    comments = []
+    for line in inline_json.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            if "path" in obj and "position" in obj and "body" in obj:
+                comments.append({
+                    "path": obj["path"],
+                    "position": obj["position"],
+                    "body": obj["body"],
+                })
+        except json.JSONDecodeError:
+            continue  # skip malformed lines
+
+    payload = {
+        "body": summary,
+        "event": "COMMENT",
+        "comments": comments,
+    }
+    result = gh_post(
+        f"/repos/{pr.owner}/{pr.repo}/pulls/{pr.number}/reviews",
+        payload,
+        token,
+    )
+    return result.get("html_url", "")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=f"claude-review v{VERSION} — AI-powered PR review agent",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent("""
+        Examples:
+          claude-review --pr https://github.com/facebook/react/pull/28000
+          claude-review --pr owner/repo/123 --post
+          claude-review --pr owner/repo/123 --post --inline
+          claude-review --pr owner/repo/123 --model claude-opus-4-5-20251001
+        """),
+    )
+    parser.add_argument("--pr", required=True, metavar="URL|owner/repo/number",
+                        help="GitHub PR URL or owner/repo/number")
+    parser.add_argument("--post", action="store_true",
+                        help="Post review as a GitHub PR comment")
+    parser.add_argument("--inline", action="store_true",
+                        help="Add per-line inline comments in addition to summary")
+    parser.add_argument("--model", default=DEFAULT_MODEL,
+                        help=f"Claude model (default: {DEFAULT_MODEL})")
+    parser.add_argument("--json", dest="json_output", action="store_true",
+                        help="Output review as JSON instead of Markdown")
+    parser.add_argument("--version", action="version", version=f"claude-review {VERSION}")
+    args = parser.parse_args()
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY")
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY (or CLAUDE_API_KEY) environment variable not set.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    gh_token = os.environ.get("GITHUB_TOKEN", "")
+    if not gh_token and args.post:
+        print("Error: GITHUB_TOKEN is required when using --post.", file=sys.stderr)
+        sys.exit(1)
+
+    owner, repo, number = parse_pr_ref(args.pr)
+    print(f"Fetching PR {owner}/{repo}#{number} …", file=sys.stderr)
+    pr = fetch_pr(owner, repo, number, gh_token or "")
+
+    print(f"Generating summary review via {args.model} …", file=sys.stderr)
+    summary_prompt = build_summary_review_prompt(pr)
+    summary = call_claude(summary_prompt, api_key, args.model)
+
+    inline_json: Optional[str] = None
+    if args.inline:
+        print("Generating inline comments …", file=sys.stderr)
+        positions = parse_diff_positions(pr.diff)
+        inline_prompt = build_inline_review_prompt(pr, positions)
+        inline_json = call_claude(inline_prompt, api_key, args.model)
+
+    if args.json_output:
+        out = {
+            "pr": f"{owner}/{repo}#{number}",
+            "title": pr.title,
+            "summary": summary,
+        }
+        if inline_json:
+            comments = []
+            for line in inline_json.strip().splitlines():
+                try:
+                    comments.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+            out["inline_comments"] = comments
+        print(json.dumps(out, indent=2))
+        return
+
+    # Plain Markdown output
+    print(summary)
+    if inline_json:
+        print("\n---\n## Inline Comments (raw NDJSON)\n")
+        print(inline_json)
+
+    if args.post:
+        if gh_token and args.inline and inline_json:
+            url = post_inline_comments(pr, inline_json, summary, gh_token)
+            print(f"\nReview with inline comments posted: {url}", file=sys.stderr)
+        elif gh_token:
+            url = post_review_comment(pr, summary, gh_token)
+            print(f"\nReview comment posted: {url}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
