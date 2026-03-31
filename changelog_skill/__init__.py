@@ -1,0 +1,1 @@
+"""Structured changelog generation helpers."""
