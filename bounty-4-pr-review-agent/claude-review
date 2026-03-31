@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# claude-review — Claude Code PR Review Agent
+# Reviews a GitHub PR and outputs a structured Markdown comment.
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+#        claude-review --pr owner/repo/123
+#        CLAUDE_API_KEY=... claude-review --pr ...
+
+VERSION="1.0.0"
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-20250514}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+CLAUDE_API_KEY="${CLAUDE_API_KEY:-${ANTHROPIC_API_KEY:-}}"
+
+usage() {
+  cat <<EOF
+claude-review v${VERSION} — AI-powered PR review agent
+
+USAGE:
+  claude-review --pr <url|owner/repo/number> [OPTIONS]
+
+OPTIONS:
+  --pr <ref>         GitHub PR URL or owner/repo/number (required)
+  --post             Post the review as a PR comment (requires GITHUB_TOKEN)
+  --model <model>    Claude model to use (default: ${CLAUDE_MODEL})
+  --json             Output raw JSON instead of Markdown
+  --help             Show this help
+
+ENVIRONMENT:
+  CLAUDE_API_KEY     Anthropic API key (or ANTHROPIC_API_KEY)
+  GITHUB_TOKEN       GitHub token (required for --post and private repos)
+
+EXAMPLES:
+  claude-review --pr https://github.com/facebook/react/pull/28000
+  claude-review --pr facebook/react/28000 --post
+  claude-review --pr owner/repo/123 --json
+EOF
+  exit 0
+}
+
+die() { echo "❌ $1" >&2; exit 1; }
+
+# Parse arguments
+PR_REF=""
+POST_COMMENT=false
+OUTPUT_JSON=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_REF="$2"; shift 2 ;;
+    --post) POST_COMMENT=true; shift ;;
+    --model) CLAUDE_MODEL="$2"; shift 2 ;;
+    --json) OUTPUT_JSON=true; shift ;;
+    --help|-h) usage ;;
+    *) die "Unknown option: $1" ;;
+  esac
+done
+
+[[ -z "$PR_REF" ]] && die "Missing --pr argument. Run claude-review --help"
+[[ -z "$CLAUDE_API_KEY" ]] && die "Set CLAUDE_API_KEY or ANTHROPIC_API_KEY"
+
+# Parse PR reference
+if [[ "$PR_REF" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+  OWNER="${BASH_REMATCH[1]}"
+  REPO="${BASH_REMATCH[2]}"
+  PR_NUMBER="${BASH_REMATCH[3]}"
+elif [[ "$PR_REF" =~ ^([^/]+)/([^/]+)/([0-9]+)$ ]]; then
+  OWNER="${BASH_REMATCH[1]}"
+  REPO="${BASH_REMATCH[2]}"
+  PR_NUMBER="${BASH_REMATCH[3]}"
+else
+  die "Invalid PR reference: $PR_REF (expected URL or owner/repo/number)"
+fi
+
+echo "🔍 Reviewing ${OWNER}/${REPO}#${PR_NUMBER}..." >&2
+
+# Build GitHub API headers
+GH_HEADERS=(-H "Accept: application/vnd.github.v3+json")
+[[ -n "$GITHUB_TOKEN" ]] && GH_HEADERS+=(-H "Authorization: token $GITHUB_TOKEN")
+
+# Fetch PR metadata
+PR_META=$(curl -sf "${GH_HEADERS[@]}" \
+  "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}") \
+  || die "Failed to fetch PR metadata (check GITHUB_TOKEN for private repos)"
+
+PR_TITLE=$(echo "$PR_META" | python3 -c "import json,sys; print(json.load(sys.stdin)['title'])")
+PR_BODY=$(echo "$PR_META" | python3 -c "import json,sys; print(json.load(sys.stdin).get('body','') or '')")
+PR_AUTHOR=$(echo "$PR_META" | python3 -c "import json,sys; print(json.load(sys.stdin)['user']['login'])")
+CHANGED_FILES=$(echo "$PR_META" | python3 -c "import json,sys; print(json.load(sys.stdin)['changed_files'])")
+ADDITIONS=$(echo "$PR_META" | python3 -c "import json,sys; print(json.load(sys.stdin)['additions'])")
+DELETIONS=$(echo "$PR_META" | python3 -c "import json,sys; print(json.load(sys.stdin)['deletions'])")
+
+echo "  📝 \"${PR_TITLE}\" by @${PR_AUTHOR}" >&2
+echo "  📊 ${CHANGED_FILES} files, +${ADDITIONS}/-${DELETIONS}" >&2
+
+# Fetch diff
+DIFF=$(curl -sf "${GH_HEADERS[@]}" -H "Accept: application/vnd.github.v3.diff" \
+  "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}") \
+  || die "Failed to fetch PR diff"
+
+# Truncate diff if too large (Claude context limit)
+DIFF_CHARS=${#DIFF}
+MAX_CHARS=80000
+if [[ $DIFF_CHARS -gt $MAX_CHARS ]]; then
+  echo "  ⚠️  Diff truncated from ${DIFF_CHARS} to ${MAX_CHARS} chars" >&2
+  DIFF="${DIFF:0:$MAX_CHARS}
+
+... [TRUNCATED — diff exceeded ${MAX_CHARS} characters] ..."
+fi
+
+echo "  🤖 Analyzing with ${CLAUDE_MODEL}..." >&2
+
+# Build Claude prompt
+SYSTEM_PROMPT="You are a senior software engineer performing a code review. Be thorough but concise. Focus on correctness, security, performance, and maintainability. Output ONLY the structured Markdown — no preamble."
+
+USER_PROMPT="Review this GitHub Pull Request and provide a structured analysis.
+
+## PR Info
+- **Title:** ${PR_TITLE}
+- **Author:** @${PR_AUTHOR}
+- **Stats:** ${CHANGED_FILES} files changed, +${ADDITIONS}/-${DELETIONS}
+
+## PR Description
+${PR_BODY}
+
+## Diff
+\`\`\`diff
+${DIFF}
+\`\`\`
+
+---
+
+Respond with EXACTLY this Markdown structure:
+
+## 📋 Summary
+(2-3 sentence overview of what this PR does)
+
+## ⚠️ Identified Risks
+(Bulleted list of potential issues. If none, say \"No significant risks identified.\")
+
+## 💡 Improvement Suggestions
+(Bulleted list of concrete suggestions. If the code is solid, say \"No major improvements needed.\")
+
+## 🎯 Confidence Score
+**[Low/Medium/High]** — (1 sentence explaining your confidence level based on diff complexity and your ability to assess it)"
+
+# Call Claude API
+RESPONSE=$(curl -sf "https://api.anthropic.com/v1/messages" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: ${CLAUDE_API_KEY}" \
+  -H "anthropic-version: 2023-06-01" \
+  -d "$(python3 -c "
+import json, sys
+print(json.dumps({
+    'model': '${CLAUDE_MODEL}',
+    'max_tokens': 2048,
+    'system': sys.stdin.readline(),
+    'messages': [{'role': 'user', 'content': sys.stdin.readline()}]
+}))
+" <<< "${SYSTEM_PROMPT}
+${USER_PROMPT}")") || die "Claude API call failed (check CLAUDE_API_KEY)"
+
+# Extract text content
+REVIEW=$(echo "$RESPONSE" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for block in data.get('content', []):
+    if block.get('type') == 'text':
+        print(block['text'])
+")
+
+if [[ -z "$REVIEW" ]]; then
+  die "Empty response from Claude API"
+fi
+
+# Format output
+HEADER="# 🤖 Claude Code Review — ${OWNER}/${REPO}#${PR_NUMBER}
+
+> *Automated review by [claude-review](https://github.com/claude-builders-bounty/claude-builders-bounty) using ${CLAUDE_MODEL}*
+
+"
+
+FULL_REVIEW="${HEADER}${REVIEW}"
+
+if $OUTPUT_JSON; then
+  python3 -c "
+import json, sys
+print(json.dumps({
+    'pr': '${OWNER}/${REPO}#${PR_NUMBER}',
+    'title': $(python3 -c "import json; print(json.dumps('${PR_TITLE}'))"),
+    'author': '${PR_AUTHOR}',
+    'model': '${CLAUDE_MODEL}',
+    'review': sys.stdin.read()
+}, indent=2))
+" <<< "$REVIEW"
+else
+  echo "$FULL_REVIEW"
+fi
+
+# Post as PR comment if requested
+if $POST_COMMENT; then
+  [[ -z "$GITHUB_TOKEN" ]] && die "--post requires GITHUB_TOKEN"
+  echo "  📤 Posting review comment..." >&2
+  
+  COMMENT_BODY=$(python3 -c "import json,sys; print(json.dumps({'body': sys.stdin.read()}))" <<< "$FULL_REVIEW")
+  
+  curl -sf -X POST \
+    -H "Authorization: token $GITHUB_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$COMMENT_BODY" \
+    "https://api.github.com/repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments" > /dev/null \
+    || die "Failed to post comment"
+  
+  echo "  ✅ Review posted to PR #${PR_NUMBER}" >&2
+fi
