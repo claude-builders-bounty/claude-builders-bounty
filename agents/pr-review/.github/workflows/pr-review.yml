@@ -1,0 +1,148 @@
+name: PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Determine PR number
+        id: pr
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch PR metadata
+        id: meta
+        run: |
+          PR_JSON=$(gh pr view ${{ steps.pr.outputs.number }} \
+            --json title,author,additions,deletions,changedFiles,files,body,baseRefName,headRefName)
+
+          echo "title=$(echo "$PR_JSON" | jq -r '.title')" >> "$GITHUB_OUTPUT"
+          echo "author=$(echo "$PR_JSON" | jq -r '.author.login')" >> "$GITHUB_OUTPUT"
+          echo "additions=$(echo "$PR_JSON" | jq -r '.additions')" >> "$GITHUB_OUTPUT"
+          echo "deletions=$(echo "$PR_JSON" | jq -r '.deletions')" >> "$GITHUB_OUTPUT"
+          echo "changed=$(echo "$PR_JSON" | jq -r '.changedFiles')" >> "$GITHUB_OUTPUT"
+
+          # Save files list and body for the prompt
+          echo "$PR_JSON" | jq -r '.files[].path' > /tmp/pr_files.txt
+          echo "$PR_JSON" | jq -r '.body // ""' | head -50 > /tmp/pr_body.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch PR diff
+        run: |
+          gh pr diff ${{ steps.pr.outputs.number }} > /tmp/diff.txt
+
+          # Truncate large diffs to stay within token limits
+          DIFF_SIZE=$(wc -c < /tmp/diff.txt)
+          if [ "$DIFF_SIZE" -gt 100000 ]; then
+            head -c 100000 /tmp/diff.txt > /tmp/diff_truncated.txt
+            echo "" >> /tmp/diff_truncated.txt
+            echo "... [diff truncated at 100000 bytes — ${DIFF_SIZE} total]" >> /tmp/diff_truncated.txt
+            mv /tmp/diff_truncated.txt /tmp/diff.txt
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build review prompt
+        run: |
+          cat > /tmp/prompt.txt <<'PROMPT_EOF'
+          You are an expert code reviewer. Analyze the following GitHub pull request and produce a structured Markdown review.
+
+          ## PR Information
+          PROMPT_EOF
+
+          echo "- **Title**: ${{ steps.meta.outputs.title }}" >> /tmp/prompt.txt
+          echo "- **Author**: @${{ steps.meta.outputs.author }}" >> /tmp/prompt.txt
+          echo "- **Stats**: +${{ steps.meta.outputs.additions }} -${{ steps.meta.outputs.deletions }} across ${{ steps.meta.outputs.changed }} files" >> /tmp/prompt.txt
+          echo "" >> /tmp/prompt.txt
+          echo "## Files changed" >> /tmp/prompt.txt
+          cat /tmp/pr_files.txt >> /tmp/prompt.txt
+          echo "" >> /tmp/prompt.txt
+          echo "## PR Description" >> /tmp/prompt.txt
+          cat /tmp/pr_body.txt >> /tmp/prompt.txt
+          echo "" >> /tmp/prompt.txt
+          echo '## Diff' >> /tmp/prompt.txt
+          echo '```diff' >> /tmp/prompt.txt
+          cat /tmp/diff.txt >> /tmp/prompt.txt
+          echo '```' >> /tmp/prompt.txt
+
+          cat >> /tmp/prompt.txt <<'PROMPT_EOF'
+
+          ## Instructions
+          Produce your review in EXACTLY this Markdown format:
+
+          ## PR Review: <title>
+
+          ### Summary
+          <2-3 sentence summary of what this PR does and why>
+
+          ### Risk Assessment
+          <List each identified risk as a bullet point. If no risks, say 'No significant risks identified.'>
+
+          ### Suggestions
+          <List each improvement suggestion as a bullet point with file:line references where applicable. If no suggestions, say 'No suggestions — changes look good.'>
+
+          ### Confidence
+          **Score: <Low|Medium|High>**
+          <1 sentence explaining the confidence level>
+
+          ---
+          *Reviewed by [claude-review](https://github.com/claude-builders-bounty/claude-builders-bounty) v1.0.0*
+
+          IMPORTANT RULES:
+          - Be specific — reference file names and line numbers
+          - Be constructive — suggest fixes, not just problems
+          - Be honest about uncertainty
+          - Keep the review concise but thorough
+          - Do NOT wrap your entire response in a code block — output raw Markdown
+          PROMPT_EOF
+
+      - name: Review with Claude
+        run: |
+          cat /tmp/prompt.txt | claude --print > /tmp/review.md
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post review comment
+        run: |
+          gh pr comment ${{ steps.pr.outputs.number }} --body-file /tmp/review.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-review-${{ steps.pr.outputs.number }}
+          path: /tmp/review.md
+          retention-days: 30

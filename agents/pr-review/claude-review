@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+#
+# claude-review — Claude Code PR review agent
+#
+# Analyzes a GitHub pull request and outputs a structured Markdown review
+# with summary, risks, suggestions, and confidence score.
+#
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --pr owner/repo#123
+#   claude-review --repo owner/repo --number 123
+#
+# Requirements:
+#   - gh (GitHub CLI, authenticated)
+#   - claude (Claude Code CLI, with ANTHROPIC_API_KEY set)
+#
+# Environment:
+#   ANTHROPIC_API_KEY  — Required for Claude API access
+#   CLAUDE_MODEL       — Optional model override (default: claude-sonnet-4-20250514)
+#
+
+set -euo pipefail
+
+VERSION="1.0.0"
+
+# --- Color helpers (disabled if not a terminal) ---
+if [ -t 1 ]; then
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[0;33m'
+  BOLD='\033[1m'
+  NC='\033[0m'
+else
+  RED='' GREEN='' YELLOW='' BOLD='' NC=''
+fi
+
+usage() {
+  cat <<EOF
+claude-review v${VERSION} — Claude Code PR review agent
+
+USAGE:
+  claude-review --pr <URL>
+  claude-review --pr <owner/repo#number>
+  claude-review --repo <owner/repo> --number <N>
+
+OPTIONS:
+  --pr <URL|ref>       PR URL or shorthand (owner/repo#123)
+  --repo <owner/repo>  Repository (used with --number)
+  --number <N>         PR number (used with --repo)
+  --post               Post the review as a PR comment (requires gh auth)
+  --output <file>      Write review to file instead of stdout
+  --verbose            Show debug information
+  --help               Show this help message
+  --version            Show version
+
+ENVIRONMENT:
+  ANTHROPIC_API_KEY    Required for Claude API access
+  CLAUDE_MODEL         Optional model override
+
+EXAMPLES:
+  claude-review --pr https://github.com/vercel/next.js/pull/92157
+  claude-review --pr vercel/next.js#92157
+  claude-review --repo vercel/next.js --number 92157 --post
+EOF
+  exit 0
+}
+
+die() { echo -e "${RED}Error:${NC} $*" >&2; exit 1; }
+info() { echo -e "${GREEN}>>>${NC} $*" >&2; }
+warn() { echo -e "${YELLOW}Warning:${NC} $*" >&2; }
+
+# --- Argument parsing ---
+PR_URL=""
+REPO=""
+NUMBER=""
+POST_COMMENT=false
+OUTPUT_FILE=""
+VERBOSE=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr)       PR_URL="$2"; shift 2 ;;
+    --repo)     REPO="$2"; shift 2 ;;
+    --number)   NUMBER="$2"; shift 2 ;;
+    --post)     POST_COMMENT=true; shift ;;
+    --output)   OUTPUT_FILE="$2"; shift 2 ;;
+    --verbose)  VERBOSE=true; shift ;;
+    --help|-h)  usage ;;
+    --version)  echo "claude-review v${VERSION}"; exit 0 ;;
+    *)          die "Unknown argument: $1. Use --help for usage." ;;
+  esac
+done
+
+# --- Validate dependencies ---
+command -v gh >/dev/null 2>&1    || die "gh (GitHub CLI) is required. Install: https://cli.github.com"
+command -v claude >/dev/null 2>&1 || die "claude (Claude Code CLI) is required. Install: npm install -g @anthropic-ai/claude-code"
+
+# --- Parse PR reference ---
+if [[ -n "$PR_URL" ]]; then
+  # Handle full URL: https://github.com/owner/repo/pull/123
+  if [[ "$PR_URL" =~ github\.com/([^/]+/[^/]+)/pull/([0-9]+) ]]; then
+    REPO="${BASH_REMATCH[1]}"
+    NUMBER="${BASH_REMATCH[2]}"
+  # Handle shorthand: owner/repo#123
+  elif [[ "$PR_URL" =~ ^([^/]+/[^#]+)#([0-9]+)$ ]]; then
+    REPO="${BASH_REMATCH[1]}"
+    NUMBER="${BASH_REMATCH[2]}"
+  else
+    die "Cannot parse PR reference: $PR_URL"
+  fi
+fi
+
+[[ -z "$REPO" ]]   && die "Repository not specified. Use --pr <URL> or --repo <owner/repo>"
+[[ -z "$NUMBER" ]] && die "PR number not specified. Use --pr <URL> or --number <N>"
+
+info "Reviewing PR #${NUMBER} in ${REPO}..."
+
+# --- Fetch PR metadata ---
+$VERBOSE && info "Fetching PR metadata..."
+
+PR_META=$(gh pr view "$NUMBER" --repo "$REPO" \
+  --json title,body,files,additions,deletions,changedFiles,author,baseRefName,headRefName 2>&1) \
+  || die "Failed to fetch PR metadata. Is gh authenticated? Does the PR exist?"
+
+PR_TITLE=$(echo "$PR_META" | jq -r '.title // "Unknown"')
+PR_AUTHOR=$(echo "$PR_META" | jq -r '.author.login // "Unknown"')
+PR_ADDITIONS=$(echo "$PR_META" | jq -r '.additions // 0')
+PR_DELETIONS=$(echo "$PR_META" | jq -r '.deletions // 0')
+PR_CHANGED=$(echo "$PR_META" | jq -r '.changedFiles // 0')
+PR_BASE=$(echo "$PR_META" | jq -r '.baseRefName // "main"')
+PR_HEAD=$(echo "$PR_META" | jq -r '.headRefName // "unknown"')
+PR_BODY=$(echo "$PR_META" | jq -r '.body // ""' | head -50)
+PR_FILES=$(echo "$PR_META" | jq -r '.files[].path' | head -30)
+
+info "PR: ${PR_TITLE} by @${PR_AUTHOR}"
+info "Changes: +${PR_ADDITIONS} -${PR_DELETIONS} across ${PR_CHANGED} files"
+
+# --- Fetch diff ---
+$VERBOSE && info "Fetching PR diff..."
+
+DIFF=$(gh pr diff "$NUMBER" --repo "$REPO" 2>&1) \
+  || die "Failed to fetch PR diff."
+
+DIFF_SIZE=${#DIFF}
+$VERBOSE && info "Diff size: ${DIFF_SIZE} bytes"
+
+# Truncate very large diffs to avoid token limits
+MAX_DIFF_SIZE=100000
+if [[ $DIFF_SIZE -gt $MAX_DIFF_SIZE ]]; then
+  warn "Diff is ${DIFF_SIZE} bytes, truncating to ${MAX_DIFF_SIZE} bytes"
+  DIFF="${DIFF:0:$MAX_DIFF_SIZE}
+
+... [diff truncated at ${MAX_DIFF_SIZE} bytes — ${DIFF_SIZE} total]"
+fi
+
+# --- Build the review prompt ---
+PROMPT="You are an expert code reviewer. Analyze the following GitHub pull request and produce a structured Markdown review.
+
+## PR Information
+- **Title**: ${PR_TITLE}
+- **Author**: @${PR_AUTHOR}
+- **Branch**: ${PR_HEAD} -> ${PR_BASE}
+- **Stats**: +${PR_ADDITIONS} -${PR_DELETIONS} across ${PR_CHANGED} files
+- **Files changed**:
+${PR_FILES}
+
+## PR Description
+${PR_BODY}
+
+## Diff
+\`\`\`diff
+${DIFF}
+\`\`\`
+
+## Instructions
+Produce your review in EXACTLY this Markdown format:
+
+## PR Review: <title>
+
+### Summary
+<2-3 sentence summary of what this PR does and why>
+
+### Risk Assessment
+<List each identified risk as a bullet point. If no risks, say 'No significant risks identified.'>
+
+### Suggestions
+<List each improvement suggestion as a bullet point with file:line references where applicable. If no suggestions, say 'No suggestions — changes look good.'>
+
+### Confidence
+**Score: <Low|Medium|High>**
+<1 sentence explaining the confidence level>
+
+---
+*Reviewed by [claude-review](https://github.com/claude-builders-bounty/claude-builders-bounty) v${VERSION}*
+
+IMPORTANT RULES:
+- Be specific — reference file names and line numbers
+- Be constructive — suggest fixes, not just problems
+- Be honest about uncertainty — use Low confidence if the domain is unfamiliar
+- Keep the review concise but thorough
+- Do NOT wrap your entire response in a code block — output raw Markdown"
+
+# --- Run Claude ---
+info "Running Claude analysis..."
+
+REVIEW=$(echo "$PROMPT" | claude --print 2>&1) \
+  || die "Claude analysis failed. Is ANTHROPIC_API_KEY set?"
+
+# --- Output ---
+if [[ -n "$OUTPUT_FILE" ]]; then
+  echo "$REVIEW" > "$OUTPUT_FILE"
+  info "Review written to: ${OUTPUT_FILE}"
+else
+  echo ""
+  echo "$REVIEW"
+fi
+
+# --- Optionally post as PR comment ---
+if $POST_COMMENT; then
+  info "Posting review as PR comment..."
+  echo "$REVIEW" | gh pr comment "$NUMBER" --repo "$REPO" --body-file - \
+    || die "Failed to post PR comment."
+  info "Review posted to PR #${NUMBER}"
+fi
+
+info "Done."
