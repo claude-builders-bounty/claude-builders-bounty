@@ -1,53 +1,101 @@
-# Claude Builders Bounty 🤖
+# CHANGELOG Generator
 
-> A community bounty board for Claude Code builders.
+A simple bash script that automatically generates a structured `CHANGELOG.md` from your git history using conventional commits.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
+
+```bash
+# 1. Download the script
+curl -O https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/changelog-generator-skill/changelog.sh
+chmod +x changelog.sh
+
+# 2. Run it in your repository
+./changelog.sh
+
+# 3. Review the generated CHANGELOG.md
+cat CHANGELOG.md
+```
+
+That's it! The script will automatically detect your latest git tag and generate a categorized changelog.
+
+## Usage
+
+```bash
+# Basic usage - generates CHANGELOG.md from latest tag
+./changelog.sh
+
+# Custom output file
+./changelog.sh --output docs/CHANGELOG.md
+
+# Only include commits since a specific tag
+./changelog.sh --since-tag v1.0.0
+
+# Show help
+./changelog.sh --help
+```
+
+## How It Works
+
+The script parses your git history and categorizes commits based on conventional commit prefixes:
+
+| Prefix | Category |
+|--------|----------|
+| `feat:`, `feature:`, `add:` | Added |
+| `fix:`, `bugfix:`, `bug:` | Fixed |
+| `chore:`, `refactor:`, `update:`, `change:` | Changed |
+| `remove:`, `revert:`, `deprecate:` | Removed |
+| `docs:`, `doc:` | Docs |
+| Others | Miscellaneous |
+
+## Conventional Commits
+
+For best results, use conventional commit format:
+
+```
+feat: add new user authentication
+fix: resolve login timeout issue
+docs: update API documentation
+chore: bump dependencies
+```
+
+The script extracts the message after the prefix and formats it nicely in the CHANGELOG.
+
+## Output Format
+
+Generates a [Keep a Changelog](https://keepachangelog.com/) compatible format:
+
+```markdown
+# Changelog
+
+All notable changes to this project will be documented in this file.
 
 ---
 
-## How it works
+## [1.0.0] - 2024-01-15
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### Added
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+- Add new user authentication ([abc1234](https://github.com/user/repo/commit/abc1234))
+- Add password reset flow
 
----
+### Fixed
 
-## Active Bounties
+- Resolve login timeout issue ([def5678](https://github.com/user/repo/commit/def5678))
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### Changed
 
----
+- Bump dependencies
 
-## Rules
+### Removed
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+- Deprecated legacy API endpoints
+```
 
----
+## Requirements
 
-## Community
+- Git
+- Bash 4.0+
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## License
 
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+MIT
