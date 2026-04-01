@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""claude-review — review a GitHub PR using Claude API.
+
+Note: On Unix systems, make this file executable by running:
+chmod +x claude-review
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr owner/repo#123 --output review.md
+  claude-review --pr owner/repo#123 --post
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+
+REVIEW_PROMPT = """You are a senior software engineer conducting a pull request review.
+
+Analyze the following PR diff and return a structured Markdown review with exactly these sections:
+
+## Summary
+2-3 sentences describing what the PR does and the scope of changes.
+
+## Risks
+Bullet list of potential issues: bugs, security concerns, breaking changes, performance regressions, missing tests. If none, write "None identified."
+
+## Suggestions
+Bullet list of concrete improvement recommendations. Focus on actionable items a reviewer would ask for. If none, write "None."
+
+## Confidence
+One of: Low / Medium / High — how confident you are in this review given the diff size and context available.
+
+---
+
+PR URL: {pr_url}
+
+Diff:
+{diff}
+"""
+
+
+def parse_pr_ref(pr_ref: str) -> str:
+    """Accept URL or owner/repo#number format, return canonical URL."""
+    url_match = re.match(r"https?://github\.com/([^/]+/[^/]+)/pull/(\d+)", pr_ref)
+    if url_match:
+        return pr_ref.rstrip("/")
+    shorthand = re.match(r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d+)$", pr_ref)
+    if shorthand:
+        return f"https://github.com/{shorthand.group(1)}/pull/{shorthand.group(2)}"
+    print(f"Error: cannot parse PR reference '{pr_ref}'", file=sys.stderr)
+    print("Expected: https://github.com/owner/repo/pull/123  or  owner/repo#123", file=sys.stderr)
+    sys.exit(1)
+
+
+def fetch_diff(pr_url: str) -> str:
+    """Fetch PR diff using gh CLI."""
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "diff", pr_url],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        print("Error: 'gh' CLI not found. Install it from https://cli.github.com and run 'gh auth login'.", file=sys.stderr)
+        sys.exit(1)
+    if result.returncode != 0:
+        print(f"Error fetching diff: {result.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
+    diff = result.stdout.strip()
+    if not diff:
+        print("Error: diff is empty — PR may have no changes or be already merged.", file=sys.stderr)
+        sys.exit(1)
+    # Truncate very large diffs to avoid token limits
+    if len(diff) > 60_000:
+        diff = diff[:60_000] + "\n\n[... diff truncated at 60,000 characters ...]"
+    return diff
+
+
+def call_claude(diff: str, pr_url: str, api_key: str) -> str:
+    """Call Anthropic API and return the review text."""
+    prompt = REVIEW_PROMPT.format(pr_url=pr_url, diff=diff)
+    payload = json.dumps({
+        "model": "claude-3-5-sonnet-20241022",
+        "max_tokens": 2048,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=payload,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode()
+        print(f"Claude API error {e.code}: {error_body}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"Network error reaching Claude API: {e.reason}", file=sys.stderr)
+        sys.exit(1)
+
+    content = body.get("content")
+    if not (content and isinstance(content, list) and len(content) > 0 and content[0].get("text")):
+        print(f"Unexpected Claude API response structure: {json.dumps(body)[:200]}", file=sys.stderr)
+        sys.exit(1)
+    return content[0]["text"]
+
+
+def post_comment(pr_url: str, review: str) -> None:
+    """Post review as a PR comment using gh CLI."""
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "comment", pr_url, "--body", review],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        print("Error: 'gh' CLI not found. Install it from https://cli.github.com and run 'gh auth login'.", file=sys.stderr)
+        sys.exit(1)
+    if result.returncode != 0:
+        print(f"Error posting comment: {result.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Review posted to {pr_url}", file=sys.stderr)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Review a GitHub PR using Claude",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("--pr", required=True, metavar="URL",
+                        help="PR URL or owner/repo#number")
+    parser.add_argument("--output", metavar="FILE",
+                        help="Write review to FILE instead of stdout")
+    parser.add_argument("--post", action="store_true",
+                        help="Post review as a GitHub PR comment (requires gh auth)")
+    args = parser.parse_args()
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY environment variable not set.", file=sys.stderr)
+        sys.exit(1)
+
+    pr_url = parse_pr_ref(args.pr)
+    print(f"Fetching diff for {pr_url} ...", file=sys.stderr)
+    diff = fetch_diff(pr_url)
+
+    print("Calling Claude ...", file=sys.stderr)
+    review = call_claude(diff, pr_url, api_key)
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(review)
+        print(f"Review saved to {args.output}", file=sys.stderr)
+    else:
+        print(review)
+
+    if args.post:
+        post_comment(pr_url, review)
+
+
+if __name__ == "__main__":
+    main()
