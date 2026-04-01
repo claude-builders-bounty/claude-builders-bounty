@@ -78,5 +78,7 @@ and a new Supabase integration. The team closed 12 issues and merged 8 PRs.
 
 - **No credentials stored in the workflow** — all secrets use `$env.VARIABLE_NAME` so they never appear in exported JSON.
 - **GitHub API rate limits:** The workflow fetches up to 100 items per endpoint per run. Unauthenticated requests are limited to 60/hour; a `GITHUB_TOKEN` raises this to 5,000/hour.
+- **Pagination:** Each endpoint fetches up to 100 items (the GitHub API maximum per page). For most active repos this covers a full week. Very high-volume repos (>100 PRs/week) may see truncated data — enable n8n's built-in HTTP Request pagination if needed.
+- **Claude model:** The workflow uses `claude-sonnet-4-20250514`. Update this in the Claude API node body to match your preferred available model.
 - **Discord vs Slack:** The webhook payload includes both `content` and `text` fields. Discord reads `content`; Slack reads `text`. Both keys carry identical text so the same payload works for either.
 - **Language options:** Set `language` to `EN` (English) or `FR` (French) in Set Config. Claude adapts the narrative language accordingly.
