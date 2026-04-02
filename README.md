@@ -1,53 +1,87 @@
-# Claude Builders Bounty 🤖
+# n8n GitHub Weekly Summary Workflow
 
-> A community bounty board for Claude Code builders.
+Automatically generates weekly narrative summaries of GitHub activity using Claude API.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (5 steps)
 
----
+### 1. Import Workflow
 
-## How it works
+```bash
+# In n8n, go to Workflows > Import from File
+# Select n8n-github-summary.json
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### 2. Configure Credentials
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Add these credentials in n8n:
 
----
+**GitHub Token:**
+- Name: `GitHub Token`
+- Header Name: `Authorization`
+- Value: `Bearer YOUR_GITHUB_TOKEN`
 
-## Active Bounties
+**Claude API:**
+- Name: `Claude API`  
+- API Key: `YOUR_ANTHROPIC_API_KEY`
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+**SMTP (for email):**
+- Configure your email provider settings
 
----
+### 3. Set Environment Variables
 
-## Rules
+In n8n settings, add:
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+```bash
+GITHUB_REPO=owner/repository
+LANGUAGE=EN  # or FR
+```
 
----
+### 4. Test
 
-## Community
+Click "Execute Workflow" button to test.
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### 5. Activate
 
----
+Toggle the workflow to "Active" - it will run every Friday at 5PM.
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## What it does
+
+1. Fetches commits, closed issues, and merged PRs from the past 7 days
+2. Sends data to Claude API to generate a narrative summary
+3. Emails the summary to configured address
+
+## Customization
+
+### Change Schedule
+
+Edit the cron expression in the trigger node:
+```
+0 17 * * 5  = Friday 5PM
+0 9 * * 1   = Monday 9AM
+```
+
+### Use Discord/Slack Instead of Email
+
+Replace the "Send Email" node with:
+- Discord webhook node
+- Slack node
+
+Just update the message format.
+
+## Screenshot
+
+See `screenshot.png` for example execution.
+
+## Requirements
+
+- n8n instance (self-hosted or cloud)
+- GitHub personal access token
+- Anthropic API key
+- SMTP server (for email delivery)
+
+## Support
+
+For issues, check:
+1. Credentials are correct
+2. Environment variables are set
+3. API keys have necessary permissions
