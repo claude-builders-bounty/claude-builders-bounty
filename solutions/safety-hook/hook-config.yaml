@@ -1,0 +1,214 @@
+# safety-hook configuration
+# Risk scores are cumulative. A command is blocked when its total score >= threshold.
+
+threshold: 100
+
+# Severity levels map to base scores
+severity_scores:
+  critical: 100    # Instant block — catastrophic system damage
+  high: 70         # Blocked alone, or when combined with a medium
+  medium: 40       # Suspicious; blocked only when compounded with other factors
+  low: 20          # Informational; contributes to compound score
+
+# ─── Rule Definitions ──────────────────────────────────────────────────────────
+# Each rule has:
+#   pattern    — regex applied to the (normalised) command string
+#   severity   — one of critical / high / medium / low
+#   message    — human-readable reason shown when the rule fires
+#   allowlist  — (optional) list of regexes; if ANY matches, the rule is skipped
+# ────────────────────────────────────────────────────────────────────────────────
+
+rules:
+  # ── Filesystem destruction ──────────────────────────────────────────────────
+  - id: rm_rf_root
+    pattern: '\brm\s+.*-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+.*(?:^|[\s/])/$|\brm\s+.*-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\s+.*(?:^|[\s/])/$|\brm\s+.*-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\b.*\s/\s*$|\brm\s+.*-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\b.*\s/\s*$'
+    severity: critical
+    message: "Recursive forced deletion of filesystem root (/)"
+    allowlist: []
+
+  - id: rm_rf_system_dirs
+    pattern: '\brm\s+.*-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\b.*\s/(usr|etc|var|boot|sys|proc|dev|lib|sbin|bin)\b|\brm\s+.*-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\b.*\s/(usr|etc|var|boot|sys|proc|dev|lib|sbin|bin)\b'
+    severity: critical
+    message: "Recursive forced deletion of critical system directory"
+    allowlist: []
+
+  - id: rm_recursive_broad
+    pattern: '\brm\s+.*-[a-zA-Z]*r[a-zA-Z]*\s'
+    severity: low
+    message: "Recursive rm detected (review target path)"
+    allowlist:
+      - '\brm\s+.*-r[f]?\s+\./[\w./-]+'        # relative path inside project
+      - '\brm\s+.*-r[f]?\s+node_modules\b'      # common cleanup
+      - '\brm\s+.*-r[f]?\s+__pycache__\b'
+      - '\brm\s+.*-r[f]?\s+\.cache\b'
+      - '\brm\s+.*-r[f]?\s+dist\b'
+      - '\brm\s+.*-r[f]?\s+build\b'
+
+  # ── SQL destruction ─────────────────────────────────────────────────────────
+  - id: drop_table
+    pattern: '\bDROP\s+TABLE\b'
+    severity: critical
+    message: "DROP TABLE detected"
+    allowlist:
+      - '\bIF\s+EXISTS\b.*\btest'    # dropping test tables
+      - '\btest_\w+|_test\b'          # tables with test in name
+      - '--dry-run'
+
+  - id: drop_database
+    pattern: '\bDROP\s+DATABASE\b'
+    severity: critical
+    message: "DROP DATABASE detected"
+    allowlist:
+      - '\btest\b'
+      - '--dry-run'
+
+  - id: truncate_table
+    pattern: '\bTRUNCATE\s+(TABLE\s+)?\w'
+    severity: critical
+    message: "TRUNCATE TABLE detected"
+    allowlist:
+      - '\btest\b'
+
+  - id: delete_no_where
+    pattern: '\bDELETE\s+FROM\s+\w+\s*;'
+    severity: critical
+    message: "DELETE FROM without WHERE clause"
+    allowlist: []
+
+  # ── Git force-push ──────────────────────────────────────────────────────────
+  - id: git_force_push_main
+    pattern: '\bgit\s+push\s+.*--force.*\b(main|master)\b|\bgit\s+push\s+.*\b(main|master)\b.*--force'
+    severity: critical
+    message: "Force-push to main/master branch"
+    allowlist: []
+
+  - id: git_force_push_any
+    pattern: '\bgit\s+push\s+.*--force'
+    severity: medium
+    message: "Force-push detected (non-protected branch)"
+    allowlist:
+      - '\b(feature|fix|hotfix|topic|wip|dev)[/-]'
+
+  # ── Permissions ─────────────────────────────────────────────────────────────
+  - id: chmod_777_system
+    pattern: '\bchmod\s+.*777\s+/(usr|etc|var|boot|sys|proc|dev|lib|sbin|bin|home)\b'
+    severity: critical
+    message: "chmod 777 on system directory"
+    allowlist: []
+
+  - id: chmod_777_root
+    pattern: '\bchmod\s+.*777\s+/\s*$'
+    severity: critical
+    message: "chmod 777 on filesystem root"
+    allowlist: []
+
+  - id: chmod_recursive_777
+    pattern: '\bchmod\s+.*-R.*777\b|\bchmod\s+.*777.*-R'
+    severity: high
+    message: "Recursive chmod 777"
+    allowlist:
+      - '\./[\w./-]+'
+
+  # ── Disk / partition destruction ────────────────────────────────────────────
+  - id: mkfs_format
+    pattern: '\b(mkfs|mkfs\.\w+)\s+'
+    severity: critical
+    message: "Filesystem format command (mkfs)"
+    allowlist:
+      - '--dry-run'
+      - '/dev/loop'      # loopback devices are usually safe
+
+  - id: dd_disk_write
+    pattern: '\bdd\s+.*of=/dev/(sd|hd|nvme|vd|xvd|mmcblk)'
+    severity: critical
+    message: "dd writing directly to disk device"
+    allowlist: []
+
+  - id: dd_zero_write
+    pattern: '\bdd\s+.*if=/dev/(zero|urandom|random).*of=/'
+    severity: high
+    message: "dd zeroing / randomising a path"
+    allowlist:
+      - 'of=\./[\w./-]+'
+
+  # ── System shutdown / reboot ────────────────────────────────────────────────
+  - id: shutdown_reboot
+    pattern: '\b(shutdown|reboot|halt|poweroff|init\s+[06])\b'
+    severity: critical
+    message: "System shutdown/reboot command"
+    allowlist: []
+
+  - id: systemctl_poweroff
+    pattern: '\bsystemctl\s+(poweroff|reboot|halt)\b'
+    severity: critical
+    message: "systemctl power command"
+    allowlist: []
+
+  # ── Process killing ─────────────────────────────────────────────────────────
+  - id: kill_critical_pid
+    pattern: '\bkill\s+.*-9\s+1\b|\bkill\s+-KILL\s+1\b|\bkill\s+1\b'
+    severity: critical
+    message: "Killing PID 1 (init/systemd)"
+    allowlist: []
+
+  - id: killall_pkill_critical
+    pattern: '\b(killall|pkill)\s+.*(init|systemd|sshd|dockerd|containerd|kernel)\b'
+    severity: critical
+    message: "Killing critical system process by name"
+    allowlist: []
+
+  - id: kill_dash_9_broad
+    pattern: '\bkill\s+-9\s+-1\b|\bkillall\s+-9\b'
+    severity: critical
+    message: "Mass-kill signal to all processes"
+    allowlist: []
+
+  # ── Fork bomb / resource exhaustion ─────────────────────────────────────────
+  - id: fork_bomb
+    pattern: ':\(\)\s*\{\s*:\|:\s*&\s*\}\s*;|\./(\.)\s*&'
+    severity: critical
+    message: "Fork bomb detected"
+    allowlist: []
+
+  # ── Curl piped to shell ────────────────────────────────────────────────────
+  - id: curl_pipe_shell
+    pattern: '\bcurl\s+.*\|\s*(ba)?sh\b|\bwget\s+.*\|\s*(ba)?sh\b'
+    severity: medium
+    message: "Remote script piped directly to shell"
+    allowlist: []
+
+  # ── Python / scripting destruction ──────────────────────────────────────────
+  - id: python_rmtree
+    pattern: "shutil\\.rmtree\\s*\\(\\s*['\"]/"
+    severity: critical
+    message: "Python shutil.rmtree on absolute root path"
+    allowlist: []
+
+  - id: python_os_system_rm
+    pattern: "os\\.system\\s*\\(.*\\brm\\s+-rf\\s+/"
+    severity: critical
+    message: "Python os.system() with rm -rf /"
+    allowlist: []
+
+# ── Compound risk modifiers ──────────────────────────────────────────────────
+# Extra score added when certain contextual patterns appear alongside any rule hit.
+compound_modifiers:
+  - pattern: '\bsudo\b'
+    score: 20
+    message: "Elevated privileges (sudo)"
+
+  - pattern: '--no-preserve-root'
+    score: 50
+    message: "--no-preserve-root flag present"
+
+  - pattern: '\b2>/dev/null\b|>/dev/null\s+2>&1'
+    score: 10
+    message: "Output suppression (hiding errors)"
+
+  - pattern: '\bxargs\b.*\brm\b'
+    score: 30
+    message: "xargs piped to rm"
+
+  - pattern: '\bfind\s+/\s+'
+    score: 15
+    message: "find starting at filesystem root"
