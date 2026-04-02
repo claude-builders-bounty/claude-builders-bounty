@@ -1,41 +1,104 @@
-name: PR Review
+# Claude AI Code Review — GitHub Action
+#
+# Automatically reviews pull requests using Claude and posts structured
+# feedback as a PR comment.
+#
+# Setup:
+#   1. Add ANTHROPIC_API_KEY to repository secrets
+#   2. Ensure GITHUB_TOKEN has write permissions for pull-requests
+#      (Settings → Actions → General → Workflow permissions → Read and write)
+#   3. Copy this workflow and claude-review.sh to your repository
+#
+# Optionally set a repository variable CLAUDE_MODEL to override the model.
+#
+name: Claude PR Review
+
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: number
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
   review:
+    name: Claude Code Review
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
+
+    # Skip draft PRs unless manually dispatched
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      !github.event.pull_request.draft
+
+    timeout-minutes: 10
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Get PR diff
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify dependencies
         run: |
-          curl -sL \
-            -H "Accept: application/vnd.github.v3.diff" \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" \
-            > pr.diff
-      
-      - name: Run review
+          for cmd in curl jq bash; do
+            command -v "$cmd" >/dev/null || { echo "Missing: $cmd"; exit 1; }
+          done
+
+      - name: Determine PR number
+        id: pr
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ github.event.inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Claude review
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-sonnet-4-20250514' }}
         run: |
-          bash claude-review.sh \
-            --pr "${{ github.event.pull_request.html_url }}" \
-            --output review.md
-      
-      - name: Post review comment
-        uses: actions/github-script@v7
+          chmod +x ./claude-review.sh
+
+          PR_URL="https://github.com/${{ github.repository }}/pull/${{ steps.pr.outputs.number }}"
+          echo "::group::Reviewing $PR_URL"
+
+          ./claude-review.sh \
+            --pr "$PR_URL" \
+            --post-comment \
+            --model "${CLAUDE_MODEL}" \
+            --output review-output.md
+
+          echo "::endgroup::"
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            const fs = require('fs');
-            const review = fs.readFileSync('review.md', 'utf8');
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: review
-            });
+          name: claude-review-pr-${{ steps.pr.outputs.number }}
+          path: review-output.md
+          retention-days: 30
+
+      - name: Job summary
+        if: always()
+        run: |
+          if [ -f review-output.md ]; then
+            {
+              echo "## 🤖 Claude Code Review"
+              echo ""
+              cat review-output.md
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠️ Review output was not generated" >> "$GITHUB_STEP_SUMMARY"
+          fi
