@@ -1,0 +1,272 @@
+{
+  "name": "n8n Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cron",
+              "hours": 17,
+              "item_interval": "",
+              "minutes": "0",
+              "month": "",
+              "weekday": "5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Weekly Schedule (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.GITHUB_API_URL}}/repos/={{$vars.GITHUB_REPO}}/commits",
+        "options": {
+          "qs": {
+            "since": "={{$vars.LAST_WEEK_DATE}}",
+            "per_page": "100"
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [320, 100],
+      "notes": "Fetches commits from the last 7 days"
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.GITHUB_API_URL}}/repos/={{$vars.GITHUB_REPO}}/issues",
+        "options": {
+          "qs": {
+            "state": "closed",
+            "since": "={{$vars.LAST_WEEK_DATE}}",
+            "per_page": "100",
+            "labels": ""
+          }
+        }
+      },
+      "id": "fetch-closed-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [320, 220],
+      "notes": "Fetches closed issues from the last 7 days"
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.GITHUB_API_URL}}/repos/={{$vars.GITHUB_REPO}}/pulls",
+        "options": {
+          "qs": {
+            "state": "closed",
+            "per_page": "100"
+          }
+        }
+      },
+      "id": "fetch-merged-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [320, 340],
+      "notes": "Fetches merged pull requests"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate last week's date range\nconst now = new Date();\nconst lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);\n\nconst formatDate = (d) => d.toISOString().split('T')[0];\n\nreturn {\n  LAST_WEEK_DATE: twoWeeksAgo.toISOString(),\n  SINCE_DATE: formatDate(lastWeek),\n  WEEK_START: formatDate(twoWeeksAgo),\n  WEEK_END: formatDate(lastWeek)\n};"
+      },
+      "id": "date-calculator",
+      "name": "Calculate Date Range",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [100, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process commits\nconst commits = $input.all();\nconst commitData = commits.map(c => c.json).filter(c => c.commit);\n\n// Process closed issues\nconst issues = $('Fetch Closed Issues').all().map(i => i.json).filter(i => i.pull_request === undefined);\n\n// Process merged PRs\nconst allPRs = $('Fetch Merged PRs').all().map(pr => pr.json).filter(pr => pr.merged_at);\nconst weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\nconst mergedThisWeek = allPRs.filter(pr => new Date(pr.merged_at) >= weekAgo);\n\nreturn {\n  commits: commitData.map(c => ({\n    sha: c.sha,\n    message: c.commit.message.split('\\n')[0],\n    author: c.commit.author.name,\n    date: c.commit.author.date\n  })),\n  issues: issues.map(i => ({\n    number: i.number,\n    title: i.title,\n    closed_at: i.closed_at\n  })),\n  prs: mergedThisWeek.map(pr => ({\n    number: pr.number,\n    title: pr.title,\n    merged_at: pr.merged_at,\n    author: pr.user.login\n  }))\n};"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate GitHub Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "model": "claude-sonnet-4-20250514"
+        },
+        "prompt": {
+          "__rl": true,
+          "mode": "define",
+          "values": {
+            "role": "user",
+            "content": "={{$vars.PROMPT_TEMPLATE}}"
+          }
+        },
+        "options": {
+          "maxTokens": 2000,
+          "temperature": 0.7
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API - Generate Summary",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [760, 300],
+      "notes": "Generates narrative summary using Claude Sonnet 4"
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.DISCORD_WEBHOOK_URL}}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$json.choices[0].message.content}}"
+            },
+            {
+              "name": "embeds",
+              "value": "[{\"title\": \"📋 Weekly Dev Summary - {{$vars.GITHUB_REPO}}\", \"color\": 5814783, \"footer\": {\"text\": \"Generated by n8n + Claude\"}, \"timestamp\": \"{{$now.toISOString()}}\"}]"
+            }
+          ]
+        }
+      },
+      "id": "discord-webhook",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [980, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Range",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Weekly Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Range": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate GitHub Data": {
+      "main": [
+        [
+          {
+            "node": "Claude API - Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API - Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "UTC"
+  },
+  "staticData": null,
+  "tags": ["github", "claude", "n8n", "weekly-summary", "automation"]
+}
