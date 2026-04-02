@@ -1,0 +1,513 @@
+{
+  "name": "Weekly Dev Summary (Claude + GitHub)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 17,
+              "triggerAtDay": 5
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "notes": "Fires every Friday at 17:00. Edit triggerAtHour / triggerAtDay to change schedule."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, -140],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      },
+      "notes": "GET /repos/{owner}/{repo}/commits?since={7 days ago}",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      },
+      "notes": "GET /repos/{owner}/{repo}/issues?state=closed&since={7 days ago}",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 140],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      },
+      "notes": "GET /repos/{owner}/{repo}/pulls?state=closed — filtered to merged_at in Code node",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// ──────────────────────────────────────────────\n// CONFIG — edit these or override via env vars\n// ──────────────────────────────────────────────\nconst GITHUB_OWNER  = $env.GITHUB_OWNER  || 'n8n-io';\nconst GITHUB_REPO   = $env.GITHUB_REPO   || 'n8n';\nconst SUMMARY_LANG  = $env.SUMMARY_LANG  || 'EN';   // EN or FR\n\nconst since = new Date();\nsince.setDate(since.getDate() - 7);\nconst sinceISO = since.toISOString();\n\nreturn [\n  {\n    json: {\n      GITHUB_OWNER,\n      GITHUB_REPO,\n      SUMMARY_LANG,\n      since: sinceISO,\n      weekStart: sinceISO.split('T')[0],\n      weekEnd: new Date().toISOString().split('T')[0]\n    }\n  }\n];"
+      },
+      "id": "set-config",
+      "name": "Set Config Variables",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "notes": "Reads GITHUB_OWNER, GITHUB_REPO, SUMMARY_LANG from environment variables (with defaults). Computes the 'since' date (7 days ago)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gather raw data from the three parallel GitHub API calls\nconst config   = $('Set Config Variables').first().json;\nconst sinceDate = new Date(config.since);\n\n// ── Commits ──────────────────────────────────\nlet rawCommits = [];\ntry {\n  const commitsData = $('Fetch Commits').first().json;\n  rawCommits = Array.isArray(commitsData) ? commitsData : (commitsData ? [commitsData] : []);\n} catch (e) { rawCommits = []; }\n\nconst commits = rawCommits.map(c => ({\n  sha:     (c.sha || '').substring(0, 7),\n  message: (c.commit?.message || '').split('\\n')[0].substring(0, 120),\n  author:  c.commit?.author?.name || c.author?.login || 'unknown',\n  date:    c.commit?.author?.date || ''\n}));\n\n// ── Closed Issues (exclude PRs — they have pull_request key) ──\nlet rawIssues = [];\ntry {\n  const issuesData = $('Fetch Closed Issues').first().json;\n  rawIssues = Array.isArray(issuesData) ? issuesData : (issuesData ? [issuesData] : []);\n} catch (e) { rawIssues = []; }\n\nconst closedIssues = rawIssues\n  .filter(i => !i.pull_request)\n  .filter(i => new Date(i.closed_at) >= sinceDate)\n  .map(i => ({\n    number: i.number,\n    title:  (i.title || '').substring(0, 120),\n    labels: (i.labels || []).map(l => l.name).join(', '),\n    closedBy: i.user?.login || 'unknown'\n  }));\n\n// ── Merged PRs ───────────────────────────────\nlet rawPRs = [];\ntry {\n  const prsData = $('Fetch Merged PRs').first().json;\n  rawPRs = Array.isArray(prsData) ? prsData : (prsData ? [prsData] : []);\n} catch (e) { rawPRs = []; }\n\nconst mergedPRs = rawPRs\n  .filter(pr => pr.merged_at && new Date(pr.merged_at) >= sinceDate)\n  .map(pr => ({\n    number:  pr.number,\n    title:   (pr.title || '').substring(0, 120),\n    author:  pr.user?.login || 'unknown',\n    labels:  (pr.labels || []).map(l => l.name).join(', '),\n    additions: pr.additions || 0,\n    deletions: pr.deletions || 0\n  }));\n\n// ── Unique contributors ──────────────────────\nconst contributors = [...new Set([\n  ...commits.map(c => c.author),\n  ...mergedPRs.map(pr => pr.author)\n])];\n\n// ── Check for empty week ─────────────────────\nconst isEmpty = commits.length === 0 && closedIssues.length === 0 && mergedPRs.length === 0;\n\n// ── Truncate for Claude token limits (large repos) ──\nconst MAX_COMMITS = 50;\nconst MAX_ISSUES  = 50;\nconst MAX_PRS     = 50;\nconst truncatedCommits = commits.slice(0, MAX_COMMITS);\nconst truncatedIssues  = closedIssues.slice(0, MAX_ISSUES);\nconst truncatedPRs     = mergedPRs.slice(0, MAX_PRS);\nconst wasTruncated = commits.length > MAX_COMMITS || closedIssues.length > MAX_ISSUES || mergedPRs.length > MAX_PRS;\n\nreturn [{\n  json: {\n    repo: `${config.GITHUB_OWNER}/${config.GITHUB_REPO}`,\n    weekStart: config.weekStart,\n    weekEnd: config.weekEnd,\n    language: config.SUMMARY_LANG,\n    isEmpty,\n    wasTruncated,\n    stats: {\n      totalCommits:  commits.length,\n      closedIssues:  closedIssues.length,\n      mergedPRs:     mergedPRs.length,\n      contributors:  contributors.length\n    },\n    commits:      truncatedCommits,\n    closedIssues: truncatedIssues,\n    mergedPRs:    truncatedPRs,\n    contributors\n  }\n}];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate & Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1020, 0],
+      "notes": "Combines outputs from all three GitHub API calls. Filters merged PRs by date, removes PRs from issues list, truncates for large repos, detects empty weeks."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-empty-check",
+              "leftValue": "={{ $json.isEmpty }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-empty",
+      "name": "Empty Week?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1260, 0],
+      "notes": "Routes to a static 'no activity' message if the week had zero commits, issues, and PRs."
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Aggregate & Format Data').first().json;\nconst lang = data.language || 'EN';\n\nconst msg = lang === 'FR'\n  ? `## 📊 Résumé Hebdomadaire — ${data.repo}\\n**${data.weekStart} → ${data.weekEnd}**\\n\\n_Aucune activité cette semaine. Pas de commits, issues fermées, ni PRs mergées._\\n\\n🏖️ Semaine calme — bonne occasion de planifier le prochain sprint !`\n  : `## 📊 Weekly Dev Summary — ${data.repo}\\n**${data.weekStart} → ${data.weekEnd}**\\n\\n_No activity this week. Zero commits, closed issues, or merged PRs._\\n\\n🏖️ Quiet week — great time to plan the next sprint!`;\n\nreturn [{ json: { summary: msg } }];"
+      },
+      "id": "empty-week-msg",
+      "name": "Empty Week Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, -140],
+      "notes": "Generates a static message when no GitHub activity was found for the week."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2048, messages: [{ role: 'user', content: 'You are a senior developer writing a weekly development summary for a team channel (Discord/Slack). Write in ' + $json.language + ' language (EN=English, FR=French).\\n\\nRepository: ' + $json.repo + '\\nPeriod: ' + $json.weekStart + ' to ' + $json.weekEnd + '\\n\\nRAW DATA:\\n\\n## Commits (' + $json.stats.totalCommits + ' total)\\n' + JSON.stringify($json.commits, null, 2) + '\\n\\n## Closed Issues (' + $json.stats.closedIssues + ' total)\\n' + JSON.stringify($json.closedIssues, null, 2) + '\\n\\n## Merged PRs (' + $json.stats.mergedPRs + ' total)\\n' + JSON.stringify($json.mergedPRs, null, 2) + '\\n\\n## Contributors: ' + $json.contributors.join(', ') + ($json.wasTruncated ? '\\n\\nNote: Data was truncated due to volume. Summarize based on available data and note there was more.' : '') + '\\n\\n---\\nINSTRUCTIONS:\\n1. Start with a header: \"## 📊 Weekly Dev Summary — {repo}\" and the date range.\\n2. Write a 2-3 sentence executive summary of the week\\'s highlights.\\n3. Section: \"🔨 Key Changes\" — group related commits into themes (max 5 themes). Mention notable commit authors.\\n4. Section: \"✅ Issues Resolved\" — list closed issues, grouped by label/category if possible.\\n5. Section: \"🔀 Pull Requests Merged\" — highlight the most impactful PRs with authors.\\n6. Section: \"👥 Contributors\" — shout out active contributors.\\n7. Section: \"📈 Stats\" — show commit count, issues closed, PRs merged, contributor count.\\n8. End with a brief forward-looking note or team encouragement.\\n\\nFormat for Discord/Slack markdown. Keep it concise but informative. Use emoji for visual appeal. Maximum 1500 characters.' }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "call-claude",
+      "name": "Claude Summarize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1500, 140],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "claude-api-key",
+          "name": "Claude API Key"
+        }
+      },
+      "notes": "Calls Claude claude-sonnet-4-20250514 to generate a narrative summary from the raw GitHub data. The prompt instructs Claude to format for Discord/Slack with sections, emoji, and stats.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $('Claude Summarize').first().json;\n\n// Handle Claude API response structure\nlet summary = '';\n\nif (response.content && Array.isArray(response.content)) {\n  summary = response.content\n    .filter(block => block.type === 'text')\n    .map(block => block.text)\n    .join('\\n');\n} else if (response.error) {\n  // Claude API error — build a fallback summary from raw data\n  const data = $('Aggregate & Format Data').first().json;\n  summary = `## 📊 Weekly Dev Summary — ${data.repo}\\n`\n    + `**${data.weekStart} → ${data.weekEnd}**\\n\\n`\n    + `⚠️ _AI summary unavailable (API error). Raw stats below._\\n\\n`\n    + `**📈 Stats:** ${data.stats.totalCommits} commits | ${data.stats.closedIssues} issues closed | ${data.stats.mergedPRs} PRs merged | ${data.stats.contributors} contributors\\n\\n`\n    + `**Recent commits:**\\n`\n    + data.commits.slice(0, 10).map(c => `• \\`${c.sha}\\` ${c.message} — _${c.author}_`).join('\\n')\n    + '\\n\\n'\n    + `**Merged PRs:**\\n`\n    + data.mergedPRs.slice(0, 10).map(pr => `• #${pr.number} ${pr.title} — _${pr.author}_`).join('\\n');\n}\n\n// Discord has a 2000 char limit per message\nif (summary.length > 1950) {\n  summary = summary.substring(0, 1947) + '...';\n}\n\nreturn [{ json: { summary } }];"
+      },
+      "id": "extract-summary",
+      "name": "Extract & Fallback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 140],
+      "notes": "Extracts the text from Claude's response. If Claude returns an error, builds a fallback summary from raw stats. Truncates to fit Discord's 2000-char message limit."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL || 'https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.summary, username: 'Dev Summary Bot', avatar_url: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2060, 0],
+      "notes": "Posts the summary to a Discord channel via webhook. Set DISCORD_WEBHOOK_URL env var or edit the URL directly. For Slack: change URL to Slack webhook and body to { \"text\": $json.summary }.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const summary = $json.summary || 'No summary generated';\nconst sent = $('Send to Discord').first().json;\nconst success = !sent?.error;\n\nreturn [{\n  json: {\n    status: success ? '✅ Summary delivered to Discord' : '⚠️ Discord delivery may have failed — check webhook URL',\n    summaryLength: summary.length,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "log-result",
+      "name": "Log Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2300, 0],
+      "notes": "Final node — logs delivery status for execution history."
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "errorSource",
+              "value": "={{ $json.error || 'Unknown error in workflow execution' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2060, 280],
+      "notes": "Catches unhandled errors. Connected as error trigger output."
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Friday 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Set Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate & Format Data": {
+      "main": [
+        [
+          {
+            "node": "Empty Week?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Empty Week?": {
+      "main": [
+        [
+          {
+            "node": "Empty Week Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Claude Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Empty Week Message": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summarize": {
+      "main": [
+        [
+          {
+            "node": "Extract & Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Fallback": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Discord": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "automation",
+      "id": "tag-automation"
+    },
+    {
+      "name": "github",
+      "id": "tag-github"
+    },
+    {
+      "name": "weekly-summary",
+      "id": "tag-weekly"
+    }
+  ],
+  "triggerCount": 1,
+  "pinData": {},
+  "versionId": "1.0.0"
+}
