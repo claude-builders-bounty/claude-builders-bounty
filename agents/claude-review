@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""
+PR Review Sub-Agent — Structured analysis via CLI or GitHub Action.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr owner/repo#123
+    claude-review --diff ./changes.diff
+
+Output: JSON with summary, verdict, confidence, issues, suggestions.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass, field, asdict
+from enum import Enum
+from typing import Optional
+
+
+class Verdict(str, Enum):
+    APPROVE = "APPROVE"
+    REQUEST_CHANGES = "REQUEST_CHANGES"
+
+
+class Confidence(str, Enum):
+    Low = "Low"
+    Medium = "Medium"
+    High = "High"
+
+
+class Severity(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+@dataclass
+class Issue:
+    file: str
+    line: Optional[int]
+    severity: Severity
+    description: str
+
+
+@dataclass
+class Suggestion:
+    description: str
+    code: Optional[str] = None
+
+
+@dataclass
+class ReviewResult:
+    summary: str
+    verdict: Verdict
+    confidence: Confidence
+    issues: list[Issue] = field(default_factory=list)
+    suggestions: list[Suggestion] = field(default_factory=list)
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    """Parse PR URL or shorthand into (owner, repo, number)."""
+    # Full URL: https://github.com/owner/repo/pull/123
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    if m:
+        return m.group(1), m.group(2), int(m.group(3))
+    # Shorthand: owner/repo#123
+    m = re.match(r"([^/]+)/([^/#]+)#(\d+)", url)
+    if m:
+        return m.group(1), m.group(2), int(m.group(3))
+    raise ValueError(f"Cannot parse PR reference: {url}")
+
+
+def get_pr_diff(owner: str, repo: str, number: int) -> str:
+    """Fetch PR diff via gh CLI."""
+    result = subprocess.run(
+        ["gh", "pr", "diff", str(number), "--repo", f"{owner}/{repo}"],
+        capture_output=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to fetch diff: {result.stderr.decode('utf-8', errors='replace')}")
+    return result.stdout.decode('utf-8', errors='replace')
+
+
+def get_pr_metadata(owner: str, repo: str, number: int) -> dict:
+    """Fetch PR metadata (title, additions, deletions, changed files)."""
+    result = subprocess.run(
+        ["gh", "pr", "view", str(number), "--repo", f"{owner}/{repo}",
+         "--json", "title,additions,deletions,changedFiles,baseRefName,headRefName"],
+        capture_output=True,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        return {}
+    try:
+        return json.loads(result.stdout.decode('utf-8', errors='replace'))
+    except json.JSONDecodeError:
+        return {}
+
+
+def analyze_diff(diff_text: str, metadata: dict) -> ReviewResult:
+    """Analyze diff and produce structured review."""
+    issues: list[Issue] = []
+    suggestions: list[Suggestion] = []
+    files_changed = set()
+
+    current_file = ""
+    current_line = 0
+
+    for line in diff_text.split("\n"):
+        # Track current file
+        if line.startswith("+++ b/"):
+            current_file = line[6:]
+            files_changed.add(current_file)
+        elif line.startswith("--- a/"):
+            pass
+        elif line.startswith("@@"):
+            m = re.search(r"\+(\d+)", line)
+            if m:
+                current_line = int(m.group(1))
+        elif line.startswith("+") and not line.startswith("+++"):
+            added = line[1:]
+
+            # Check for hardcoded secrets
+            if re.search(r'(password|secret|api_key|token|private_key)\s*=\s*["\'][^"\']{8,}', added, re.IGNORECASE):
+                issues.append(Issue(
+                    file=current_file, line=current_line,
+                    severity=Severity.CRITICAL,
+                    description="Potential hardcoded secret/credential"
+                ))
+
+            # Check for SQL injection patterns
+            if re.search(r'f["\'].*SELECT.*{.*}.*FROM', added, re.IGNORECASE):
+                issues.append(Issue(
+                    file=current_file, line=current_line,
+                    severity=Severity.HIGH,
+                    description="Potential SQL injection via f-string"
+                ))
+
+            # Check for TODO/FIXME
+            if re.search(r'\b(TODO|FIXME|HACK|XXX)\b', added, re.IGNORECASE):
+                issues.append(Issue(
+                    file=current_file, line=current_line,
+                    severity=Severity.LOW,
+                    description="Left TODO/FIXME comment in code"
+                ))
+
+            # Check for bare except
+            if re.search(r'\bexcept\s*:', added):
+                issues.append(Issue(
+                    file=current_file, line=current_line,
+                    severity=Severity.MEDIUM,
+                    description="Bare 'except:' catches all exceptions including KeyboardInterrupt"
+                ))
+                suggestions.append(Suggestion(
+                    description="Use specific exception types",
+                    code="except SpecificException as e:"
+                ))
+
+            # Check for eval/exec
+            if re.search(r'\beval\s*\(', added):
+                issues.append(Issue(
+                    file=current_file, line=current_line,
+                    severity=Severity.HIGH,
+                    description="Use of eval() is dangerous"
+                ))
+
+            # Check for shell=True in subprocess
+            if re.search(r'subprocess\.\w+\(.*shell\s*=\s*True', added):
+                issues.append(Issue(
+                    file=current_file, line=current_line,
+                    severity=Severity.MEDIUM,
+                    description="subprocess with shell=True can be a security risk"
+                ))
+
+            # Check for debug mode
+            if re.search(r'(DEBUG\s*=\s*True|app\.run\(.*debug\s*=\s*True)', added):
+                issues.append(Issue(
+                    file=current_file, line=current_line,
+                    severity=Severity.MEDIUM,
+                    description="Debug mode enabled in production code"
+                ))
+
+            current_line += 1
+
+    # Generate summary
+    n_files = len(files_changed)
+    additions = metadata.get("additions", "?")
+    deletions = metadata.get("deletions", "?")
+    summary = f"PR changes {n_files} file(s) (+{additions}/-{deletions}). "
+
+    critical = sum(1 for i in issues if i.severity == Severity.CRITICAL)
+    high = sum(1 for i in issues if i.severity == Severity.HIGH)
+    medium = sum(1 for i in issues if i.severity == Severity.MEDIUM)
+
+    if critical > 0:
+        summary += f"Found {critical} critical and {high} high severity issues."
+    elif high > 0:
+        summary += f"Found {high} high severity issues."
+    elif medium > 0:
+        summary += f"Found {medium} medium severity issues."
+    else:
+        summary += "No significant issues found."
+
+    # Determine verdict and confidence
+    if critical > 0:
+        verdict = Verdict.REQUEST_CHANGES
+        confidence = Confidence.High
+    elif high > 0:
+        verdict = Verdict.REQUEST_CHANGES
+        confidence = Confidence.Medium
+    elif medium > 2:
+        verdict = Verdict.REQUEST_CHANGES
+        confidence = Confidence.Low
+    else:
+        verdict = Verdict.APPROVE
+        confidence = Confidence.High if not issues else Confidence.Medium
+
+    # General suggestions
+    if n_files > 20:
+        suggestions.append(Suggestion(
+            description="Large PR — consider splitting into smaller, focused PRs"
+        ))
+    if not issues:
+        suggestions.append(Suggestion(
+            description="Consider adding tests for the changed functionality"
+        ))
+
+    return ReviewResult(
+        summary=summary,
+        verdict=verdict,
+        confidence=confidence,
+        issues=issues,
+        suggestions=suggestions,
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description="PR Review Sub-Agent")
+    parser.add_argument("--pr", required=True, help="PR URL or owner/repo#123")
+    parser.add_argument("--format", choices=["json", "markdown"], default="json", help="Output format")
+    parser.add_argument("--diff", help="Path to local diff file (alternative to --pr)")
+    args = parser.parse_args()
+
+    if args.diff:
+        with open(args.diff) as f:
+            diff_text = f.read()
+        metadata = {}
+    else:
+        owner, repo, number = parse_pr_url(args.pr)
+        print(f"Fetching diff for {owner}/{repo}#{number}...", file=sys.stderr)
+        diff_text = get_pr_diff(owner, repo, number)
+        metadata = get_pr_metadata(owner, repo, number)
+
+    if not diff_text or not diff_text.strip():
+        print("Error: Empty diff", file=sys.stderr)
+        sys.exit(1)
+
+    result = analyze_diff(diff_text, metadata)
+
+    # Output
+    output = asdict(result)
+    if args.format == "json":
+        print(json.dumps(output, indent=2, default=str))
+    else:
+        print(f"## PR Review\n")
+        print(f"**Summary:** {result.summary}\n")
+        print(f"**Verdict:** {result.verdict.value} | **Confidence:** {result.confidence.value}\n")
+        if result.issues:
+            print("### Issues")
+            for i in result.issues:
+                loc = f"{i.file}:{i.line}" if i.line else i.file
+                print(f"- [{i.severity.value.upper()}] {loc} — {i.description}")
+        if result.suggestions:
+            print("\n### Suggestions")
+            for s in result.suggestions:
+                print(f"- {s.description}")
+                if s.code:
+                    print(f"  ```\n  {s.code}\n  ```")
+
+
+if __name__ == "__main__":
+    main()
