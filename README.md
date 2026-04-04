@@ -1,53 +1,79 @@
-# Claude Builders Bounty 🤖
+# 📋 git-changelog-skill
 
-> A community bounty board for Claude Code builders.
+Auto-generate a structured `CHANGELOG.md` from your git history — categorized into **Added**, **Fixed**, **Changed**, and **Removed** — in one command.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+Works as a **bash script** (`changelog.sh`) or as a **Claude Code skill** (`/generate-changelog`).
 
 ---
 
-## How it works
+## Setup (3 steps)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+**1. Copy `changelog.sh` to your project root**
+```bash
+curl -O https://raw.githubusercontent.com/<YOUR_USERNAME>/git-changelog-skill/main/changelog.sh
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+**2. Make it executable**
+```bash
+chmod +x changelog.sh
+```
 
----
+**3. Run it**
+```bash
+bash changelog.sh
+```
 
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+That's it — `CHANGELOG.md` is generated in your project root. ✅
 
 ---
 
-## Rules
+## Claude Code Usage
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Copy `SKILL.md` into your project's `.claude/skills/` directory, then in Claude Code run:
 
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+```
+/generate-changelog
+```
 
 ---
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--since <tag>` | Start from a specific tag | last git tag |
+| `--output <file>` | Output file path | `CHANGELOG.md` |
+| `--version <label>` | Version label for new section | `Unreleased` |
+
+**Examples:**
+```bash
+# Use last tag automatically
+bash changelog.sh
+
+# Override tag range
+bash changelog.sh --since v1.0.0
+
+# Tag a release version
+bash changelog.sh --version 2.1.0 --since v2.0.0
+```
+
+---
+
+## How Categorization Works
+
+Commits are matched by prefix or keyword — first match wins:
+
+| Category  | Matched prefixes / keywords |
+|-----------|-----------------------------|
+| ✨ Added   | `feat`, `add`, `new`, `create`, `introduce`, `implement` |
+| 🐛 Fixed   | `fix`, `bug`, `patch`, `resolve`, `hotfix`, `correct`, `revert` |
+| 🔧 Changed | `refactor`, `update`, `change`, `improve`, `upgrade`, `bump`, `chore`, `style`, `perf`, `docs` |
+| 🗑️ Removed | `remove`, `delete`, `drop`, `deprecate` |
+
+Conventional commit prefixes (`feat(scope): message`) are stripped for clean output.
+
+---
+
+## Sample Output
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for a real example generated from this repo.
