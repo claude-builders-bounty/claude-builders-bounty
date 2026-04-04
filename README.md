@@ -1,53 +1,74 @@
-# Claude Builders Bounty 🤖
+# n8n + Claude Code 自动化周报
 
-> A community bounty board for Claude Code builders.
+定时生成并发送开发周报，支持 GitHub 数据采集 + Claude AI 总结 + 多渠道分发。
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## 功能特性
 
----
+- ✅ 每周定时触发 (周五 5pm)
+- ✅ GitHub 数据采集 (commits, issues, PRs)
+- ✅ Claude API 集成生成叙事总结
+- ✅ 多渠道发送 (Discord/Slack/Email)
+- ✅ 5步快速部署
 
-## How it works
+## 使用步骤
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### 1. 导入工作流
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+1. 打开 n8n 管理界面
+2. 点击 "Import from File"
+3. 选择 `workflow.json` 文件
 
----
+### 2. 创建 Credentials
 
-## Active Bounties
+在 n8n 中创建以下 5 个 Credentials：
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+| Credential | 类型 | 说明 |
+|------------|------|------|
+| `githubCredentials` | Header Auth | `Authorization: token <GITHUB_TOKEN>` |
+| `anthropicApi` | Custom API Key | API Key |
+| `discordWebhook` | Webhook URL | Discord Webhook |
+| `slackWebhook` | Webhook URL | Slack Webhook |
+| `gmailOAuth2` | OAuth2 | Gmail 账号 |
 
----
+### 3. 配置环境变量
 
-## Rules
+复制 `.env.example` 为 `.env` 并填写：
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+```bash
+GITHUB_TOKEN=ghp_xxx
+OWNER=your-org
+REPO=your-repo
+ANTHROPIC_API_KEY=sk-ant-xxx
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/xxx
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx
+EMAIL_FROM=you@gmail.com
+EMAIL_TO=team@example.com
+```
 
----
+### 4. 配置节点参数
 
-## Community
+在工作流中设置以下参数：
+- Owner: 你的 GitHub 组织或用户名
+- Repo: 仓库名
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### 5. 激活工作流
 
----
+点击 "Activate" 按钮，工作流将在每周五下午 5 点自动运行。
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## 文件说明
+
+| 文件 | 说明 |
+|------|------|
+| workflow.json | n8n 工作流定义 |
+| .env.example | 环境变量模板 |
+| README.md | 本文档 |
+
+## 自定义
+
+- 修改触发时间：编辑 "Schedule Trigger" 节点
+- 修改 prompt：编辑 "Claude Summary" 节点中的 messages
+- 添加新渠道：在 "Claude Summary" 后添加新节点
+
+## License
+
+MIT
