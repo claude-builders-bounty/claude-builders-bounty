@@ -1,0 +1,235 @@
+{
+  "name": "Weekly Developer Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "weekday": 5
+            }
+          ]
+        }
+      },
+      "id": "trigger-cron",
+      "name": "Weekly Schedule (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.GITHUB_API_BASE}}/repos/={{$vars.GITHUB_REPO}}/commits",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "Bearer {{$vars.GITHUB_TOKEN}}"
+          },
+          "qs": {
+            "since": "={{$json.since}}",
+            "until": "={{$json.until}}",
+            "per_page": 100
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [320, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.GITHUB_API_BASE}}/repos/={{$vars.GITHUB_REPO}}/issues",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "Bearer {{$vars.GITHUB_TOKEN}}"
+          },
+          "qs": {
+            "state": "closed",
+            "since": "={{$json.since}}",
+            "per_page": 100,
+            "labels": ""
+          }
+        }
+      },
+      "id": "fetch-closed-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [320, 400],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.GITHUB_API_BASE}}/repos/={{$vars.GITHUB_REPO}}/pulls",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "Bearer {{$vars.GITHUB_TOKEN}}"
+          },
+          "qs": {
+            "state": "closed",
+            "per_page": 100,
+            "sort": "updated",
+            "direction": "desc"
+          }
+        }
+      },
+      "id": "fetch-merged-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [320, 600],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate date range for the past week\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nconst since = weekAgo.toISOString();\nconst until = now.toISOString();\n\n// Filter merged PRs from the closed PRs\nconst closedPrs = $input.all();\nconst allClosedPrs = closedPrs.flatMap(item => item.json);\n\nconst mergedPrs = allClosedPrs.filter(pr => {\n  if (!pr.merged_at) return false;\n  const mergedAt = new Date(pr.merged_at);\n  return mergedAt >= weekAgo && mergedAt <= now;\n});\n\n// Filter closed issues (exclude PRs)\nconst allClosedIssues = closedPrs.filter(item => !item.json.pull_request);\n\n// Extract commit data\nconst commitsData = $('Fetch Commits').all();\nconst commits = commitsData.flatMap(item => item.json).map(c => ({\n  sha: c.sha,\n  message: c.commit.message.split('\\n')[0],\n  author: c.commit.author.name,\n  date: c.commit.author.date\n}));\n\n// Extract issues data\nconst issues = allClosedIssues.map(i => ({\n  number: i.json.number,\n  title: i.json.title,\n  state: i.json.state,\n  closed_at: i.json.closed_at\n}));\n\n// Create summary input\nconst summaryInput = {\n  since,\n  until,\n  repo: $vars.GITHUB_REPO,\n  commits: commits.slice(0, 20), // limit to 20\n  issues: issues.slice(0, 20),   // limit to 20\n  mergedPRs: mergedPrs.slice(0, 20).map(pr => ({\n    number: pr.number,\n    title: pr.title,\n    merged_at: pr.merged_at\n  }))\n};\n\nreturn [{ json: summaryInput }];"
+      },
+      "id": "process-data",
+      "name": "Process Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.CLAUDE_API_URL}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$vars.CLAUDE_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 4000
+            },
+            {
+              "name": "messages",
+              "value": "=[\n  {\n    \"role\": \"system\",\n    \"content\": \"{{ $vars.LANGUAGE === 'FR' ? 'Tu es un assistant qui génère des résumés narratifs en français pour les développeurs. Génère un résumé clair et structuré basé sur les données fournies.' : 'You are an assistant that generates narrative summaries in English for developers. Generate a clear and structured summary based on the provided data.' }}\"\n  },\n  {\n    \"role\": \"user\",\n    \"content\": \"{{ $json }}\"\n  }\n]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "call-claude-api",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the summary from Claude's response\nconst claudeResponse = $input.first().json;\nconst summary = claudeResponse.content?.[0]?.text || JSON.stringify(claudeResponse);\n\nconst language = $vars.LANGUAGE || 'EN';\nconst repo = $vars.GITHUB_REPO || 'unknown/repo';\n\nconst title = language === 'FR' \n  ? `📊 Résumé Hebdomadaire Dev - ${repo}`\n  : `📊 Weekly Developer Summary - ${repo}`;\n\nconst webhookPayload = {\n  content: `${title}\\n\\n${summary}`\n};\n\nreturn [{ json: webhookPayload }];"
+      },
+      "id": "format-discord",
+      "name": "Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.DISCORD_WEBHOOK_URL}}",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ $json }}",
+        "options": {}
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1200, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Data": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Format Discord Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Discord Message": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "templateId": null
+  }
+}
