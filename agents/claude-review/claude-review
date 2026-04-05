@@ -1,0 +1,359 @@
+#!/usr/bin/env bash
+#
+# claude-review — a lightweight PR review agent
+#
+# Analyzes a GitHub pull request and outputs a structured Markdown report.
+# No external dependencies beyond `gh` (GitHub CLI) and standard Unix tools.
+#
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --pr owner/repo#123
+#   claude-review --pr 123              # when inside a git repo with a remote
+
+set -euo pipefail
+
+VERSION="1.0.0"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+die() { echo "error: $*" >&2; exit 1; }
+
+usage() {
+  cat <<EOF
+claude-review v${VERSION}
+
+Usage:
+  claude-review --pr <PR_URL_OR_REF>
+  claude-review -h | --help
+
+Options:
+  --pr <ref>   A GitHub PR URL, owner/repo#number, or just a number (repo inferred)
+  --json       Output raw JSON instead of Markdown (for piping)
+  -h, --help   Show this help
+
+Examples:
+  claude-review --pr https://github.com/facebook/react/pull/28000
+  claude-review --pr facebook/react#28000
+  claude-review --pr 42   # uses the current repo's remote
+EOF
+  exit 0
+}
+
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+
+PR_REF=""
+OUTPUT_JSON=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr)     PR_REF="$2"; shift 2 ;;
+    --json)   OUTPUT_JSON=true; shift ;;
+    -h|--help) usage ;;
+    *)        die "unknown option: $1" ;;
+  esac
+done
+
+[[ -z "$PR_REF" ]] && die "missing --pr argument. Run with --help for usage."
+
+# ---------------------------------------------------------------------------
+# Resolve owner/repo and PR number from various input formats
+# ---------------------------------------------------------------------------
+
+resolve_pr() {
+  local ref="$1"
+
+  # Full URL: https://github.com/owner/repo/pull/123
+  if [[ "$ref" =~ github\.com/([^/]+/[^/]+)/pull/([0-9]+) ]]; then
+    REPO="${BASH_REMATCH[1]}"
+    PR_NUM="${BASH_REMATCH[2]}"
+    return
+  fi
+
+  # Short form: owner/repo#123
+  if [[ "$ref" =~ ^([^#]+)#([0-9]+)$ ]]; then
+    REPO="${BASH_REMATCH[1]}"
+    PR_NUM="${BASH_REMATCH[2]}"
+    return
+  fi
+
+  # Bare number — infer repo from git remote
+  if [[ "$ref" =~ ^[0-9]+$ ]]; then
+    PR_NUM="$ref"
+    REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null) \
+      || die "can't infer repo from current directory. Use owner/repo#number or a full URL."
+    return
+  fi
+
+  die "can't parse PR reference: $ref"
+}
+
+resolve_pr "$PR_REF"
+
+# ---------------------------------------------------------------------------
+# Fetch PR metadata and diff via gh
+# ---------------------------------------------------------------------------
+
+echo "Fetching PR #${PR_NUM} from ${REPO}..." >&2
+
+PR_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" \
+  --json title,body,author,baseRefName,headRefName,changedFiles,additions,deletions,files,state,labels,createdAt,url 2>&1) \
+  || die "failed to fetch PR metadata. Is 'gh' authenticated?\n$PR_JSON"
+
+PR_DIFF=$(gh pr diff "$PR_NUM" --repo "$REPO" 2>&1) \
+  || die "failed to fetch PR diff.\n$PR_DIFF"
+
+# Extract basic fields
+PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
+PR_AUTHOR=$(echo "$PR_JSON" | jq -r '.author.login')
+PR_URL=$(echo "$PR_JSON" | jq -r '.url')
+PR_BASE=$(echo "$PR_JSON" | jq -r '.baseRefName')
+PR_HEAD=$(echo "$PR_JSON" | jq -r '.headRefName')
+PR_ADDITIONS=$(echo "$PR_JSON" | jq -r '.additions')
+PR_DELETIONS=$(echo "$PR_JSON" | jq -r '.deletions')
+PR_CHANGED_FILES=$(echo "$PR_JSON" | jq -r '.changedFiles')
+PR_STATE=$(echo "$PR_JSON" | jq -r '.state')
+
+# File list with per-file stats
+FILES_LIST=$(echo "$PR_JSON" | jq -r '.files[] | "\(.path) (+\(.additions)/-\(.deletions))"')
+
+# ---------------------------------------------------------------------------
+# Analysis: scan the diff for patterns worth flagging
+# ---------------------------------------------------------------------------
+
+# Count various risk signals in the diff
+count_pattern() {
+  echo "$PR_DIFF" | grep -cE "$1" 2>/dev/null || echo 0
+}
+
+# Only count lines that are actually added (start with +, not +++)
+added_lines() {
+  echo "$PR_DIFF" | grep '^+[^+]' 2>/dev/null || true
+}
+
+ADDED=$(added_lines)
+
+# Helper: count grep matches safely (pipefail-safe)
+count_in() {
+  local input="$1" pattern="$2"
+  local result
+  result=$(echo "$input" | { grep -iE "$pattern" || true; } | wc -l)
+  echo "$result" | tr -d ' '
+}
+
+# Security signals
+HARDCODED_SECRETS=$(count_in "$ADDED" '(api[_-]?key|secret|password|token|credential)\s*[:=]')
+PRIVATE_KEYS=$(count_in "$ADDED" 'PRIVATE KEY')
+ENV_FILES=$(count_in "$PR_DIFF" '^\+\+\+ b/.*\.env')
+
+# Code quality signals
+CONSOLE_LOGS=$(count_in "$ADDED" 'console\.(log|debug|info|warn)')
+TODOS=$(count_in "$ADDED" '(TODO|FIXME|HACK|XXX|TEMP)')
+LONG_LINES=$(echo "$ADDED" | awk 'length > 120' | wc -l | tr -d ' ')
+DEBUGGER_STMTS=$(count_in "$ADDED" '(debugger|breakpoint\(\)|pdb\.set_trace|binding\.pry)')
+EMPTY_CATCHES=$(count_in "$PR_DIFF" 'catch\s*\([^)]*\)\s*\{\s*\}')
+
+# Complexity signals
+LARGE_FUNCTIONS=$(echo "$PR_DIFF" | awk '
+  /^+[^+]/ && /function |def |func / { in_func=1; lines=0; name=$0 }
+  in_func && /^+/ { lines++ }
+  in_func && lines > 50 { count++; in_func=0 }
+  END { print count+0 }
+')
+
+# Dependency changes
+DEP_CHANGES=$(echo "$PR_DIFF" | grep -cE '^\+\+\+ b/(package\.json|requirements\.txt|go\.mod|Gemfile|Cargo\.toml|composer\.json)' 2>/dev/null || echo 0)
+
+# Test coverage: does the PR touch test files?
+TEST_FILES_TOUCHED=$(count_in "$FILES_LIST" '(test|spec|_test\.|\.test\.)')
+SRC_FILES_TOUCHED=$(echo "$FILES_LIST" | { grep -viE '(test|spec|_test\.|\.test\.|\.md |\.txt |\.json |\.ya?ml |\.lock )' || true; } | wc -l | tr -d ' ')
+
+# ---------------------------------------------------------------------------
+# Determine confidence and risk level
+# ---------------------------------------------------------------------------
+
+RISK_SCORE=0
+RISKS=()
+SUGGESTIONS=()
+
+# Security risks (high weight)
+if [[ $HARDCODED_SECRETS -gt 0 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 30))
+  RISKS+=("**Possible hardcoded secrets detected** ($HARDCODED_SECRETS occurrence(s)). Check for API keys, tokens, or passwords in the diff.")
+fi
+if [[ $PRIVATE_KEYS -gt 0 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 40))
+  RISKS+=("**Private key material found in diff.** This is almost certainly a mistake — remove it immediately.")
+fi
+if [[ $ENV_FILES -gt 0 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 25))
+  RISKS+=("**.env file(s) modified or added.** Ensure no secrets are committed. These files usually belong in .gitignore.")
+fi
+
+# Code quality risks
+if [[ $CONSOLE_LOGS -gt 3 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 5))
+  SUGGESTIONS+=("Clean up console.log/debug statements ($CONSOLE_LOGS found). Consider using a proper logger.")
+elif [[ $CONSOLE_LOGS -gt 0 ]]; then
+  SUGGESTIONS+=("$CONSOLE_LOGS console.log statement(s) — make sure these are intentional.")
+fi
+
+if [[ $DEBUGGER_STMTS -gt 0 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 15))
+  RISKS+=("**Debugger statements left in code** ($DEBUGGER_STMTS found). These will break production.")
+fi
+
+if [[ $EMPTY_CATCHES -gt 0 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 10))
+  RISKS+=("**Empty catch blocks** ($EMPTY_CATCHES found). Silently swallowing errors makes debugging painful.")
+fi
+
+if [[ $TODOS -gt 0 ]]; then
+  SUGGESTIONS+=("$TODOS TODO/FIXME comment(s) added. Track these in an issue tracker so they don't get lost.")
+fi
+
+if [[ $LONG_LINES -gt 10 ]]; then
+  SUGGESTIONS+=("$LONG_LINES lines exceed 120 characters. Consider breaking them up for readability.")
+fi
+
+if [[ $LARGE_FUNCTIONS -gt 0 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 10))
+  SUGGESTIONS+=("$LARGE_FUNCTIONS function(s) appear to be >50 lines. Smaller functions are easier to test and reason about.")
+fi
+
+# Size-based risk
+TOTAL_CHANGES=$((PR_ADDITIONS + PR_DELETIONS))
+if [[ $TOTAL_CHANGES -gt 1000 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 15))
+  RISKS+=("**Large PR** ($TOTAL_CHANGES lines changed across $PR_CHANGED_FILES files). Consider splitting into smaller, reviewable chunks.")
+elif [[ $TOTAL_CHANGES -gt 500 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 5))
+  SUGGESTIONS+=("This PR touches $TOTAL_CHANGES lines. Not huge, but keep an eye on scope creep.")
+fi
+
+# Dependency changes
+if [[ $DEP_CHANGES -gt 0 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 10))
+  SUGGESTIONS+=("Dependency files changed. Review new packages for security advisories and license compatibility.")
+fi
+
+# Test coverage assessment
+if [[ $SRC_FILES_TOUCHED -gt 0 && $TEST_FILES_TOUCHED -eq 0 ]]; then
+  RISK_SCORE=$((RISK_SCORE + 15))
+  RISKS+=("**No test files modified.** $SRC_FILES_TOUCHED source file(s) changed but no tests added or updated.")
+fi
+
+# Confidence score
+if [[ $RISK_SCORE -ge 30 ]]; then
+  CONFIDENCE="Low"
+  CONFIDENCE_DETAIL="Several issues flagged — this PR needs careful manual review."
+elif [[ $RISK_SCORE -ge 10 ]]; then
+  CONFIDENCE="Medium"
+  CONFIDENCE_DETAIL="Some items to address, but nothing critical at first glance."
+else
+  CONFIDENCE="High"
+  CONFIDENCE_DETAIL="Looks clean. Standard review should suffice."
+fi
+
+# ---------------------------------------------------------------------------
+# Build the summary (2-3 sentences describing the PR)
+# ---------------------------------------------------------------------------
+
+# Detect what kind of changes this is by looking at file extensions
+detect_languages() {
+  echo "$FILES_LIST" | sed 's/ .*//' | awk -F. '{print $NF}' | sort | uniq -c | sort -rn | head -3 | awk '{print $2}'
+}
+
+LANGS=$(detect_languages | tr '\n' ', ' | sed 's/,$//')
+
+SUMMARY="This PR by **@${PR_AUTHOR}** merges \`${PR_HEAD}\` into \`${PR_BASE}\`, "
+SUMMARY+="modifying **${PR_CHANGED_FILES} file(s)** with **+${PR_ADDITIONS}/-${PR_DELETIONS}** lines"
+[[ -n "$LANGS" ]] && SUMMARY+=" (primarily ${LANGS} files)"
+SUMMARY+="."
+
+if [[ $TEST_FILES_TOUCHED -gt 0 ]]; then
+  SUMMARY+=" Includes test changes."
+fi
+
+# ---------------------------------------------------------------------------
+# Render Markdown output
+# ---------------------------------------------------------------------------
+
+render_markdown() {
+  cat <<MARKDOWN
+# PR Review: ${PR_TITLE}
+
+> ${PR_URL} | State: ${PR_STATE}
+
+## Summary
+
+${SUMMARY}
+
+## File Changes
+
+| File | Changes |
+|------|---------|
+MARKDOWN
+
+  echo "$FILES_LIST" | while IFS= read -r line; do
+    file=$(echo "$line" | sed 's/ (.*//')
+    stats=$(echo "$line" | grep -oE '\(.*\)')
+    echo "| \`${file}\` | ${stats} |"
+  done
+
+  cat <<MARKDOWN
+
+## Risk Assessment
+
+MARKDOWN
+
+  if [[ ${#RISKS[@]} -eq 0 ]]; then
+    echo "No major risks identified."
+  else
+    for risk in "${RISKS[@]}"; do
+      echo "- ${risk}"
+    done
+  fi
+
+  cat <<MARKDOWN
+
+## Suggestions
+
+MARKDOWN
+
+  if [[ ${#SUGGESTIONS[@]} -eq 0 ]]; then
+    echo "Nothing specific — this looks solid."
+  else
+    for suggestion in "${SUGGESTIONS[@]}"; do
+      echo "- ${suggestion}"
+    done
+  fi
+
+  cat <<MARKDOWN
+
+## Stats
+
+| Metric | Value |
+|--------|-------|
+| Files changed | ${PR_CHANGED_FILES} |
+| Lines added | +${PR_ADDITIONS} |
+| Lines deleted | -${PR_DELETIONS} |
+| Console/debug statements | ${CONSOLE_LOGS} |
+| TODOs/FIXMEs added | ${TODOS} |
+| Test files touched | ${TEST_FILES_TOUCHED} |
+
+## Confidence: **${CONFIDENCE}**
+
+${CONFIDENCE_DETAIL}
+
+---
+*Generated by [claude-review](https://github.com/wocaoac-cpu/claude-builders-bounty/tree/feat/claude-review-agent/agents/claude-review) v${VERSION}*
+MARKDOWN
+}
+
+render_markdown
+echo "" >&2
+echo "Review complete." >&2
