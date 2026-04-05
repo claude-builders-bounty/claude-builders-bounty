@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""
+🤖 Claude PR Review Agent
+一个用于自动审查GitHub PR的CLI工具
+"""
+
+import os
+import sys
+import re
+import argparse
+import subprocess
+from pathlib import Path
+
+# 尝试导入anthropic，如果不存在则给出安装提示
+try:
+    from anthropic import Anthropic
+except ImportError:
+    print("❌ 需要安装anthropic库: pip install anthropic")
+    sys.exit(1)
+
+class PRReviewAgent:
+    """PR审查Agent"""
+    
+    def __init__(self):
+        self.client = None
+        self._init_claude()
+    
+    def _init_claude(self):
+        """初始化Claude客户端"""
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            print("❌ 请设置 ANTHROPIC_API_KEY 环境变量")
+            sys.exit(1)
+        self.client = Anthropic(api_key=api_key)
+    
+    def parse_pr_url(self, url: str) -> tuple:
+        """解析PR URL，提取owner, repo, pr_number"""
+        pattern = r"github\.com/([^/]+)/([^/]+)/pull/(\d+)"
+        match = re.search(pattern, url)
+        if not match:
+            raise ValueError(f"无效的PR URL: {url}")
+        return match.group(1), match.group(2), match.group(3)
+    
+    def fetch_pr_diff(self, owner: str, repo: str, pr_number: str) -> str:
+        """使用gh CLI获取PR diff"""
+        cmd = f"gh pr view {pr_number} --repo {owner}/{repo} --json title,body,files,additions,deletions"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            # 尝试获取diff
+            cmd = f"gh pr diff {pr_number} --repo {owner}/{repo}"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"无法获取PR信息: {result.stderr}")
+            return result.stdout
+        
+        return result.stdout
+    
+    def analyze_with_claude(self, diff: str, pr_info: dict) -> dict:
+        """使用Claude分析PR"""
+        
+        prompt = f"""你是一个专业的代码审查员。请审查以下PR并提供结构化反馈。
+
+PR信息:
+- 标题: {pr_info.get('title', 'N/A')}
+- 描述: {pr_info.get('body', 'N/A')[:500]}
+
+代码变更:
+```diff
+{diff[:8000] if len(diff) > 8000 else diff}
+```
+
+请提供以下格式的审查报告:
+
+## Summary
+用2-3句话总结这个PR的主要变更。
+
+## Identified Risks
+列出潜在风险（如有）：
+- 风险1
+- 风险2
+...
+
+## Improvement Suggestions
+列出改进建议（如有）：
+- 建议1
+- 建议2
+...
+
+## Confidence Score
+给出信心评分：Low / Medium / High
+并简要说明理由。
+
+请用中文回复。
+"""
+
+        response = self.client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2000,
+            temperature=0.3,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        return self._parse_response(response.content[0].text)
+    
+    def _parse_response(self, text: str) -> dict:
+        """解析Claude的响应"""
+        result = {
+            "summary": "",
+            "risks": [],
+            "suggestions": [],
+            "confidence": "Medium"
+        }
+        
+        # 提取Summary
+        summary_match = re.search(r'## Summary\s*\n(.*?)(?=##|\Z)', text, re.DOTALL)
+        if summary_match:
+            result["summary"] = summary_match.group(1).strip()
+        
+        # 提取Risks
+        risks_match = re.search(r'## Identified Risks\s*\n(.*?)(?=##|\Z)', text, re.DOTALL)
+        if risks_match:
+            risks_text = risks_match.group(1).strip()
+            result["risks"] = [r.strip('- ').strip() for r in risks_text.split('\n') if r.strip().startswith('-')]
+        
+        # 提取Suggestions
+        suggestions_match = re.search(r'## Improvement Suggestions\s*\n(.*?)(?=##|\Z)', text, re.DOTALL)
+        if suggestions_match:
+            suggestions_text = suggestions_match.group(1).strip()
+            result["suggestions"] = [s.strip('- ').strip() for s in suggestions_text.split('\n') if s.strip().startswith('-')]
+        
+        # 提取Confidence
+        confidence_match = re.search(r'## Confidence Score\s*\n.*?(Low|Medium|High)', text, re.IGNORECASE)
+        if confidence_match:
+            result["confidence"] = confidence_match.group(1).capitalize()
+        
+        return result
+    
+    def format_output(self, analysis: dict, pr_url: str) -> str:
+        """格式化输出为Markdown"""
+        output = f"""## 🤖 PR Review Report
+
+**PR**: {pr_url}
+
+### Summary
+{analysis['summary']}
+
+### Identified Risks
+"""
+        if analysis['risks']:
+            for risk in analysis['risks']:
+                output += f"- {risk}\n"
+        else:
+            output += "- 未发现明显风险 ✅\n"
+        
+        output += "\n### Improvement Suggestions\n"
+        if analysis['suggestions']:
+            for suggestion in analysis['suggestions']:
+                output += f"- {suggestion}\n"
+        else:
+            output += "- 代码看起来不错，暂无改进建议 ✅\n"
+        
+        output += f"\n### Confidence Score\n**{analysis['confidence']}**\n"
+        
+        return output
+    
+    def review(self, pr_url: str) -> str:
+        """主入口：审查PR"""
+        print(f"🔍 正在分析PR: {pr_url}")
+        
+        # 解析URL
+        owner, repo, pr_number = self.parse_pr_url(pr_url)
+        print(f"   仓库: {owner}/{repo}, PR #{pr_number}")
+        
+        # 获取PR信息
+        try:
+            pr_info_cmd = f"gh pr view {pr_number} --repo {owner}/{repo} --json title,body,author"
+            pr_info_result = subprocess.run(pr_info_cmd, shell=True, capture_output=True, text=True)
+            pr_info = json.loads(pr_info_result.stdout) if pr_info_result.returncode == 0 else {}
+        except:
+            pr_info = {}
+        
+        # 获取diff
+        print("📥 获取PR diff...")
+        diff = self.fetch_pr_diff(owner, repo, pr_number)
+        
+        # 使用Claude分析
+        print("🤖 使用Claude分析代码...")
+        analysis = self.analyze_with_claude(diff, pr_info)
+        
+        # 格式化输出
+        output = self.format_output(analysis, pr_url)
+        
+        return output
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude PR Review Agent")
+    parser.add_argument("--pr", required=True, help="PR URL (e.g., https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--output", "-o", help="输出文件路径（可选）")
+    
+    args = parser.parse_args()
+    
+    agent = PRReviewAgent()
+    report = agent.review(args.pr)
+    
+    if args.output:
+        with open(args.output, 'w') as f:
+            f.write(report)
+        print(f"\n✅ 报告已保存到: {args.output}")
+    else:
+        print("\n" + "=" * 60)
+        print(report)
+        print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
