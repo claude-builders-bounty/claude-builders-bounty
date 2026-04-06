@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""
+Claude PR Review Agent
+Reviews GitHub pull requests using Claude AI and provides structured feedback.
+"""
+
+import os
+import sys
+import re
+import json
+import urllib.request
+import urllib.error
+from typing import Optional, Dict, Any
+
+# Constants
+MAX_DIFF_SIZE = 200 * 1024  # 200KB
+WARN_DIFF_SIZE = 100 * 1024  # 100KB
+CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
+CLAUDE_MODEL = "claude-sonnet-4-20250514"
+MAX_TOKENS = 4096
+
+def error(message: str) -> None:
+    """Print error message and exit."""
+    print(f"❌ Error: {message}", file=sys.stderr)
+    sys.exit(1)
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    """
+    Parse GitHub PR URL into (owner, repo, pr_number).
+    
+    Supports formats:
+    - https://github.com/owner/repo/pull/123
+    - github.com/owner/repo/pull/123
+    """
+    pattern = r"(?:https?://)?github\.com/([^/]+)/([^/]+)/pull/(\d+)"
+    match = re.match(pattern, url)
+    
+    if not match:
+        error(f"Invalid GitHub PR URL: {url}\nExpected format: https://github.com/owner/repo/pull/123")
+    
+    owner, repo, pr_number = match.groups()
+    return owner, repo, int(pr_number)
+
+def fetch_pr_diff(owner: str, repo: str, pr_number: int) -> str:
+    """Fetch the PR diff from GitHub API."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    
+    headers = {
+        "Accept": "application/vnd.github.v3.diff",
+        "User-Agent": "Claude-PR-Review-Agent"
+    }
+    
+    # Add GitHub token if available
+    github_token = os.getenv("GITHUB_TOKEN")
+    if github_token:
+        headers["Authorization"] = f"token {github_token}"
+    
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=30) as response:
+            diff = response.read().decode("utf-8")
+            
+            # Check diff size
+            diff_size = len(diff.encode("utf-8"))
+            
+            if diff_size > MAX_DIFF_SIZE:
+                print(f"⚠️  Warning: Diff is very large ({diff_size / 1024:.1f} KB). Review may be incomplete.", file=sys.stderr)
+                # Truncate to manageable size
+                diff = diff[:MAX_DIFF_SIZE]
+            elif diff_size > WARN_DIFF_SIZE:
+                print(f"⚠️  Warning: Diff is large ({diff_size / 1024:.1f} KB). Review may take longer.", file=sys.stderr)
+            
+            return diff
+            
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            error(f"PR not found: {owner}/{repo}#{pr_number}\nCheck that the repository and PR number are correct.")
+        elif e.code == 403:
+            error("GitHub API rate limit exceeded. Set GITHUB_TOKEN environment variable.")
+        else:
+            error(f"GitHub API error: {e.code} {e.reason}")
+    except urllib.error.URLError as e:
+        error(f"Network error: {e.reason}")
+    except Exception as e:
+        error(f"Failed to fetch PR: {str(e)}")
+
+def call_claude_api(diff: str) -> str:
+    """Call Claude API to analyze the PR diff."""
+    api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        error("ANTHROPIC_API_KEY environment variable not set.\nGet your API key from https://console.anthropic.com/")
+    
+    prompt = f"""Analyze this pull request diff and provide a structured code review.
+
+Focus on:
+1. **Code Quality**: Design patterns, readability, maintainability
+2. **Security**: Vulnerabilities, input validation, auth issues
+3. **Performance**: Inefficiencies, resource usage, scalability
+4. **Testing**: Test coverage, edge cases, test quality
+
+**IMPORTANT RULES:**
+- Be concise and actionable
+- Only mention issues that actually exist in the diff
+- Use bullet points for clarity
+- Rate severity: 🔴 Critical, 🟡 Moderate, 🟢 Minor
+- Provide specific line references when possible
+- Skip generic advice or platitudes
+
+PR Diff:
+```
+{diff}
+```
+
+Provide the review in clean Markdown format."""
+
+    payload = {
+        "model": CLAUDE_MODEL,
+        "max_tokens": MAX_TOKENS,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    }
+    
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01"
+    }
+    
+    try:
+        req = urllib.request.Request(
+            CLAUDE_API_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST"
+        )
+        
+        with urllib.request.urlopen(req, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            
+            if "content" not in result or not result["content"]:
+                error("Invalid response from Claude API")
+            
+            return result["content"][0]["text"]
+            
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        if e.code == 401:
+            error("Invalid Claude API key")
+        elif e.code == 429:
+            error("Claude API rate limit exceeded. Try again later.")
+        else:
+            error(f"Claude API error: {e.code}\n{error_body}")
+    except urllib.error.URLError as e:
+        error(f"Network error: {e.reason}")
+    except json.JSONDecodeError:
+        error("Invalid JSON response from Claude API")
+    except Exception as e:
+        error(f"Failed to call Claude API: {str(e)}")
+
+def main():
+    """Main entry point."""
+    if len(sys.argv) != 2:
+        print("Usage: claude-review-pr <pr-url>", file=sys.stderr)
+        print("\nExample:", file=sys.stderr)
+        print("  claude-review-pr https://github.com/owner/repo/pull/123", file=sys.stderr)
+        print("\nRequired environment variables:", file=sys.stderr)
+        print("  ANTHROPIC_API_KEY - Your Claude API key", file=sys.stderr)
+        print("  GITHUB_TOKEN - (Optional) GitHub Personal Access Token", file=sys.stderr)
+        sys.exit(1)
+    
+    pr_url = sys.argv[1]
+    
+    # Parse PR URL
+    print("🔍 Parsing PR URL...", file=sys.stderr)
+    owner, repo, pr_number = parse_pr_url(pr_url)
+    print(f"📦 Repository: {owner}/{repo}", file=sys.stderr)
+    print(f"🔢 PR Number: #{pr_number}\n", file=sys.stderr)
+    
+    # Fetch PR diff
+    print("📥 Fetching PR diff...", file=sys.stderr)
+    diff = fetch_pr_diff(owner, repo, pr_number)
+    print(f"✅ Diff fetched ({len(diff)} chars)\n", file=sys.stderr)
+    
+    # Analyze with Claude
+    print("🤖 Analyzing with Claude AI...\n", file=sys.stderr)
+    review = call_claude_api(diff)
+    
+    # Output review
+    print("─" * 80)
+    print(f"# PR Review: {owner}/{repo}#{pr_number}")
+    print(f"🔗 {pr_url}\n")
+    print(review)
+    print("\n" + "─" * 80)
+    print("\n✨ Review complete!")
+
+if __name__ == "__main__":
+    main()

@@ -1,53 +1,134 @@
-# Claude Builders Bounty 🤖
+# 🤖 Claude PR Review Agent
 
-> A community bounty board for Claude Code builders.
-
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+Automated GitHub Pull Request code review using Claude AI.
 
 ---
 
-## How it works
+## ✨ Features
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+- **CLI Tool**: Review PRs from the command line
+- **GitHub Action**: Automated PR reviews in CI/CD workflows
+- **Structured Output**: Summary, risks, suggestions, confidence score
+- **Zero Config**: Works with GitHub API (no local repo clone needed)
 
 ---
 
-## Active Bounties
+## 🚀 Quick Start
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### CLI Usage
+
+#### 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+#### 2. Set Environment Variables
+```bash
+export ANTHROPIC_API_KEY="your-api-key-here"
+export GITHUB_TOKEN="your-github-token"  # Optional, for private repos
+```
+
+#### 3. Run Review
+```bash
+python claude_review.py --pr https://github.com/owner/repo/pull/123
+```
+
+**Output Example:**
+```
+🔍 Fetching PR: https://github.com/owner/repo/pull/123
+📊 Files changed: 5 | +142 -38
+🤖 Analyzing with Claude...
+
+================================================================================
+
+## 📋 Summary
+This PR refactors the authentication flow to use JWT tokens instead of sessions...
+
+## ⚠️ Identified Risks
+- Migration path for existing sessions not defined
+- Token expiration logic missing error handling
+- No rate limiting on token refresh endpoint
+
+## 💡 Improvement Suggestions
+- Add integration tests for token refresh flow
+- Document migration steps in CHANGELOG.md
+- Consider adding token revocation endpoint
+
+## 🎯 Confidence Score
+**High**
+
+Justification: Code is well-structured with clear intent, but production deployment needs migration strategy.
+
+================================================================================
+✅ Review complete
+```
 
 ---
 
-## Rules
+### GitHub Action Usage
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+#### 1. Add to Your Repository
+Create `.github/workflows/pr-review.yml`:
+
+```yaml
+name: PR Review with Claude
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: neo-sonicseeds/pr-review-agent@main
+        with:
+          pr-url: ${{ github.event.pull_request.html_url }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+#### 2. Add Secret
+Go to **Settings → Secrets → Actions** and add:
+- `ANTHROPIC_API_KEY`: Your Claude API key
+
+#### 3. Open a PR
+The action will automatically post a review comment! 🎉
 
 ---
 
-## Community
+## 📦 Requirements
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+- Python 3.11+
+- `anthropic` >= 0.34.0
+- `click` >= 8.1.0
+- Anthropic API key ([get one here](https://console.anthropic.com/))
 
 ---
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## 🧪 Testing
+
+See `examples/` for real PR review outputs:
+- [PR Example 1](examples/pr-example-1.md) — Refactoring PR
+- [PR Example 2](examples/pr-example-2.md) — Bug fix PR
+
+---
+
+## 🛠️ How It Works
+
+1. **Fetch PR Diff**: Uses GitHub REST API to retrieve diff + metadata
+2. **Analyze with Claude**: Sends diff to Claude 3.5 Sonnet with structured prompt
+3. **Parse & Format**: Returns Markdown review with summary, risks, suggestions, confidence
+
+---
+
+## 💰 Bounty
+
+This project was built for the [claude-builders-bounty](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/4) $150 bounty.
+
+---
+
+## 📄 License
+
+MIT © 2026 Neo @ SonicSeeds
