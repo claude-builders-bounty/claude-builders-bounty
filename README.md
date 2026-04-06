@@ -1,53 +1,82 @@
-# Claude Builders Bounty 🤖
+# CHANGELOG Generator 🚀
 
-> A community bounty board for Claude Code builders.
+Automatically generate a structured `CHANGELOG.md` from your git commit history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Features
 
----
+- ✅ Fetches commits since the last git tag
+- ✅ Auto-categorizes into: **Added** / **Fixed** / **Changed** / **Removed**
+- ✅ Properly formatted Markdown output
+- ✅ Works with any git repository
 
-## How it works
+## Setup (3 Steps)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### 1. Download the script
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+curl -O https://raw.githubusercontent.com/neo-sonicseeds/changelog-generator/main/changelog.sh
+```
 
----
+### 2. Make it executable
 
-## Active Bounties
+```bash
+chmod +x changelog.sh
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### 3. Run it
 
----
+```bash
+./changelog.sh
+```
 
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+That's it! Your `CHANGELOG.md` will be generated in the current directory.
 
 ---
 
-## Community
+## How It Works
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+The script:
+1. Finds the last git tag in your repository
+2. Fetches all commits since that tag (or all commits if no tags exist)
+3. Categorizes commits based on their prefix:
+   - `add`, `feat`, `new` → **Added**
+   - `fix`, `bugfix`, `patch` → **Fixed**
+   - `change`, `update`, `refactor` → **Changed**
+   - `remove`, `delete` → **Removed**
+4. Outputs a clean, structured `CHANGELOG.md`
+
+## Example Output
+
+```markdown
+# CHANGELOG
+
+## [Unreleased] - 2026-04-06
+
+_Changes since v1.0.0_
+
+### Added
+- feat: add new authentication system
+- add support for dark mode
+
+### Fixed
+- fix: resolve login timeout issue
+- bugfix: correct typo in error message
+
+### Changed
+- update dependencies to latest versions
+- refactor: improve code structure
+```
+
+## Requirements
+
+- Git repository
+- Bash shell
+- Git tags (optional, but recommended)
+
+## License
+
+MIT
 
 ---
 
-*Started by the Claude builder community · March 2026 · MIT License*
+**Built with ❤️ by [Neo](https://github.com/neo-sonicseeds) @ SonicSeeds**
