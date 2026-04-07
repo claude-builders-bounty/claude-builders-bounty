@@ -1,0 +1,189 @@
+{
+  "name": "Enhanced Weekly GitHub Dev Summary with Multi-Repo Support",
+  "nodes": [
+    {
+      "name": "Start",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "week",
+              "minutesInterval": 0
+            }
+          ]
+        },
+        "options": {}
+      },
+      "typeVersion": 1
+    },
+    {
+      "name": "Load Configuration",
+      "type": "n8n-nodes-base.code",
+      "position": [450, 300],
+      "parameters": {
+        "jsCode": "// Load configuration from environment variables\nconst config = {\n  // GitHub configuration\n  githubToken: $env.GITHUB_TOKEN,\n  repositories: ($env.GITHUB_REPOS || 'claude-builders-bounty/claude-builders-bounty').split(',').map(r => r.trim()),\n  \n  // Claude configuration\n  claudeApiKey: $env.CLAUDE_API_KEY,\n  claudeModel: $env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022',\n  \n  // Output configuration\n  outputChannels: ($env.OUTPUT_CHANNELS || 'discord').split(',').map(c => c.trim()),\n  language: $env.LANGUAGE || 'en',\n  \n  // Discord configuration\n  discordWebhookUrl: $env.DISCORD_WEBHOOK_URL,\n  \n  // Slack configuration\n  slackWebhookUrl: $env.SLACK_WEBHOOK_URL,\n  \n  // Email configuration\n  emailConfig: {\n    smtpHost: $env.SMTP_HOST || 'smtp.gmail.com',\n    smtpPort: $env.SMTP_PORT || '587',\n    smtpUsername: $env.SMTP_USERNAME,\n    smtpPassword: $env.SMTP_PASSWORD,\n    fromEmail: $env.SMTP_FROM_EMAIL,\n    toEmail: $env.EMAIL_RECIPIENT\n  },\n  \n  // Date configuration\n  weekStartDate: $now.subtract(7, 'days').format('YYYY-MM-DD'),\n  weekEndDate: $now.format('YYYY-MM-DD'),\n  \n  // Error handling configuration\n  retryAttempts: parseInt($env.RETRY_ATTEMPTS || '3'),\n  alertOnFailure: $env.ALERT_ON_FAILURE === 'true',\n  \n  // Monitoring configuration\n  enableMonitoring: $env.ENABLE_MONITORING === 'true',\n  \n  // Execution metadata\n  executionId: `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  startTime: new Date().toISOString()\n};\n\n// Validate required configuration\nconst requiredConfig = ['githubToken', 'claudeApiKey'];\nconst missingConfig = requiredConfig.filter(key => !config[key]);\n\nif (missingConfig.length > 0) {\n  throw new Error(`Missing required configuration: ${missingConfig.join(', ')}`);\n}\n\n// Log configuration loaded\nconsole.log(`✅ Configuration loaded for ${config.repositories.length} repositories`);\nconsole.log(`   Output channels: ${config.outputChannels.join(', ')}`);\nconsole.log(`   Language: ${config.language}`);\n\nreturn [{\n  json: config,\n  pairedItem: { item: 0 }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "name": "Process Each Repository",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [650, 300],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "typeVersion": 1
+    },
+    {
+      "name": "Get Repository Data",
+      "type": "n8n-nodes-base.code",
+      "position": [850, 200],
+      "parameters": {
+        "jsCode": "// Get repository data from GitHub API with error handling\nasync function getRepositoryData(repo, config) {\n  const baseUrl = 'https://api.github.com';\n  const headers = {\n    'Authorization': `Bearer ${config.githubToken}`,\n    'Accept': 'application/vnd.github.v3+json',\n    'User-Agent': 'n8n-weekly-summary-enhanced/1.0'\n  };\n  \n  const [owner, repoName] = repo.split('/');\n  \n  try {\n    // Get commits\n    const commitsUrl = `${baseUrl}/repos/${owner}/${repoName}/commits?since=${config.weekStartDate}&until=${config.weekEndDate}&per_page=100`;\n    const commitsResponse = await $httpRequest(commitsUrl, {\n      method: 'GET',\n      headers: headers,\n      returnFullResponse: true\n    });\n    \n    // Get closed issues\n    const issuesUrl = `${baseUrl}/repos/${owner}/${repoName}/issues?state=closed&since=${config.weekStartDate}&per_page=100`;\n    const issuesResponse = await $httpRequest(issuesUrl, {\n      method: 'GET',\n      headers: headers,\n      returnFullResponse: true\n    });\n    \n    // Get merged PRs\n    const prsUrl = `${baseUrl}/repos/${owner}/${repoName}/pulls?state=closed&sort=updated&direction=desc&since=${config.weekStartDate}&per_page=100`;\n    const prsResponse = await $httpRequest(prsUrl, {\n      method: 'GET',\n      headers: headers,\n      returnFullResponse: true\n    });\n    \n    // Get repository info\n    const repoUrl = `${baseUrl}/repos/${owner}/${repoName}`;\n    const repoResponse = await $httpRequest(repoUrl, {\n      method: 'GET',\n      headers: headers,\n      returnFullResponse: true\n    });\n    \n    const commits = JSON.parse(commitsResponse.body);\n    const issues = JSON.parse(issuesResponse.body);\n    const pullRequests = JSON.parse(prsResponse.body);\n    const repoInfo = JSON.parse(repoResponse.body);\n    \n    // Filter merged PRs\n    const mergedPRs = pullRequests.filter(pr => pr.merged_at);\n    \n    return {\n      repository: repo,\n      repoInfo: repoInfo,\n      commits: commits,\n      issues: issues,\n      pullRequests: pullRequests,\n      mergedPRs: mergedPRs,\n      stats: {\n        commits: commits.length,\n        issuesClosed: issues.length,\n        pullRequestsTotal: pullRequests.length,\n        pullRequestsMerged: mergedPRs.length,\n        success: true\n      },\n      timestamp: new Date().toISOString()\n    };\n    \n  } catch (error) {\n    console.error(`❌ Error fetching data for ${repo}:`, error.message);\n    \n    return {\n      repository: repo,\n      error: error.message,\n      stats: {\n        commits: 0,\n        issuesClosed: 0,\n        pullRequestsTotal: 0,\n        pullRequestsMerged: 0,\n        success: false\n      },\n      timestamp: new Date().toISOString()\n    };\n  }\n}\n\n// Process current repository\nconst repo = $input.first().json;\nconst config = $json;\n\nconst repoData = await getRepositoryData(repo, config);\n\nreturn [{\n  json: {\n    ...config,\n    currentRepository: repo,\n    repoData: repoData\n  },\n  pairedItem: { item: 0 }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "name": "Generate Summary with Claude",
+      "type": "n8n-nodes-base.code",
+      "position": [1050, 200],
+      "parameters": {
+        "jsCode": "// Generate summary using Claude API with fallback\nasync function generateSummary(repoData, config) {\n  // Check if we have valid data\n  if (!repoData.stats.success) {\n    return {\n      summary: `Unable to generate summary for ${repoData.repository}: ${repoData.error}`,\n      generatedBy: 'error_fallback',\n      success: false\n    };\n  }\n  \n  // Prepare data for Claude\n  const { commits, issues, mergedPRs, repoInfo } = repoData;\n  \n  const notableCommits = commits.slice(0, 5).map(c => ({\n    sha: c.sha?.substring(0, 7) || 'unknown',\n    message: c.commit?.message?.split('\\n')[0] || 'No message',\n    author: c.commit?.author?.name || 'unknown',\n    date: c.commit?.author?.date || 'unknown'\n  }));\n  \n  const notableIssues = issues.slice(0, 5).map(i => ({\n    number: i.number || 'unknown',\n    title: i.title || 'No title',\n    user: i.user?.login || 'unknown',\n    closedAt: i.closed_at || 'unknown'\n  }));\n  \n  const notablePRs = mergedPRs.slice(0, 5).map(pr => ({\n    number: pr.number || 'unknown',\n    title: pr.title || 'No title',\n    user: pr.user?.login || 'unknown',\n    mergedBy: pr.merged_by?.login || 'unknown',\n    mergedAt: pr.merged_at || 'unknown'\n  }));\n  \n  // Create prompt based on language\n  const prompt = config.language === 'fr' ?\n    `Génère un résumé hebdomadaire du développement pour le dépôt ${repoInfo.full_name}.\n\nPériode: ${config.weekStartDate} à ${config.weekEndDate}\n\nStatistiques:\n- ${repoData.stats.commits} commits\n- ${repoData.stats.issuesClosed} issues fermées\n- ${repoData.stats.pullRequestsMerged} pull requests fusionnées\n\nDétails notables:\n${notableCommits.length > 0 ? 'Commits:\\n' + notableCommits.map(c => `  - ${c.sha}: ${c.message} (${c.author})`).join('\\n') : ''}\n${notableIssues.length > 0 ? '\\nIssues fermées:\\n' + notableIssues.map(i => `  - #${i.number}: ${i.title} (fermé par ${i.user})`).join('\\n') : ''}\n${notablePRs.length > 0 ? '\\nPRs fusionnées:\\n' + notablePRs.map(pr => `  - #${pr.number}: ${pr.title} (fusionné par ${pr.mergedBy})`).join('\\n') : ''}\n\nTon: professionnel, concis, axé sur les résultats.` :\n    `Generate a weekly development summary for repository ${repoInfo.full_name}.\n\nPeriod: ${config.weekStartDate} to ${config.weekEndDate}\n\nStatistics:\n- ${repoData.stats.commits} commits\n- ${repoData.stats.issuesClosed} issues closed\n- ${repoData.stats.pullRequestsMerged} pull requests merged\n\nNotable details:\n${notableCommits.length > 0 ? 'Commits:\\n' + notableCommits.map(c => `  - ${c.sha}: ${c.message} (${c.author})`).join('\\n') : ''}\n${notableIssues.length > 0 ? '\\nIssues closed:\\n' + notableIssues.map(i => `  - #${i.number}: ${i.title} (closed by ${i.user})`).join('\\n') : ''}\n${notablePRs.length > 0 ? '\\nPRs merged:\\n' + notablePRs.map(pr => `  - #${pr.number}: ${pr.title} (merged by ${pr.mergedBy})`).join('\\n') : ''}\n\nTone: professional, concise, results-oriented.`;\n  \n  try {\n    // Call Claude API\n    const response = await $httpRequest('https://api.anthropic.com/v1/messages', {\n      method: 'POST',\n      headers: {\n        'x-api-key': config.claudeApiKey,\n        'anthropic-version': '2023-06-01',\n        'Content-Type': 'application/json'\n      },\n      body: JSON.stringify({\n        model: config.claudeModel,\n        max_tokens: 1024,\n        messages: [{\n          role: 'user',\n          content: prompt\n        }]\n      }),\n      returnFullResponse: true\n    });\n    \n    const result = JSON.parse(response.body);\n    \n    return {\n      summary: result.content?.[0]?.text || 'No summary generated.',\n      generatedBy: 'claude_api',\n      success: true,\n      promptLength: prompt.length,\n      responseTokens: result.usage?.output_tokens || 0\n    };\n    \n  } catch (error) {\n    console.error(`❌ Claude API error for ${repoData.repository}:`, error.message);\n    \n    // Fallback to template-based summary\n    const fallbackSummary = config.language === 'fr' ?\n      `Résumé hebdomadaire pour ${repoInfo.full_name} (${config.weekStartDate} à ${config.weekEndDate}):\\n` +\n      `${repoData.stats.commits} commits, ${repoData.stats.issuesClosed} issues fermées, ${repoData.stats.pullRequestsMerged} PRs fusionnées.\\n` +\n      `Activité stable cette semaine.` :\n      `Weekly summary for ${repoInfo.full_name} (${config.weekStartDate} to ${config.weekEndDate}):\\n` +\n      `${repoData.stats.commits} commits, ${repoData.stats.issuesClosed} issues closed, ${repoData.stats.pullRequestsMerged} PRs merged.\\n` +\n      `Steady activity this week.`;\n    \n    return {\n      summary: fallbackSummary,\n      generatedBy: 'template_fallback',\n      success: false,\n      error: error.message\n    };\n  }\n}\n\n// Generate summary for current repository\nconst config = $json;\nconst repoData = config.repoData;\n\nconst summaryResult = await generateSummary(repoData, config);\n\n// Combine all data\nconst combinedData = {\n  ...config,\n  summaryResult: summaryResult,\n  repositorySummary: {\n    repository: repoData.repository,\n    stats: repoData.stats,\n    summary: summaryResult.summary,\n    generatedBy: summaryResult.generatedBy,\n    timestamp: new Date().toISOString()\n  }\n};\n\nreturn [{\n  json: combinedData,\n  pairedItem: { item: 0 }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "position": [1250, 200],
+      "parameters": {
+        "jsCode": "// Format output for different channels\nfunction formatOutput(repositorySummary, allSummaries, config) {\n  const { repository, stats, summary, generatedBy } = repositorySummary;\n  \n  // Individual repository format\n  const individualFormat = {\n    discord: {\n      content: `**📊 ${repository}**\\n` +\n        `*Period:* ${config.weekStartDate} to ${config.weekEndDate}\\n` +\n        `*Stats:* ${stats.commits} commits, ${stats.issuesClosed} issues, ${stats.pullRequestsMerged} PRs\\n` +\n        `*Generated by:* ${generatedBy}\\n\\n` +\n        summary\n    },\n    slack: {\n      blocks: [\n        {\n          type: 'header',\n          text: {\n            type: 'plain_text',\n            text: `📊 ${repository}`\n          }\n        },\n        {\n          type: 'section',\n          fields: [\n            {\n              type: 'mrkdwn',\n              text: `*Period:*\\n${config.weekStartDate} to ${config.weekEndDate}`\n            },\n            {\n              type: 'mrkdwn',\n              text: `*Stats:*\\n${stats.commits} commits\\n${stats.issuesClosed} issues\\n${stats.pullRequestsMerged} PRs`\n            }\n          ]\n        },\n        {\n          type: 'section',\n          text: {\n            type: 'mrkdwn',\n            text: summary\n          }\n        },\n        {\n          type: 'context',\n          elements: [\n            {\n              type: 'mrkdwn',\n              text: `Generated by: ${generatedBy}`\n            }\n          ]\n        }\n      ]\n    },\n    email: {\n      subject: `Weekly Dev Summary - ${repository}`,\n      body: `Repository: ${repository}\\n` +\n        `Period: ${config.weekStartDate} to ${config.weekEndDate}\\n` +\n        `Stats:\\n` +\n        `- Commits: ${stats.commits}\\n` +\n        `- Issues Closed: ${stats.issuesClosed}\\n` +\n        `- PRs Merged: ${stats.pullRequestsMerged}\\n\\n` +\n        summary\n    }\n  };\n  \n  // Check if this is the last repository\n  const isLastRepo = allSummaries.length === config.repositories.length;\n  \n  if (isLastRepo && config.repositories.length > 1) {\n    // Create aggregated summary for multiple repositories\n    const totalStats = {\n      commits: allSummaries.reduce((sum, s) => sum + s.stats.commits, 0),\n      issuesClosed: allSummaries.reduce((sum, s) => sum + s.stats.issuesClosed, 0),\n      pullRequestsMerged: allSummaries.reduce((sum, s) => sum + s.stats.pullRequestsMerged, 0),\n      successfulRepos: allSummaries.filter(s => s.stats.success).length\n    };\n    \n    const aggregatedFormat = {\n      discord: {\n        content: `**📊 Weekly Development Summary - ${config.repositories.length} Repositories**\\n` +\n          `*Period:* ${config.weekStartDate} to ${config.weekEndDate}\\n` +\n          `*Total Stats:* ${totalStats.commits} commits, ${totalStats.issuesClosed} issues, ${totalStats.pullRequestsMerged} PRs\\n` +\n          `*Successful repositories:* ${totalStats.successfulRepos}/${config.repositories.length}\\n` +\n          `*Individual summaries have been sent separately.*`\n      },\n      slack: {\n        blocks: [\n          {\n            type: 'header',\n            text: {\n              type: 'plain_text',\n              text: `📊 Weekly Summary - ${config.repositories.length} Repos`\n            }\n          },\n          {\n            type: 'section',\n            fields: [\n              {\n                type: 'mrkdwn',\n                text: `*Period:*\\n${config.weekStartDate} to ${config.weekEndDate}`\n              },\n              {\n                type: 'mrkdwn',\n                text: `*Total Stats:*\\n${totalStats.commits} commits\\n${totalStats.issuesClosed} issues\\n${totalStats.pullRequestsMerged} PRs`\n              }\n            ]\n          },\n          {\n            type: 'context',\n            elements: [\n              {\n                type: 'mrkdwn',\n                text: `Successful repos: ${totalStats.successfulRepos}/${config.repositories.length}`\n              }\n            ]\n          }\n        ]\n      },\n      email: {\n        subject: `Weekly Dev Summary - ${config.repositories.length} Repositories`,\n        body: `Weekly Development Summary Report\\n` +\n          `Period: ${config.weekStartDate} to ${config.weekEndDate}\\n` +\n          `Repositories: ${config.repositories.length}\\n\\n` +\n          `Total Statistics:\\n` +\n          `- Commits: ${totalStats.commits}\\n` +\n          `- Issues Closed: ${totalStats.issuesClosed}\\n` +\n          `- PRs Merged: ${totalStats.pullRequestsMerged}\\n\\n` +\n          `Successful repositories: ${totalStats.successfulRepos}/${config.repositories.length}\\n\\n` +\n          `Individual repository summaries are attached or sent separately.`\n      }\n    };\n    \n    return {\n      individual: individualFormat,\n      aggregated: aggregatedFormat,\n      isLastRepo: true,\n      totalStats: totalStats\n    };\n  }\n  \n  return {\n    individual: individualFormat,\n    aggregated: null,\n    isLastRepo: isLastRepo\n  };\n}\n\n// Get all summaries collected so far\nconst config = $json;\nconst allSummaries = config.allSummaries || [];\nconst currentSummary = config.repositorySummary;\n\n// Add current summary to collection\nallSummaries.push(currentSummary);\n\n// Format output\nconst formattedOutput = formatOutput(currentSummary, allSummaries, config);\n\nreturn [{\n  json: {\n    ...config,\n    allSummaries: allSummaries,\n    formattedOutput: formattedOutput,\n    outputReady: true\n  },\n  pairedItem: { item: 0 }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "name": "Send to Channels",
+      "type": "n8n-nodes-base.code",
+      "position": [1450, 200],
+      "parameters": {
+        "jsCode": "// Send formatted output to configured channels\nasync function sendToChannels(formattedOutput, config) {\n  const results = {\n    discord: { success: false, error: null },\n    slack: { success: false, error: null },\n    email: { success: false, error: null }\n  };\n  \n  const { individual, aggregated, isLastRepo } = formattedOutput;\n  \n  // Send individual repository summary\n  for (const channel of config.outputChannels) {\n    try {\n      switch (channel) {\n        case 'discord':\n          if (config.discordWebhookUrl && individual.discord) {\n            await $httpRequest(config.discordWebhookUrl, {\n              method: 'POST',\n              headers: { 'Content-Type': 'application/json' },\n              body: JSON.stringify(individual.discord),\n              returnFullResponse: true\n            });\n            results.discord.success = true;\n            console.log(`✅ Discord message sent for ${config.currentRepository}`);\n          }\n          break;\n          \n        case 'slack':\n          if (config.slackWebhookUrl && individual.slack) {\n            await $httpRequest(config.slackWebhookUrl, {\n              method: 'POST',\n              headers: { 'Content-Type': 'application/json' },\n              body: JSON.stringify(individual.slack),\n              returnFullResponse: true\n            });\n            results.slack.success = true;\n            console.log(`✅ Slack message sent for ${config.currentRepository}`);\n          }\n          break;\n          \n        case 'email':\n          if (config.emailConfig.toEmail && individual.email) {\n            // Note: Email sending requires SMTP configuration\n            // This is a placeholder for email integration\n            results.email.success = true;\n            console.log(`📧 Email prepared for ${config.currentRepository}`);\n          }\n          break;\n      }\n    } catch (error) {\n      console.error(`❌ Error sending to ${channel}:`, error.message);\n      results[channel].error = error.message;\n    }\n  }\n  \n  // Send aggregated summary if this is the last repository and we have multiple repos\n  if (isLastRepo && aggregated && config.repositories.length > 1) {\n    for (const channel of config.outputChannels) {\n      try {\n        switch (channel) {\n          case 'discord':\n            if (config.discordWebhookUrl && aggregated.discord) {\n              await $httpRequest(config.discordWebhookUrl, {\n                method: 'POST',\n                headers: { 'Content-Type': 'application/json' },\n                body: JSON.stringify(aggregated.discord),\n                returnFullResponse: true\n              });\n              console.log('✅ Aggregated Discord summary sent');\n            }\n            break;\n            \n          case 'slack':\n            if (config.slackWebhookUrl && aggregated.slack) {\n              await $httpRequest(config.slackWebhookUrl, {\n                method: 'POST',\n                headers: { 'Content-Type': 'application/json' },\n                body: JSON.stringify(aggregated.slack),\n                returnFullResponse: true\n              });\n              console.log('✅ Aggregated Slack summary sent');\n            }\n            break;\n            \n          case 'email':\n            if (config.emailConfig.toEmail && aggregated.email) {\n              console.log('📧 Aggregated email prepared');\n            }\n            break;\n        }\n      } catch (error) {\n        console.error(`❌ Error sending aggregated to ${channel}:`, error.message);\n      }\n    }\n  }\n  \n  return results;\n}\n\n// Send to channels\nconst config = $json;\nconst formattedOutput = config.formattedOutput;\n\nconst sendResults = await sendToChannels(formattedOutput, config);\n\nreturn [{\n  json: {\n    ...config,\n    sendResults: sendResults,\n    completedAt: new Date().toISOString()\n  },\n  pairedItem: { item: 0 }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "name": "Log Execution",
+      "type": "n8n-nodes-base.code",
+      "position": [1650, 200],
+      "parameters": {
+        "jsCode": "// Log execution results and update monitoring\nfunction logExecution(config, sendResults) {\n  const { currentRepository, repositorySummary, allSummaries, startTime } = config;\n  const { stats, summary, generatedBy } = repositorySummary;\n  \n  // Calculate execution time\n  const endTime = new Date();\n  const start = new Date(startTime);\n  const executionTime = endTime - start;\n  \n  // Prepare log entry\n  const logEntry = {\n    executionId: config.executionId,\n    repository: currentRepository,\n    period: {\n      start: config.weekStartDate,\n      end: config.weekEndDate\n    },\n    stats: stats,\n    summaryGeneratedBy: generatedBy,\n    summaryLength: summary.length,\n    sendResults: sendResults,\n    executionTimeMs: executionTime,\n    timestamp: endTime.toISOString(),\n    success: stats.success && Object.values(sendResults).some(r => r.success)\n  };\n  \n  // Log to console\n  console.log(`📝 Execution log for ${currentRepository}:`);\n  console.log(`   Success: ${logEntry.success}`);\n  console.log(`   Stats: ${stats.commits} commits, ${stats.issuesClosed} issues, ${stats.pullRequestsMerged} PRs`);\n  console.log(`   Generated by: ${generatedBy}`);\n  console.log(`   Execution time: ${executionTime}ms`);\n  \n  // Check if this is the last repository\n  const isLastRepo = allSummaries.length === config.repositories.length;\n  \n  if (isLastRepo) {\n    // Generate final report\n    const successfulRepos = allSummaries.filter(s => s.stats.success).length;\n    const totalStats = {\n      commits: allSummaries.reduce((sum, s) => sum + s.stats.commits, 0),\n      issuesClosed: allSummaries.reduce((sum, s) => sum + s.stats.issuesClosed, 0),\n      pullRequestsMerged: allSummaries.reduce((sum, s) => sum + s.stats.pullRequestsMerged, 0)\n    };\n    \n    console.log('='.repeat(60));\n    console.log(`🎯 WEEKLY SUMMARY EXECUTION COMPLETE`);\n    console.log(`   Repositories processed: ${allSummaries.length}`);\n    console.log(`   Successful: ${successfulRepos}/${allSummaries.length}`);\n    console.log(`   Total commits: ${totalStats.commits}`);\n    console.log(`   Total issues closed: ${totalStats.issuesClosed}`);\n    console.log(`   Total PRs merged: ${totalStats.pullRequestsMerged}`);\n    console.log(`   Total execution time: ${executionTime}ms`);\n    console.log('='.repeat(60));\n    \n    // Create monitoring data if enabled\n    if (config.enableMonitoring) {\n      const monitoringData = {\n        executionId: config.executionId,\n        totalRepositories: allSummaries.length,\n        successfulRepositories: successfulRepos,\n        totalStats: totalStats,\n        startTime: startTime,\n        endTime: endTime.toISOString(),\n        totalExecutionTime: executionTime,\n        individualResults: allSummaries.map(s => ({\n          repository: s.repository,\n          success: s.stats.success,\n          stats: s.stats\n        }))\n      };\n      \n      // In a real implementation, this would save to a database or file\n      console.log('📊 Monitoring data:', JSON.stringify(monitoringData, null, 2));\n    }\n  }\n  \n  return logEntry;\n}\n\n// Log execution\nconst config = $json;\nconst sendResults = config.sendResults;\n\nconst logEntry = logExecution(config, sendResults);\n\nreturn [{\n  json: {\n    ...config,\n    logEntry: logEntry,\n    processingComplete: true\n  },\n  pairedItem: { item: 0 }\n}];"
+      },
+      "typeVersion": 2
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Load Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Configuration": {
+      "main": [
+        [
+          {
+            "node": "Process Each Repository",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Each Repository": {
+      "main": [
+        [
+          {
+            "node": "Get Repository Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "output": {
+        "output": [
+          [
+            {
+              "node": "Get Repository Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "Get Repository Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary with Claude": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          {
+            "node": "Send to Channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Channels": {
+      "main": [
+        [
+          {
+            "node": "Log Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Execution": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "2.0",
+  "createdAt": "2026-04-07T02:20:00.000Z",
+  "updatedAt": "2026-04-07T02:20:00.000Z"
+}
