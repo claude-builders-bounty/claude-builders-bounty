@@ -1,53 +1,35 @@
-# Claude Builders Bounty 🤖
+# n8n + Claude: Automated Weekly Dev Summary
 
-> A community bounty board for Claude Code builders.
+Generates narrative weekly dev summaries from GitHub activity using Claude AI.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (5 steps)
 
----
+### 1. Import
+n8n > Workflows > Import > select `weekly-dev-summary.json`
 
-## How it works
+### 2. GitHub credentials
+Credentials > New > Header Auth: `Authorization` = `Bearer YOUR_GITHUB_PAT`
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### 3. Set variables
+| Variable | Example |
+|---|---|
+| `GITHUB_REPO` | `facebook/react` |
+| `CLAUDE_API_KEY` | `sk-ant-...` |
+| `WEBHOOK_URL` | Discord/Slack webhook |
+| `LANGUAGE` | `EN` or `FR` |
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+### 4. Test
+Execute Workflow manually.
 
----
+### 5. Activate
+Toggle Active. Default: Friday 5pm.
 
-## Active Bounties
+## Features
+- Weekly cron trigger
+- GitHub commits, issues, PRs (7 days)
+- Claude claude-sonnet-4-20250514 narrative summary
+- EN/FR support
+- Discord/Slack delivery
+- Configurable via variables
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+Closes #5
