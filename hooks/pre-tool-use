@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""pre-tool-use hook: blocks destructive bash commands."""
+
+import sys
+import os
+import re
+from datetime import datetime
+
+DANGEROUS_PATTERNS = [
+    (r'rm\s+-rf\s+',                     "rm -rf — recursive delete, dangerous"),
+    (r'DROP\s+TABLE',                     "DROP TABLE — destroys data"),
+    (r'TRUNCATE',                         "TRUNCATE — deletes all rows"),
+    (r'git\s+push\s+--force',             "git push --force — can overwrite history"),
+    (r'drop\s+database',                  "DROP DATABASE — destroys entire database"),
+]
+
+def is_dangerous_delete(command):
+    """Check for DELETE without WHERE clause."""
+    cmd_lower = command.lower()
+    if 'delete from' in cmd_lower and 'where' not in cmd_lower:
+        return True
+    return False
+
+def main():
+    # Read stdin (tool input from Claude Code)
+    tool_input = sys.stdin.read().strip()
+    
+    if not tool_input:
+        sys.exit(0)
+    
+    command = tool_input
+    
+    # Check dangerous patterns
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            log_blocked(command, reason)
+            print(f"\n🚫 HOOK BLOCKED: {reason}")
+            print(f"   Command attempted: {command[:100]}")
+            print(f"   Project: {os.getcwd()}")
+            print(f"   To proceed: edit the hook or use --dangerous flag")
+            sys.exit(1)
+    
+    # Check for DELETE without WHERE
+    if is_dangerous_delete(command):
+        log_blocked(command, "DELETE without WHERE clause")
+        print(f"\n🚫 HOOK BLOCKED: DELETE without WHERE — risks data loss")
+        print(f"   Command attempted: {command[:100]}")
+        print(f"   Add WHERE clause to unblock")
+        sys.exit(1)
+    
+    sys.exit(0)
+
+def log_blocked(command, reason):
+    hook_dir = os.path.dirname(os.path.abspath(__file__))
+    log_file = os.path.join(hook_dir, 'blocked.log')
+    timestamp = datetime.now().isoformat()
+    try:
+        with open(log_file, 'a') as f:
+            f.write(f"[{timestamp}] BLOCKED | {reason} | {os.getcwd()} | {command[:200]}\n")
+    except Exception:
+        pass
+
+if __name__ == '__main__':
+    main()

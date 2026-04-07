@@ -1,0 +1,126 @@
+{
+  "meta": {
+    "templateCredsSetup": false,
+    "templateId": "weekly-github-summary"
+  },
+  "nodes": {
+    "Schedule-Trigger": {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cron",
+              "cronExpression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    "GitHub-Commits": {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/commits",
+        "queryParameters": {
+          "since": "={{ $vars.LAST_WEEK }}",
+          "per_page": "50"
+        },
+        "options": {}
+      },
+      "id": "github-commits",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [300, 300]
+    },
+    "GitHub-Issues": {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/issues",
+        "queryParameters": {
+          "state": "closed",
+          "since": "={{ $vars.LAST_WEEK }}",
+          "per_page": "25"
+        },
+        "options": {}
+      },
+      "id": "github-issues",
+      "name": "GitHub Issues (Closed)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [300, 450]
+    },
+    "Claude-Summary": {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "model", "value": "claude-sonnet-4-20250514"},
+            {"name": "max_tokens", "value": 1024},
+            {"name": "messages", "value": "=[{\"role\": \"user\", \"content\": \"You are a developer relations assistant. Summarize the following GitHub activity into a concise weekly dev summary (3-5 sentences). Format: **Summary**: ...\\n\\n**Highlights**: ...\\n\\n**Activity**: ...\\n\\nRepo: \" + $vars.GITHUB_REPO + \"\\n\\nRecent commits:\\n\" + $json.commits + \"\\n\\nClosed issues:\\n\" + $json.issues}]"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-summary",
+      "name": "Claude API Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [500, 375]
+    },
+    "Discord-Webhook": {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.DISCORD_WEBHOOK }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "content", "value": "={{ $json.summary }}"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [700, 375]
+    }
+  },
+  "connections": {
+    "Schedule-Trigger": {
+      "main": [
+        [{"node": "GitHub-Commits", "type": "main", "index": 0}],
+        [{"node": "GitHub-Issues", "type": "main", "index": 0}]
+      ]
+    },
+    "GitHub-Commits": {
+      "main": [["Claude-Summary", "main", 0]]
+    },
+    "GitHub-Issues": {
+      "main": [["Claude-Summary", "main", 0]]
+    },
+    "Claude-Summary": {
+      "main": [["Discord-Webhook", "main", 0]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "variables": {
+    "GITHUB_REPO": "coollabsio/coolify",
+    "LAST_WEEK": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+  },
+  "staticData": null
+}

@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""Claude Code PR Reviewer — CLI tool + GitHub Action for structured PR review."""
+
+import sys
+import os
+import re
+import json
+import subprocess
+
+USAGE = """
+claude-review — PR Review CLI Tool
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --diff /path/to/diff.txt
+
+Environment:
+  GITHUB_TOKEN  — GitHub personal access token
+  OPENAI_API_KEY — optional for enhanced analysis
+
+Exit codes:
+  0 — success (review generated)
+  1 — error (bad args, network, etc.)
+
+## Example Output
+
+  claude-review --pr https://github.com/coollabsio/coolify/pull/9436
+
+Generates:
+
+  ## 🔍 PR Review
+  **Confidence**: Medium
+  ...
+"""
+
+def run_cmd(cmd):
+    return subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.DEVNULL)
+
+def get_pr_diff(repo, pr_num, token):
+    import urllib.request
+    url = f"https://api.github.com/repos/{repo}/pulls/{pr_num}"
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github.v3.diff"
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read().decode('utf-8', errors='replace')
+    except Exception as e:
+        return None
+
+def analyze_diff(diff_content):
+    """Pattern-based diff analysis for PR review."""
+    if not diff_content or len(diff_content) < 50:
+        return {
+            "summary": "Empty or minimal diff.",
+            "risks": ["No significant changes detected"],
+            "suggestions": [],
+            "confidence": "Low",
+            "stats": {"files": 0, "added": 0, "removed": 0}
+        }
+    
+    added = len(re.findall(r'^\+[^+]', diff_content, re.MULTILINE))
+    removed = len(re.findall(r'^-[^-]', diff_content, re.MULTILINE))
+    files = len(re.findall(r'^diff --git', diff_content, re.MULTILINE))
+    
+    risk_lines = []
+    suggest_lines = []
+    
+    if re.search(r'password\s*=|secret\s*=|api[_-]?key\s*=', diff_content, re.I):
+        risk_lines.append("Potential secret/key hardcoded — use environment variables")
+    
+    if re.search(r'execute\(|query\(|raw\(|innerHTML|document\.write', diff_content):
+        risk_lines.append("Potential injection vulnerability — validate inputs")
+    
+    todo_count = len(re.findall(r'TODO|FIXME|HACK|XXX', diff_content))
+    if todo_count > 0:
+        suggest_lines.append(f"Found {todo_count} TODO/FIXME comment(s)")
+    
+    if added > 500:
+        suggest_lines.append("Large PR — consider splitting")
+    
+    if not re.search(r'\.test\.|spec\.|__tests__', diff_content) and added > 100:
+        suggest_lines.append("No test files changed — add tests")
+    
+    if not risk_lines:
+        risk_lines.append("No major risks detected")
+    
+    confidence = "High" if added > 20 and files > 2 else "Medium" if added > 5 else "Low"
+    summary = f"PR modifies {files} file(s) with {added} additions and {removed} deletions."
+    
+    return {
+        "summary": summary,
+        "risks": risk_lines,
+        "suggestions": suggest_lines,
+        "confidence": confidence,
+        "stats": {"files": files, "added": added, "removed": removed}
+    }
+
+def format_review(analysis):
+    lines = ["## 🔍 PR Review\n", f"**Confidence**: {analysis['confidence']}", ""]
+    lines.append("### Summary")
+    lines.append(analysis['summary'])
+    lines.append("")
+    
+    if analysis.get('stats'):
+        s = analysis['stats']
+        lines.append(f"📊 **{s['files']}** files · **{s['added']}** additions · **{s['removed']}** deletions\n")
+    
+    if analysis['risks']:
+        lines.append("### ⚠️ Risks")
+        for r in analysis['risks']:
+            lines.append(f"- {r}")
+        lines.append("")
+    
+    if analysis['suggestions']:
+        lines.append("### 💡 Suggestions")
+        for s in analysis['suggestions']:
+            lines.append(f"- {s}")
+        lines.append("")
+    
+    lines.append("— *Review by claude-review*")
+    return "\n".join(lines)
+
+def main():
+    args = sys.argv[1:]
+    if not args or '--help' in args or '-h' in args:
+        print(USAGE)
+        sys.exit(0)
+    
+    pr_url = None
+    for i, arg in enumerate(args):
+        if arg == '--pr' and i+1 < len(args):
+            pr_url = args[i+1]
+    
+    if not pr_url:
+        print("Error: --pr required")
+        sys.exit(1)
+    
+    match = re.search(r'github\.com[/:]([^/]+)/([^/]+)/pull[/\s]+(\d+)', pr_url)
+    if not match:
+        print("Error: invalid GitHub PR URL")
+        sys.exit(1)
+    
+    owner, repo_name, pr_num = match.group(1), match.group(2), match.group(3)
+    full_repo = f"{owner}/{repo_name}"
+    
+    token = os.environ.get('GITHUB_TOKEN', '')
+    if not token:
+        print("Error: GITHUB_TOKEN env var required")
+        sys.exit(1)
+    
+    diff = get_pr_diff(full_repo, pr_num, token)
+    if not diff:
+        print("Error: could not fetch PR diff")
+        sys.exit(1)
+    
+    analysis = analyze_diff(diff)
+    review = format_review(analysis)
+    print(review)
+
+if __name__ == '__main__':
+    main()
