@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""
+🛡️ Claude Code Safety Hook
+Pre-tool-use hook that blocks destructive bash commands
+"""
+
+import sys
+import json
+import re
+import os
+from datetime import datetime
+
+# 危险命令模式
+DANGEROUS_PATTERNS = [
+    {
+        "pattern": r"rm\s+-rf\s+/",
+        "name": "rm -rf /",
+        "severity": "CRITICAL",
+        "message": "Attempted to delete root directory"
+    },
+    {
+        "pattern": r"rm\s+-rf\s+~",
+        "name": "rm -rf ~",
+        "severity": "CRITICAL",
+        "message": "Attempted to delete home directory"
+    },
+    {
+        "pattern": r"rm\s+-rf\s+\.",
+        "name": "rm -rf .",
+        "severity": "CRITICAL",
+        "message": "Attempted to delete current directory"
+    },
+    {
+        "pattern": r"DROP\s+TABLE",
+        "name": "DROP TABLE",
+        "severity": "HIGH",
+        "message": "Attempted to drop database table",
+        "flags": re.IGNORECASE
+    },
+    {
+        "pattern": r"git\s+push\s+.*--force",
+        "name": "git push --force",
+        "severity": "HIGH",
+        "message": "Attempted force push to git repository"
+    },
+    {
+        "pattern": r"git\s+push\s+.*-f\b",
+        "name": "git push -f",
+        "severity": "HIGH",
+        "message": "Attempted force push to git repository"
+    },
+    {
+        "pattern": r"TRUNCATE\s+TABLE",
+        "name": "TRUNCATE TABLE",
+        "severity": "HIGH",
+        "message": "Attempted to truncate database table",
+        "flags": re.IGNORECASE
+    },
+    {
+        "pattern": r"DELETE\s+FROM\s+\w+\s*;?$",
+        "name": "DELETE without WHERE",
+        "severity": "HIGH",
+        "message": "Attempted DELETE without WHERE clause",
+        "flags": re.IGNORECASE
+    },
+    {
+        "pattern": r">\s*/\w+",
+        "name": "Overwrite system file",
+        "severity": "MEDIUM",
+        "message": "Attempted to overwrite system file"
+    },
+    {
+        "pattern": r"mkfs\.",
+        "name": "mkfs",
+        "severity": "CRITICAL",
+        "message": "Attempted to format filesystem"
+    },
+    {
+        "pattern": r"dd\s+if=.*of=/dev/",
+        "name": "dd to device",
+        "severity": "CRITICAL",
+        "message": "Attempted to write directly to device"
+    },
+    {
+        "pattern": r":\(\)\{\s*:\|:\s*&\s*};:\s*",
+        "name": "fork bomb",
+        "severity": "CRITICAL",
+        "message": "Attempted fork bomb"
+    }
+]
+
+# 日志文件路径
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+def ensure_log_directory():
+    """确保日志目录存在"""
+    log_dir = os.path.dirname(LOG_FILE)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+
+def log_blocked_attempt(command, pattern_name, severity, project_path):
+    """记录被阻止的尝试"""
+    ensure_log_directory()
+    
+    timestamp = datetime.now().isoformat()
+    log_entry = f"[{timestamp}] SEVERITY: {severity} | PATTERN: {pattern_name} | COMMAND: {command} | PATH: {project_path}\n"
+    
+    with open(LOG_FILE, 'a') as f:
+        f.write(log_entry)
+
+def check_command(command):
+    """检查命令是否包含危险模式"""
+    for pattern_def in DANGEROUS_PATTERNS:
+        pattern = pattern_def["pattern"]
+        flags = pattern_def.get("flags", 0)
+        
+        if re.search(pattern, command, flags):
+            return pattern_def
+    
+    return None
+
+def main():
+    """主函数 - Claude Code hook入口"""
+    # 读取Claude Code传入的JSON
+    try:
+        input_data = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        # 如果不是JSON格式，直接通过
+        print(json.dumps({"allowed": True}))
+        sys.exit(0)
+    
+    # 获取工具使用信息
+    tool_name = input_data.get("tool", "")
+    tool_input = input_data.get("input", {})
+    
+    # 只检查bash工具
+    if tool_name != "bash":
+        print(json.dumps({"allowed": True}))
+        sys.exit(0)
+    
+    # 获取命令
+    command = tool_input.get("command", "")
+    project_path = input_data.get("project_path", os.getcwd())
+    
+    # 检查命令
+    danger = check_command(command)
+    
+    if danger:
+        # 记录到日志
+        log_blocked_attempt(
+            command=command,
+            pattern_name=danger["name"],
+            severity=danger["severity"],
+            project_path=project_path
+        )
+        
+        # 返回阻止信息
+        response = {
+            "allowed": False,
+            "message": f"🛡️ SAFETY HOOK BLOCKED: {danger['message']}\n\n"
+                      f"Pattern detected: {danger['name']}\n"
+                      f"Severity: {danger['severity']}\n\n"
+                      f"This command has been blocked to prevent potential data loss.\n"
+                      f"If you're sure about this action, please review the command carefully.\n\n"
+                      f"Blocked command: {command[:100]}{'...' if len(command) > 100 else ''}"
+        }
+        
+        print(json.dumps(response))
+        sys.exit(0)
+    
+    # 命令安全，允许执行
+    print(json.dumps({"allowed": True}))
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
