@@ -24,6 +24,26 @@ You're in the right place.
 
 ## Active Bounties
 
+### Setup Instructions
+ To generate a structured CHANGELOG from git history:
+  
+  1. Ensure you have the necessary dependencies installed: `@opencode-ai/plugin`.
+  2. Run the following command to generate the changelog:
+     
+     ```bash
+     bash changelog.sh
+     ```
+
+   This command will create or update the CHANGELOG.md file with the latest changes.
+
+### Usage Example
+
+- To get the latest changes in the CHANGELOG:
+  
+bash changelog.sh
+
+
+
 | # | Task | Amount | Status |
 |---|------|--------|--------|
 | [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
