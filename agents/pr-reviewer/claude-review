@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# claude-review — Claude Code sub-agent for structured PR review
+# Dependencies: bash, gh (GitHub CLI), claude (Claude Code CLI)
+# Usage: ./claude-review --pr https://github.com/owner/repo/pull/123
+
+set -euo pipefail
+
+VERSION="2.0.0"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- Defaults ---
+PR_URL=""
+OUTPUT_FILE=""
+POST_COMMENT=false
+MODEL="claude-sonnet-4-20250514"
+MAX_DIFF_LINES=3000
+
+usage() {
+  cat <<EOF
+claude-review v${VERSION} — AI-powered structured PR review agent
+
+USAGE:
+  claude-review --pr <github-pr-url> [OPTIONS]
+
+OPTIONS:
+  --pr <url>        GitHub PR URL (required)
+  --output <file>   Write review to file instead of stdout
+  --post            Post review as a PR comment via gh CLI
+  --model <model>   Claude model (default: $MODEL)
+  --max-diff <n>    Max diff lines before truncation (default: $MAX_DIFF_LINES)
+  --version         Print version and exit
+  --help            Show this help
+
+EXAMPLES:
+  claude-review --pr https://github.com/vercel/next.js/pull/78658
+  claude-review --pr https://github.com/facebook/react/pull/36243 --post
+  claude-review --pr https://github.com/owner/repo/pull/42 --output review.md
+EOF
+  exit 0
+}
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+# --- Parse arguments ---
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr)       PR_URL="$2"; shift 2 ;;
+    --output)   OUTPUT_FILE="$2"; shift 2 ;;
+    --post)     POST_COMMENT=true; shift ;;
+    --model)    MODEL="$2"; shift 2 ;;
+    --max-diff) MAX_DIFF_LINES="$2"; shift 2 ;;
+    --version)  echo "claude-review v${VERSION}"; exit 0 ;;
+    --help|-h)  usage ;;
+    *)          die "Unknown option: $1" ;;
+  esac
+done
+
+[[ -z "$PR_URL" ]] && die "Missing required --pr <url>. Run --help for usage."
+
+# --- Validate dependencies ---
+for cmd in gh claude; do
+  command -v "$cmd" >/dev/null 2>&1 || die "'$cmd' is required but not found in PATH."
+done
+
+# --- Parse PR URL ---
+if [[ "$PR_URL" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+  OWNER="${BASH_REMATCH[1]}"
+  REPO="${BASH_REMATCH[2]}"
+  PR_NUM="${BASH_REMATCH[3]}"
+else
+  die "Invalid PR URL. Expected: https://github.com/owner/repo/pull/123"
+fi
+
+REPO_FULL="$OWNER/$REPO"
+echo "==> Fetching PR #${PR_NUM} from ${REPO_FULL}..." >&2
+
+# --- Fetch PR metadata ---
+PR_META=$(gh api "repos/${REPO_FULL}/pulls/${PR_NUM}" \
+  --jq '{
+    title: .title,
+    body: (.body // "" | .[0:2000]),
+    state: .state,
+    author: .user.login,
+    base: .base.ref,
+    head: .head.ref,
+    additions: .additions,
+    deletions: .deletions,
+    changed_files: .changed_files,
+    mergeable_state: .mergeable_state,
+    labels: [.labels[].name]
+  }' 2>&1) || die "Failed to fetch PR metadata. Check URL and gh auth."
+
+# --- Fetch file list ---
+PR_FILES=$(gh api "repos/${REPO_FULL}/pulls/${PR_NUM}/files?per_page=100" \
+  --jq '[.[] | {filename: .filename, status: .status, additions: .additions, deletions: .deletions, patch: (.patch // "" | .[0:500])}]' 2>&1) || PR_FILES="[]"
+
+# --- Fetch PR diff ---
+PR_DIFF=$(gh api "repos/${REPO_FULL}/pulls/${PR_NUM}" \
+  -H "Accept: application/vnd.github.v3.diff" 2>&1) || die "Failed to fetch diff."
+
+DIFF_LINES=$(echo "$PR_DIFF" | wc -l)
+
+if [[ "$DIFF_LINES" -gt "$MAX_DIFF_LINES" ]]; then
+  echo "==> Warning: Diff is ${DIFF_LINES} lines, truncating to ${MAX_DIFF_LINES}..." >&2
+  PR_DIFF="$(echo "$PR_DIFF" | head -n "$MAX_DIFF_LINES")
+
+[... DIFF TRUNCATED: showing ${MAX_DIFF_LINES} of ${DIFF_LINES} lines]"
+fi
+
+# --- Fetch existing review comments for context ---
+REVIEW_COMMENTS=$(gh api "repos/${REPO_FULL}/pulls/${PR_NUM}/comments?per_page=5" \
+  --jq '[.[] | {user: .user.login, body: (.body[0:200]), path: .path}]' 2>/dev/null || echo "[]")
+
+# --- Build structured prompt ---
+TMPFILE=$(mktemp)
+trap 'rm -f "$TMPFILE"' EXIT
+
+cat > "$TMPFILE" <<PROMPT_EOF
+You are a senior software engineer performing a thorough, structured code review.
+
+## PR Information
+- Repository: ${REPO_FULL}
+- PR: #${PR_NUM}
+- URL: ${PR_URL}
+
+## PR Metadata
+${PR_META}
+
+## Changed Files
+${PR_FILES}
+
+## Existing Review Comments
+${REVIEW_COMMENTS}
+
+## Full Diff
+\`\`\`diff
+${PR_DIFF}
+\`\`\`
+
+## Output Format
+Produce a review in EXACTLY this Markdown structure:
+
+# PR Review: ${REPO_FULL}#${PR_NUM}
+
+## Summary
+(2-3 sentences: what this PR does, approach taken, overall assessment)
+
+## Identified Risks
+(Bulleted list. Each item: specific risk with file/line reference from diff. If none: "No significant risks identified.")
+
+## Improvement Suggestions
+(Bulleted list. Each item: actionable suggestion with file/line reference. Be specific.)
+
+## Confidence Score
+(Exactly one of: **Low** | **Medium** | **High**)
+(Add 1-line justification for the score)
+
+---
+*Reviewed by [claude-review](https://github.com/ElromEvedElElyon/claude-builders-bounty/tree/main/agents/pr-reviewer) v${VERSION}*
+
+## Rules
+- Reference actual files and line numbers from the diff
+- Never hallucinate code or files not in the diff
+- If diff was truncated, note it explicitly
+- Focus on bugs, security, and correctness over style
+- Be constructive, not nitpicky
+PROMPT_EOF
+
+echo "==> Analyzing with Claude (${MODEL})..." >&2
+
+REVIEW=$(claude --model "$MODEL" --print < "$TMPFILE" 2>&1) || die "Claude analysis failed."
+
+# --- Output routing ---
+if [[ -n "$OUTPUT_FILE" ]]; then
+  echo "$REVIEW" > "$OUTPUT_FILE"
+  echo "==> Review written to: ${OUTPUT_FILE}" >&2
+elif [[ "$POST_COMMENT" == true ]]; then
+  echo "$REVIEW" | gh pr comment "$PR_NUM" --repo "$REPO_FULL" --body-file -
+  echo "==> Review posted as comment on PR #${PR_NUM}" >&2
+  echo "$REVIEW"
+else
+  echo "$REVIEW"
+fi
