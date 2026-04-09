@@ -231,6 +231,34 @@ bin/
 
 ---
 
+## 📊 n8n Weekly Dev Summary
+
+This repo also includes an **n8n workflow** that automatically generates narrative weekly summaries of GitHub activity using Claude API.
+
+See [`n8n-workflows/README.md`](n8n-workflows/README.md) for setup instructions.
+
+### Quick Overview
+
+- **Trigger**: Weekly cron (Friday 5 PM)
+- **Data**: Commits, closed issues, merged PRs from GitHub API
+- **AI**: Claude Sonnet 4 (`claude-sonnet-4-20250514`)
+- **Delivery**: Discord webhook (configurable to Slack/email)
+- **Config**: `GITHUB_REPO`, `DISCORD_WEBHOOK_URL`, `LANGUAGE` (EN/FR)
+
+```
+Schedule → Fetch GitHub Data → Process → Claude Summary → Discord
+```
+
+### Files
+
+```
+n8n-workflows/
+├── github-weekly-summary.json    # Importable n8n workflow
+└── README.md                     # Setup instructions
+```
+
+---
+
 ## License
 
 MIT
