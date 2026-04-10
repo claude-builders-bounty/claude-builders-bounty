@@ -1,0 +1,273 @@
+{
+  "name": "Weekly Dev Summary — Claude AI",
+  "nodes": [
+    {
+      "id": "cron-trigger",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 2.2,
+      "position": [100, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "weekday": "Friday"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [320, 300],
+      "parameters": {
+        "mode": "raw",
+        "assignments": {
+          "assignments": [
+            {
+              "name": "repo",
+              "value": "={{ $vars.GITHUB_REPO || 'owner/repo' }}",
+              "type": "string"
+            },
+            {
+              "name": "language",
+              "value": "={{ $vars.LANGUAGE || 'EN' }}",
+              "type": "string"
+            },
+            {
+              "name": "weekStartDate",
+              "value": "={{ $now.minus(7, 'days').toISO() }}",
+              "type": "string"
+            },
+            {
+              "name": "weekEndDate",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "name": "githubToken",
+              "value": "={{ $vars.GITHUB_TOKEN }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 180],
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $json.repo }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.weekStartDate }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.weekEndDate }}"
+            },
+            {
+              "name": "per_page",
+              "value": "30"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-merged-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 300],
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $json.repo }}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "per_page",
+              "value": "20"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-closed-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 420],
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $json.repo }}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.weekStartDate }}"
+            },
+            {
+              "name": "per_page",
+              "value": "20"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "filter-merged-prs",
+      "name": "Filter Merged PRs",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 4.2,
+      "position": [760, 300],
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.merged_at }}",
+        "operation": "exists",
+        "options": {}
+      }
+    },
+    {
+      "id": "summarize-data",
+      "name": "Summarize with Claude",
+      "type": "@anthropic-ai/n8n-nodes-claude.ai",
+      "typeVersion": 1.1,
+      "position": [980, 300],
+      "parameters": {
+        "resource": "message",
+        "operation": "complete",
+        "model": "claude-sonnet-4-20250514",
+        "systemPrompt": "=You are a DevRel engineer writing a weekly development summary for a software project. Write in {{ $json.language === 'FR' ? 'French' : 'English' }}. Be concise, friendly, and informative. Highlight key achievements, interesting commits, resolved issues, and merged features. Format with emoji and Markdown headings.",
+        "prompt": "=Write a weekly narrative summary of this GitHub repository's activity.\n\nRepo: {{ $json.repo }}\nWeek: {{ $json.weekStartDate }} to {{ $json.weekEndDate }}\n\n**Recent commits (last 30):**\n{{ JSON.stringify($json.commits.slice(0, 15), null, 2) }}\n\n**Merged PRs:**\n{{ JSON.stringify($json.mergedPRs.slice(0, 10), null, 2) }}\n\n**Closed issues:**\n{{ JSON.stringify($json.closedIssues.slice(0, 10), null, 2) }}\n\nWrite a clear, engaging weekly summary in 3-5 paragraphs. Include:\n- Overview of the week's activity\n- Notable commits or features\n- Merged PRs and their impact\n- Resolved issues\n- Any interesting findings",
+        "options": {
+          "maxTokens": 1024,
+          "temperature": 0.7
+        }
+      }
+    },
+    {
+      "id": "discord-webhook",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.discordWebhook",
+      "typeVersion": 1.2,
+      "position": [1200, 300],
+      "parameters": {
+        "webhook": {
+          "url": "={{ $vars.DISCORD_WEBHOOK_URL }}"
+        },
+        "text": "={{ $json.summary }}",
+        "options": {
+          "username": "Dev Summary Bot",
+          "embeds": [
+            {
+              "title": "=Weekly Dev Summary — {{ $json.repo }}",
+              "color": 5814783,
+              "footer": {
+                "text": "Generated by Claude AI | Week of {{ $json.weekStartDate }}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "github-auth",
+      "name": "GitHub Auth",
+      "type": "n8n-nodes-base.httpHeaderAuth",
+      "typeVersion": 1,
+      "position": [320, 100],
+      "parameters": {
+        "name": "github",
+        "value": "Bearer {{ $vars.GITHUB_TOKEN }}"
+      }
+    }
+  ],
+  "connections": {
+    "cron-trigger": {
+      "main": [
+        [{ "node": "set-config", "type": "main", "index": 0 }]
+      ]
+    },
+    "set-config": {
+      "main": [
+        [
+          { "node": "github-commits", "type": "main", "index": 0 },
+          { "node": "github-merged-prs", "type": "main", "index": 0 },
+          { "node": "github-closed-issues", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "github-commits": {
+      "main": [
+        [{ "node": "filter-merged-prs", "type": "main", "index": 0 }]
+      ]
+    },
+    "github-merged-prs": {
+      "main": [
+        [{ "node": "filter-merged-prs", "type": "main", "index": 0 }]
+      ]
+    },
+    "github-closed-issues": {
+      "main": [
+        [{ "node": "filter-merged-prs", "type": "main", "index": 0 }]
+      ]
+    },
+    "filter-merged-prs": {
+      "main": [
+        [{ "node": "summarize-data", "type": "main", "index": 0 }]
+      ]
+    },
+    "summarize-data": {
+      "main": [
+        [{ "node": "discord-webhook", "type": "main", "index": 0 }]
+      ]
+    },
+    "github-auth": {
+      "main": [
+        [{ "node": "github-commits", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "UTC"
+  },
+  "staticData": null,
+  "tags": ["github", "claude", "weekly-summary", "automation"],
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "templateId": "weekly-dev-summary"
+  },
+  "versionId": "1",
+  "id": "weekly-dev-summary-v1",
+  "OC:context": {}
+}
