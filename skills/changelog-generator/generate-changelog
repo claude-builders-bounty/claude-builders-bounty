@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# Claude Code Skill: Generate Structured CHANGELOG from Git History
+# Usage: /changelog [since] — generates CHANGELOG.md from git commits
+# Install: cp generate-changelog ~/.claude/skills/ && chmod +x ~/.claude/skills/generate-changelog
+
+set -euo pipefail
+
+SINCE="${1:-$(git log --reverse --format=%ci | head -1 | cut -d' ' -f1)}"
+OUTPUT="CHANGELOG.md"
+REPO_NAME=$(basename "$(git rev-parse --show-toplevel)")
+
+echo "Generating CHANGELOG for $REPO_NAME since $SINCE..."
+
+# Collect commits grouped by date
+declare -A COMMITS_BY_DATE
+declare -A TYPES
+
+while IFS='|' read -r hash date author subject; do
+  day="${date%% *}"
+  type="other"
+
+  # Classify commit by conventional commit prefix
+  case "$subject" in
+    feat:*|feat\(*) type="added" ;;
+    fix:*|fix\(*)   type="fixed" ;;
+    docs:*|doc:*)   type="docs" ;;
+    test:*|tests:*) type="tests" ;;
+    refactor:*)     type="changed" ;;
+    perf:*)         type="performance" ;;
+    ci:*|build:*)   type="build" ;;
+    chore:*)        type="chore" ;;
+    revert:*)       type="reverted" ;;
+    style:*)        type="style" ;;
+    BREAKING*|!:*)  type="breaking" ;;
+  esac
+
+  # Clean subject: remove type prefix for cleaner output
+  clean_subject=$(echo "$subject" | sed -E 's/^(feat|fix|docs|test|refactor|perf|ci|build|chore|revert|style)(\([^)]*\))?:\s*//')
+
+  COMMITS_BY_DATE["$day"]+="- [$type] $clean_subject ($hash by $author)"$'\n'
+  TYPES["$type"]=1
+done < <(git log --since="$SINCE" --format="%h|%ci|%an|%s" --no-merges)
+
+# Generate CHANGELOG
+{
+  echo "# Changelog"
+  echo ""
+  echo "> Generated on $(date -u +%Y-%m-%d) from git history since $SINCE"
+  echo ""
+
+  # Get all dates sorted descending
+  dates=($(echo "${!COMMITS_BY_DATE[@]}" | tr ' ' '\n' | sort -r))
+
+  for day in "${dates[@]}"; do
+    echo "## $day"
+    echo ""
+
+    # Group by type within each date
+    for category in breaking added fixed changed performance docs tests build chore reverted style other; do
+      category_commits=""
+      while IFS= read -r line; do
+        if [[ "$line" == *"[$category]"* ]]; then
+          clean_line=$(echo "$line" | sed "s/\[$category\] //")
+          category_commits+="$clean_line"$'\n'
+        fi
+      done <<< "${COMMITS_BY_DATE[$day]}"
+
+      if [ -n "$category_commits" ]; then
+        # Pretty category names
+        case "$category" in
+          breaking)    echo "### Breaking Changes" ;;
+          added)       echo "### Added" ;;
+          fixed)       echo "### Fixed" ;;
+          changed)     echo "### Changed" ;;
+          performance) echo "### Performance" ;;
+          docs)        echo "### Documentation" ;;
+          tests)       echo "### Tests" ;;
+          build)       echo "### Build" ;;
+          chore)       echo "### Chore" ;;
+          reverted)    echo "### Reverted" ;;
+          style)       echo "### Style" ;;
+          other)       echo "### Other" ;;
+        esac
+        echo ""
+        echo "$category_commits"
+      fi
+    done
+  done
+} > "$OUTPUT"
+
+COMMIT_COUNT=$(git log --since="$SINCE" --oneline --no-merges | wc -l)
+DATE_COUNT=${#dates[@]}
+
+echo "CHANGELOG.md generated:"
+echo "  $COMMIT_COUNT commits across $DATE_COUNT days"
+echo "  Categories: ${!TYPES[*]}"
+echo "  Output: $OUTPUT"
