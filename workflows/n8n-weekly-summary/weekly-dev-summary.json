@@ -1,0 +1,194 @@
+{
+  "name": "Weekly Dev Summary — GitHub + Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "0 17 * * 5"}]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "repo", "name": "repo", "value": "={{ $env.GITHUB_REPO || 'anthropics/claude-code' }}", "type": "string"},
+            {"id": "language", "name": "language", "value": "={{ $env.SUMMARY_LANGUAGE || 'EN' }}", "type": "string"},
+            {"id": "days", "name": "days", "value": "7", "type": "number"}
+          ]
+        }
+      },
+      "id": "config",
+      "name": "Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits?since={{ $now.minus({days: $json.days}).toISO() }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {"response": {"response": {"fullResponse": false}}}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 180],
+      "credentials": {"httpHeaderAuth": {"id": "github-token", "name": "GitHub Token"}}
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config Variables').item.json.repo }}/pulls?state=closed&sort=updated&direction=desc&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "credentials": {"httpHeaderAuth": {"id": "github-token", "name": "GitHub Token"}}
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config Variables').item.json.repo }}/issues?state=closed&since={{ $now.minus({days: 7}).toISO() }}&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 420],
+      "credentials": {"httpHeaderAuth": {"id": "github-token", "name": "GitHub Token"}}
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByPosition": true,
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge GitHub Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "prompt",
+              "name": "prompt",
+              "value": "=You are a technical writer creating a weekly development summary.\n\nRepository: {{ $('Config Variables').item.json.repo }}\nLanguage: {{ $('Config Variables').item.json.language }}\nPeriod: Last 7 days\n\n## Commits This Week:\n{{ JSON.stringify($('Fetch Commits').all().map(i => ({message: i.json.commit?.message?.substring(0,100), author: i.json.commit?.author?.name, date: i.json.commit?.author?.date})).slice(0,30)) }}\n\n## Merged PRs:\n{{ JSON.stringify($('Fetch Merged PRs').all().filter(i => i.json.merged_at).map(i => ({title: i.json.title, number: i.json.number, user: i.json.user?.login})).slice(0,20)) }}\n\n## Closed Issues:\n{{ JSON.stringify($('Fetch Closed Issues').all().filter(i => !i.json.pull_request).map(i => ({title: i.json.title, number: i.json.number})).slice(0,20)) }}\n\nWrite a concise, engaging narrative summary (3-5 paragraphs) covering:\n1. Key features and improvements\n2. Bug fixes and maintenance\n3. Notable contributors\n4. Overall project momentum\n\nUse markdown formatting. Be specific about what changed.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "content-type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [{\"role\": \"user\", \"content\": \"{{ $json.prompt.replace(/\"/g, '\\\\\"').replace(/\\n/g, '\\\\n') }}\"}]\n}",
+        "options": {}
+      },
+      "id": "call-claude",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "summary",
+              "name": "summary",
+              "value": "={{ $json.content[0].text }}",
+              "type": "string"
+            },
+            {
+              "id": "subject",
+              "name": "subject",
+              "value": "=Weekly Dev Summary: {{ $('Config Variables').item.json.repo }} ({{ $now.format('MMM d, yyyy') }})",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "extract-summary",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.NOTIFICATION_EMAIL }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.summary }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"**{{ $json.subject }}**\\n\\n{{ $json.summary.substring(0, 1900) }}\"\n}",
+        "options": {}
+      },
+      "id": "send-discord",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Friday 5PM)": {"main": [[{"node": "Config Variables", "type": "main", "index": 0}]]},
+    "Config Variables": {"main": [[{"node": "Fetch Commits", "type": "main", "index": 0}, {"node": "Fetch Merged PRs", "type": "main", "index": 0}, {"node": "Fetch Closed Issues", "type": "main", "index": 0}]]},
+    "Fetch Commits": {"main": [[{"node": "Merge GitHub Data", "type": "main", "index": 0}]]},
+    "Fetch Merged PRs": {"main": [[{"node": "Merge GitHub Data", "type": "main", "index": 1}]]},
+    "Merge GitHub Data": {"main": [[{"node": "Build Claude Prompt", "type": "main", "index": 0}]]},
+    "Build Claude Prompt": {"main": [[{"node": "Claude API", "type": "main", "index": 0}]]},
+    "Claude API": {"main": [[{"node": "Extract Summary", "type": "main", "index": 0}]]},
+    "Extract Summary": {"main": [[{"node": "Send Email", "type": "main", "index": 0}, {"node": "Discord Webhook", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": [{"name": "weekly-summary"}, {"name": "github"}, {"name": "claude-api"}]
+}
