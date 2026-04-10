@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Claude Code Pre-Tool-Use Hook: Destructive Command Blocker
+# Blocks dangerous bash commands before execution
+# Install: cp guard-hook ~/.claude/hooks/ && chmod +x ~/.claude/hooks/guard-hook
+
+set -euo pipefail
+
+LOG_FILE="${HOME}/.claude/hooks/blocked.log"
+INPUT=$(cat)
+
+# Extract tool name and command from hook input JSON
+TOOL_NAME=$(echo "$INPUT" | grep -o '"tool_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+# Only check Bash tool calls
+if [ "$TOOL_NAME" != "Bash" ]; then
+  exit 0
+fi
+
+# Extract the command being executed
+COMMAND=$(echo "$INPUT" | grep -o '"command":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+if [ -z "$COMMAND" ]; then
+  exit 0
+fi
+
+# Project path from hook input
+PROJECT_PATH=$(echo "$INPUT" | grep -o '"cwd":"[^"]*"' | head -1 | cut -d'"' -f4)
+PROJECT_PATH="${PROJECT_PATH:-$(pwd)}"
+
+# ============================================================
+# DANGEROUS PATTERNS
+# Each pattern: regex | severity | description
+# ============================================================
+PATTERNS=(
+  # Filesystem destruction
+  'rm\s+-[a-zA-Z]*r[a-zA-Z]*f|rm\s+-[a-zA-Z]*f[a-zA-Z]*r|rm\s+-rf|rm\s+-fr:CRITICAL:Recursive force delete (rm -rf)'
+  'rm\s+-r\s+/[^.]|rm\s+-r\s+\.\.:HIGH:Recursive delete of system/parent path'
+  'mkfs\.|format\s+[A-Z]:|dd\s+if=.+of=/dev:CRITICAL:Disk format/overwrite'
+  'chmod\s+-R\s+777|chmod\s+777\s+/:HIGH:Insecure recursive permission change'
+  '>\s*/dev/sd|>\s*/dev/nvme:CRITICAL:Direct write to block device'
+
+  # Git destructive operations
+  'git\s+push\s+.*--force|git\s+push\s+-f\b:HIGH:Force push (overwrites remote history)'
+  'git\s+reset\s+--hard:HIGH:Hard reset (discards uncommitted changes)'
+  'git\s+clean\s+-[a-zA-Z]*f:MEDIUM:Force clean untracked files'
+  'git\s+checkout\s+--\s+\.|git\s+restore\s+\.:HIGH:Discard all working tree changes'
+  'git\s+branch\s+-D:MEDIUM:Force delete branch'
+
+  # Database destruction
+  'DROP\s+TABLE|DROP\s+DATABASE|DROP\s+SCHEMA:CRITICAL:SQL DROP statement'
+  'TRUNCATE\s+TABLE|TRUNCATE\s+:HIGH:SQL TRUNCATE (deletes all rows)'
+  'DELETE\s+FROM\s+[a-zA-Z_]+\s*;|DELETE\s+FROM\s+[a-zA-Z_]+\s*$:HIGH:DELETE without WHERE clause'
+
+  # System/process destruction
+  'kill\s+-9\s+-1|killall\s+-9:CRITICAL:Kill all processes'
+  'shutdown|reboot|init\s+[06]:HIGH:System shutdown/reboot'
+  'systemctl\s+stop\s+ssh|service\s+ssh\s+stop:HIGH:Stop SSH service'
+
+  # Credential exposure
+  'curl.*\|.*sh|wget.*\|.*sh|curl.*\|.*bash:MEDIUM:Pipe remote script to shell'
+)
+
+BLOCKED=false
+BLOCK_REASON=""
+BLOCK_SEVERITY=""
+
+for pattern_entry in "${PATTERNS[@]}"; do
+  IFS=':' read -r pattern severity description <<< "$pattern_entry"
+
+  if echo "$COMMAND" | grep -qiP "$pattern" 2>/dev/null || echo "$COMMAND" | grep -qiE "$pattern" 2>/dev/null; then
+    BLOCKED=true
+    BLOCK_REASON="$description"
+    BLOCK_SEVERITY="$severity"
+    break
+  fi
+done
+
+if [ "$BLOCKED" = true ]; then
+  # Log the blocked attempt
+  mkdir -p "$(dirname "$LOG_FILE")"
+  TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "${TIMESTAMP} | ${BLOCK_SEVERITY} | BLOCKED | ${BLOCK_REASON} | project=${PROJECT_PATH} | cmd=${COMMAND}" >> "$LOG_FILE"
+
+  # Return error to Claude Code (non-zero exit = block)
+  cat <<EOF
+BLOCKED: ${BLOCK_REASON}
+
+Severity: ${BLOCK_SEVERITY}
+Command:  ${COMMAND}
+Project:  ${PROJECT_PATH}
+
+This command was blocked by the destructive-command-blocker hook.
+The attempt has been logged to ${LOG_FILE}.
+
+If this action is intentional, you can:
+1. Ask the user to confirm the destructive operation
+2. Use a safer alternative (e.g., git stash instead of git reset --hard)
+3. Temporarily disable this hook in ~/.claude/settings.json
+EOF
+  exit 2
+fi
+
+# Command is safe — allow execution
+exit 0
