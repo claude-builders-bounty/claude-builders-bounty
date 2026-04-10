@@ -1,0 +1,263 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "week",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Friday 5PM",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "owner": "={{$env.GITHUB_OWNER}}",
+        "repository": "={{$env.GITHUB_REPO}}",
+        "returnAll": true,
+        "filters": {
+          "since": "={{$json.timestamp - 604800}}"
+        }
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 200],
+      "credentials": {
+        "githubApi": "github-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "owner": "={{$env.GITHUB_OWNER}}",
+        "repository": "={{$env.GITHUB_REPO}}",
+        "returnAll": true,
+        "filters": {
+          "state": "closed",
+          "since": "={{$json.timestamp - 604800}}"
+        }
+      },
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "githubApi": "github-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "owner": "={{$env.GITHUB_OWNER}}",
+        "repository": "={{$env.GITHUB_REPO}}",
+        "returnAll": true,
+        "filters": {
+          "state": "closed"
+        }
+      },
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 400],
+      "credentials": {
+        "githubApi": "github-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate GitHub data for the past week\nconst oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\n\nconst commits = $input.first().json;\nconst issues = $input.all()[1]?.json || [];\nconst prs = $input.all()[2]?.json || [];\n\n// Filter for past week\nconst recentCommits = (commits || []).filter(c => new Date(c.commit?.committer?.date) > oneWeekAgo);\nconst recentIssues = (issues || []).filter(i => new Date(i.closed_at) > oneWeekAgo);\nconst recentPRs = (prs || []).filter(p => new Date(p.merged_at || p.closed_at) > oneWeekAgo && p.merged);\n\nconst summary = {\n  period: oneWeekAgo.toISOString().split('T')[0] + ' to ' + new Date().toISOString().split('T')[0],\n  commits: {\n    count: recentCommits.length,\n    authors: [...new Set(recentCommits.map(c => c.commit?.author?.name || c.author?.login))].filter(Boolean),\n    messages: recentCommits.slice(0, 10).map(c => c.commit?.message?.split('\\n')[0])\n  },\n  issues: {\n    count: recentIssues.length,\n    titles: recentIssues.slice(0, 10).map(i => i.title)\n  },\n  pullRequests: {\n    count: recentPRs.length,\n    titles: recentPRs.slice(0, 10).map(p => p.title),\n    authors: [...new Set(recentPRs.map(p => p.user?.login))].filter(Boolean)\n  }\n};\n\nreturn [{json: summary}];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a technical writer creating weekly development summaries for engineering teams. Write in a clear, professional tone. Highlight key achievements, contributors, and momentum. Keep summaries concise but informative."
+          },
+          {
+            "role": "user",
+            "content": "=Please write a weekly development summary based on this GitHub activity data:\n\nPeriod: {{ $json.period }}\n\nCommits: {{ $json.commits.count }} commits by {{ $json.commits.authors.join(', ') }}\nKey commit messages: {{ $json.commits.messages.join('; ') }}\n\nClosed Issues: {{ $json.issues.count }} issues resolved\nIssue titles: {{ $json.issues.titles.join('; ') }}\n\nMerged Pull Requests: {{ $json.pullRequests.count }} PRs merged\nPR authors: {{ $json.pullRequests.authors.join(', ') }}\nPR titles: {{ $json.pullRequests.titles.join('; ') }}\n\nPlease write a concise but engaging summary of the week's development activity, highlighting key contributions and momentum."
+          }
+        ]
+      },
+      "id": "claude-api",
+      "name": "Generate Summary with Claude",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "credentials": {
+        "anthropicApi": "claude-api-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "webhookUri": "={{$env.DISCORD_WEBHOOK_URL}}",
+        "text": "=📊 **Weekly Development Summary**\n\n{{ $json.content }}\n\n_— Generated via n8n automation_",
+        "options": {}
+      },
+      "id": "discord-output",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [1100, 200],
+      "credentials": {
+        "discordWebhook": "discord-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "sendOptions": {},
+        "options": {}
+      },
+      "id": "slack-output",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1100, 300],
+      "credentials": {
+        "slackApi": "slack-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "subject": "=Weekly Dev Summary - {{ $json.period }}",
+        "body": "={{ $json.content }}\n\n<p><em>— Generated automatically via n8n</em></p>",
+        "to": "={{$env.SUMMARY_EMAIL_RECIPIENT}}"
+      },
+      "id": "email-output",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1100, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 5PM": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate GitHub Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary with Claude": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "automation",
+      "id": "automation-tag"
+    },
+    {
+      "name": "github",
+      "id": "github-tag"
+    },
+    {
+      "name": "claude",
+      "id": "claude-tag"
+    }
+  ]
+}
