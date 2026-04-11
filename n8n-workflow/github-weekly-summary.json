@@ -1,0 +1,219 @@
+{
+  "name": "GitHub Weekly Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "triggerOnWeekday": "FRIDAY"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/commits?since={{ $vars.weekStart }}&until={{ $vars.weekEnd }}&per_page=100"
+      },
+      "id": "get-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 100],
+      "notes": "Fetches commits from GitHub API"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/issues?state=closed&since={{ $vars.weekStart }}&per_page=100"
+      },
+      "id": "get-closed-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 220]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/pulls?state=closed&per_page=100"
+      },
+      "id": "get-merged-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 340]
+    },
+    {
+      "parameters": {
+        "method": "post",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2048
+            },
+            {
+              "name": "system",
+              "value": "=You are a developer relations assistant. Generate a concise weekly summary in {{ $env.LANGUAGE }} language with emojis and bullet points."
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"Generate a weekly development summary for {{ $env.GITHUB_REPO }}:\\n\\n**Recent Commits:**\\n{{ $('Get Commits').response[0].slice(0, 10).map(c => '- ' + c.commit.message.split('\\n')[0]).join('\\n') }}\\n\\n**Closed Issues:**\\n{{ $('Get Closed Issues').response[0].slice(0, 10).map(i => '- #' + i.number + ' ' + i.title).join('\\n') }}\\n\\n**Merged PRs:**\\n{{ $('Get Merged PRs').response[0].filter(pr => pr.merged_at).slice(0, 10).map(pr => '- #' + pr.number + ' ' + pr.title).join('\\n') }}\"}]"
+            }
+          ]
+        }
+      },
+      "id": "claude-summarize",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 220]
+    },
+    {
+      "parameters": {
+        "method": "post",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}"
+      },
+      "id": "discord-send",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 180]
+    },
+    {
+      "parameters": {
+        "to": "={{ $env.EMAIL_RECIPIENT }}",
+        "subject": "={{ $vars.emailSubject }}",
+        "emailOutput": "send",
+        "content": "={{ $json.content }}",
+        "options": {}
+      },
+      "id": "email-send",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1.1,
+      "position": [660, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst dayOfWeek = now.getDay();\nconst diffToFriday = (dayOfWeek + 2) % 7;\n\nconst weekEnd = new Date(now);\nweekEnd.setDate(now.getDate() - (diffToFriday || 7));\nweekEnd.setHours(23, 59, 59, 999);\n\nconst weekStart = new Date(weekEnd);\nweekStart.setDate(weekEnd.getDate() - 6);\nweekStart.setHours(0, 0, 0, 0);\n\nreturn {\n  weekStart: weekStart.toISOString(),\n  weekEnd: weekEnd.toISOString(),\n  emailSubject: 'Weekly Dev Summary - Week of ' + weekStart.toLocaleDateString()\n};"
+      },
+      "id": "date-calculator",
+      "name": "Calculate Week Dates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $input.first().json;\nconst content = claudeResponse.content[0].text;\n\nreturn {\n  json: {\n    content: content,\n    username: 'GitHub Weekly Bot'\n  }\n};"
+      },
+      "id": "format-discord",
+      "name": "Format for Discord",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, 180]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Calculate Week Dates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Week Dates": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Format for Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for Discord": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["github", "weekly", "summary", "claude", "automation"],
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "variables": {
+    "weekStart": "",
+    "weekEnd": "",
+    "emailSubject": "Weekly Development Summary"
+  },
+  "workflowId": "github-weekly-summary"
+}
