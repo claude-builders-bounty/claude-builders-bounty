@@ -1,0 +1,121 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    name: Review PR with Claude
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get PR info
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request || context.payload.issue;
+            return {
+              number: pr.number,
+              title: pr.title,
+              body: pr.body || '',
+              url: pr.html_url,
+              repo: context.repo.repo,
+              owner: context.repo.owner
+            };
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ steps.pr.outputs.number }} > pr.diff
+          echo "diff_file=pr.diff" >> $GITHUB_OUTPUT
+
+      - name: Run Claude Review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          # Install dependencies
+          pip install anthropic --quiet
+          
+          # Create review script
+          cat > /tmp/review.py << 'PYEOF'
+          import os, sys, json, re
+          import anthropic
+          
+          diff_file = os.environ.get("DIFF_FILE", "pr.diff")
+          with open(diff_file, "r") as f:
+              diff = f.read()
+          
+          pr_url = os.environ.get("PR_URL", "")
+          pr_title = os.environ.get("PR_TITLE", "PR Review")
+          
+          client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+          
+          response = client.messages.create(
+              model="claude-sonnet-4-20250514",
+              max_tokens=2048,
+              system="You are an expert code reviewer. Respond with JSON: {summary, risks, suggestions, confidence}",
+              messages=[{
+                  "role": "user",
+                  "content": f"Review this PR:\n\nTitle: {pr_title}\n\nDiff:\n{diff[:15000]}"
+              }]
+          )
+          
+          result = response.content[0].text.strip()
+          print(result)
+          PYEOF
+          
+          python3 /tmp/review.py > review_result.json
+          
+          # Parse and format
+          python3 << 'PYEOF'
+          import json
+          with open("review_result.json", "r") as f:
+              content = f.read().strip()
+          
+          # Extract JSON
+          match = re.search(r'\{.*\}', content, re.DOTALL)
+          if match:
+              review = json.loads(match.group(0))
+          else:
+              review = {"summary": content[:500], "risks": [], "suggestions": [], "confidence": "Low"}
+          
+          emoji = {"High": "✅", "Medium": "⚠️", "Low": "❌"}.get(review.get("confidence", "Low"), "⚠️")
+          
+          comment = f"""## 🤖 Claude Code PR Review
+
+{emoji} **Confidence**: {review.get('confidence', 'Unknown')}
+
+### Summary
+{review.get('summary', 'No summary available')}
+
+"""
+          
+          if review.get('risks'):
+              comment += "## Risks\n" + "\n".join(f"- {r}" for r in review['risks'][:5]) + "\n\n"
+          
+          if review.get('suggestions'):
+              comment += "## Suggestions\n" + "\n".join(f"- {s}" for s in review['suggestions'][:5]) + "\n\n"
+          
+          comment += "---\n*Reviewed by Claude Code AI*"
+          
+          with open("review_comment.md", "w") as f:
+              f.write(comment)
+          
+          print("Review generated successfully")
+          PYEOF
+
+      - name: Post comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ steps.pr.outputs.number }} --body-file review_comment.md
