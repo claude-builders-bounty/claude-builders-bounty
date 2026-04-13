@@ -1,25 +1,26 @@
-# Safety First: Claude Code Security Hook
+# Claude Code Safety Hook 🛡️
 
-This hook intercepts and blocks dangerous bash commands before they are executed by Claude Code.
+A `pre-tool-use` hook for [Claude Code](https://docs.anthropic.com/claude-code/hooks) that intercepts and blocks destructive bash commands before they can cause damage.
 
-## Blocked Commands:
-- `rm -rf`
-- `DROP TABLE` (SQL)
-- `git push --force`
-- `TRUNCATE` (SQL)
-- `DELETE FROM` without a `WHERE` clause
+## Blocked Patterns
+- `rm -rf` (Recursive forced removal)
+- `DROP TABLE` (SQL database destruction)
+- `git push --force` (Repository history overwrite)
+- `TRUNCATE` (SQL table clearing)
+- `DELETE FROM` (SQL deletions without a `WHERE` clause)
 
-## Installation:
+## Installation
 
-1. Create the hooks directory:
+Install in 2 commands:
+
 ```bash
 mkdir -p ~/.claude/hooks
+cp pre-tool-use.sh ~/.claude/hooks/pre-tool-use.sh && chmod +x ~/.claude/hooks/pre-tool-use.sh
 ```
 
-2. Copy the hook script:
-```bash
-cp security_hook.py ~/.claude/hooks/pre-tool-use.py
-```
+## Logging
+Every blocked attempt is logged to `~/.claude/hooks/blocked.log` with the following format:
+`[TIMESTAMP] | BLOCKED: [COMMAND] | PATTERN: [PATTERN] | PATH: [PROJECT_PATH]`
 
-## Logs:
-All blocked attempts are logged to `~/.claude/hooks/blocked.log`.
+---
+*Created by Michael Sovereign V7.0.0*
