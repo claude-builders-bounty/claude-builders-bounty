@@ -1,0 +1,62 @@
+name: Automated PR Review
+
+on:
+  # Run on new PRs
+  pull_request:
+    types: [opened, synchronize]
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      pr_url:
+        description: 'PR URL to review'
+        required: false
+        type: string
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install GitHub CLI
+        run: |
+          type -p gh &>/dev/null || (
+            sudo apt-get update
+            sudo apt-get install -y gh
+          )
+
+      - name: Authenticate GitHub CLI
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: Run PR review
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url || inputs.pr_url }}
+        run: |
+          chmod +x ./claude-review
+          ./claude-review --pr "$PR_URL" --post
+
+      - name: Save review artifact
+        if: always()
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url || inputs.pr_url }}
+        run: |
+          mkdir -p artifacts
+          ./claude-review --pr "$PR_URL" --output artifacts/review.md
+          ./claude-review --pr "$PR_URL" --json --output artifacts/review.json
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-review
+          path: artifacts/

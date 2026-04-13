@@ -1,0 +1,432 @@
+#!/usr/bin/env python3
+"""
+claude-review — A CLI tool that reviews GitHub PRs and outputs structured Markdown.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr https://github.com/owner/repo/pull/123 --post
+    claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import textwrap
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Data models
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PRInfo:
+    owner: str
+    repo: str
+    number: int
+    title: str = ""
+    body: str = ""
+    author: str = ""
+    state: str = ""
+    base_branch: str = ""
+    head_branch: str = ""
+    additions: int = 0
+    deletions: int = 0
+    changed_files: int = 0
+
+    @property
+    def url(self) -> str:
+        return f"https://github.com/{self.owner}/{self.repo}/pull/{self.number}"
+
+
+@dataclass
+class DiffStats:
+    files_changed: list = field(default_factory=list)
+    total_additions: int = 0
+    total_deletions: int = 0
+    file_count: int = 0
+    languages: set = field(default_factory=set)
+
+
+@dataclass
+class ReviewResult:
+    summary: str = ""
+    risks: list = field(default_factory=list)
+    improvements: list = field(default_factory=list)
+    confidence: str = "Medium"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+LANG_EXT = {
+    ".py": "Python", ".js": "JavaScript", ".ts": "TypeScript",
+    ".jsx": "JavaScript", ".tsx": "TypeScript", ".go": "Go",
+    ".rs": "Rust", ".rb": "Ruby", ".java": "Java", ".kt": "Kotlin",
+    ".c": "C", ".cpp": "C++", ".h": "C/C++", ".cs": "C#",
+    ".sh": "Shell", ".bash": "Shell", ".yml": "YAML", ".yaml": "YAML",
+    ".json": "JSON", ".md": "Markdown", ".html": "HTML", ".css": "CSS",
+    ".sql": "SQL", ".dockerfile": "Docker", ".tf": "Terraform",
+}
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    """Extract owner, repo, pr_number from a GitHub PR URL."""
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url.strip())
+    if not m:
+        print(f"Error: Invalid PR URL: {url}", file=sys.stderr)
+        print("Expected: https://github.com/owner/repo/pull/123", file=sys.stderr)
+        sys.exit(1)
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def run_gh(*args: str) -> str:
+    """Run a gh CLI command and return stdout."""
+    result = subprocess.run(
+        ["gh"] + list(args),
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        print(f"gh command failed: {' '.join(args)}", file=sys.stderr)
+        print(result.stderr, file=sys.stderr)
+        sys.exit(1)
+    return result.stdout
+
+
+def detect_language(filepath: str) -> str:
+    _, ext = os.path.splitext(filepath.lower())
+    return LANG_EXT.get(ext, ext.lstrip(".") or "unknown")
+
+
+def count_diff_lines(diff_text: str) -> tuple[int, int]:
+    additions, deletions = 0, 0
+    for line in diff_text.splitlines():
+        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+            continue
+        if line.startswith("+"):
+            additions += 1
+        elif line.startswith("-"):
+            deletions += 1
+    return additions, deletions
+
+
+# ---------------------------------------------------------------------------
+# PR data fetching
+# ---------------------------------------------------------------------------
+
+def fetch_pr_info(owner: str, repo: str, number: int) -> PRInfo:
+    """Fetch PR metadata via gh CLI."""
+    raw = run_gh(
+        "pr", "view", str(number),
+        "--repo", f"{owner}/{repo}",
+        "--json", "title,body,author,state,baseRefName,headRefName,additions,deletions,changedFiles",
+    )
+    data = json.loads(raw)
+    return PRInfo(
+        owner=owner, repo=repo, number=number,
+        title=data.get("title", ""),
+        body=data.get("body", "") or "",
+        author=data.get("author", {}).get("login", "unknown"),
+        state=data.get("state", ""),
+        base_branch=data.get("baseRefName", ""),
+        head_branch=data.get("headRefName", ""),
+        additions=data.get("additions", 0),
+        deletions=data.get("deletions", 0),
+        changed_files=data.get("changedFiles", 0),
+    )
+
+
+def fetch_diff(owner: str, repo: str, number: int) -> str:
+    """Fetch the full diff via gh CLI."""
+    return run_gh("pr", "diff", str(number), "--repo", f"{owner}/{repo}")
+
+
+def parse_diff_stats(diff_text: str) -> DiffStats:
+    """Parse diff text to extract per-file stats."""
+    stats = DiffStats()
+    current_file = None
+
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git"):
+            # Extract filepath from 'diff --git a/path b/path'
+            parts = line.split(" b/", 1)
+            if len(parts) > 1:
+                current_file = parts[1].strip()
+                stats.files_changed.append(current_file)
+                stats.languages.add(detect_language(current_file))
+
+    # Count additions/deletions per file
+    file_sections = re.split(r"^diff --git", diff_text, flags=re.MULTILINE)[1:]
+    total_add = 0
+    total_del = 0
+    for section in file_sections:
+        add, dele = count_diff_lines(section)
+        total_add += add
+        total_del += dele
+
+    stats.total_additions = total_add
+    stats.total_deletions = total_del
+    stats.file_count = len(stats.files_changed)
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# Analysis engine
+# ---------------------------------------------------------------------------
+
+# Heuristic patterns that suggest risk
+RISK_PATTERNS = [
+    (r"\bos\.remove\(|\bos\.unlink\(|\bshutil\.rmtree\(", "File deletion operation detected"),
+    (r"\bsubprocess\.(call|run|Popen)\(", "Subprocess execution — potential command injection risk"),
+    (r"\beval\(|\bexec\(", "Use of eval/exec — potential code injection risk"),
+    (r"\bopen\(", "File I/O operation — verify path sanitization"),
+    (r"\bpassword\b|\bsecret\b|\btoken\b|\bapi_key\b", "Possible hardcoded credential or secret"),
+    (r"\bSELECT\b.*\bFROM\b.*WHERE.*%", "Possible SQL injection risk (string formatting in query)"),
+    (r"\bchmod\b|\bchown\b", "Permission modification"),
+    (r"\bdisable.*ssl\b|\bverify.*=.*False\b|\bno.verify\b", "SSL verification disabled"),
+    (r"rm\s+-rf\b", "Recursive force delete in shell"),
+    (r"\.innerHTML\s*=", "DOM XSS risk via innerHTML"),
+    (r"\bsudo\b", "Sudo usage — elevated privileges"),
+]
+
+# Patterns that suggest improvement opportunities
+IMPROVEMENT_PATTERNS = [
+    (r"\bTODO\b|\bFIXME\b|\bHACK\b|\bXXX\b", "Contains TODO/FIXME/HACK comments — unfinished work"),
+    (r"^\+.*print\(", "Debug print statement may have been left in"),
+    (r"^\+.*console\.log\(", "Debug console.log may have been left in"),
+    (r"^\+\s*except\s*:\s*$|^\+\s*except\s+Exception\s*:", "Bare except clause — catch specific exceptions"),
+    (r"^\+\s*catch\s*\(\s*\)", "Empty catch block — handle errors properly"),
+    (r"# type:\s*ignore", "Type ignore comment — may mask real type errors"),
+    (r"pragma:\s*no.cover", "Coverage pragma — ensure tests cover this code"),
+    (r"\.sleep\(|time\.sleep\(\d{3,}", "Long sleep/wait — may impact performance"),
+]
+
+# Patterns that suggest high complexity or large changes
+COMPLEXITY_INDICATORS = [
+    (r"^\+.*def\s+\w+.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n", "New function with significant complexity"),
+]
+
+
+def analyze_diff(diff_text: str, stats: DiffStats) -> ReviewResult:
+    """Run heuristic analysis on the diff and produce a review."""
+    result = ReviewResult()
+
+    # --- Summary ---
+    lang_str = ", ".join(sorted(stats.languages)) if stats.languages else "unknown"
+    file_list = stats.files_changed[:5]
+    file_summary = ", ".join(f"`{f}`" for f in file_list)
+    if stats.file_count > 5:
+        file_summary += f" and {stats.file_count - 5} more"
+
+    result.summary = (
+        f"This PR modifies {stats.file_count} file(s) ({lang_str}) with "
+        f"+{stats.total_additions}/-{stats.total_deletions} lines. "
+        f"Key files: {file_summary}."
+    )
+
+    # --- Risks ---
+    for pattern, description in RISK_PATTERNS:
+        matches = re.findall(pattern, diff_text, re.IGNORECASE | re.MULTILINE)
+        if matches:
+            result.risks.append(f"⚠️ {description} (found {len(matches)} occurrence(s))")
+
+    # Check for large hunks
+    hunks = re.findall(r"^@@ .+ @@.*$", diff_text, re.MULTILINE)
+    if len(hunks) > 30:
+        result.risks.append(
+            f"⚠️ Large PR with {len(hunks)} diff hunks — consider splitting into smaller PRs"
+        )
+
+    # Check for changes to lock files
+    for f in stats.files_changed:
+        if any(x in f.lower() for x in ["lock", "package-lock", "yarn.lock", "poetry.lock", "cargo.lock"]):
+            result.risks.append(f"⚠️ Lock file modified: `{f}` — review dependency changes carefully")
+
+    # Check for config/security changes
+    for f in stats.files_changed:
+        if any(x in f.lower() for x in [".env", "config", "secret", "credential", "auth"]):
+            result.risks.append(f"⚠️ Configuration/security file modified: `{f}`")
+
+    if not result.risks:
+        result.risks.append("✅ No significant risks detected by automated analysis")
+
+    # --- Improvements ---
+    for pattern, description in IMPROVEMENT_PATTERNS:
+        matches = re.findall(pattern, diff_text, re.IGNORECASE | re.MULTILINE)
+        if matches:
+            result.improvements.append(f"💡 {description} (found {len(matches)} occurrence(s))")
+
+    # General improvement suggestions
+    if stats.total_additions > 500:
+        result.improvements.append("💡 Consider breaking this into smaller, more focused PRs for easier review")
+
+    if stats.file_count > 20:
+        result.improvements.append("💡 High file count — ensure changes are cohesive and well-scoped")
+
+    if not result.improvements:
+        result.improvements.append("✅ No obvious improvement suggestions from automated analysis")
+
+    # --- Confidence ---
+    score = 0
+    if stats.total_additions + stats.total_deletions < 50:
+        score += 3
+    elif stats.total_additions + stats.total_deletions < 200:
+        score += 2
+    else:
+        score += 1
+
+    if stats.file_count <= 5:
+        score += 2
+    elif stats.file_count <= 15:
+        score += 1
+
+    if len(result.risks) <= 2:
+        score += 2
+    elif len(result.risks) <= 5:
+        score += 1
+
+    if score >= 6:
+        result.confidence = "High"
+    elif score >= 3:
+        result.confidence = "Medium"
+    else:
+        result.confidence = "Low"
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Output formatting
+# ---------------------------------------------------------------------------
+
+def format_review(pr: PRInfo, review: ReviewResult) -> str:
+    """Format the review as structured Markdown."""
+    lines = [
+        f"## 🔍 Automated PR Review: #{pr.number}",
+        "",
+        f"**PR:** [{pr.title}]({pr.url})",
+        f"**Author:** @{pr.author}",
+        f"**Branch:** `{pr.head_branch}` → `{pr.base_branch}`",
+        f"**Changes:** +{pr.additions} / -{pr.deletions} across {pr.changed_files} file(s)",
+        "",
+        "---",
+        "",
+        "### 📝 Summary",
+        "",
+        review.summary,
+        "",
+        "---",
+        "",
+        "### ⚠️ Identified Risks",
+        "",
+    ]
+    for r in review.risks:
+        lines.append(f"- {r}")
+
+    lines += [
+        "",
+        "---",
+        "",
+        "### 💡 Improvement Suggestions",
+        "",
+    ]
+    for imp in review.improvements:
+        lines.append(f"- {imp}")
+
+    lines += [
+        "",
+        "---",
+        "",
+        f"### 🎯 Confidence Score: **{review.confidence}**",
+        "",
+        "> This review was generated by [claude-review](https://github.com/claude-builders-bounty), "
+        "an automated PR analysis tool. Always apply human judgment before acting on suggestions.",
+        "",
+    ]
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="claude-review",
+        description="Review a GitHub PR and output structured Markdown analysis.",
+    )
+    parser.add_argument(
+        "--pr", required=True,
+        help="GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)",
+    )
+    parser.add_argument(
+        "--output", "-o",
+        help="Write review to a file instead of stdout",
+    )
+    parser.add_argument(
+        "--post", action="store_true",
+        help="Post the review as a comment on the PR",
+    )
+    parser.add_argument(
+        "--json", action="store_true", dest="as_json",
+        help="Output review as JSON instead of Markdown",
+    )
+    return parser
+
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+
+    owner, repo, number = parse_pr_url(args.pr)
+
+    print(f"Fetching PR #{number} from {owner}/{repo}...", file=sys.stderr)
+
+    pr_info = fetch_pr_info(owner, repo, number)
+    diff_text = fetch_diff(owner, repo, number)
+    diff_stats = parse_diff_stats(diff_text)
+
+    print(f"Analyzing {diff_stats.file_count} file(s), "
+          f"+{diff_stats.total_additions}/-{diff_stats.total_deletions} lines...",
+          file=sys.stderr)
+
+    review = analyze_diff(diff_text, diff_stats)
+
+    if args.as_json:
+        output = json.dumps({
+            "pr_url": pr_info.url,
+            "pr_title": pr_info.title,
+            "author": pr_info.author,
+            "summary": review.summary,
+            "risks": review.risks,
+            "improvements": review.improvements,
+            "confidence": review.confidence,
+        }, indent=2)
+    else:
+        output = format_review(pr_info, review)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(output)
+        print(f"Review written to {args.output}", file=sys.stderr)
+    else:
+        print(output)
+
+    if args.post:
+        print("Posting review comment to PR...", file=sys.stderr)
+        run_gh(
+            "pr", "comment", str(number),
+            "--repo", f"{owner}/{repo}",
+            "--body", output,
+        )
+        print("Comment posted successfully!", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
