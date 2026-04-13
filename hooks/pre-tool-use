@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+#────────────────────────────────────────────────────────────────────────────
+# pre-tool-use — Safety Hook: Block Destructive Commands
+#────────────────────────────────────────────────────────────────────────────
+# Claude Code hook that intercepts dangerous bash commands before execution.
+# Install: cp pre-tool-use ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use
+# Format: Claude Code expects hook to read JSON from stdin, emit JSON to stdout.
+#────────────────────────────────────────────────────────────────────────────
+
+BLOCKED_LOG="${HOME}/.claude/hooks/blocked.log"
+HOOK_DIR="${HOME}/.claude/hooks"
+
+#────────────────────────────────────────────────────────────────────────────
+# Blocked patterns — matched against the full command line
+#────────────────────────────────────────────────────────────────────────────
+declare -a BLOCKED_PATTERNS=(
+  # Recursive force delete
+  "rm\s+-rf\s+/"
+  "rm\s+-rf\s+~"
+  "rm\s+-rf\s+/\s"
+  "rm\s+-rf\s+[a-zA-Z]*/\*"
+  
+  # Database destructive
+  "DROP\s+TABLE"
+  "DROP\s+DATABASE"
+  "TRUNCATE"
+  "DELETE\s+FROM\s+[a-zA-Z_]+\s*;"
+  "DELETE\s+FROM\s+[a-zA-Z_]+\s+WHERE\s+1\s*="
+  
+  # Git force push
+  "git\s+push\s+.*\s+--force"
+  "git\s+push\s+.*\s+-f"
+  "git\s+push\s+.*\s+--force-with-lease"
+  
+  # Network destruction
+  "iptables\s+-F"
+  "iptables\s+--flush"
+  "ufw\s+disable"
+  "firewall-cmd\s+--add-port\s+--permanent"
+  
+  # Package destruction
+  "apt-get\s+remove\s+.*--purge"
+  "yum\s+remove\s+.*--remove-leaves"
+  "pip\s+uninstall\s+.*-y"
+  "npm\s+uninstall\s+.*-g"
+  
+  # Data destruction
+  "dd\s+if=.*of=/dev/"
+  "mkfs\."
+  "wipe\s+-rf"
+  "shred\s+-rf"
+  
+  # Process killing
+  "kill\s+-9\s+1"
+  "kill\s+-9\s+$$
+  "pkill\s+-9"
+  
+  # Disk/Filesystem
+  ":(){ :|:& };:"        # Fork bomb
+  ">\s*/dev/sd"
+  "dd\s+of=/dev/sd"
+)
+
+#────────────────────────────────────────────────────────────────────────────
+# Log a blocked attempt
+#────────────────────────────────────────────────────────────────────────────
+log_blocked() {
+  local cmd="$1"
+  local ts
+  ts=$(date "+%Y-%m-%d %H:%M:%S")
+  
+  mkdir -p "$(dirname "$BLOCKED_LOG")" 2>/dev/null || true
+  
+  echo "[$ts] BLOCKED: $cmd (cwd: $(pwd))" >> "$BLOCKED_LOG"
+}
+
+#────────────────────────────────────────────────────────────────────────────
+# Check if command matches any blocked pattern
+#────────────────────────────────────────────────────────────────────────────
+is_blocked() {
+  local cmd="$1"
+  
+  for pattern in "${BLOCKED_PATTERNS[@]}"; do
+    if echo "$cmd" | grep -qiE "$pattern"; then
+      return 0
+    fi
+  done
+  
+  # Additional safety checks
+  if echo "$cmd" | grep -qiE "rm\s+-rf\s+[a-zA-Z]"; then
+    # Allow rm -rf on known safe dirs with confirmation
+    local safe_dirs="/tmp/work|/tmp/repo|/tmp/clone"
+    if ! echo "$cmd" | grep -qiE "$safe_dirs"; then
+      return 0
+    fi
+  fi
+  
+  return 1
+}
+
+#────────────────────────────────────────────────────────────────────────────
+# Read input from Claude Code (JSON)
+#────────────────────────────────────────────────────────────────────────────
+read_input() {
+  # Claude Code sends JSON like: {"tool":"bash","args":{"command":"..."}}
+  # Read all of stdin
+  python3 -c "
+import sys, json
+
+try:
+    data = json.load(sys.stdin)
+    tool_name = data.get('tool', data.get('name', ''))
+    args = data.get('args', data)
+    
+    # Extract command from various possible structures
+    command = args.get('command', args.get('script', ''))
+    
+    # For shell exec, get the command
+    if not command:
+        command = args.get('command', '')
+    
+    print(command, end='')
+except Exception as e:
+    print('', end='')
+"
+}
+
+#────────────────────────────────────────────────────────────────────────────
+# Main — Claude Code hook interface
+#────────────────────────────────────────────────────────────────────────────
+main() {
+  local cmd
+  cmd=$(read_input)
+  
+  if [[ -z "$cmd" ]]; then
+    # No command to check, allow
+    echo '{"allow": true}'
+    exit 0
+  fi
+  
+  if is_blocked "$cmd"; then
+    log_blocked "$cmd"
+    
+    # Claude Code expects hook response: {"allow": false, "reason": "..."}
+    echo '{"allow": false, "reason": "⛔ DESTRUCTIVE COMMAND BLOCKED\n\nThe command you attempted has been blocked by the safety hook:\n\n```\n'"$cmd"'\n```\n\nThis pattern matches a known destructive operation.\nIf you need to proceed, please:\n1. Break the operation into smaller, safer steps\n2. Use interactive confirmation where available\n3. Explain your intent to proceed safely\n\nBlocked attempts are logged to: '"$BLOCKED_LOG"'"}'
+    exit 0
+  fi
+  
+  # Allow
+  echo '{"allow": true}'
+}
+
+main
