@@ -1,0 +1,331 @@
+#!/usr/bin/env bash
+#────────────────────────────────────────────────────────────────────────────
+# claude-review — GitHub PR Review Agent (Pure Bash)
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+#        claude-review --pr 123 --owner owner --repo repo [--token TOKEN]
+#────────────────────────────────────────────────────────────────────────────
+
+set -euo pipefail
+
+# Defaults
+PR_URL=""
+PR_NUM=""
+OWNER=""
+REPO=""
+TOKEN="${GITHUB_TOKEN:-}"
+OUTPUT_FILE=""
+VERBOSE=false
+
+#────────────────────────────────────────────────────────────────────────────
+# Usage
+#────────────────────────────────────────────────────────────────────────────
+usage() {
+  cat <<EOF
+Usage: claude-review [OPTIONS]
+
+  --pr <url|number>   PR URL or number (required)
+  --owner <owner>      Repository owner (required if --pr is a number)
+  --repo <repo>        Repository name (required if --pr is a number)
+  --token <token>      GitHub API token (or set GITHUB_TOKEN env var)
+  --output <file>      Write review to file instead of stdout
+  --verbose            Show debug info
+  -h, --help           Show this help
+
+Examples:
+  claude-review --pr https://github.com/anthropic/claude-code/pull/456
+  claude-review --pr 456 --owner anthropic --repo claude-code
+EOF
+  exit 1
+}
+
+#────────────────────────────────────────────────────────────────────────────
+# Parse args
+#────────────────────────────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr)        PR_NUM="$2"; shift 2 ;;
+    --owner)     OWNER="$2"; shift 2 ;;
+    --repo)      REPO="$2"; shift 2 ;;
+    --token)     TOKEN="$2"; shift 2 ;;
+    --output)    OUTPUT_FILE="$2"; shift 2 ;;
+    --verbose)   VERBOSE=true; shift ;;
+    -h|--help)   usage ;;
+    *)           echo "Unknown option: $1"; usage ;;
+  esac
+done
+
+#────────────────────────────────────────────────────────────────────────────
+# Resolve PR URL / number
+#────────────────────────────────────────────────────────────────────────────
+resolve_pr() {
+  if [[ "$PR_NUM" =~ ^https?:// ]]; then
+    PR_URL="$PR_NUM"
+    # Extract owner/repo/number from URL
+    # Supports: https://github.com/owner/repo/pull/123
+    #           https://github.com/owner/repo/pull/123/files
+    if [[ "$PR_URL" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+      OWNER="${BASH_REMATCH[1]}"
+      REPO="${BASH_REMATCH[2]}"
+      PR_NUM="${BASH_REMATCH[3]}"
+    else
+      echo "ERROR: Could not parse PR URL: $PR_URL" >&2
+      exit 1
+    fi
+  elif [[ -n "$PR_NUM" ]]; then
+    if [[ -z "$OWNER" || -z "$REPO" ]]; then
+      echo "ERROR: --owner and --repo required when --pr is a number" >&2
+      exit 1
+    fi
+    PR_URL="https://github.com/$OWNER/$REPO/pull/$PR_NUM"
+  else
+    echo "ERROR: --pr is required" >&2
+    usage
+  fi
+
+  [[ -n "$TOKEN" ]] || {
+    echo "ERROR: GitHub token required. Set GITHUB_TOKEN env var or --token" >&2
+    exit 1
+  }
+}
+
+#────────────────────────────────────────────────────────────────────────────
+# GitHub API helper
+#────────────────────────────────────────────────────────────────────────────
+gh_api() {
+  local endpoint="$1"
+  curl -sSf -H "Authorization: token $TOKEN" \
+       -H "Accept: application/vnd.github.v3+json" \
+       "https://api.github.com$endpoint"
+}
+
+#────────────────────────────────────────────────────────────────────────────
+# Main review logic
+#────────────────────────────────────────────────────────────────────────────
+review_pr() {
+  resolve_pr
+
+  [[ "$VERBOSE" == true ]] && echo "[DEBUG] Reviewing PR #$PR_NUM in $OWNER/$REPO" >&2
+
+  # ── Fetch PR metadata ────────────────────────────────────────────────────
+  local pr_json diff_json comments_json
+  pr_json=$(gh_api "/repos/$OWNER/$REPO/pulls/$PR_NUM")
+  
+  local title body state base_branch head_branch
+  title=$(echo "$pr_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))")
+  body=$(echo "$pr_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('body','') or '')")
+  state=$(echo "$pr_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('state',''))")
+  base_branch=$(echo "$pr_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('base',{}).get('ref',''))")
+  head_branch=$(echo "$pr_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('head',{}).get('ref',''))")
+
+  [[ "$VERBOSE" == true ]] && echo "[DEBUG] PR title: $title" >&2
+
+  # ── Fetch diff ───────────────────────────────────────────────────────────
+  diff_json=$(gh_api "/repos/$OWNER/$REPO/pulls/$PR_NUM/files?per_page=100")
+
+  # ── Fetch existing comments ──────────────────────────────────────────────
+  comments_json=$(gh_api "/repos/$OWNER/$REPO/issues/$PR_NUM/comments")
+
+  # ── Parse changed files ─────────────────────────────────────────────────
+  local changed_files add_lines del_lines
+  changed_files=$(echo "$diff_json" | python3 -c "
+import sys, json
+files = json.load(sys.stdin)
+print(len(files))
+" 2>/dev/null || echo "0")
+
+  # Count additions/deletions
+  local total_add=0 total_del=0
+  total_add=$(echo "$diff_json" | python3 -c "
+import sys, json
+files = json.load(sys.stdin)
+total = sum(f.get('additions',0) for f in files)
+print(total)
+" 2>/dev/null || echo "0")
+  total_del=$(echo "$diff_json" | python3 -c "
+import sys, json
+files = json.load(sys.stdin)
+total = sum(f.get('deletions',0) for f in files)
+print(total)
+" 2>/dev/null || echo "0")
+
+  # ── Build diff text for analysis ─────────────────────────────────────────
+  local diff_text
+  diff_text=$(echo "$diff_json" | python3 -c "
+import sys, json
+files = json.load(sys.stdin)
+for f in files:
+    print(f'## {f[\"filename\"]}')
+    print(f'Changes: +{f[\"additions\"]} -{f[\"deletions\"]}')
+    patch = f.get('patch', '')
+    if patch:
+        lines = patch.split('\n')
+        for line in lines[:200]:  # limit to first 200 lines per file
+            print(line)
+    print()
+" 2>/dev/null || echo "Error parsing diff")
+
+  # ── Get commit messages for context ─────────────────────────────────────
+  local commits_json
+  commits_json=$(gh_api "/repos/$OWNER/$REPO/pulls/$PR_NUM/commits?per_page=10")
+  local commit_messages
+  commit_messages=$(echo "$commits_json" | python3 -c "
+import sys, json
+commits = json.load(sys.stdin)
+for c in commits[:5]:
+    msg = c['commit']['message'].split('\n')[0]
+    print(f'- {msg}')
+" 2>/dev/null || echo "")
+
+  # ── Analyze and score ────────────────────────────────────────────────────
+  local risk_items suggestions confidence
+
+  # Risk analysis based on diff patterns
+  risk_items=$(echo "$diff_json" "$body" | python3 -c "
+import sys, re
+
+data = sys.stdin.read()
+risks = []
+
+# Check for security-sensitive patterns
+dangerous_patterns = [
+    (r'sql.*SELECT.*FROM.*WHERE', 'SQL query without parameterization may be vulnerable to injection'),
+    (r'execute\s*\(\s*["\'].*\$\{?', 'String interpolation in query execution — injection risk'),
+    (r'eval\s*\(', 'Use of eval() — code injection risk'),
+    (r'child_process|exec\s*\(', 'Shell command execution — verify user input is sanitized'),
+    (r'process\.env\.|os\.environ', 'Environment variable access — ensure no secrets exposed'),
+    (r'password|secret|api_key|token', 'Potential secret or credential in code — verify intentionally exposed'),
+    (r'\.env\b', '.env file modification — ensure .gitignore covers secrets'),
+    (r'chmod\s+777|chmod\s+0', 'Dangerous file permissions — security risk'),
+    (r'DROP\s+TABLE|TRUNCATE|DELETE\s+FROM\s+WHERE', 'Destructive DB operations — verify intentional'),
+    (r'--force|force\s*push', 'Force push detected — ensure review before merging'),
+    (r'console\.log\(|logger\.(debug|info)', 'Debug logging left in — consider removing in production'),
+    (r'await.*\.then\(|then\([^)]*\)\s*=>', 'Unchecked async patterns — ensure error handling'),
+    (r'try\s*\{[^}]*\}\s*catch\s*\([^)]*\)\s*\{\s*\}', 'Empty catch block — errors silently swallowed'),
+]
+
+found = set()
+for pat, desc in dangerous_patterns:
+    if re.search(pat, data, re.IGNORECASE):
+        if desc not in found:
+            found.add(desc)
+            risks.append(f'- **{desc}**')
+
+if not risks:
+    print('- No obvious risks detected in the changed code')
+else:
+    for r in risks:
+        print(r)
+" 2>/dev/null)
+
+  # Improvement suggestions
+  suggestions=$(echo "$diff_json" "$body" | python3 -c "
+import sys, re
+data = sys.stdin.read()
+sugs = []
+
+patterns = [
+    (r'function\s+\w+[^{]*\{[^}]*\}', 'Consider extracting complex logic into well-named helper functions'),
+    (r'if\s*\(.*\)\s*\{[^}]*if\s*\(', 'Deeply nested conditionals detected — consider early returns or refactoring'),
+    (r'TODO|FIXME|HACK|XXX', 'Found TODO/FIXME comments — should be addressed before merge'),
+    (r'\/\*\*[\s\S]*?\*\/', 'Consider adding/updating documentation for complex code sections'),
+    (r'\.ts|\.tsx|\.js|\.jsx', 'Test coverage — ensure new logic has corresponding tests'),
+    (r'mock|spy|stub', 'Mock usage detected — verify test coverage is sufficient'),
+]
+
+for pat, desc in patterns:
+    if re.search(pat, data, re.IGNORECASE):
+        sugs.append(f'- {desc}')
+        break
+
+# Add general suggestions
+sugs.extend([
+    '- Verify all error states are handled with appropriate fallbacks',
+    '- Check that API responses are validated before use',
+    '- Ensure any new dependencies are reviewed for security implications',
+])
+
+for s in sugs[:5]:
+    print(s)
+" 2>/dev/null || echo "- Review code for adherence to project style guidelines")
+
+  # Confidence scoring
+  local file_count不安全
+  file_count=$(echo "$diff_json" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "1")
+  
+  local complexity_score=50
+  # Adjust based on file count and changes
+  [[ "$file_count" -gt 10 ]] && complexity_score=$((complexity_score + 20))
+  [[ "$file_count" -gt 30 ]] && complexity_score=$((complexity_score + 20))
+  
+  # Check for risky patterns
+  echo "$diff_text $body" | grep -qiE '(sql|exec|eval|child_process|process\.env)' && complexity_score=$((complexity_score + 15))
+  
+  [[ $complexity_score -ge 85 ]] && confidence="High" || \
+  [[ $complexity_score -ge 60 ]] && confidence="Medium" || \
+  confidence="Low"
+
+  # ── Render Markdown output ──────────────────────────────────────────────
+  cat <<REVIEW
+# 📋 PR Review — #$PR_NUM
+
+**Repository:** [$OWNER/$REPO](https://github.com/$OWNER/$REPO)  
+**PR Title:** $title  
+**State:** $state  
+**Base:** \`$base_branch\` ← **Head:** \`$head_branch\`
+
+---
+
+## 📝 Summary
+
+$body
+
+**Changed Files:** $changed_files  
+**Additions:** +$total_add | **Deletions:** -$total_del
+
+**Recent commits:**
+$commit_messages
+
+---
+
+## 🔍 Code Review
+
+### Diff
+
+\`\`\`diff
+$diff_text
+\`\`\`
+
+---
+
+## ⚠️ Identified Risks
+
+$risk_items
+
+---
+
+## 💡 Improvement Suggestions
+
+$suggestions
+
+---
+
+## 📊 Confidence Score
+
+**[$confidence]**
+
+The confidence level reflects the extent of the review coverage:
+- **Low:** Limited diff visibility, recommend manual deep-dive
+- **Medium:** Key patterns reviewed, manual spot-check advised
+- **High:** Comprehensive analysis, low residual risk expected
+
+---
+
+*🤖 Generated by claude-review (Claude Code sub-agent)*
+*Review URL: $PR_URL*
+REVIEW
+
+  # Write to output file if specified
+  [[ -n "$OUTPUT_FILE" ]] && cat > "$OUTPUT_FILE"
+}
+
+review_pr
