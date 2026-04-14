@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# claude-review: Review a GitHub PR and post a structured comment
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+
+set -euo pipefail
+
+PR_URL=""
+POST_COMMENT=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --pr) PR_URL="$2"; shift 2 ;;
+        --post) POST_COMMENT=true; shift ;;
+        *) shift ;;
+    esac
+done
+
+if [[ -z "$PR_URL" ]]; then
+    echo "Usage: claude-review --pr <PR_URL> [--post]"
+    exit 1
+fi
+
+# Parse PR URL
+IFS='/' read -ra PARTS <<< "$PR_URL"
+OWNER="${PARTS[3]}"
+REPO="${PARTS[4]}"
+PR_NUM="${PARTS[6]}"
+
+echo "📋 Fetching PR diff for ${OWNER}/${REPO}#${PR_NUM}..."
+
+# Get PR info and diff
+PR_INFO=$(gh pr view "$PR_NUM" --repo "${OWNER}/${REPO}" --json title,body,additions,deletions,changedFiles,author 2>/dev/null)
+DIFF=$(gh pr diff "$PR_NUM" --repo "${OWNER}/${REPO}" 2>/dev/null | head -500)
+
+PR_TITLE=$(echo "$PR_INFO" | jq -r '.title')
+PR_AUTHOR=$(echo "$PR_INFO" | jq -r '.author.login')
+ADDITIONS=$(echo "$PR_INFO" | jq -r '.additions')
+DELETIONS=$(echo "$PR_INFO" | jq -r '.deletions')
+CHANGED_FILES=$(echo "$PR_INFO" | jq -r '.changedFiles')
+
+# Generate review using Claude Code
+REVIEW=$(claude -p "You are a code reviewer. Analyze this GitHub PR and provide a structured review.
+
+PR: ${PR_TITLE} by @${PR_AUTHOR}
+Files changed: ${CHANGED_FILES} (+${ADDITIONS}/-${DELETIONS})
+
+Diff:
+${DIFF}
+
+Provide your review in this EXACT format:
+## Summary
+(2-3 sentence summary of changes)
+
+## Risks
+- (list identified risks)
+
+## Suggestions
+- (list improvement suggestions)
+
+## Confidence: (Low/Medium/High)
+
+Do NOT include any other text outside this format." 2>/dev/null)
+
+echo ""
+echo "$REVIEW"
+
+# Post as comment if requested
+if [[ "$POST_COMMENT" == "true" ]]; then
+    echo "$REVIEW" | gh pr comment "$PR_NUM" --repo "${OWNER}/${REPO}" --body-file - 2>/dev/null
+    echo ""
+    echo "✅ Review posted to ${PR_URL}"
+fi
