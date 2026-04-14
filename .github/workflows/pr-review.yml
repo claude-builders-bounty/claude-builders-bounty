@@ -1,0 +1,112 @@
+name: AI PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DIFF=$(gh pr diff ${{ github.event.pull_request.number }} 2>/dev/null || curl -sL \
+            -H "Accept: application/vnd.github.v3.diff" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}")
+          echo "diff_length=${#DIFF}" >> "$GITHUB_OUTPUT"
+          # Truncate to 100KB for API limits
+          echo "$DIFF" | head -c 100000 > /tmp/pr.diff
+
+      - name: Get PR metadata
+        id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          META=$(gh pr view ${{ github.event.pull_request.number }} --json \
+            title,body,author,additions,deletions,changedFiles,baseRefName,headRefName)
+          echo "meta<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$META" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Generate AI review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          pip install anthropic 2>/dev/null || true
+          python3 << 'PYEOF'
+          import os, json, sys
+
+          diff = open("/tmp/pr.diff").read()[:80000]
+          meta = os.environ.get("META", "{}")
+          api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+          if not api_key:
+              print("Error: ANTHROPIC_API_KEY not set")
+              sys.exit(0)
+
+          prompt = f"""You are an expert code reviewer. Review this pull request.
+
+          PR Info: {meta}
+
+          Diff:
+          {diff[:50000]}
+
+          Provide a structured review:
+          ## Summary (2-3 sentences)
+          ## Risks (bulleted list)
+          ## Improvement Suggestions (bulleted list)
+          ## Confidence Score (Low/Medium/High)
+          ## Details (specific file/line references)"""
+
+          import urllib.request
+          data = json.dumps({
+              "model": "claude-sonnet-4-20250514",
+              "max_tokens": 4096,
+              "messages": [{"role": "user", "content": prompt}]
+          }).encode()
+
+          req = urllib.request.Request(
+              "https://api.anthropic.com/v1/messages",
+              data=data,
+              headers={
+                  "x-api-key": api_key,
+                  "anthropic-version": "2023-06-01",
+                  "content-type": "application/json"
+              }
+          )
+          try:
+              resp = urllib.request.urlopen(req, timeout=120)
+              result = json.loads(resp.read())
+              review = result["content"][0]["text"]
+              with open("/tmp/review.md", "w") as f:
+                  f.write(review)
+              print(f"Review generated: {len(review)} chars")
+          except Exception as e:
+              with open("/tmp/review.md", "w") as f:
+                  f.write(f"Review generation failed: {e}")
+              print(f"Error: {e}")
+          PYEOF
+        env:
+          META: ${{ steps.meta.outputs.meta }}
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f /tmp/review.md ] && [ -s /tmp/review.md ]; then
+            REVIEW=$(cat /tmp/review.md)
+            gh pr comment ${{ github.event.pull_request.number }} \
+              --body "## 🤖 AI PR Review
+
+          $REVIEW" 2>/dev/null || echo "Failed to post comment"
+          fi
