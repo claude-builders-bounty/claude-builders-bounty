@@ -1,53 +1,55 @@
-# Claude Builders Bounty 🤖
+# Claude Code Destructive Command Blocker
 
-> A community bounty board for Claude Code builders.
+A pre-tool-use hook that intercepts and blocks dangerous bash commands before Claude Code executes them.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Install (2 commands)
 
----
+```bash
+cp -r hooks ~/.claude/hooks/
+chmod +x ~/.claude/hooks/block-destructive.sh
+```
 
-## How it works
+## What It Blocks
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+| Pattern | Risk |
+|---|---|
+| `rm -rf /`, `rm -rf ~`, `rm -rf *` | Mass file deletion |
+| `DROP TABLE`, `TRUNCATE` | Database destruction |
+| `DELETE FROM` (without WHERE) | Unbounded data deletion |
+| `git push --force` | Git history rewrite |
+| `mkfs`, `dd if=` | Disk destruction |
+| `chmod -R 777 /` | Permission escalation |
+| Fork bombs | Resource exhaustion |
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Smart Safeguards
 
----
+The hook allows commands that include safety mechanisms:
+- `rm -rf --preserve-root` — protected root deletion
+- `DROP TABLE IF EXISTS` — safe table drops
+- `DELETE FROM ... WHERE ...` — bounded deletes
+- `git push --force-with-lease` — safer force push
 
-## Active Bounties
+## Logging
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+Every blocked attempt is logged to `~/.claude/hooks/blocked.log` with:
+- Timestamp (ISO 8601 UTC)
+- Matched pattern
+- Full command
+- Project path
 
----
+### Example log entry
 
-## Rules
+```
+[2026-04-14T01:30:00Z] BLOCKED | Pattern: rm -rf / | Command: rm -rf /tmp/old-project | Project: /home/user/myapp
+```
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## How It Works
 
----
+1. Claude Code passes bash command input via stdin (JSON format)
+2. The hook parses the command and checks against dangerous patterns
+3. If matched (without safety override), it logs the attempt and returns `block`
+4. Claude receives the block decision and explains to the user
 
-## Community
+## Claude Code Hooks
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+This follows the Claude Code hooks format in `~/.claude/hooks/`. See [Claude Code hooks docs](https://docs.anthropic.com/claude-code/hooks) for more information.
