@@ -1,53 +1,53 @@
-# Claude Builders Bounty 🤖
+# Claude Code Pre-Tool-Use Safety Hook
 
-> A community bounty board for Claude Code builders.
+> ⛔ Block destructive bash commands before they execute — with logging and clear explanations.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## What It Does
 
----
+This **Claude Code `PreToolUse` hook** intercepts dangerous bash commands (like `rm -rf /`, `DROP TABLE`, `git push --force`) **before** they execute, logs every blocked attempt, and tells Claude exactly why it was blocked.
 
-## How it works
+## Dangerous Patterns Blocked
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+| Pattern | Risk |
+|---------|------|
+| `rm -rf` (non-root paths) | Irreversible file deletion |
+| `DROP TABLE` / `TRUNCATE` | Database destruction |
+| `DELETE FROM` (without WHERE) | Accidental data wipe |
+| `git push --force` / `-f` | Rewrite shared history |
+| `dd if=/dev/zero`, `mkfs`, `> /dev/sd*` | Disk wiping |
+| `chmod -R 777 /` | Security hole |
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Install (2 commands)
 
----
+```bash
+mkdir -p ~/.claude/hooks && curl -sL https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/hooks/pre-tool-use-block-destructive.sh -o ~/.claude/hooks/pre-tool-use-block-destructive.sh && chmod +x ~/.claude/hooks/pre-tool-use-block-destructive.sh
+```
 
-## Active Bounties
+Then add to your Claude Code settings:
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```bash
+echo '{"hooks":{"PreToolUse":[{"type":"command","command":"bash ~/.claude/hooks/pre-tool-use-block-destructive.sh"}]}}' > ~/.claude/settings.local.json
+```
 
----
+## How It Works
 
-## Rules
+1. Claude Code sends tool-use JSON to stdin before each bash execution
+2. Hook extracts the command and checks against dangerous regex patterns
+3. If matched → **blocks** the command, logs to `~/.claude/hooks/blocked.log`, returns a clear explanation
+4. If safe → passes through unchanged, zero overhead
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Log Format
 
----
+Every blocked attempt is logged with timestamp, command, pattern, and project path:
 
-## Community
+```
+[2026-04-14T14:00:00Z] command="rm -rf ./node_modules" pattern="rm\s+-rf?\s+[^/]" path="/home/user/project"
+```
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Customize
 
----
+Edit the `DANGEROUS_PATTERNS` array in the script to add or remove patterns. Each entry is a PCRE (Perl-compatible) regex.
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## License
+
+MIT
