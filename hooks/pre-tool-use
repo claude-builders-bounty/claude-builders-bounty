@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""
+Claude Code Pre-Tool-Use Hook
+Blocks destructive bash commands before execution.
+"""
+
+import sys
+import json
+import re
+from datetime import datetime
+from pathlib import Path
+
+# Destructive patterns to block
+BLOCKED_PATTERNS = [
+    # File system destruction
+    (r'rm\s+-rf\s+/', 'rm -rf: Recursive force delete detected'),
+    (r'rm\s+-rf\s+~', 'rm -rf ~: Home directory deletion detected'),
+    (r'rm\s+-rf\s+/\s', 'rm -rf /: Root directory deletion detected'),
+    
+    # Database destruction
+    (r'DROP\s+TABLE', 'DROP TABLE: Database table deletion detected'),
+    (r'TRUNCATE\s+TABLE', 'TRUNCATE: Table data deletion detected'),
+    (r'DELETE\s+FROM\s+\w+\s*$', 'DELETE without WHERE: Potential data loss'),
+    (r'DELETE\s+FROM\s+\w+\s*;?\s*$', 'DELETE without WHERE: Potential data loss'),
+    
+    # Git destructive operations
+    (r'git\s+push\s+--force', 'git push --force: Force push detected'),
+    (r'git\s+push\s+-f\s', 'git push -f: Force push detected'),
+    
+    # Additional dangerous patterns
+    (r':\(\)\s*\{\s*:\|:\s*&\s*\};\s*:', 'Fork bomb detected'),
+    (r'mkfs\.', 'mkfs: Filesystem formatting detected'),
+    (r'dd\s+if=.*of=/dev/', 'dd to device: Direct disk write detected'),
+]
+
+# Log file path
+LOG_PATH = Path.home() / '.claude' / 'hooks' / 'blocked.log'
+
+
+def log_blocked_attempt(command: str, reason: str, project_path: str):
+    """Log blocked command to file."""
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().isoformat()
+    log_entry = f"[{timestamp}] BLOCKED: {reason}\n"
+    log_entry += f"  Command: {command}\n"
+    log_entry += f"  Project: {project_path}\n"
+    log_entry += "-" * 60 + "\n"
+    
+    with open(LOG_PATH, 'a') as f:
+        f.write(log_entry)
+
+
+def check_command(tool_input: dict) -> tuple[bool, str]:
+    """
+    Check if command should be blocked.
+    Returns (should_block, reason)
+    """
+    # Only check bash tool
+    if tool_input.get('tool') != 'bash':
+        return False, ""
+    
+    command = tool_input.get('command', '')
+    if not command:
+        return False, ""
+    
+    # Check against blocked patterns
+    for pattern, reason in BLOCKED_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True, reason
+    
+    return False, ""
+
+
+def main():
+    """Main hook entry point."""
+    # Read tool input from stdin
+    try:
+        tool_input = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        # If not valid JSON, allow the command
+        sys.exit(0)
+    
+    should_block, reason = check_command(tool_input)
+    
+    if should_block:
+        command = tool_input.get('command', 'Unknown')
+        project_path = tool_input.get('project_path', 'Unknown')
+        
+        # Log the blocked attempt
+        log_blocked_attempt(command, reason, project_path)
+        
+        # Output error message for Claude
+        error_msg = f"""
+╔══════════════════════════════════════════════════════════════╗
+║  🔒 SECURITY HOOK BLOCKED THIS COMMAND                       ║
+╠══════════════════════════════════════════════════════════════╣
+║  Reason: {reason:<49} ║
+╠══════════════════════════════════════════════════════════════╣
+║  This command was blocked to prevent potential data loss.    ║
+║                                                              ║
+║  If you're sure this is safe, you can:                       ║
+║  1. Modify the command to be less destructive                ║
+║  2. Temporarily disable the hook (not recommended)           ║
+║                                                              ║
+║  Blocked command logged to: ~/.claude/hooks/blocked.log      ║
+╚══════════════════════════════════════════════════════════════╝
+"""
+        print(error_msg, file=sys.stderr)
+        sys.exit(1)
+    
+    # Allow the command
+    sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()
