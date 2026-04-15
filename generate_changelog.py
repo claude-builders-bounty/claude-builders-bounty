@@ -1,13 +1,24 @@
+#!/usr/bin/env python3
 import subprocess
 import re
 import sys
 from collections import defaultdict
 from datetime import datetime
 
-def get_git_logs():
-    """Fetches git commit logs with hash, subject, and body."""
+def get_last_tag():
+    """Fetches the latest git tag."""
+    try:
+        return subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], encoding="utf-8").strip()
+    except subprocess.CalledProcessError:
+        return None
+
+def get_git_logs(since_tag=None):
+    """Fetches git commit logs since the specified tag."""
     try:
         cmd = ["git", "log", "--pretty=format:%H%n%s%n%b%n---COMMIT-END---"]
+        if since_tag:
+            cmd.append(f"{since_tag}..HEAD")
+        
         result = subprocess.check_output(cmd, encoding="utf-8")
         return result.split("---COMMIT-END---")
     except Exception as e:
@@ -15,16 +26,13 @@ def get_git_logs():
         return []
 
 def parse_commits(logs):
-    """Categorizes commits based on Conventional Commits standards."""
+    """Categorizes commits into Added, Fixed, Changed, Removed."""
     categories = defaultdict(list)
     patterns = {
-        "Features": r"feat(?:\(.*\))?:",
-        "Bug Fixes": r"fix(?:\(.*\))?:",
-        "Documentation": r"docs(?:\(.*\))?:",
-        "Performance": r"perf(?:\(.*\))?:",
-        "Refactoring": r"refactor(?:\(.*\))?:",
-        "Security": r"security:",
-        "CI/CD": r"ci(?:\(.*\))?:|chore(?:\(.*\))?:"
+        "Added": r"feat(?:\(.*\))?:",
+        "Fixed": r"fix(?:\(.*\))?:",
+        "Changed": r"refactor(?:\(.*\))?:|perf(?:\(.*\))?:|style(?:\(.*\))?:",
+        "Removed": r"removed?:"
     }
 
     for log in logs:
@@ -38,7 +46,6 @@ def parse_commits(logs):
         matched = False
         for cat, pattern in patterns.items():
             if re.match(pattern, subject, re.IGNORECASE):
-                # Clean up the subject line
                 clean_subject = re.sub(pattern, "", subject, flags=re.IGNORECASE).strip()
                 categories[cat].append(f"- {clean_subject} ([{commit_hash}])")
                 matched = True
@@ -49,12 +56,12 @@ def parse_commits(logs):
             
     return categories
 
-def generate_changelog(categories):
+def generate_changelog(categories, tag_name=None):
     """Formats the categories into a markdown CHANGELOG."""
-    output = [f"# CHANGELOG\n\nGenerated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"]
+    since_info = f" since {tag_name}" if tag_name else ""
+    output = [f"# CHANGELOG\n\nGenerated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{since_info}\n"]
     
-    # Priority order
-    order = ["Features", "Bug Fixes", "Security", "Performance", "Refactoring", "Documentation", "CI/CD", "Other"]
+    order = ["Added", "Fixed", "Changed", "Removed", "Other"]
     
     for cat in order:
         if cat in categories and categories[cat]:
@@ -64,16 +71,21 @@ def generate_changelog(categories):
             
     return "\n".join(output)
 
-if __name__ == "__main__":
-    logs = get_git_logs()
-    if not logs:
-        print("No git history found.")
-        sys.exit(1)
+def main():
+    tag = get_last_tag()
+    logs = get_git_logs(tag)
+    
+    if not logs or (len(logs) == 1 and not logs[0].strip()):
+        print(f"No new commits found{' since ' + tag if tag else ''}.")
+        sys.exit(0)
         
     categories = parse_commits(logs)
-    changelog_content = generate_changelog(categories)
+    changelog_content = generate_changelog(categories, tag)
     
     with open("CHANGELOG.md", "w") as f:
         f.write(changelog_content)
         
-    print("[SUCCESS] CHANGELOG.md has been generated.")
+    print(f"✅ CHANGELOG.md generated successfully{' since ' + tag if tag else ''}.")
+
+if __name__ == "__main__":
+    main()
