@@ -1,0 +1,433 @@
+#!/usr/bin/env python3
+"""
+claude-review — PR reviewer that produces structured Markdown reviews.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr https://github.com/owner/repo/pull/123 --post
+    claude-review --diff-file changes.diff
+    git diff main..feature | claude-review --stdin
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone
+from typing import Optional
+
+
+def fetch_pr_info(pr_url: str, token: Optional[str] = None) -> dict:
+    """Fetch PR metadata and diff from GitHub API."""
+    # Parse PR URL
+    m = re.match(r'https://github\.com/([^/]+)/([^/]+)/pull/(\d+)', pr_url)
+    if not m:
+        print(f"Error: Invalid PR URL: {pr_url}", file=sys.stderr)
+        sys.exit(1)
+    
+    owner, repo, pr_num = m.group(1), m.group(2), m.group(3)
+    
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "claude-review/1.0",
+    }
+    if token:
+        headers["Authorization"] = f"token {token}"
+    
+    # Fetch PR metadata
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}"
+    req = urllib.request.Request(api_url, headers=headers)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            pr_data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        print(f"Error fetching PR: {e.code} {e.reason}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Fetch diff
+    diff_headers = {**headers, "Accept": "application/vnd.github.v3.diff"}
+    req = urllib.request.Request(api_url, headers=diff_headers)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            diff = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        print(f"Error fetching diff: {e.code}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Fetch files list
+    files_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}/files"
+    req = urllib.request.Request(files_url, headers=headers)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            files = json.loads(resp.read())
+    except urllib.error.HTTPError:
+        files = []
+    
+    return {
+        "owner": owner,
+        "repo": repo,
+        "number": int(pr_num),
+        "title": pr_data.get("title", ""),
+        "body": pr_data.get("body", ""),
+        "author": pr_data.get("user", {}).get("login", ""),
+        "state": pr_data.get("state", ""),
+        "created_at": pr_data.get("created_at", ""),
+        "updated_at": pr_data.get("updated_at", ""),
+        "base_branch": pr_data.get("base", {}).get("ref", ""),
+        "head_branch": pr_data.get("head", {}).get("ref", ""),
+        "additions": pr_data.get("additions", 0),
+        "deletions": pr_data.get("deletions", 0),
+        "changed_files": pr_data.get("changed_files", 0),
+        "diff": diff,
+        "files": files,
+    }
+
+
+def parse_diff(diff: str) -> list:
+    """Parse unified diff into per-file hunks."""
+    files = []
+    current_file = None
+    
+    for line in diff.split("\n"):
+        if line.startswith("diff --git"):
+            if current_file:
+                files.append(current_file)
+            parts = line.split(" b/")
+            filename = parts[-1] if len(parts) > 1 else "unknown"
+            current_file = {
+                "name": filename,
+                "additions": 0,
+                "deletions": 0,
+                "hunks": [],
+                "content": [],
+            }
+        elif current_file is not None:
+            current_file["content"].append(line)
+            if line.startswith("+") and not line.startswith("+++"):
+                current_file["additions"] += 1
+            elif line.startswith("-") and not line.startswith("---"):
+                current_file["deletions"] += 1
+            if line.startswith("@@"):
+                current_file["hunks"].append(line)
+    
+    if current_file:
+        files.append(current_file)
+    
+    return files
+
+
+def analyze_code(files: list, diff: str) -> dict:
+    """Static analysis of the diff — detect patterns, issues, suggestions."""
+    
+    findings = {
+        "security": [],
+        "bugs": [],
+        "performance": [],
+        "style": [],
+        "testing": [],
+        "documentation": [],
+    }
+    
+    full_diff = diff.lower()
+    
+    # Security checks
+    security_patterns = [
+        (r'eval\s*\(', "Use of eval() — potential code injection"),
+        (r'exec\s*\(', "Use of exec() — potential code injection"),
+        (r'innerHTML\s*=', "Direct innerHTML assignment — XSS risk"),
+        (r'password.*=.*["\']', "Hardcoded password detected"),
+        (r'api[_-]?key.*=.*["\']', "Hardcoded API key detected"),
+        (r'secret.*=.*["\']', "Hardcoded secret detected"),
+        (r'token.*=.*["\'][a-zA-Z0-9]{10,}', "Hardcoded token detected"),
+        (r'DELETE\s+FROM.*WHERE', "SQL DELETE — ensure WHERE clause is correct"),
+        (r'DROP\s+TABLE', "DROP TABLE detected — ensure this is intentional"),
+        (r'--no-verify', "Git --no-verify bypasses hooks"),
+        (r'ssl.*false|verify.*false', "SSL verification disabled"),
+        (r'cors.*\*', "Wildcard CORS — restrict to specific origins"),
+    ]
+    
+    for pattern, message in security_patterns:
+        if re.search(pattern, diff, re.IGNORECASE):
+            findings["security"].append(message)
+    
+    # Bug detection
+    bug_patterns = [
+        (r'console\.log\s*\(', "console.log left in code — remove for production"),
+        (r'debugger\s*;?', "debugger statement left in code"),
+        (r'TODO|FIXME|HACK|XXX', "TODO/FIXME comment found — is this addressed?"),
+        (r'catch\s*\([^)]*\)\s*\{\s*\}', "Empty catch block — errors silently swallowed"),
+        (r'any\s*[;,\)]', "TypeScript 'any' type — consider proper typing"),
+        (r'@ts-ignore', "@ts-ignore suppresses type errors"),
+        (r'\.catch\(\s*\)', "Empty .catch() — errors silently swallowed"),
+    ]
+    
+    for pattern, message in bug_patterns:
+        if re.search(pattern, diff, re.IGNORECASE):
+            findings["bugs"].append(message)
+    
+    # Performance
+    perf_patterns = [
+        (r'SELECT\s+\*\s+FROM', "SELECT * — select only needed columns"),
+        (r'\.forEach\(.*=>\s*\{[\s\S]*?await', "Await inside forEach — use Promise.all or for...of"),
+        (r'n\+1|n\+1', "Possible N+1 query pattern"),
+        (r'new\s+Date\(\)', "new Date() in hot path — cache if repeated"),
+        (r'JSON\.parse\(JSON\.stringify', "Deep clone via JSON — consider structuredClone"),
+    ]
+    
+    for pattern, message in perf_patterns:
+        if re.search(pattern, diff, re.IGNORECASE):
+            findings["performance"].append(message)
+    
+    # Style / conventions
+    style_patterns = [
+        (r'var\s+\w+', "var declaration — use const/let instead"),
+        (r'==\s*(?!null)', "== comparison — use === for strict equality"),
+        (r'!=\s*(?!null)', "!= comparison — use !== for strict inequality"),
+    ]
+    
+    for pattern, message in style_patterns:
+        if re.search(pattern, diff, re.IGNORECASE):
+            findings["style"].append(message)
+    
+    # Testing
+    has_test = any("test" in f["name"].lower() or "spec" in f["name"].lower() for f in files)
+    has_src = any("src" in f["name"] or "lib" in f["name"] or "app" in f["name"] for f in files)
+    if has_src and not has_test:
+        findings["testing"].append("No test files included — consider adding tests")
+    
+    for f in files:
+        if "test" in f["name"].lower() or "spec" in f["name"].lower():
+            if f["additions"] < 5:
+                findings["testing"].append(f"Test file {f['name']} has minimal changes")
+    
+    # Documentation
+    has_docs = any("readme" in f["name"].lower() or "doc" in f["name"].lower() for f in files)
+    if has_src and not has_docs and len(files) > 1:
+        findings["documentation"].append("No documentation updates detected")
+    
+    return findings
+
+
+def compute_stats(files: list) -> dict:
+    """Compute review statistics."""
+    total_additions = sum(f["additions"] for f in files)
+    total_deletions = sum(f["deletions"] for f in files)
+    
+    file_types = {}
+    for f in files:
+        ext = os.path.splitext(f["name"])[1].lower()
+        file_types[ext] = file_types.get(ext, 0) + 1
+    
+    return {
+        "files_changed": len(files),
+        "total_additions": total_additions,
+        "total_deletions": total_deletions,
+        "net_change": total_additions - total_deletions,
+        "file_types": file_types,
+        "large_files": [f["name"] for f in files if f["additions"] + f["deletions"] > 100],
+    }
+
+
+def generate_review(pr_info: dict, findings: dict, stats: dict) -> str:
+    """Generate structured Markdown review."""
+    
+    lines = []
+    
+    # Header
+    lines.append("# 🔍 Automated PR Review")
+    lines.append("")
+    lines.append(f"**PR:** [#{pr_info['number']}]({pr_info.get('html_url', '')}) — {pr_info['title']}")
+    lines.append(f"**Author:** @{pr_info['author']}")
+    lines.append(f"**Branch:** `{pr_info['head_branch']}` → `{pr_info['base_branch']}`")
+    lines.append(f"**Reviewed:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    lines.append("")
+    
+    # Summary stats
+    lines.append("## 📊 Summary")
+    lines.append("")
+    lines.append(f"| Metric | Value |")
+    lines.append(f"|--------|-------|")
+    lines.append(f"| Files changed | {stats['files_changed']} |")
+    lines.append(f"| Additions | +{stats['total_additions']} |")
+    lines.append(f"| Deletions | -{stats['total_deletions']} |")
+    lines.append(f"| Net change | {stats['net_change']:+d} lines |")
+    lines.append("")
+    
+    if stats["large_files"]:
+        lines.append(f"> ⚠️ Large changes in: {', '.join(stats['large_files'])}")
+        lines.append("")
+    
+    # File breakdown
+    lines.append("## 📁 Files Changed")
+    lines.append("")
+    for f in pr_info.get("files", [])[:20]:
+        status = f.get("status", "modified")
+        icon = {"added": "🆕", "removed": "🗑️", "modified": "✏️", "renamed": "📝"}.get(status, "📄")
+        additions = f.get("additions", 0)
+        deletions = f.get("deletions", 0)
+        lines.append(f"- {icon} `{f['filename']}` (+{additions}/-{deletions})")
+    if len(pr_info.get("files", [])) > 20:
+        lines.append(f"- ... and {len(pr_info['files']) - 20} more files")
+    lines.append("")
+    
+    # Findings by category
+    categories = [
+        ("security", "🔒 Security Issues", "red"),
+        ("bugs", "🐛 Potential Bugs", "orange"),
+        ("performance", "⚡ Performance", "yellow"),
+        ("style", "🎨 Code Style", "blue"),
+        ("testing", "🧪 Testing", "purple"),
+        ("documentation", "📝 Documentation", "gray"),
+    ]
+    
+    has_findings = any(findings[k] for k, _, _ in categories)
+    
+    if has_findings:
+        lines.append("## 🔎 Findings")
+        lines.append("")
+        
+        for key, title, _ in categories:
+            items = findings[key]
+            if items:
+                lines.append(f"### {title}")
+                lines.append("")
+                for item in items:
+                    lines.append(f"- {item}")
+                lines.append("")
+    else:
+        lines.append("## ✅ No Issues Detected")
+        lines.append("")
+        lines.append("The automated scan found no obvious security, bug, or performance issues.")
+        lines.append("")
+    
+    # Overall assessment
+    total_issues = sum(len(v) for v in findings.values())
+    security_count = len(findings["security"])
+    bug_count = len(findings["bugs"])
+    
+    lines.append("## 📋 Assessment")
+    lines.append("")
+    if security_count > 0:
+        lines.append(f"**⚠️ REQUIRES ATTENTION** — {security_count} security issue(s) found")
+    elif bug_count > 0:
+        lines.append(f"**🔍 NEEDS REVIEW** — {bug_count} potential bug(s) found")
+    elif total_issues == 0:
+        lines.append("**✅ LOOKS GOOD** — No major issues detected")
+    else:
+        lines.append(f"**💡 SUGGESTIONS** — {total_items} minor suggestion(s)")
+    
+    lines.append("")
+    lines.append("---")
+    lines.append(f"*Generated by claude-review • {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*")
+    
+    return "\n".join(lines)
+
+
+def post_review_comment(owner: str, repo: str, pr_num: int, body: str, token: str):
+    """Post review as a GitHub comment."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_num}/comments"
+    data = json.dumps({"body": body}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+            "Content-Type": "application/json",
+            "User-Agent": "claude-review/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            result = json.loads(resp.read())
+            print(f"✅ Comment posted: {result.get('html_url', 'OK')}")
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode() if e.fp else ""
+        print(f"Error posting comment: {e.code} — {error_body}", file=sys.stderr)
+        sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Review a GitHub PR and generate structured Markdown feedback.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --post
+  claude-review --diff-file changes.diff
+  git diff main..feature | claude-review --stdin
+  claude-review --pr <url> --json
+        """,
+    )
+    
+    parser.add_argument("--pr", help="GitHub PR URL")
+    parser.add_argument("--diff-file", help="Path to diff file")
+    parser.add_argument("--stdin", action="store_true", help="Read diff from stdin")
+    parser.add_argument("--post", action="store_true", help="Post review as GitHub comment")
+    parser.add_argument("--json", action="store_true", help="Output as JSON instead of Markdown")
+    parser.add_argument("--output", "-o", help="Save review to file")
+    
+    args = parser.parse_args()
+    
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    
+    # Get diff and PR info
+    if args.pr:
+        if not token:
+            print("Warning: GITHUB_TOKEN not set — public repos only", file=sys.stderr)
+        pr_info = fetch_pr_info(args.pr, token)
+        diff = pr_info["diff"]
+        files = parse_diff(diff)
+    elif args.diff_file:
+        with open(args.diff_file) as f:
+            diff = f.read()
+        files = parse_diff(diff)
+        pr_info = {"title": "Local diff", "author": "unknown", "number": 0,
+                   "head_branch": "feature", "base_branch": "main", "files": []}
+    elif args.stdin:
+        diff = sys.stdin.read()
+        files = parse_diff(diff)
+        pr_info = {"title": "Stdin diff", "author": "unknown", "number": 0,
+                   "head_branch": "feature", "base_branch": "main", "files": []}
+    else:
+        parser.error("Provide --pr, --diff-file, or --stdin")
+        sys.exit(1)
+    
+    # Analyze
+    findings = analyze_code(files, diff)
+    stats = compute_stats(files)
+    
+    # Generate output
+    if args.json:
+        output = json.dumps({
+            "pr": pr_info,
+            "stats": stats,
+            "findings": findings,
+        }, indent=2, default=str)
+    else:
+        output = generate_review(pr_info, findings, stats)
+    
+    # Output
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(output)
+        print(f"Review saved to {args.output}")
+    else:
+        print(output)
+    
+    # Post to GitHub if requested
+    if args.post and args.pr:
+        if not token:
+            print("Error: GITHUB_TOKEN required to post comments", file=sys.stderr)
+            sys.exit(1)
+        post_review_comment(pr_info["owner"], pr_info["repo"], pr_info["number"], output, token)
+
+
+if __name__ == "__main__":
+    main()
