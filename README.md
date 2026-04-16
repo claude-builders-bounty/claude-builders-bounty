@@ -1,53 +1,23 @@
-# Claude Builders Bounty 🤖
+# Destructive Command Guard Hook for Claude Code
 
-> A community bounty board for Claude Code builders.
+This hook intercepts and blocks dangerous bash commands (like , , or ) before they are executed by Claude.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation
 
----
+Run these two commands in your terminal:
 
-## How it works
+```bash
+mkdir -p ~/.claude/hooks
+curl -sSL https://raw.githubusercontent.com/MichaelSovereign/claude-builders-bounty/main/destructive_guard.py -o ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Features
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+- **Intercepts Dangerous Patterns:** Blocks , , , , and more.
+- **Audit Logging:** Every blocked attempt is logged to `~/.claude/hooks/blocked.log` with a timestamp and project path.
+- **Clear Feedback:** Provides immediate, clear reasons why a command was blocked.
 
----
+## Configuration
 
-## Active Bounties
+You can add custom patterns to the `DANGEROUS_PATTERNS` list in the script.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
