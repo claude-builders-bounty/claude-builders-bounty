@@ -1,53 +1,73 @@
-# Claude Builders Bounty 🤖
+# pre-tool-use-block-destructive
 
-> A community bounty board for Claude Code builders.
+A Claude Code `pre-tool-use` hook that intercepts and blocks dangerous bash commands before they execute.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## What It Blocks
 
+| Category | Patterns |
+|----------|----------|
+| **File system** | `rm -rf`, `shred`, `dd of=/dev/...`, `mkfs`, `chmod 777` |
+| **Database** | `DROP TABLE`, `DROP DATABASE`, `TRUNCATE`, `DELETE FROM` (without WHERE) |
+| **Git** | `git push --force`, `git clean --force`, `git reset --hard`, deleting `main`/`master` |
+| **System** | `shutdown`, `reboot`, `kill -9`, `systemctl stop/disable` |
+| **Pipes** | `curl | bash`, `wget | sh` |
+
+## Install
+
+```bash
+# 1. Copy the hook files
+cp hooks/pre-tool-use-block-destructive.py ~/.claude/hooks/
+cp hooks/pre-tool-use-block-destructive.sh ~/.claude/hooks/
+
+# 2. Register the hook with Claude Code
+claude hooks set pre-tool-use-block-destructive --type pre-tool-use --command "python3 ~/.claude/hooks/pre-tool-use-block-destructive.py"
+```
+
+That's it. The hook activates immediately for all new Claude Code sessions.
+
+## How It Works
+
+1. Claude Code sends tool call details as JSON to the hook's stdin
+2. The hook inspects `tool_input.command` for blocked patterns
+3. If a match is found, it returns `{"decision": "block", "reason": "..."}` and logs to `~/.claude/hooks/blocked.log`
+4. Claude receives the block signal and explains to the user why the command was refused
+5. Safe commands pass through with `{"decision": "allow"}`
+
+## Log File
+
+Every blocked attempt is logged to `~/.claude/hooks/blocked.log`:
+
+```
+[2026-04-16T18:30:00.000000+00:00] BLOCKED
+  tool: Bash
+  reason: rm -rf detected
+  command: rm -rf /important/data
+  cwd: /home/user/project
 ---
+```
 
-## How it works
+## Test
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+```bash
+# Run the test suite
+python3 hooks/tests/test_hook.py
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+# Manual test — should be BLOCKED:
+echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/test"}}' | python3 hooks/pre-tool-use-block-destructive.py
 
----
+# Manual test — should be ALLOWED:
+echo '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}' | python3 hooks/pre-tool-use-block-destructive.py
 
-## Active Bounties
+# Manual test — non-Bash tool should be ALLOWED:
+echo '{"tool_name":"Read","tool_input":{"file_path":"/etc/passwd"}}' | python3 hooks/pre-tool-use-block-destructive.py
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## False Positive Handling
 
----
+- Commands with `--dry-run` flags are always allowed
+- The hook only intercepts the `Bash` tool — file reads, edits, and other tools pass through
 
-## Rules
+## Requirements
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+- Python 3.8+
+- Claude Code (for hook registration)
