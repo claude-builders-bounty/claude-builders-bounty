@@ -1,0 +1,319 @@
+#!/usr/bin/env python3
+"""
+claude-review — structured PR review agent
+Usage: claude-review --pr https://github.com/owner/repo/pull/123
+       claude-review --diff diff_file.txt
+
+Bounty: claude-builders-bounty/claude-builders-bounty#4 ($150)
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from datetime import datetime
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+
+
+def github_headers(accept: str) -> dict:
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-review",
+    }
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+    return headers
+
+
+def github_api(url: str):
+    req = urllib.request.Request(url, headers=github_headers("application/vnd.github+json"))
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as err:
+        message = err.read().decode(errors="replace")[:200]
+        print(f"GitHub API error {err.code}: {message}", file=sys.stderr)
+        return None
+    except urllib.error.URLError as err:
+        print(f"GitHub API request failed: {err.reason}", file=sys.stderr)
+        return None
+    except TimeoutError:
+        print("GitHub API request timed out.", file=sys.stderr)
+        return None
+
+
+def parse_pr_url(url: str):
+    match = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    if not match:
+        raise ValueError(f"Invalid PR URL: {url}")
+    return match.group(1), match.group(2), int(match.group(3))
+
+
+def fetch_pr_diff(owner: str, repo: str, pr_number: int):
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    req = urllib.request.Request(url, headers=github_headers("application/vnd.github.v3.diff"))
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read().decode()
+    except urllib.error.HTTPError as err:
+        print(f"Failed to fetch diff: {err.code}", file=sys.stderr)
+        return None
+    except urllib.error.URLError as err:
+        print(f"Failed to fetch diff: {err.reason}", file=sys.stderr)
+        return None
+    except TimeoutError:
+        print("Fetching PR diff timed out.", file=sys.stderr)
+        return None
+
+
+def fetch_pr_info(owner: str, repo: str, pr_number: int):
+    return github_api(f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}")
+
+
+class DiffAnalyzer:
+    def __init__(self, diff_text: str, pr_info=None):
+        self.diff = diff_text
+        self.pr_info = pr_info or {}
+        self.files_changed = []
+        self.additions = 0
+        self.deletions = 0
+        self.risks = []
+        self.suggestions = []
+        self.file_summaries = []
+
+    def analyze(self) -> str:
+        self._parse_diff()
+        self._detect_risks()
+        self._generate_suggestions()
+        return self._build_report()
+
+    def _parse_diff(self) -> None:
+        current_file = None
+        file_add = 0
+        file_del = 0
+        file_changes = []
+
+        for line in self.diff.splitlines():
+            if line.startswith("diff --git"):
+                if current_file:
+                    self.file_summaries.append(
+                        {
+                            "file": current_file,
+                            "additions": file_add,
+                            "deletions": file_del,
+                            "changes": file_changes[:40],
+                        }
+                    )
+                current_file = line.split(" b/")[-1] if " b/" in line else line
+                file_add = 0
+                file_del = 0
+                file_changes = []
+            elif line.startswith("+") and not line.startswith("+++"):
+                file_add += 1
+                self.additions += 1
+                file_changes.append(("add", line[1:]))
+            elif line.startswith("-") and not line.startswith("---"):
+                file_del += 1
+                self.deletions += 1
+                file_changes.append(("del", line[1:]))
+
+        if current_file:
+            self.file_summaries.append(
+                {
+                    "file": current_file,
+                    "additions": file_add,
+                    "deletions": file_del,
+                    "changes": file_changes[:40],
+                }
+            )
+
+        self.files_changed = [item["file"] for item in self.file_summaries]
+
+    def _detect_risks(self) -> None:
+        for file_summary in self.file_summaries:
+            filename = file_summary["file"].lower()
+            changes_text = " ".join(change for _, change in file_summary["changes"]).lower()
+
+            if any(keyword in changes_text for keyword in ["eval(", "exec(", "subprocess.call", "os.system("]):
+                self.risks.append(
+                    f"**Security**: `{file_summary['file']}` uses dynamic execution (`eval` / `exec` / shell invocation) and needs trust-boundary review."
+                )
+
+            if any(keyword in changes_text for keyword in ["password", "secret", "api_key", "token", "private_key"]):
+                if "env" not in changes_text and "secret" not in filename:
+                    self.risks.append(
+                        f"**Security**: `{file_summary['file']}` references credentials or tokens; confirm nothing sensitive is hardcoded."
+                    )
+
+            if any(keyword in changes_text for keyword in ["select ", "insert ", "update ", "delete ", "sql", "query("]):
+                if "parameter" not in changes_text and ".execute(" in changes_text:
+                    self.risks.append(
+                        f"**Security**: `{file_summary['file']}` appears to execute raw SQL; verify query parameters are bound safely."
+                    )
+
+            if file_summary["additions"] > 200:
+                self.risks.append(
+                    f"**Complexity**: `{file_summary['file']}` adds {file_summary['additions']} lines; reviewers may want this split or better documented."
+                )
+
+            if any(keyword in changes_text for keyword in ["todo", "fixme", "hack", "xxx"]):
+                self.risks.append(
+                    f"**Tech debt**: `{file_summary['file']}` still contains TODO/FIXME/HACK markers."
+                )
+
+            if "except:" in changes_text and "pass" in changes_text:
+                self.risks.append(
+                    f"**Error handling**: `{file_summary['file']}` has a bare `except: pass`, which can silently hide failures."
+                )
+
+            if "console.log" in changes_text or "print(" in changes_text:
+                self.suggestions.append(
+                    f"Remove debug output from `{file_summary['file']}` before merging."
+                )
+
+            if filename.endswith((".ts", ".tsx", ".js", ".jsx", ".py")) and "test" not in filename and file_summary["additions"] > 50:
+                if not any("test" in item.lower() or "spec" in item.lower() for item in self.files_changed):
+                    self.risks.append(
+                        f"**Testing**: `{file_summary['file']}` makes meaningful source changes but this PR does not appear to add or update tests."
+                    )
+
+        if len(self.file_summaries) > 15:
+            self.suggestions.append(
+                "Consider splitting this PR into smaller units if reviewers struggle to isolate behavior changes."
+            )
+
+        if self.additions > 500:
+            self.suggestions.append(
+                "This is a large diff; add a reviewer guide or narrow the scope if possible."
+            )
+
+    def _generate_suggestions(self) -> None:
+        for file_summary in self.file_summaries:
+            changes_text = " ".join(change for _, change in file_summary["changes"]).lower()
+            if "var " in changes_text:
+                self.suggestions.append(
+                    f"Replace `var` with `const` or `let` in `{file_summary['file']}`."
+                )
+            if "callback" in changes_text and "async" not in changes_text and "await" not in changes_text:
+                self.suggestions.append(
+                    f"Consider `async` / `await` in `{file_summary['file']}` if the callback flow is getting hard to read."
+                )
+
+    def _build_report(self) -> str:
+        title = self.pr_info.get("title", "Pull request")
+        url = self.pr_info.get("html_url", "N/A")
+
+        summary_sentences = [
+            f"This PR updates **{len(self.files_changed)} file(s)** with **+{self.additions}/-{self.deletions}** lines changed.",
+        ]
+        if title:
+            summary_sentences.insert(0, f"Review for **{title}**.")
+        if self.file_summaries:
+            biggest = sorted(
+                self.file_summaries,
+                key=lambda item: item["additions"] + item["deletions"],
+                reverse=True,
+            )[:3]
+            summary_sentences.append(
+                "Largest files touched: "
+                + ", ".join(
+                    f"`{item['file']}` (+{item['additions']}/-{item['deletions']})"
+                    for item in biggest
+                )
+                + "."
+            )
+        if self.risks:
+            summary_sentences.append(
+                f"I found **{len(self.risks)}** area(s) worth reviewer attention."
+            )
+        else:
+            summary_sentences.append("I did not find a major risk signal in the changed lines.")
+
+        confidence = "Low"
+        if len(self.files_changed) <= 5 and self.additions <= 200:
+            confidence = "High"
+        elif len(self.files_changed) <= 10 and self.additions <= 500:
+            confidence = "Medium"
+
+        lines = [
+            "# Claude Review",
+            "",
+            f"**PR**: {url}",
+            "",
+            "## Summary of Changes",
+            " ".join(summary_sentences),
+            "",
+            "| Metric | Value |",
+            "|--------|-------|",
+            f"| Files changed | {len(self.files_changed)} |",
+            f"| Additions | +{self.additions} |",
+            f"| Deletions | -{self.deletions} |",
+            f"| Confidence | **{confidence}** |",
+            "",
+            "## Identified Risks",
+        ]
+
+        if self.risks:
+            lines.extend(f"- {risk}" for risk in self.risks)
+        else:
+            lines.append("- No significant risks detected in the inspected diff.")
+
+        lines.extend(["", "## Improvement Suggestions"])
+        if self.suggestions:
+            lines.extend(f"- {suggestion}" for suggestion in self.suggestions)
+        else:
+            lines.append("- No immediate follow-up suggestions.")
+
+        lines.extend(["", "## Confidence Score", f"**{confidence}**", ""])
+        lines.append(
+            f"> Generated by `claude-review` on {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        )
+        return "\n".join(lines)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Structured PR review agent")
+    parser.add_argument("--pr", help="GitHub PR URL, for example https://github.com/owner/repo/pull/123")
+    parser.add_argument("--diff", help="Path to a local diff file")
+    parser.add_argument("--token", help="GitHub token override")
+    parser.add_argument("--output", help="Write the generated review to a file instead of stdout")
+    args = parser.parse_args()
+
+    global GITHUB_TOKEN
+    if args.token:
+        GITHUB_TOKEN = args.token
+
+    if not args.pr and not args.diff:
+        parser.print_help()
+        sys.exit(1)
+
+    diff_text = None
+    pr_info = None
+
+    if args.pr:
+        owner, repo, pr_number = parse_pr_url(args.pr)
+        print(f"Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+        diff_text = fetch_pr_diff(owner, repo, pr_number)
+        pr_info = fetch_pr_info(owner, repo, pr_number)
+        if not diff_text:
+            sys.exit(1)
+    else:
+        with open(args.diff, encoding="utf-8") as handle:
+            diff_text = handle.read()
+
+    report = DiffAnalyzer(diff_text, pr_info).analyze()
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as handle:
+            handle.write(report)
+        print(f"Review written to {args.output}", file=sys.stderr)
+    else:
+        print(report)
+
+
+if __name__ == "__main__":
+    main()
