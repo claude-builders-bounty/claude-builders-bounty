@@ -1,0 +1,216 @@
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "Weekly Dev Summary",
+  "active": false,
+  "pinData": false,
+  "settings": { "executionTimeout": 3600 },
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [100, 360],
+      "parameters": {
+        "cronExpression": "0 17 * * 5",
+        "timezone": "Asia/Shanghai"
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [300, 360],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            { "name": "repoOwner",   "value": "claude-builders-bounty" },
+            { "name": "repoName",    "value": "claude-builders-bounty" },
+            { "name": "githubToken", "value": "YOUR_GITHUB_TOKEN_HERE" },
+            { "name": "claudeKey",   "value": "YOUR_ANTHROPIC_API_KEY_HERE" },
+            { "name": "webhookUrl",  "value": "YOUR_DISCORD_WEBHOOK_URL_HERE" },
+            { "name": "language",    "value": "EN" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 260],
+      "alwaysOutputData": true,
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repoOwner }}/{{ $json.repoName }}/commits",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",      "value": "=Bearer {{ $json.githubToken }}" },
+            { "name": "Accept",             "value": "application/vnd.github+json" },
+            { "name": "X-GitHub-Api-Version","value": "2022-11-28" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since",    "value": "={{ $now.minus({days:7}).toISO() }}" },
+            { "name": "until",    "value": "={{ $now.toISO() }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Collect Commits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [700, 260],
+      "parameters": {
+        "jsCode": "const commits = $input.all().map(function(i){ return i.json; }).filter(function(c){ return c && c.sha; });\nconst cfg = $node['Config'].json;\nreturn [{ json: { commits: commits, cfg: cfg } }];"
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Fetch Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 260],
+      "alwaysOutputData": true,
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $node['Config'].json.repoOwner }}/{{ $node['Config'].json.repoName }}/issues",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",      "value": "=Bearer {{ $node['Config'].json.githubToken }}" },
+            { "name": "Accept",             "value": "application/vnd.github+json" },
+            { "name": "X-GitHub-Api-Version","value": "2022-11-28" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state",    "value": "closed" },
+            { "name": "since",    "value": "={{ $now.minus({days:7}).toISO() }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Collect Issues",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1100, 260],
+      "parameters": {
+        "jsCode": "const allIssues = $input.all().map(function(i){ return i.json; }).filter(function(i){ return i && i.number; });\nconst issues = allIssues.filter(function(i){ return !i.pull_request; });\nconst prev = $node['Collect Commits'].json;\nreturn [{ json: { commits: prev.commits, issues: issues, cfg: prev.cfg } }];"
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, 260],
+      "alwaysOutputData": true,
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $node['Config'].json.repoOwner }}/{{ $node['Config'].json.repoName }}/pulls",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization",      "value": "=Bearer {{ $node['Config'].json.githubToken }}" },
+            { "name": "Accept",             "value": "application/vnd.github+json" },
+            { "name": "X-GitHub-Api-Version","value": "2022-11-28" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state",     "value": "closed" },
+            { "name": "base",      "value": "main" },
+            { "name": "sort",      "value": "updated" },
+            { "name": "direction", "value": "desc" },
+            { "name": "per_page",  "value": "100" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1500, 260],
+      "parameters": {
+        "jsCode": "var allPRs = $input.all().map(function(i){ return i.json; }).filter(function(p){ return p && p.number; });\nvar mergedPRs = allPRs.filter(function(p){ return p.merged_at; });\nvar prev = $node['Collect Issues'].json;\nvar commits = prev.commits || [];\nvar issues  = prev.issues  || [];\nvar cfg     = prev.cfg     || {};\n\nvar commitList = commits.slice(0,20).map(function(c){\n  var sha = (c.sha||'').slice(0,7);\n  var msg = c.commit && c.commit.message ? c.commit.message.split('\\n')[0] : '';\n  var who = c.author ? c.author.login : (c.commit && c.commit.author ? c.commit.author.name : 'unknown');\n  return '- ' + sha + ' ' + msg + ' (@' + who + ')';\n}).join('\\n') || 'No commits this week.';\n\nvar issueList = issues.slice(0,20).map(function(i){\n  return '- #' + i.number + ' ' + i.title + ' (closed by @' + (i.closed_by ? i.closed_by.login : 'unknown') + ')';\n}).join('\\n') || 'No issues closed this week.';\n\nvar prList = mergedPRs.slice(0,20).map(function(p){\n  return '- #' + p.number + ' ' + p.title + ' (merged by @' + (p.merged_by ? p.merged_by.login : 'unknown') + ')';\n}).join('\\n') || 'No PRs merged this week.';\n\nvar lang = cfg.language === 'FR' ? 'French' : 'English';\nvar repo = cfg.repoOwner + '/' + cfg.repoName;\n\nvar prompt = 'You are a technical writer. Generate a concise weekly development summary in ' + lang + ' for the GitHub repository ' + repo + '.\\n\\nActivity this week:\\n\\n## Commits (' + commits.length + ' total)\\n' + commitList + '\\n\\n## Closed Issues (' + issues.length + ' total)\\n' + issueList + '\\n\\n## Merged PRs (' + mergedPRs.length + ' total)\\n' + prList + '\\n\\nWrite a narrative summary in 3 short paragraphs: what was built, what was fixed, and overall momentum. Keep it under 350 words.';\n\nreturn [{ json: { prompt: prompt, claudeKey: cfg.claudeKey, webhookUrl: cfg.webhookUrl, repo: repo } }];"
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1700, 260],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key",        "value": "={{ $json.claudeKey }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type",      "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 1024,\n  \"messages\": [{ \"role\": \"user\", \"content\": {{ JSON.stringify($json.prompt) }} }]\n}"
+      }
+    },
+    {
+      "id": "n10",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1900, 260],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Config'].json.webhookUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ '📊 **Weekly Dev Summary — ' + $node['Config'].json.repoOwner + '/' + $node['Config'].json.repoName + '**\\n\\n' + $json.content[0].text }}"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Trigger":   { "main": [[{ "node": "Config",          "type": "main", "index": 0 }]] },
+    "Config":           { "main": [[{ "node": "Fetch Commits",   "type": "main", "index": 0 }]] },
+    "Fetch Commits":    { "main": [[{ "node": "Collect Commits", "type": "main", "index": 0 }]] },
+    "Collect Commits":  { "main": [[{ "node": "Fetch Issues",    "type": "main", "index": 0 }]] },
+    "Fetch Issues":     { "main": [[{ "node": "Collect Issues",  "type": "main", "index": 0 }]] },
+    "Collect Issues":   { "main": [[{ "node": "Fetch PRs",       "type": "main", "index": 0 }]] },
+    "Fetch PRs":        { "main": [[{ "node": "Build Prompt",    "type": "main", "index": 0 }]] },
+    "Build Prompt":     { "main": [[{ "node": "Call Claude API", "type": "main", "index": 0 }]] },
+    "Call Claude API":  { "main": [[{ "node": "Send to Discord", "type": "main", "index": 0 }]] }
+  }
+}
