@@ -1,0 +1,139 @@
+{
+  "name": "Claude Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "triggerOnWeekday": "FRIDAY"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/commits?since={{ $vars.LAST_WEEK_EPOCH }}&per_page=50",
+        "options": {}
+      },
+      "id": "github-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 150]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/issues?state=closed&since={{ $vars.LAST_WEEK_EPOCH }}&per_page=30",
+        "options": {}
+      },
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/pulls?state=closed&per_page=30",
+        "options": {}
+      },
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate GitHub data\nconst commits = $input.first().json.slice(0, 20);\nconst issues = $input.all()[1].json.filter(i => !i.pull_request).slice(0, 10);\nconst prs = $input.all()[2].json.filter(p => p.merged_at !== null).slice(0, 10);\n\nconst weekAgo = new Date();\nweekAgo.setDate(weekAgo.getDate() - 7);\n\nconst commitLines = commits.map(c => `- ${c.commit.message.split('\\n')[0].substring(0, 80)}`).join('\\n');\nconst issueLines = issues.map(i => `- #${i.number} ${i.title}`).join('\\n');\nconst prLines = prs.map(p => `- #${p.number} ${p.title}`).join('\\n');\n\nconst prompt = `Write a 3-paragraph weekly development summary based on this GitHub activity:\n\nCOMMITS (last 7 days):\\n${commitLines}\\n\\nCLOSED ISSUES:\\n${issueLines}\\n\\nMERGED PRS:\\n${prLines}\\n\\nWrite in concise developer-friendly tone.`;\n\nreturn { json: { prompt, commits, issues, prs, repo: $vars.GITHUB_REPO } };",
+        "outputs": ["main"]
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "model": "gpt-4",
+        "messages": {
+          "values": [
+            {
+              "name": "system",
+              "content": "You are a development reporting assistant. Write concise, informative weekly summaries."
+            },
+            {
+              "name": "user",
+              "content": "={{ $json.prompt }}"
+            }
+          ]
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.openAiChat",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "webhookUri": "={{ $vars.DISCORD_WEBHOOK_URL }}",
+        "body": {
+          "content": "=**Weekly Dev Summary** | {{ $vars.GITHUB_REPO }}\n\n{{ $json.choices[0].message.content }}"
+        }
+      },
+      "id": "discord-webhook",
+      "name": "Discord Notify",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": {
+      "main": [
+        [
+          { "node": "Get Commits", "type": "main", "index": 0 },
+          { "node": "Get Closed Issues", "type": "main", "index": 0 },
+          { "node": "Get Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [{ "node": "Claude API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [{ "node": "Discord Notify", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "variables": {
+    "GITHUB_REPO": "owner/repo",
+    "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/your-webhook-here"
+  },
+  "meta": {
+    "templateCredsSetup": false,
+    "templateId": "claude-weekly-summary"
+  }
+}
