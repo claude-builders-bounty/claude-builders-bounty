@@ -1,0 +1,221 @@
+{
+  "name": "Weekly GitHub Dev Summary — Claude + Discord",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Every Friday 5PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-001",
+              "name": "GITHUB_OWNER",
+              "value": "your-github-owner",
+              "type": "string"
+            },
+            {
+              "id": "cfg-002",
+              "name": "GITHUB_REPO",
+              "value": "your-github-repo",
+              "type": "string"
+            },
+            {
+              "id": "cfg-003",
+              "name": "DISCORD_WEBHOOK",
+              "value": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "cfg-004",
+              "name": "LANGUAGE",
+              "value": "EN",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000002",
+      "name": "📋 Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate the date range for the past 7 days\nconst now = new Date();\nconst sevenDaysAgo = new Date(now);\nsevenDaysAgo.setDate(now.getDate() - 7);\n\nconst fmt = (d) => d.toISOString().split('T')[0];\n\nreturn {\n  dateFrom: fmt(sevenDaysAgo),\n  dateTo: fmt(now),\n  owner: $('📋 Config').first().json.GITHUB_OWNER,\n  repo: $('📋 Config').first().json.GITHUB_REPO,\n  discordWebhook: $('📋 Config').first().json.DISCORD_WEBHOOK,\n  language: $('📋 Config').first().json.LANGUAGE\n};"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000003",
+      "name": "🗓️ Date Calculator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "parameters": {
+        "jsCode": "// Calculate the date range for the past 7 days\nconst now = new Date();\nconst sevenDaysAgo = new Date(now);\nsevenDaysAgo.setDate(now.getDate() - 7);\n\nconst fmt = (d) => d.toISOString().split('T')[0];\n\nreturn [{ json: {\n  dateFrom: fmt(sevenDaysAgo),\n  dateTo: fmt(now),\n  owner: $('📋 Config').first().json.GITHUB_OWNER,\n  repo: $('📋 Config').first().json.GITHUB_REPO,\n  discordWebhook: $('📋 Config').first().json.DISCORD_WEBHOOK,\n  language: $('📋 Config').first().json.LANGUAGE\n} }];"
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/search/issues?q=repo:{{ $json.owner }}/{{ $json.repo }}+is:pr+is:merged+merged:{{ $json.dateFrom }}..{{ $json.dateTo }}&per_page=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer YOUR_GITHUB_TOKEN" },
+            { "name": "Accept", "value": "application/vnd.github.v3+json" },
+            { "name": "User-Agent", "value": "n8n-weekly-summary" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000004",
+      "name": "🔀 Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/search/issues?q=repo:{{ $('🗓️ Date Calculator').first().json.owner }}/{{ $('🗓️ Date Calculator').first().json.repo }}+is:issue+is:closed+closed:{{ $('🗓️ Date Calculator').first().json.dateFrom }}..{{ $('🗓️ Date Calculator').first().json.dateTo }}&per_page=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer YOUR_GITHUB_TOKEN" },
+            { "name": "Accept", "value": "application/vnd.github.v3+json" },
+            { "name": "User-Agent", "value": "n8n-weekly-summary" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000005",
+      "name": "🐛 Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const dateCalc = $('🗓️ Date Calculator').first().json;\nconst prs = $('🔀 Get Merged PRs').first().json.items || [];\nconst issues = $('🐛 Get Closed Issues').first().json.items || [];\n\nconst lang = dateCalc.language || 'EN';\n\nconst prList = prs.map(p => `- [${p.title}](${p.html_url}) by @${p.user.login}`).join('\\n') || '(none)';\nconst issueList = issues.map(i => `- [${i.title}](${i.html_url}) by @${i.user.login}`).join('\\n') || '(none)';\n\nconst langPrompt = lang === 'FR'\n  ? 'Réponds entièrement en français.'\n  : 'Respond entirely in English.';\n\nconst prompt = `${langPrompt}\n\nYou are a senior engineering manager. Write a concise but engaging weekly development summary for the repository \"${dateCalc.owner}/${dateCalc.repo}\" covering the period from ${dateCalc.dateFrom} to ${dateCalc.dateTo}.\n\nWrite in a professional but approachable tone. Use this data:\n\n## Merged Pull Requests (${prs.length})\n${prList}\n\n## Closed Issues (${issues.length})\n${issueList}\n\nWrite a 3-4 paragraph narrative summary. Highlight key themes, achievements, and any notable contributors. End with a one-line motivational message for the team.`;\n\nreturn {\n  prompt,\n  owner: dateCalc.owner,\n  repo: dateCalc.repo,\n  discordWebhook: dateCalc.discordWebhook,\n  dateFrom: dateCalc.dateFrom,\n  dateTo: dateCalc.dateTo\n};"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000006",
+      "name": "📝 Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "parameters": {
+        "jsCode": "const dateCalc = $('🗓️ Date Calculator').first().json;\nconst prs = $('🔀 Get Merged PRs').first().json.items || [];\nconst issues = $('🐛 Get Closed Issues').first().json.items || [];\n\nconst lang = dateCalc.language || 'EN';\n\nconst prList = prs.map(p => `- [${p.title}](${p.html_url}) by @${p.user.login}`).join('\\n') || '(none)';\nconst issueList = issues.map(i => `- [${i.title}](${i.html_url}) by @${i.user.login}`).join('\\n') || '(none)';\n\nconst langPrompt = lang === 'FR'\n  ? 'Réponds entièrement en français.'\n  : 'Respond entirely in English.';\n\nconst prompt = `${langPrompt}\\n\\nYou are a senior engineering manager. Write a concise but engaging weekly development summary for the repository \\\"${dateCalc.owner}/${dateCalc.repo}\\\" covering the period from ${dateCalc.dateFrom} to ${dateCalc.dateTo}.\\n\\nWrite in a professional but approachable tone. Use this data:\\n\\n## Merged Pull Requests (${prs.length})\\n${prList}\\n\\n## Closed Issues (${issues.length})\\n${issueList}\\n\\nWrite a 3-4 paragraph narrative summary. Highlight key themes, achievements, and any notable contributors. End with a one-line motivational message for the team.`;\n\nreturn [{ json: {\n  prompt,\n  owner: dateCalc.owner,\n  repo: dateCalc.repo,\n  discordWebhook: dateCalc.discordWebhook,\n  dateFrom: dateCalc.dateFrom,\n  dateTo: dateCalc.dateTo\n} }];"
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "YOUR_ANTHROPIC_API_KEY" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000007",
+      "name": "🤖 Claude Summarise",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $('🤖 Claude Summarise').first().json;\nconst meta = $('📝 Build Claude Prompt').first().json;\n\nconst summary = claudeResponse.content[0].text;\n\nconst discordPayload = {\n  username: 'DevSummary Bot',\n  avatar_url: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',\n  embeds: [\n    {\n      title: `📊 Weekly Dev Summary: ${meta.owner}/${meta.repo}`,\n      description: summary,\n      color: 5793266,\n      footer: {\n        text: `Period: ${meta.dateFrom} → ${meta.dateTo} · Powered by Claude + n8n`\n      }\n    }\n  ]\n};\n\nreturn {\n  payload: JSON.stringify(discordPayload),\n  webhook: meta.discordWebhook\n};"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000008",
+      "name": "📦 Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "parameters": {
+        "jsCode": "const claudeResponse = $('🤖 Claude Summarise').first().json;\nconst meta = $('📝 Build Claude Prompt').first().json;\n\nconst summary = claudeResponse.content[0].text;\n\nconst discordPayload = {\n  username: 'DevSummary Bot',\n  avatar_url: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',\n  embeds: [\n    {\n      title: `📊 Weekly Dev Summary: ${meta.owner}/${meta.repo}`,\n      description: summary,\n      color: 5793266,\n      footer: {\n        text: `Period: ${meta.dateFrom} → ${meta.dateTo} · Powered by Claude + n8n`\n      }\n    }\n  ]\n};\n\nreturn [{ json: {\n  payload: JSON.stringify(discordPayload),\n  webhook: meta.discordWebhook\n} }];"
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "string",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000009",
+      "name": "📣 Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "Every Friday 5PM": {
+      "main": [[{ "node": "📋 Config", "type": "main", "index": 0 }]]
+    },
+    "📋 Config": {
+      "main": [[{ "node": "🗓️ Date Calculator", "type": "main", "index": 0 }]]
+    },
+    "🗓️ Date Calculator": {
+      "main": [
+        [
+          { "node": "🔀 Get Merged PRs", "type": "main", "index": 0 },
+          { "node": "🐛 Get Closed Issues", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "🔀 Get Merged PRs": {
+      "main": [[{ "node": "📝 Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "🐛 Get Closed Issues": {
+      "main": [[{ "node": "📝 Build Claude Prompt", "type": "main", "index": 1 }]]
+    },
+    "📝 Build Claude Prompt": {
+      "main": [[{ "node": "🤖 Claude Summarise", "type": "main", "index": 0 }]]
+    },
+    "🤖 Claude Summarise": {
+      "main": [[{ "node": "📦 Format Discord Message", "type": "main", "index": 0 }]]
+    },
+    "📦 Format Discord Message": {
+      "main": [[{ "node": "📣 Post to Discord", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "bounty" }, { "name": "github" }, { "name": "claude" }],
+  "triggerCount": 1,
+  "updatedAt": "2026-04-17T14:00:00.000Z",
+  "versionId": "1"
+}
