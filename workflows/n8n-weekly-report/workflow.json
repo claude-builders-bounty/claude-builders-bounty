@@ -1,0 +1,347 @@
+{
+  "name": "Weekly Dev Summary - Claude AI",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cron",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate date range for the past week\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nconst since = weekAgo.toISOString();\nconst until = now.toISOString();\n\nreturn {\n  since,\n  until,\n  commits_count: 0,\n  issues_count: 0,\n  prs_count: 0,\n  commits: [],\n  issues: [],\n  merged_prs: []\n};"
+      },
+      "id": "date-range",
+      "name": "Calculate Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$vars.GITHUB_REPO}}/commits",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{$json.since}}"
+            },
+            {
+              "name": "until",
+              "value": "={{$json.until}}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$vars.GITHUB_TOKEN}}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [540, 100]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$vars.GITHUB_REPO}}/issues",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{$json.since}}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$vars.GITHUB_TOKEN}}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-closed-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [540, 250]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$vars.GITHUB_REPO}}/pulls",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$vars.GITHUB_TOKEN}}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-merged-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [540, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and aggregate activity data\nconst commits = $input.first().json || [];\nconst issues = $input.item.json.filter(i => !i.pull_request) || [];\nconst mergedPRs = $input.item.json.filter(i => i.merged_at) || [];\n\n// Calculate issue resolution rate\nconst totalIssuesOpened = $input.item.json.filter(i => !i.pull_request && i.created_at >= new Date(Date.now() - 7*24*60*60*1000).toISOString()).length;\nconst issuesClosed = issues.length;\nconst resolutionRate = totalIssuesOpened > 0 ? Math.round((issuesClosed / totalIssuesOpened) * 100) : 0;\n\n// Get top contributors\nconst contributorMap = {};\ncommits.forEach(c => {\n  const author = c.commit?.author?.name || 'Unknown';\n  contributorMap[author] = (contributorMap[author] || 0) + 1;\n});\nconst topContributors = Object.entries(contributorMap)\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 5)\n  .map(([name, count]) => ({ name, commits: count }));\n\nconst summary = {\n  week_start: new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0],\n  week_end: new Date().toISOString().split('T')[0],\n  repo: $vars.GITHUB_REPO,\n  stats: {\n    new_commits: commits.length,\n    closed_issues: issues.length,\n    merged_prs: mergedPRs.length,\n    issue_resolution_rate: resolutionRate + '%'\n  },\n  top_contributors: topContributors,\n  top_commits: commits.slice(0, 10).map(c => ({\n    sha: c.sha?.substring(0, 7),\n    message: c.commit?.message?.split('\\n')[0],\n    author: c.commit?.author?.name\n  })),\n  recent_issues: issues.slice(0, 5).map(i => ({\n    number: i.number,\n    title: i.title,\n    labels: i.labels?.map(l => l.name) || []\n  })),\n  recent_prs: mergedPRs.slice(0, 5).map(p => ({\n    number: p.number,\n    title: p.title,\n    merged_by: p.merged_by?.login\n  }))\n};\n\nreturn [{json: summary}];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 250]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$vars.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-dangerous-direct-browser-access",
+              "value": true
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1024
+            },
+            {
+              "name": "system",
+              "value": "={{$vars.LANGUAGE === 'FR' ? 'Tu es un assistant qui génère des résumés narratifs en français.' : 'You are a narrative summary assistant. Generate a well-formatted weekly dev summary in markdown.'}}"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"Generate a weekly narrative summary from this data:\\n\\n\" + JSON.stringify($input.first().json) + \"\\n\\nFormat it as a readable markdown report with sections for: Highlights, Top Contributors, Key PRs, Issue Resolution Rate, and Top Commits.\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-summary",
+      "name": "Generate Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [980, 250]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format the summary for delivery\nconst claudeResponse = $input.first().json;\nconst content = claudeResponse.content?.[0]?.text || claudeResponse.error || 'No summary generated';\n\nconst language = $vars.LANGUAGE || 'EN';\nconst title = language === 'FR' ? '📊 Résumé Hebdomadaire de Développement' : '📊 Weekly Development Summary';\nconst repo = $vars.GITHUB_REPO || 'unknown/repo';\n\nconst summary_md = language === 'FR' \n  ? `# ${title}\\n\\n**Repo:** ${repo}\\n**Période:** ${$vars.WEEK_START || '7 derniers jours'}\\n\\n${content}\\n\\n---\\n*Généré automatiquement par n8n + Claude AI*`\n  : `# ${title}\\n\\n**Repo:** ${repo}\\n**Period:** ${$vars.WEEK_START || 'Last 7 days'}\\n\\n${content}\\n\\n---\\n*Automatically generated by n8n + Claude AI*`;\n\nreturn [{json: {markdown: summary_md, raw: content}}];"
+      },
+      "id": "format-output",
+      "name": "Format Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 250]
+    },
+    {
+      "parameters": {
+        "to": "={{$vars.REPORT_EMAIL}}",
+        "subject": "={{$vars.LANGUAGE === 'FR' ? '📊 Résumé Dev Hebdomadaire' : '📊 Weekly Dev Summary'}} - {{$vars.GITHUB_REPO}}",
+        "body": "={{$json.markdown}}",
+        "options": {
+          "contentType": "markdown"
+        }
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1.1,
+      "position": [1420, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SLACK_WEBHOOK}}",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "application/json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{$json.markdown}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "slack-webhook",
+      "name": "Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1420, 250]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.DISCORD_WEBHOOK}}",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "application/json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$json.markdown}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1420, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [{ "node": "Calculate Date Range", "type": "main", "index": 0 }]
+      ]
+    },
+    "Calculate Date Range": {
+      "main": [
+        [
+          { "node": "Fetch Weekly Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [{ "node": "Aggregate Activity", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [{ "node": "Aggregate Activity", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [{ "node": "Aggregate Activity", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate Activity": {
+      "main": [
+        [{ "node": "Generate Claude Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Generate Claude Summary": {
+      "main": [
+        [{ "node": "Format Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Summary": {
+      "main": [
+        [{ "node": "Send Email", "type": "main", "index": 0 }],
+        [{ "node": "Slack Webhook", "type": "main", "index": 0 }],
+        [{ "node": "Discord Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "variables": {
+    "GITHUB_REPO": "owner/repo",
+    "GITHUB_TOKEN": "",
+    "ANTHROPIC_API_KEY": "",
+    "REPORT_EMAIL": "team@example.com",
+    "SLACK_WEBHOOK": "",
+    "DISCORD_WEBHOOK": "",
+    "LANGUAGE": "EN",
+    "WEEK_START": "",
+    "WEEK_END": ""
+  },
+  "staticData": null,
+  "tags": ["github", "claude", "weekly", "summary", "automation"],
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "templateId": "weekly-dev-summary-claude"
+  }
+}
