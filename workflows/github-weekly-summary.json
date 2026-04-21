@@ -1,0 +1,303 @@
+{
+  "name": "GitHub Weekly Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "interval": 7
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "description": "Trigger workflow every Monday at 9:00 AM"
+    },
+    {
+      "parameters": {
+        "authentication": "githubApi",
+        "resource": "issue",
+        "operation": "getAll",
+        "owner": "={{ $env.GITHUB_REPO_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO_NAME }}",
+        "limit": 100,
+        "filters": {
+          "state": "all",
+          "since": "={{ $now.minus({ days: 7 }).toISOString() }}"
+        }
+      },
+      "id": "github-issues",
+      "name": "GitHub Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "description": "Fetch all issues from the past 7 days"
+    },
+    {
+      "parameters": {
+        "authentication": "githubApi",
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "owner": "={{ $env.GITHUB_REPO_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO_NAME }}",
+        "limit": 100,
+        "filters": {
+          "state": "all",
+          "since": "={{ $now.minus({ days: 7 }).toISOString() }}"
+        }
+      },
+      "id": "github-prs",
+      "name": "GitHub Pull Requests",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [460, 500],
+      "description": "Fetch all PRs from the past 7 days"
+    },
+    {
+      "parameters": {
+        "authentication": "githubApi",
+        "resource": "commit",
+        "operation": "getAll",
+        "owner": "={{ $env.GITHUB_REPO_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO_NAME }}",
+        "limit": 100,
+        "filters": {
+          "since": "={{ $now.minus({ days: 7 }).toISOString() }}"
+        }
+      },
+      "id": "github-commits",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [460, 700],
+      "description": "Fetch all commits from the past 7 days"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [700, 500],
+      "description": "Combine issues, PRs, and commits into single dataset"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": false,
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "4096"
+            },
+            {
+              "name": "messages",
+              "value": "={{ JSON.stringify([{\"role\": \"user\", \"content\": `Generate a weekly development summary for GitHub repository {{ $env.GITHUB_REPO_OWNER }}/{{ $env.GITHUB_REPO_NAME }}.\\n\\n## Issues (Past 7 Days)\\n{{ $json.issues | json: 2 }}\\n\\n## Pull Requests (Past 7 Days)\\n{{ $json.prs | json: 2 }}\\n\\n## Commits (Past 7 Days)\\n{{ $json.commits | json: 2 }}\\n\\nPlease create a narrative summary that:\\n1. Highlights key achievements and milestones\\n2. Summarizes major features or fixes\\n3. Identifies trends or patterns\\n4. Notes any blockers or concerns\\n5. Celebrates contributor efforts\\n\\nWrite in a professional but engaging tone, suitable for sharing with the team and stakeholders.`}]) }}"
+            },
+            {
+              "name": "system",
+              "value": "You are a technical writer creating weekly development summaries for software teams. Your tone is professional, encouraging, and clear. Focus on achievements, progress, and team contributions."
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "properties": [
+                {
+                  "name": "content",
+                  "extractValue": true
+                }
+              ]
+            }
+          }
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 500],
+      "description": "Call Claude API to generate narrative summary"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "summary-output",
+              "name": "summary",
+              "value": "={{ $json.content[0].text }}",
+              "type": "string"
+            },
+            {
+              "id": "week-start",
+              "name": "weekStart",
+              "value": "={{ $now.minus({ days: 7 }).format('YYYY-MM-DD') }}",
+              "type": "string"
+            },
+            {
+              "id": "week-end",
+              "name": "weekEnd",
+              "value": "={{ $now.format('YYYY-MM-DD') }}",
+              "type": "string"
+            },
+            {
+              "id": "repo-name",
+              "name": "repoName",
+              "value": "={{ $env.GITHUB_REPO_OWNER }}/{{ $env.GITHUB_REPO_NAME }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1140, 500],
+      "description": "Format the final output with metadata"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "GitHub Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Pull Requests",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "weekly-summary-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "claude-builders-bounty"
+  },
+  "id": "github-weekly-summary",
+  "tags": [
+    {
+      "name": "GitHub",
+      "createdAt": "2026-04-21T19:30:00.000Z",
+      "updatedAt": "2026-04-21T19:30:00.000Z",
+      "id": "github"
+    },
+    {
+      "name": "Claude",
+      "createdAt": "2026-04-21T19:30:00.000Z",
+      "updatedAt": "2026-04-21T19:30:00.000Z",
+      "id": "claude"
+    },
+    {
+      "name": "Automation",
+      "createdAt": "2026-04-21T19:30:00.000Z",
+      "updatedAt": "2026-04-21T19:30:00.000Z",
+      "id": "automation"
+    }
+  ]
+}
