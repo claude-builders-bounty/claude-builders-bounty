@@ -34,6 +34,13 @@ You're in the right place.
 
 ---
 
+## Submitted Solutions
+
+- [`destructive-command-hook`](./destructive-command-hook) solves [#3](../../issues/3) with a Claude Code `PreToolUse` hook that blocks destructive Bash commands and logs blocked attempts.
+- [`claude-pr-review-agent`](./claude-pr-review-agent) solves [#4](../../issues/4) with a `claude-review` CLI, optional Claude Code sub-agent prompt, and sample outputs from two real GitHub PRs.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
