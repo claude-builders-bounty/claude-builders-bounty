@@ -1,0 +1,429 @@
+{
+  "name": "GitHub Weekly Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "dayOfWeek",
+              "operation": "equal",
+              "value": "5"
+            },
+            {
+              "field": "hour",
+              "operation": "equal",
+              "value": "17"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300],
+      "notes": "每周五 17:00 触发"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.GITHUB_REPO_URL || 'https://api.github.com/repos/owner/repo' }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus({ days: 7 }).toISOString() }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $now.toISOString() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "github-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 200],
+      "notes": "获取过去 7 天的 commits"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.GITHUB_REPO_URL || 'https://api.github.com/repos/owner/repo' }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $now.minus({ days: 7 }).toISOString() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 400],
+      "notes": "获取过去 7 天关闭的 issues"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.GITHUB_REPO_URL || 'https://api.github.com/repos/owner/repo' }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 600],
+      "notes": "获取过去 7 天合并的 PRs"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeMultiplex",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [440, 400],
+      "notes": "合并所有 GitHub 数据"
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Get Commits').first().json;\nconst issues = $('Get Closed Issues').first().json;\nconst prs = $('Get Merged PRs').first().json;\n\nconst weekStart = new Date();\nweekStart.setDate(weekStart.getDate() - 7);\n\nconst prompt = `Generate a narrative weekly summary for GitHub repository activity.\n\nRepository: ${$env.GITHUB_REPO_NAME || 'owner/repo'}\nWeek: ${weekStart.toISOString().split('T')[0]} to ${new Date().toISOString().split('T')[0]}\nLanguage: ${$env.SUMMARY_LANGUAGE || 'English'}\n\n## Commits this week: ${Array.isArray(commits) ? commits.length : 0}\n${Array.isArray(commits) ? commits.slice(0, 10).map(c => `- ${c.commit?.message || 'No message'} by ${c.commit?.author?.name || 'Unknown'}`).join('\\n') : 'No commits'}\n\n## Closed Issues this week: ${Array.isArray(issues) ? issues.length : 0}\n${Array.isArray(issues) ? issues.slice(0, 10).map(i => `- #${i.number}: ${i.title} (closed by ${i.closed_by?.login || 'unknown'})`).join('\\n') : 'No issues'}\n\n## Merged PRs this week: ${Array.isArray(prs) ? prs.filter(p => p.merged_at).length : 0}\n${Array.isArray(prs) ? prs.filter(p => p.merged_at).slice(0, 10).map(p => `- #${p.number}: ${p.title} by ${p.user?.login || 'unknown'}`).join('\\n') : 'No PRs'}\n\nPlease create an engaging, narrative-style summary that:\n1. Highlights the most important changes\n2. Recognizes top contributors\n3. Identifies trends or patterns\n4. Uses a friendly, professional tone\n5. Keeps it concise but informative (300-500 words)`;\n\nreturn {\n  json: {\n    prompt: prompt,\n    commitCount: Array.isArray(commits) ? commits.length : 0,\n    issueCount: Array.isArray(issues) ? issues.length : 0,\n    prCount: Array.isArray(prs) ? prs.filter(p => p.merged_at).length : 0\n  }\n};\n"
+      },
+      "id": "prepare-prompt",
+      "name": "Prepare Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 400],
+      "notes": "准备 Claude API 的 prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "2048"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 400],
+      "notes": "调用 Claude API 生成摘要"
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $('Claude API').first().json;\nconst summary = claudeResponse.content?.[0]?.text || 'No summary generated';\n\nreturn {\n  json: {\n    summary: summary,\n    generatedAt: new Date().toISOString()\n  }\n};\n"
+      },
+      "id": "extract-summary",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 400],
+      "notes": "提取 Claude 生成的摘要文本"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"content\": \"📊 **Weekly GitHub Summary**\\n\\n{{ $json.summary }}\",\n  \"username\": \"GitHub Bot\"\n}",
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 400],
+      "notes": "发送摘要到 Discord webhook",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.sendgrid.com/v3/mail/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SENDGRID_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "personalizations",
+              "value": "=[{\"to\": [{\"email\": \"{{ $env.RECIPIENT_EMAIL }}\"}], \"subject\": \"📊 Weekly GitHub Summary - \" + ($env.GITHUB_REPO_NAME || 'Repository')}]"
+            },
+            {
+              "name": "from",
+              "value": "{\"email\": \"{{ $env.FROM_EMAIL || 'noreply@example.com' }}\", \"name\": \"GitHub Summary Bot\"}"
+            },
+            {
+              "name": "content",
+              "value": "=[{\"type\": \"text/plain\", \"value\": \"{{ $json.summary }}\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 600],
+      "notes": "发送摘要到 Email (可选)",
+      "notesInFlow": false
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "github",
+      "createdAt": "2026-04-21T06:14:00.000Z",
+      "updatedAt": "2026-04-21T06:14:00.000Z",
+      "id": "1"
+    },
+    {
+      "name": "weekly-summary",
+      "createdAt": "2026-04-21T06:14:00.000000Z",
+      "updatedAt": "2026-04-21T06:14:00.000Z",
+      "id": "2"
+    },
+    {
+      "name": "claude",
+      "createdAt": "2026-04-21T06:14:00.000Z",
+      "updatedAt": "2026-04-21T06:14:00.000Z",
+      "id": "3"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-04-21T06:14:00.000Z",
+  "versionId": "1"
+}
