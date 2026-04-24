@@ -1,0 +1,234 @@
+#!/usr/bin/env node
+
+/**
+ * claude-review - CLI tool that reviews GitHub PRs using Claude
+ * Usage: claude-review --pr https://github.com/owner/repo/pull/123
+ */
+
+const { execSync } = require('child_process');
+const https = require('https');
+const path = require('path');
+
+// Parse CLI args
+const args = process.argv.slice(2);
+let prUrl = null;
+let verbose = false;
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--pr' && args[i + 1]) {
+    prUrl = args[i + 1];
+    i++;
+  } else if (args[i] === '--verbose' || args[i] === '-v') {
+    verbose = true;
+  } else if (args[i] === '--help' || args[i] === '-h') {
+    console.log(`
+claude-review - AI-powered PR reviewer using Claude
+
+Usage:
+  claude-review --pr <github-pr-url>
+  claude-review --pr https://github.com/owner/repo/pull/123
+
+Options:
+  --pr <url>     GitHub PR URL to review
+  --verbose, -v  Show detailed output
+  --help, -h     Show this help
+
+Environment:
+  GITHUB_TOKEN   GitHub token for API access (optional for public repos)
+  ANTHROPIC_API_KEY  Anthropic API key for Claude
+`);
+    process.exit(0);
+  }
+}
+
+if (!prUrl) {
+  console.error('Error: --pr <url> is required');
+  console.error('Usage: claude-review --pr https://github.com/owner/repo/pull/123');
+  process.exit(1);
+}
+
+// Parse PR URL
+function parsePrUrl(url) {
+  const match = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (!match) {
+    console.error('Error: Invalid GitHub PR URL format');
+    console.error('Expected: https://github.com/owner/repo/pull/123');
+    process.exit(1);
+  }
+  return { owner: match[1], repo: match[2], number: parseInt(match[3]) };
+}
+
+// Fetch from GitHub API
+function githubFetch(path) {
+  return new Promise((resolve, reject) => {
+    const headers = {
+      'User-Agent': 'claude-review/1.0',
+      'Accept': 'application/vnd.github.v3+json',
+    };
+    if (process.env.GITHUB_TOKEN) {
+      headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
+    }
+    const req = https.get({
+      hostname: 'api.github.com',
+      path,
+      headers,
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`GitHub API ${res.statusCode}: ${data.substring(0, 200)}`));
+          return;
+        }
+        resolve(JSON.parse(data));
+      });
+    });
+    req.on('error', reject);
+  });
+}
+
+// Fetch diff
+function fetchDiff(owner, repo, number) {
+  return new Promise((resolve, reject) => {
+    const headers = {
+      'User-Agent': 'claude-review/1.0',
+      'Accept': 'application/vnd.github.v3.diff',
+    };
+    if (process.env.GITHUB_TOKEN) {
+      headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
+    }
+    const req = https.get({
+      hostname: 'api.github.com',
+      path: `/repos/${owner}/${repo}/pulls/${number}`,
+      headers,
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+  });
+}
+
+// Call Claude API
+function callClaude(prompt) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.error('Error: ANTHROPIC_API_KEY environment variable is required');
+    process.exit(1);
+  }
+  
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    
+    const req = https.request({
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Claude API ${res.statusCode}: ${data.substring(0, 300)}`));
+          return;
+        }
+        const parsed = JSON.parse(data);
+        resolve(parsed.content[0].text);
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// Main
+async function main() {
+  const { owner, repo, number } = parsePrUrl(prUrl);
+  console.log(`\n🔍 Reviewing PR #${number} in ${owner}/${repo}...\n`);
+
+  // Fetch PR info
+  if (verbose) console.log('Fetching PR metadata...');
+  const prInfo = await githubFetch(`/repos/${owner}/${repo}/pulls/${number}`);
+  
+  // Fetch diff
+  if (verbose) console.log('Fetching PR diff...');
+  const diff = await fetchDiff(owner, repo, number);
+  
+  // Fetch files changed
+  if (verbose) console.log('Fetching changed files...');
+  const files = await githubFetch(`/repos/${owner}/${repo}/pulls/${number}/files`);
+  
+  // Truncate diff if too large
+  const maxDiffLen = 50000;
+  const truncatedDiff = diff.length > maxDiffLen 
+    ? diff.substring(0, maxDiffLen) + '\n... [truncated]' 
+    : diff;
+
+  // Build prompt
+  const prompt = `You are a senior code reviewer. Analyze this GitHub Pull Request and provide a structured review.
+
+## PR Information
+- **Title**: ${prInfo.title}
+- **Author**: ${prInfo.user.login}
+- **Base**: ${prInfo.base.ref} ← ${prInfo.head.ref}
+- **Files changed**: ${files.length}
+- **Additions**: +${prInfo.additions} / Deletions: -${prInfo.deletions}
+
+## PR Description
+${prInfo.body || '(no description)'}
+
+## Files Changed
+${files.map(f => `- ${f.filename} (+${f.additions}/-${f.deletions})`).join('\n')}
+
+## Diff
+\`\`\`diff
+${truncatedDiff}
+\`\`\`
+
+## Your Review
+Provide your review in EXACTLY this Markdown format:
+
+### 📋 Summary
+(2-3 sentences summarizing what this PR does)
+
+### ⚠️ Identified Risks
+(bullet list of potential risks, bugs, or concerns. Say "None identified" if clean)
+
+### 💡 Improvement Suggestions  
+(bullet list of concrete suggestions. Say "None" if the code looks good)
+
+### 🎯 Confidence Score
+(One of: **Low** / **Medium** / **High** — how confident you are in the review quality based on context available)
+
+Be specific. Reference file names and line numbers where possible.`;
+
+  if (verbose) console.log(`Prompt length: ${prompt.length} chars`);
+  console.log('🤖 Calling Claude for review...\n');
+  
+  const review = await callClaude(prompt);
+  
+  console.log('---');
+  console.log(`## 🤖 Claude PR Review: ${owner}/${repo}#${number}`);
+  console.log(`> **${prInfo.title}** by @${prInfo.user.login}`);
+  console.log('');
+  console.log(review);
+  console.log('---');
+  console.log(`\n✅ Review complete for ${prUrl}`);
+}
+
+main().catch(err => {
+  console.error('Error:', err.message);
+  process.exit(1);
+});

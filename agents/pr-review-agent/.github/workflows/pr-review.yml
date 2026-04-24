@@ -1,0 +1,75 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install claude-review
+        run: |
+          chmod +x agents/pr-review-agent/bin/claude-review
+          echo "$(pwd)/agents/pr-review-agent/bin" >> $GITHUB_PATH
+
+      - name: Get PR URL
+        id: pr-url
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "url=https://github.com/${{ github.repository }}/pull/${{ inputs.pr_number }}" >> $GITHUB_OUTPUT
+            echo "number=${{ inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "url=https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+            echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Claude Review
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Run review and capture output
+          claude-review --pr ${{ steps.pr-url.outputs.url }} > /tmp/review-output.md 2>&1 || true
+          
+          # Extract just the review part (between --- markers)
+          sed -n '/^---$/,/^---$/p' /tmp/review-output.md | tail -n +2 | head -n -1 > /tmp/review-body.md
+          
+          # If extraction failed, use full output
+          if [ ! -s /tmp/review-body.md ]; then
+            cp /tmp/review-output.md /tmp/review-body.md
+          fi
+
+      - name: Post Review Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/review-body.md', 'utf8');
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ steps.pr-url.outputs.number }},
+              body: body
+            });
