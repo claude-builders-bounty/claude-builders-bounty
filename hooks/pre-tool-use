@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""
+Pre-tool-use hook: Intercepts dangerous bash commands before execution.
+Blocks: rm -rf, DROP TABLE, git push --force, TRUNCATE, DELETE FROM without WHERE
+Logs all blocked attempts to ~/.claude/hooks/blocked.log
+"""
+
+import sys
+import json
+import re
+import os
+from datetime import datetime
+
+BLOCKED_LOG = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+# Dangerous patterns to block
+DANGEROUS_PATTERNS = [
+    (r'rm\s+-rf\s+', "rm -rf: Recursive force removal"),
+    (r'DROP\s+TABLE', "DROP TABLE: Data destruction"),
+    (r'git\s+push\s+--force', "git push --force: History rewrite"),
+    (r'TRUNCATE\s+', "TRUNCATE: Table data deletion"),
+    (r'DELETE\s+FROM\s+(?!.*WHERE)', "DELETE FROM without WHERE clause"),
+]
+
+def log_blocked(command: str, reason: str, project_path: str):
+    """Log blocked attempt to blocked.log"""
+    timestamp = datetime.now().isoformat()
+    with open(BLOCKED_LOG, "a") as f:
+        f.write(f"[{timestamp}] BLOCKED | Project: {project_path} | Reason: {reason} | Command: {command}
+")
+
+def check_dangerous(command: str, project_path: str) -> tuple[bool, str]:
+    """Check if command matches any dangerous pattern. Returns (blocked, reason)."""
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            log_blocked(command, reason, project_path)
+            return True, reason
+    return False, ""
+
+def main():
+    try:
+        # Read hook input from stdin (JSON)
+        hook_input = json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, EOFError):
+        # If no valid input, allow the command
+        sys.exit(0)
+
+    # Extract bash command from the hook input
+    # Claude Code pre-tool-use hook receives: { "tool_name": "...", "tool_input": {...} }
+    tool_name = hook_input.get("tool_name", "")
+    tool_input = hook_input.get("tool_input", {})
+
+    # We only care about bash commands
+    if tool_name != "Bash":
+        sys.exit(0)
+
+    command = tool_input.get("command", "")
+
+    # Get current working directory as project path
+    project_path = os.getcwd()
+
+    # Check for dangerous patterns
+    blocked, reason = check_dangerous(command, project_path)
+
+    if blocked:
+        # Print blocking message to stderr (will be shown to Claude)
+        block_msg = (
+            f"
+⚠️  HOOK BLOCKED: {reason}
+"
+            f"   Command: {command}
+"
+            f"   Project: {project_path}
+"
+            f"   This command has been logged to: {BLOCKED_LOG}
+
+"
+            f"   If you believe this is a false positive, you can:
+"
+            f"   1. Modify the command to be safer
+"
+            f"   2. Remove this hook temporarily: rm ~/.claude/hooks/pre-tool-use
+"
+            f"   3. Add an exception (edit the hook script)
+"
+        )
+        print(block_msg, file=sys.stderr)
+        # Exit with non-zero to block the command
+        sys.exit(1)
+
+    # Not blocked - allow the command
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
