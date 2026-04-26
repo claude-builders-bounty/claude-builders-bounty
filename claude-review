@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""
+Claude Code PR Review Agent
+A CLI tool to analyze GitHub PR diffs and generate structured review comments.
+"""
+import argparse
+import os
+import re
+import requests
+import sys
+from typing import Dict, List, Tuple
+import subprocess
+import json
+
+# Configuration
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
+if not CLAUDE_API_KEY:
+    print("Error: CLAUDE_API_KEY environment variable is required", file=sys.stderr)
+    sys.exit(1)
+
+CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
+HEADERS = {
+    "Content-Type": "application/json",
+    "x-api-key": CLAUDE_API_KEY,
+    "anthropic-version": "2023-06-01"
+}
+
+def extract_pr_info(pr_url: str) -> Tuple[str, str, int]:
+    """Extract owner, repo, and PR number from GitHub URL."""
+    match = re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)", pr_url)
+    if not match:
+        raise ValueError("Invalid GitHub PR URL")
+    return match.group(1), match.group(2), int(match.group(3))
+
+def get_pr_diff(owner: str, repo: str, pr_number: int) -> str:
+    """Fetch PR diff from GitHub API."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    headers = {}
+    
+    # Use GitHub token if available
+    github_token = os.getenv("GITHUB_TOKEN")
+    if github_token:
+        headers["Authorization"] = f"token {github_token}"
+    
+    response = requests.get(url, headers=headers, params={"media": "application/vnd.github.v3.diff"})
+    if response.status_code != 200:
+        raise Exception(f"Failed to fetch PR: {response.status_code} {response.text}")
+    
+    return response.text
+
+def call_claude(prompt: str) -> str:
+    """Call Claude API with the given prompt."""
+    data = {
+        "model": "claude-3-opus-20240229",
+        "max_tokens": 1024,
+        "temperature": 0.7,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    }
+    
+    response = requests.post(CLAUDE_API_URL, headers=HEADERS, json=data)
+    if response.status_code != 200:
+        raise Exception(f"Failed to call Claude API: {response.status_code} {response.text}")
+    
+    return response.json()["content"][0]["text"]
+
+def generate_review_prompt(diff: str) -> str:
+    """Generate the prompt for Claude to review the PR."""
+    return f"""Analyze the following GitHub PR diff and provide a structured code review in Markdown format.
+
+PR Diff:
+```diff
+{diff}
+```
+
+Please provide your review with the following structure:
+
+## Summary of Changes
+Provide a 2-3 sentence summary of the key changes in this PR.
+
+## Identified Risks
+List any potential risks, bugs, or issues you've identified in the code changes.
+
+## Improvement Suggestions
+List any suggestions for improving the code, including potential optimizations, better patterns, or missing tests.
+
+## Confidence Score
+Rate your confidence in this review as: Low / Medium / High
+
+Please be thorough but concise in your analysis."""
+
+def parse_claude_response(response: str) -> Dict[str, str]:
+    """Parse Claude's response into structured components."""
+    sections = {
+        "summary": "",
+        "risks": "",
+        "suggestions": "",
+        "confidence": ""
+    }
+    
+    # Split response by sections
+    parts = re.split(r'##\s+', response)
+    
+    for part in parts:
+        if part.startswith("Summary of Changes"):
+            sections["summary"] = part.replace("Summary of Changes", "").strip()
+        elif part.startswith("Identified Risks"):
+            sections["risks"] = part.replace("Identified Risks", "").strip()
+        elif part.startswith("Improvement Suggestions"):
+            sections["suggestions"] = part.replace("Improvement Suggestions", "").strip()
+        elif part.startswith("Confidence Score"):
+            content = part.replace("Confidence Score", "").strip()
+            # Extract Low/Medium/High
+            match = re.search(r'(Low|Medium|High)', content, re.IGNORECASE)
+            sections["confidence"] = match.group(1) if match else "Medium"
+    
+    return sections
+
+def format_markdown_review(sections: Dict[str, str]) -> str:
+    """Format the review sections into Markdown."""
+    risks_list = "\n".join(f"- {risk.strip()}" for risk in sections["risks"].split("\n") if risk.strip())
+    suggestions_list = "\n".join(f"- {suggestion.strip()}" for suggestion in sections["suggestions"].split("\n") if suggestion.strip())
+    
+    markdown = f"""## Summary of Changes
+{sections["summary"]}
+
+## Identified Risks
+{risks_list}
+
+## Improvement Suggestions
+{suggestions_list}
+
+## Confidence Score
+{sections["confidence"]}"""
+    
+    return markdown
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Review Agent")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--output", help="Output file (optional)")
+    
+    args = parser.parse_args()
+    
+    try:
+        # Extract PR information
+        owner, repo, pr_number = extract_pr_info(args.pr)
+        print(f"Analyzing PR #{pr_number} from {owner}/{repo}...")
+        
+        # Get PR diff
+        diff = get_pr_diff(owner, repo, pr_number)
+        if not diff.strip():
+            print("Error: Empty diff received", file=sys.stderr)
+            sys.exit(1)
+        
+        # Generate review
+        prompt = generate_review_prompt(diff)
+        print("Generating review with Claude...")
+        response = call_claude(prompt)
+        
+        # Parse and format response
+        sections = parse_claude_response(response)
+        markdown_review = format_markdown_review(sections)
+        
+        # Output result
+        if args.output:
+            with open(args.output, 'w') as f:
+                f.write(markdown_review)
+            print(f"Review saved to {args.output}")
+        else:
+            print(markdown_review)
+            
+    except Exception as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
