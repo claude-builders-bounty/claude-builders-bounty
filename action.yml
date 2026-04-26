@@ -1,0 +1,164 @@
+name: 'Claude Code PR Review'
+description: 'Generate AI-powered code reviews using Claude'
+author: 'Opire Bounty Solver'
+branding:
+  icon: 'code'
+  color: 'blue'
+
+inputs:
+  pr-url:
+    description: 'URL of the PR to review'
+    required: true
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+  claude-api-key:
+    description: 'Anthropic API key for Claude access'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        echo "No additional dependencies required"
+      shell: bash
+
+    - name: Run Claude Review
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        CLAUDE_API_KEY: ${{ inputs.claude-api-key }}
+      run: |
+        python -c "
+import os
+import requests
+import sys
+import re
+
+# Configuration
+CLAUDE_API_KEY = os.getenv('CLAUDE_API_KEY')
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+HEADERS = {
+    'Content-Type': 'application/json',
+    'x-api-key': CLAUDE_API_KEY,
+    'anthropic-version': '2023-06-01'
+}
+
+def extract_pr_info(pr_url):
+    match = re.search(r'github\.com/([^/]+)/([^/]+)/pull/(\d+)', pr_url)
+    if not match:
+        raise ValueError('Invalid GitHub PR URL')
+    return match.group(1), match.group(2), int(match.group(3))
+
+def get_pr_diff(owner, repo, pr_number):
+    url = f'https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}'
+    headers = {'Authorization': f'token {GITHUB_TOKEN}'} if GITHUB_TOKEN else {}
+    response = requests.get(url, headers=headers, params={'media': 'application/vnd.github.v3.diff'})
+    response.raise_for_status()
+    return response.text
+
+def call_claude(prompt):
+    data = {{
+        'model': 'claude-3-opus-20240229',
+        'max_tokens': 1024,
+        'temperature': 0.7,
+        'messages': [
+            {{'role': 'user', 'content': prompt}}
+        ]
+    }}
+    response = requests.post('https://api.anthropic.com/v1/messages', headers=HEADERS, json=data)
+    response.raise_for_status()
+    return response.json()['content'][0]['text']
+
+def generate_review_prompt(diff):
+    return f'''Analyze the following GitHub PR diff and provide a structured code review in Markdown format.
+
+PR Diff:
+```diff
+{{diff}}
+```
+
+Please provide your review with the following structure:
+
+## Summary of Changes
+Provide a 2-3 sentence summary of the key changes in this PR.
+
+## Identified Risks
+List any potential risks, bugs, or issues you've identified in the code changes.
+
+## Improvement Suggestions
+List any suggestions for improving the code, including potential optimizations, better patterns, or missing tests.
+
+## Confidence Score
+Rate your confidence in this review as: Low / Medium / High
+
+Please be thorough but concise in your analysis.'''
+
+def parse_claude_response(response):
+    sections = {{'summary': '', 'risks': '', 'suggestions': '', 'confidence': ''}}
+    parts = re.split(r'##\\s+', response)
+    for part in parts:
+        if part.startswith('Summary of Changes'):
+            sections['summary'] = part.replace('Summary of Changes', '').strip()
+        elif part.startswith('Identified Risks'):
+            sections['risks'] = part.replace('Identified Risks', '').strip()
+        elif part.startswith('Improvement Suggestions'):
+            sections['suggestions'] = part.replace('Improvement Suggestions', '').strip()
+        elif part.startswith('Confidence Score'):
+            content = part.replace('Confidence Score', '').strip()
+            match = re.search(r'(Low|Medium|High)', content, re.IGNORECASE)
+            sections['confidence'] = match.group(1) if match else 'Medium'
+    return sections
+
+def format_markdown_review(sections):
+    risks_list = '\\n'.join(f'- {{risk.strip()}}' for risk in sections['risks'].split('\\n') if risk.strip())
+    suggestions_list = '\\n'.join(f'- {{suggestion.strip()}}' for suggestion in sections['suggestions'].split('\\n') if suggestion.strip())
+    return f'''## Summary of Changes
+{{sections['summary']}}
+
+## Identified Risks
+{{risks_list}}
+
+## Improvement Suggestions
+{{suggestions_list}}
+
+## Confidence Score
+{{sections['confidence']}}'''
+
+# Main execution
+try:
+    pr_url = '{inputs.pr-url}'
+    owner, repo, pr_number = extract_pr_info(pr_url)
+    print(f'::group::Analyzing PR #{{pr_number}} from {{owner}}/{{repo}}')
+    
+    diff = get_pr_diff(owner, repo, pr_number)
+    if not diff.strip():
+        raise Exception('Empty diff received')
+    
+    print('::group::Generating review with Claude')
+    prompt = generate_review_prompt(diff)
+    response = call_claude(prompt)
+    print('::endgroup::')
+    
+    sections = parse_claude_response(response)
+    markdown_review = format_markdown_review(sections)
+    
+    # Output as GitHub action output
+    with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+        f.write(f'review<<EOF\\n{{markdown_review}}\\nEOF\\n')
+    
+    print('::endgroup::')
+    print('::notice title=PR Review Generated::Review generated successfully!')
+    
+except Exception as e:
+    print(f'::error::{{str(e)}}')
+    sys.exit(1)
+"
+    - name: Output Review
+      run: echo "${{ steps.review.outputs.review }}"
+      shell: bash
