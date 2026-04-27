@@ -51,3 +51,11 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## 💰 Bounty Contribution
+
+- **Task:** [BOUNTY $200] WORKFLOW: n8n + Claude Code — automated weekly dev summary
+- **Reward:** $200
+- **Source:** GitHub-Bounty
+- **Date:** 2026-04-27
+
