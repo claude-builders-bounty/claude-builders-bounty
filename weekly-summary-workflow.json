@@ -1,0 +1,262 @@
+{
+  "name": "Weekly Dev Summary (Claude + GitHub)",
+  "nodes": [
+    {
+      "id": "trigger-cron",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 17 * * 5" }]
+        }
+      }
+    },
+    {
+      "id": "github-config",
+      "name": "GitHub Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "owner", "value": "={{ $parameter['repoOwner'] || 'your-org' }}" },
+            { "name": "repo", "value": "={{ $parameter['repoName'] || 'your-repo' }}" },
+            { "name": "language", "value": "={{ $parameter['language'] || 'EN' }}" },
+            { "name": "webhookUrl", "value": "={{ $parameter['webhookUrl'] || '' }}" }
+          ]
+        },
+        "options": {}
+      },
+      "parameters": {
+        "keepOnlySet": true
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 200],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits?since={{ $now.startOf('week').toISO() }}&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github.v3+json" },
+            { "name": "User-Agent", "value": "n8n-weekly-summary" }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 350],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/issues?state=closed&since={{ $now.startOf('week').toISO() }}&per_page=50&filter=all",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github.v3+json" },
+            { "name": "User-Agent", "value": "n8n-weekly-summary" }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 500],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/pulls?state=closed&sort=updated&direction=desc&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github.v3+json" },
+            { "name": "User-Agent", "value": "n8n-weekly-summary" }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "merge-data",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [850, 350],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "format-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 350],
+      "parameters": {
+        "language": "javaScript",
+        "code": "// Build a summarized prompt for Claude\nconst commits = $input.all().filter(item => item.json.sha).slice(0, 20);\nconst issues = $input.all().filter(item => item.json.id && item.json.pull_request === undefined).slice(0, 10);\nconst prs = $input.all().filter(item => item.json.id && item.json.pull_request !== undefined && item.json.merged_at).slice(0, 10);\n\nconst owner = $('GitHub Config').first().json.owner;\nconst repo = $('GitHub Config').first().json.repo;\nconst language = $('GitHub Config').first().json.language;\n\nlet prompt = `Generate a weekly development summary for ${owner}/${repo}.\n`;\n\nif (commits.length > 0) {\n  prompt += `\\n## Commits (${commits.length} this week)\\n`;\n  commits.forEach(c => {\n    prompt += `- ${c.json.commit.message.split('\\n')[0]} (${c.json.author?.login || 'unknown'})\\n`;\n  });\n}\n\nif (issues.length > 0) {\n  prompt += `\\n## Closed Issues (${issues.length} this week)\\n`;\n  issues.forEach(i => {\n    prompt += `- #${i.json.number}: ${i.json.title}\\n`;\n  });\n}\n\nif (prs.length > 0) {\n  prompt += `\\n## Merged PRs (${prs.length} this week)\\n`;\n  prs.forEach(pr => {\n    prompt += `- #${pr.json.number}: ${pr.json.title} by @${pr.json.user?.login}\\n`;\n  });\n}\n\nprompt += `\\nWrite in ${language === 'FR' ? 'French' : 'English'}. Be enthusiastic and informative.`;\n\nreturn [{ json: { prompt, owner, repo, language } }];"
+      }
+    },
+    {
+      "id": "claude-api",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 350],
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-api-key", "value": "={{ $credentials.anthropicApiKey }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "claude-sonnet-4-20250514" },
+            { "name": "max_tokens", "value": 4096 },
+            { "name": "messages", "value": "={{ [{'role': 'user', 'content': $json.prompt}] }}" }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 350],
+      "parameters": {
+        "language": "javaScript",
+        "code": "const summary = $input.first().json.content[0].text;\nconst owner = $('GitHub Config').first().json.owner;\nconst repo = $('GitHub Config').first().json.repo;\nconst date = new Date().toISOString().split('T')[0];\n\nconst header = `# 📊 ${owner}/${repo} — Weekly Dev Summary\\n📅 Week ending: ${date}\\n---\\n\\n`;\n\nreturn [{ json: { summary: header + summary } }];"
+      }
+    },
+    {
+      "id": "delivery-choice",
+      "name": "Route Delivery",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [1650, 350],
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $('GitHub Config').first().json.webhookUrl ? 'webhook' : 'email' }}",
+        "outputs": ["webhook", "email"]
+      }
+    },
+    {
+      "id": "send-webhook",
+      "name": "Send to Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1850, 250],
+      "parameters": {
+        "url": "={{ $('GitHub Config').first().json.webhookUrl }}",
+        "authentication": "none",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "content", "value": "={{ $json.summary }}" },
+            { "name": "username", "value": "Weekly Dev Summary" }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1850, 450],
+      "parameters": {
+        "fromEmail": "={{ $parameter['fromEmail'] || 'n8n@yourdomain.com' }}",
+        "toEmail": "={{ $parameter['toEmail'] || 'team@yourdomain.com' }}",
+        "subject": "={{ 'Weekly Dev Summary: ' + $('GitHub Config').first().json.owner + '/' + $('GitHub Config').first().json.repo }}",
+        "text": "={{ $json.summary }}\n\n---\nGenerated by n8n + Claude API"
+      }
+    }
+  ],
+  "connections": {
+    "trigger-cron": {
+      "main": [[{ "node": "github-config", "type": "main", "index": 0 }]]
+    },
+    "github-config": {
+      "main": [[
+        { "node": "github-commits", "type": "main", "index": 0 },
+        { "node": "github-issues", "type": "main", "index": 0 },
+        { "node": "github-prs", "type": "main", "index": 0 }
+      ]]
+    },
+    "github-commits": {
+      "main": [[{ "node": "merge-data", "type": "main", "index": 0 }]]
+    },
+    "github-issues": {
+      "main": [[{ "node": "merge-data", "type": "main", "index": 1 }]]
+    },
+    "github-prs": {
+      "main": [[{ "node": "merge-data", "type": "main", "index": 2 }]]
+    },
+    "merge-data": {
+      "main": [[{ "node": "format-prompt", "type": "main", "index": 0 }]]
+    },
+    "format-prompt": {
+      "main": [[{ "node": "claude-api", "type": "main", "index": 0 }]]
+    },
+    "claude-api": {
+      "main": [[{ "node": "format-output", "type": "main", "index": 0 }]]
+    },
+    "format-output": {
+      "main": [[{ "node": "delivery-choice", "type": "main", "index": 0 }]]
+    },
+    "delivery-choice": {
+      "main": [
+        [{ "node": "send-webhook", "type": "main", "index": 0 }],
+        [{ "node": "send-email", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "initial",
+  "tags": []
+}
