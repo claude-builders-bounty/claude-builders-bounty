@@ -51,3 +51,11 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## 💰 Bounty Contribution
+
+- **Task:** [BOUNTY $150] AGENT: Claude Code sub-agent that reviews a PR and posts a structu
+- **Reward:** $150
+- **Source:** GitHub-Bounty
+- **Date:** 2026-04-27
+
