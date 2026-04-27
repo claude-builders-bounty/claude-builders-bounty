@@ -1,0 +1,292 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-cron",
+      "name": "Weekly Trigger (Cron)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repoUrl }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer {{ $env.GITHUB_TOKEN }}",
+            "X-GitHub-Api-Version": "2022-11-28"
+          }
+        }
+      },
+      "id": "fetch-gh-api",
+      "name": "Fetch Repo Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 500],
+      "parameters": {
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": []
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// GitHub inputs\nconst repoInput = $input.first().json;\n\n// Config variables — edit these!\nconst config = {\n  repo: $env.REPO || repoInput.repo || 'owner/repo',\n  githubToken: $env.GITHUB_TOKEN,\n  claudeApiKey: $env.CLAUDE_API_KEY,\n  destination: $env.DESTINATION || 'discord', // 'discord' or 'slack'\n  webhookUrl: $env.WEBHOOK_URL,\n  language: $env.LANGUAGE || 'EN', // EN or FR\n};\n\n// Calculate date range (last 7 days)\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst since = weekAgo.toISOString();\n\nreturn {\n  ...config,\n  since,\n  repo: config.repo,\n  commitsUrl: `https://api.github.com/repos/${config.repo}/commits?since=${since}&per_page=100`,\n  issuesUrl: `https://api.github.com/repos/${config.repo}/issues?state=closed&since=${since}&per_page=50`,\n  pullsUrl: `https://api.github.com/repos/${config.repo}/pulls?state=closed&since=${since}&per_page=50`,\n};"
+      },
+      "id": "config-builder",
+      "name": "Build Config & URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 700]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.commitsUrl }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer {{ $json.githubToken }}"
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 900]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.issuesUrl }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer {{ $json.githubToken }}"
+          }
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 900]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.pullsUrl }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer {{ $json.githubToken }}"
+          }
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 900]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all three data streams\nconst items = $input.all();\nconst commits = items.find(i => i.json._node === 'Fetch Commits'.toLowerCase() || !i.json._node) || { json: [] };\nconst issues = items.find(i => i.json._node === 'Fetch Closed Issues') || { json: [] };\nconst pulls = items.find(i => i.json._node === 'Fetch Merged PRs') || { json: [] };\n\n// Actually, n8n merges automatically. Let's just format the data.\nconst config = $('Build Config & URLs').first().json;\n\n// Get commits from the first stream\nconst commitData = $('Fetch Commits').all();\nconst issueData = $('Fetch Closed Issues').all();\nconst pullData = $('Fetch Merged PRs').all();\n\n// Format commits\nconst commitsFormatted = commitData.slice(0, 30).map(c => ({\n  type: 'commit',\n  author: c.commit?.author?.name || 'unknown',\n  message: (c.commit?.message || '').split('\\n')[0],\n  date: c.commit?.author?.date?.split('T')[0],\n  url: c.html_url\n}));\n\n// Format issues\nconst issuesFormatted = issueData.filter(i => i.pull_request === undefined).slice(0, 20).map(i => ({\n  type: 'issue',\n  title: i.title,\n  number: i.number,\n  state: 'closed',\n  url: i.html_url\n}));\n\n// Format PRs\nconst pullsFormatted = pullData.slice(0, 20).map(p => ({\n  type: 'pr',\n  title: p.title,\n  number: p.number,\n  author: p.user?.login || 'unknown',\n  url: p.html_url\n}));\n\nreturn {\n  repo: config.repo,\n  weekStart: config.since.split('T')[0],\n  weekEnd: new Date().toISOString().split('T')[0],\n  totalCommits: commitsFormatted.length,\n  totalIssues: issuesFormatted.length,\n  totalPRs: pullsFormatted.length,\n  commits: commitsFormatted,\n  issues: issuesFormatted,\n  pulls: pullsFormatted,\n  language: config.language\n};"
+      },
+      "id": "merge-format",
+      "name": "Merge & Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 1100]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "n8n-nodes-base.httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2048
+            },
+            {
+              "name": "system",
+              "value": "You are a helpful engineering assistant. Generate a weekly development summary."
+            },
+            {
+              "name": "messages",
+              "value": "=[\n  {\n    \"role\": \"user\",\n    \"content\": \"Generate a weekly development summary for repo {{ $json.repo }} ({{ $json.weekStart }} to {{ $json.weekEnd }}).\\n\\n{{ $json.totalCommits }} commits, {{ $json.totalIssues }} issues closed, {{ $json.totalPRs }} PRs merged.\\n\\nRecent commits:\\n{{ $json.commits.slice(0,10).map(c => '- ' + c.message).join('\\\\n') }}\\n\\nClosed issues:\\n{{ $json.issues.map(i => '- #' + i.number + ' ' + i.title).join('\\\\n') }}\\n\\nMerged PRs:\\n{{ $json.pulls.map(p => '- #' + p.number + ' ' + p.title).join('\\\\n') }}\\n\\nFormat the response as:\\n- **Weekly Summary** (3-5 sentences)\\n- **Key Changes** (bullet points)\\n- **Notable Events** (if any)\\n- **Recommendations** (next steps)\\n\\nLanguage: {{ $json.language === 'FR' ? 'French' : 'English' }}\"\n    }\n  ]\n"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "headers": {
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+          }
+        }
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 1300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst claudeContent = response.content?.[0]?.text || JSON.stringify(response);\n\nreturn {\n  repo: $('Merge & Format Data').first().json.repo,\n  week: `${$('Merge & Format Data').first().json.weekStart} to ${$('Merge & Format Data').first().json.weekEnd}`,\n  summary: claudeContent,\n  stats: {\n    commits: $('Merge & Format Data').first().json.totalCommits,\n    issues: $('Merge & Format Data').first().json.totalIssues,\n    prs: $('Merge & Format Data').first().json.totalPRs\n  },\n  generatedAt: new Date().toISOString()\n};"
+      },
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 1500]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.webhookUrl }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=**📊 Weekly Dev Summary**: {{ $json.repo }}\n\n**Period:** {{ $json.week }}\n**Stats:** {{ $json.stats.commits }} commits · {{ $json.stats.issues }} issues · {{ $json.stats.prs }} PRs\n\n---\n{{ $json.summary }}"
+            }
+          ]
+        }
+      },
+      "id": "webhook-delivery",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 1700],
+      "parameters": {
+        "options": {
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "timeout": 30000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Cron)": {
+      "main": [
+        [
+          {
+            "node": "Build Config & URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Config & URLs": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge & Format Data": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
