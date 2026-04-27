@@ -1,53 +1,48 @@
-# Claude Builders Bounty 🤖
+# 🛡️ Pre-Tool-Use Hook: Block Destructive Bash Commands
 
-> A community bounty board for Claude Code builders.
+A Claude Code `pre-tool-use` hook that intercepts and blocks destructive bash commands before they execute.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation
 
----
+```bash
+mkdir -p ~/.claude/hooks && curl -sL https://raw.githubusercontent.com/haoyousun60-create/claude-builders-bounty/main/hooks/pre-tool-use.py -o ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+```
 
-## How it works
+That's it! Claude Code will automatically discover the hook and apply it.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## What It Blocks
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+| Pattern | Reason |
+|---------|--------|
+| `rm -rf` / `rm --recursive` | Unconditional recursive delete |
+| `DROP TABLE` | Destructive database operation |
+| `git push --force` | Force-push (overwrites history) |
+| `TRUNCATE` | Destructive database operation |
+| `DELETE FROM` **without** `WHERE` | Accidental data wipe |
 
----
+## What It Logs
 
-## Active Bounties
+All blocked attempts are logged to `~/.claude/hooks/blocked.log`:
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```
+[2026-04-27 14:30:00] BLOCKED
+  Reason:  Unconditional recursive delete
+  Command: rm -rf /project/data
+  Project: /Users/me/my-project
+```
 
----
+## Safe Bypasses
 
-## Rules
+The following patterns are automatically allowed (they're common maintenance tasks):
+- `rm -rf /tmp/*` — clearing temp files
+- `rm -rf node_modules` — package management
+- `rm -rf .git/*` — git operations (rare but legit)
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Requirements
 
----
+- Python 3.6+ (pre-installed on macOS/Linux)
+- Claude Code (with hook support)
 
-## Community
+## License
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+MIT
