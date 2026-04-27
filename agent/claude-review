@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ──────────────────────────────────────────────
+# claude-review — AI PR review via Claude API
+# Version: 1.0.0
+# ──────────────────────────────────────────────
+
+VERSION="1.0.0"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+usage() {
+  cat <<EOF
+${CYAN}claude-review${NC} — AI-powered PR review via Claude
+
+${YELLOW}Usage:${NC}
+  claude-review --pr <PR_URL>       Review a PR
+  claude-review --pr <URL> -o file  Save review to file
+  claude-review --pr <URL> --json   Output as JSON
+  claude-review --version           Show version
+  claude-review --help              Show this help
+
+${YELLOW}Example:${NC}
+  claude-review --pr https://github.com/owner/repo/pull/123
+
+${YELLOW}Environment:${NC}
+  GITHUB_TOKEN      Required - GitHub personal access token
+  CLAUDE_API_KEY    Required - Anthropic Claude API key
+EOF
+  exit 0
+}
+
+die() {
+  echo -e "${RED}Error:${NC} $1" >&2
+  exit 1
+}
+
+# Parse args
+PR_URL=""
+OUTPUT_FILE=""
+JSON_MODE=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="$2"; shift 2 ;;
+    -o|--output) OUTPUT_FILE="$2"; shift 2 ;;
+    --json) JSON_MODE=true; shift ;;
+    --version) echo "claude-review v$VERSION"; exit 0 ;;
+    --help|-h) usage ;;
+    *) die "Unknown option: $1 (use --help)" ;;
+  esac
+done
+
+[[ -z "$PR_URL" ]] && die "Missing --pr <PR_URL>"
+[[ -z "${GITHUB_TOKEN:-}" ]] && die "GITHUB_TOKEN not set"
+[[ -z "${CLAUDE_API_KEY:-}" ]] && die "CLAUDE_API_KEY not set"
+
+# Extract owner/repo and PR number
+if [[ "$PR_URL" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+  OWNER="${BASH_REMATCH[1]}"
+  REPO="${BASH_REMATCH[2]}"
+  PR_NUM="${BASH_REMATCH[3]}"
+else
+  die "Invalid PR URL format. Expected: https://github.com/owner/repo/pull/123"
+fi
+
+echo -e "${BLUE}🔍 Reviewing${NC} $OWNER/$REPO#${PR_NUM} ..."
+
+# ── Fetch PR metadata ─────────────────────────
+PR_JSON=$(curl -s -f \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR_NUM") || die "Failed to fetch PR #$PR_NUM"
+
+PR_TITLE=$(echo "$PR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('title',''))")
+PR_BODY=$(echo "$PR_JSON" | python3 -c "import json,sys; print((json.load(sys.stdin).get('body','') or '')[:2000])")
+
+echo -e "  ${CYAN}PR:${NC} $PR_TITLE"
+
+# ── Fetch PR diff ────────────────────────────
+DIFF=$(curl -s -f \
+  -H "Accept: application/vnd.github.v3.diff" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR_NUM" 2>/dev/null | head -2000) || \
+  die "Failed to fetch diff"
+
+# ── Fetch changed files ──────────────────────
+FILES=$(curl -s \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR_NUM/files" | \
+  python3 -c "
+import json,sys
+data = json.load(sys.stdin)
+for f in data[:20]:
+    status = f.get('status','')
+    name = f.get('filename','')
+    add = f.get('additions',0)
+    del_ = f.get('deletions',0)
+    print(f'  [{status}] {name} (+{add}/-{del_})')
+" 2>/dev/null) || FILES="  (could not fetch file list)"
+
+# ── Build prompt ─────────────────────────────
+PROMPT=$(cat <<PROMPT
+You are a senior code reviewer. Review the following GitHub Pull Request.
+Be thorough but concise. Focus on:
+
+1. Correctness — does the code do what it claims?
+2. Security — any vulnerabilities introduced?
+3. Edge cases — what breaks when inputs are unusual?
+4. Code quality — idiomatic, maintainable, well-structured?
+5. Tests — are there enough of them? quality?
+
+PR Title: $PR_TITLE
+PR Description: ${PR_BODY:-No description provided}
+
+Changed Files:
+$FILES
+
+Diff:
+\`\`\`diff
+${DIFF:0:4000}
+\`\`\`
+
+Format your response exactly as:
+
+### Summary of Changes
+(2-3 sentences)
+
+### Identified Risks
+- Risk 1 (severity: High/Medium/Low)
+- Risk 2 (severity: ...)
+
+### Improvement Suggestions
+- Suggestion 1 (priority: High/Medium/Low)
+- Suggestion 2 (priority: ...)
+
+### Code Quality Observations
+- Observation 1
+- Observation 2
+
+### Confidence Score
+**Confidence: High/Medium/Low**
+
+### Final Verdict
+**✅ Approve / ⏳ Changes Requested / ❌ Needs Discussion**
+PROMPT
+)
+
+# ── Call Claude API ──────────────────────────
+echo -e "  ${YELLOW}⏳ Analyzing${NC} (Claude API)..."
+RESPONSE=$(curl -s -X POST https://api.anthropic.com/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $CLAUDE_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -d "$(cat <<BODY
+{
+  "model": "claude-sonnet-4-20250514",
+  "max_tokens": 2048,
+  "system": "You are a senior software engineer performing thorough, structured code reviews. Be honest about quality and risks.",
+  "messages": [{"role": "user", "content": $(echo "$PROMPT" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))")}]
+}
+BODY
+)")
+
+# Extract response text
+REVIEW_TEXT=$(echo "$RESPONSE" | python3 -c "
+import json,sys
+try:
+    data = json.load(sys.stdin)
+    for content in data.get('content', []):
+        if content.get('type') == 'text':
+            print(content.get('text', ''))
+except: pass
+" 2>/dev/null)
+
+# ── Output ──────────────────────────────────
+if [ -z "$REVIEW_TEXT" ]; then
+  echo -e "${RED}❌ Claude API returned empty or error. Check your CLAUDE_API_KEY or credits.${NC}"
+  echo "Raw response:" >&2
+  echo "$RESPONSE" | python3 -m json.tool 2>/dev/null | head -5 >&2 || echo "$RESPONSE" | head -2 >&2
+  exit 1
+fi
+
+if [ "$JSON_MODE" = true ]; then
+  # Output as JSON
+  REVIEW_JSON=$(cat <<JEOF
+{
+  "pr": "$PR_URL",
+  "title": $(echo "$PR_TITLE" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))"),
+  "review": $(echo "$REVIEW_TEXT" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))"),
+  "version": "$VERSION",
+  "model": "claude-sonnet-4-20250514"
+}
+JEOF
+)
+  if [ -n "$OUTPUT_FILE" ]; then
+    echo "$REVIEW_JSON" > "$OUTPUT_FILE"
+    echo -e "${GREEN}✅ Review saved to${NC} $OUTPUT_FILE"
+  else
+    echo "$REVIEW_JSON"
+  fi
+else
+  OUTPUT=$(printf "${GREEN}╔════════════════════════════════════════╗\n║  🤖 Claude PR Review     ${NC}v$VERSION${GREEN}   ║\n╚════════════════════════════════════════╝${NC}\n\n${CYAN}PR:${NC} $PR_URL\n${CYAN}Title:${NC} $PR_TITLE\n\n%s\n\n${BLUE}━━━ Powered by Anthropic Claude ━━━${NC}\n" "$REVIEW_TEXT")
+
+  if [ -n "$OUTPUT_FILE" ]; then
+    echo -e "$OUTPUT" > "$OUTPUT_FILE"
+    echo -e "${GREEN}✅ Review saved to${NC} $OUTPUT_FILE"
+  else
+    echo -e "$OUTPUT"
+  fi
+fi
