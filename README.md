@@ -51,3 +51,11 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## 💰 Bounty Contribution
+
+- **Task:** [BOUNTY $100] HOOK: Pre-tool-use hook that blocks destructive bash commands
+- **Reward:** $100
+- **Source:** GitHub-Bounty
+- **Date:** 2026-04-27
+
