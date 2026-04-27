@@ -1,0 +1,193 @@
+{
+  "name": "Weekly Dev Summary (Claude API)",
+  "nodes": [
+    {
+      "id": "cron-trigger",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 2,
+      "position": [450, 200],
+      "parameters": {
+        "repository": "={{ $json.repo || $env.GITHUB_REPO }}",
+        "owner": "={{ $json.owner || $env.GITHUB_OWNER }}",
+        "resource": "commit",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {
+          "since": "={{ $now.startOf('week').toISO() }}",
+          "until": "={{ $now.toISO() }}"
+        }
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 2,
+      "position": [450, 400],
+      "parameters": {
+        "repository": "={{ $json.repo || $env.GITHUB_REPO }}",
+        "owner": "={{ $json.owner || $env.GITHUB_OWNER }}",
+        "resource": "issue",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {
+          "state": "closed",
+          "since": "={{ $now.startOf('week').toISO() }}"
+        }
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 2,
+      "position": [450, 600],
+      "parameters": {
+        "repository": "={{ $json.repo || $env.GITHUB_REPO }}",
+        "owner": "={{ $json.owner || $env.GITHUB_OWNER }}",
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {
+          "state": "closed"
+        }
+      }
+    },
+    {
+      "id": "merge-data",
+      "name": "Merge & Format",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 400],
+      "parameters": {
+        "functionCode": "const commits = $input.all().filter(i => i.json.workflow === 'commits') || [];\nconst issues = $input.all().filter(i => i.json.workflow === 'issues') || [];\nconst prs = $input.all().filter(i => i.json.workflow === 'prs') || [];\n\nconst weekStart = new Date();\nweekStart.setDate(weekStart.getDate() - weekStart.getDay());\nweekStart.setHours(0,0,0,0);\n\nconst mergedPRs = prs.filter(p => \n  p.json.merged_at && new Date(p.json.merged_at) >= weekStart\n);\n\nconst summary = {\n  repo: $env.GITHUB_REPO || 'unknown',\n  week: `${weekStart.toISOString().split('T')[0]} to ${new Date().toISOString().split('T')[0]}`,\n  stats: {\n    commits: commits.length,\n    closed_issues: issues.length,\n    merged_prs: mergedPRs.length\n  },\n  top_commits: commits.slice(0, 10).map(c => ({\n    message: c.json.commit?.message?.split('\\n')[0] || '',\n    author: c.json.commit?.author?.name || c.json.author?.login || 'unknown',\n    date: c.json.commit?.author?.date || '',\n    url: c.json.html_url || ''\n  })),\n  top_issues: issues.slice(0, 5).map(i => ({\n    title: i.json.title || '',\n    number: i.json.number || 0,\n    url: i.json.html_url || ''\n  })),\n  top_prs: mergedPRs.slice(0, 5).map(p => ({\n    title: p.json.title || '',\n    number: p.json.number || 0,\n    author: p.json.user?.login || 'unknown',\n    url: p.json.html_url || ''\n  }))\n};\n\nreturn [{ json: summary }];"
+      }
+    },
+    {
+      "id": "claude-api",
+      "name": "Claude Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 400],
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.CLAUDE_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 4096
+            },
+            {
+              "name": "system",
+              "value": "You are a technical writer generating a weekly development summary. Write in a narrative, engaging style. Highlight key achievements, trends, and notable changes."
+            },
+            {
+              "name": "messages",
+              "value": "=[\n  {\n    \"role\": \"user\",\n    \"content\": `Generate a narrative weekly development summary for repository {{ $json.repo }} covering {{ $json.week }}.\n\n## Stats\n- Commits: {{ $json.stats.commits }}\n- Closed Issues: {{ $json.stats.closed_issues }}\n- Merged PRs: {{ $json.stats.merged_prs }}\n\n## Top Commits\n{{#each $json.top_commits}}\n- {{this.message}} ({{this.author}}, {{this.date}})\n{{/each}}\n\n## Closed Issues\n{{#each $json.top_issues}}\n- #{{this.number}}: {{this.title}}\n{{/each}}\n\n## Merged PRs\n{{#each $json.top_prs}}\n- #{{this.number}}: {{this.title}} by @{{this.author}}\n{{/each}}\n\nWrite a 2-3 paragraph narrative summary in English (or {{ $env.LANGUAGE || 'EN' }}). Start with an engaging opening sentence. Include a 'Key Highlights' section. End with a forward-looking closing remark.`\n    }\n  }\n]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "parse-response",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "parameters": {
+        "functionCode": "const response = $input.first().json;\nconst content = response.content?.find(c => c.type === 'text')?.text || '';\n\nconst repo = $env.GITHUB_REPO || '';\nconst owner = $env.GITHUB_OWNER || '';\nconst webhookUrl = $env.SLACK_WEBHOOK_URL || $env.DISCORD_WEBHOOK_URL;\nconst delivery = webhookUrl ? 'webhook' : 'email';\n\nreturn [{\n  json: {\n    summary: content,\n    repo: `${owner}/${repo}`,\n    week: response.week || '',\n    delivery_method: delivery\n  }\n}];"
+      }
+    },
+    {
+      "id": "deliver-slack",
+      "name": "Send via Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 300],
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL || $env.DISCORD_WEBHOOK_URL }}",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "=📊 *Weekly Dev Summary*\n*Repo:* {{ $json.repo }}\n*Week:* {{ $json.week }}\n\n{{ $json.summary }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "deliver-email",
+      "name": "Send via Email (Fallback)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1250, 550],
+      "parameters": {
+        "fromEmail": "={{ $env.EMAIL_FROM || 'n8n@localhost' }}",
+        "toEmail": "={{ $env.EMAIL_TO }}",
+        "subject": "=Weekly Dev Summary - {{ $json.repo }} ({{ $json.week }})",
+        "text": "={{ $json.summary }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "cron-trigger": {
+      "main": [[{ "node": "github-commits", "type": "main", "index": 0 }]]
+    },
+    "github-commits": {
+      "main": [[{ "node": "merge-data", "type": "main", "index": 0 }]]
+    },
+    "github-issues": {
+      "main": [[{ "node": "merge-data", "type": "main", "index": 0 }]]
+    },
+    "github-prs": {
+      "main": [[{ "node": "merge-data", "type": "main", "index": 0 }]]
+    },
+    "merge-data": {
+      "main": [[{ "node": "claude-api", "type": "main", "index": 0 }]]
+    },
+    "claude-api": {
+      "main": [[{ "node": "parse-response", "type": "main", "index": 0 }]]
+    },
+    "parse-response": {
+      "main": [[{ "node": "deliver-slack", "type": "main", "index": 0 }]]
+    }
+  }
+}
