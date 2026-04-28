@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# claude-review — PR review agent
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+#
+# Analyzes a GitHub PR diff and produces a structured Markdown review.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PR_URL=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --pr) PR_URL="$2"; shift 2 ;;
+    *) echo "Usage: claude-review --pr <PR_URL>"; exit 1 ;;
+  esac
+done
+
+if [ -z "$PR_URL" ]; then
+  echo "Usage: claude-review --pr <PR_URL>"
+  exit 1
+fi
+
+if ! echo "$PR_URL" | grep -qE 'github\.com/[^/]+/[^/]+/pull/[0-9]+'; then
+  echo "Error: Invalid PR URL. Expected format: https://github.com/owner/repo/pull/123"
+  exit 1
+fi
+
+OWNER=$(echo "$PR_URL" | sed -E 's|.*/([^/]+)/([^/]+)/pull/([0-9]+)|\1|')
+REPO=$(echo "$PR_URL" | sed -E 's|.*/([^/]+)/([^/]+)/pull/([0-9]+)|\2|')
+PR_NUM=$(echo "$PR_URL" | sed -E 's|.*/([^/]+)/([^/]+)/pull/([0-9]+)|\3|')
+
+FULL_REPO="${OWNER}/${REPO}"
+
+echo "Fetching PR #${PR_NUM} from ${FULL_REPO}..."
+
+PR_DATA=$(gh pr view "$PR_NUM" --repo "$FULL_REPO" --json title,body,author,additions,deletions,changedFiles 2>/dev/null || { echo "Error: Could not fetch PR. Ensure gh is authenticated."; exit 1; })
+PR_DIFF=$(gh pr diff "$PR_NUM" --repo "$FULL_REPO" 2>/dev/null || { echo "Error: Could not fetch diff."; exit 1; })
+
+DIFF_FILE=$(mktemp)
+echo "$PR_DIFF" > "$DIFF_FILE"
+
+REVIEW_FILE="pr-review-${PR_NUM}.md"
+
+python3 "${SCRIPT_DIR}/review.py" "$DIFF_FILE" "$PR_NUM" "$PR_DATA" "$PR_URL" > "$REVIEW_FILE"
+
+rm -f "$DIFF_FILE"
+
+echo "Review written to $REVIEW_FILE"
+cat "$REVIEW_FILE"
