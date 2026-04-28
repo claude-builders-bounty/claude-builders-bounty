@@ -1,53 +1,61 @@
-# Claude Builders Bounty 🤖
+# CHANGELOG Generator — Skill for Claude Code / Bash
 
-> A community bounty board for Claude Code builders.
-
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+A bash script that automatically generates a structured `CHANGELOG.md` from your project's git history.
 
 ---
 
-## How it works
+## 🚀 Setup (3 steps)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+**Step 1** — Place `changelog.sh` in your project root:
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+curl -O https://raw.githubusercontent.com/yihangwu539-png/claude-builders-bounty/main/changelog.sh
+chmod +x changelog.sh
+```
 
----
+**Step 2** — Make sure you have `git` installed and are inside a git repository:
 
-## Active Bounties
+```bash
+git init  # or ensure .git exists
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+**Step 3** — Run it:
 
----
+```bash
+./changelog.sh
+```
 
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+That's it! Your `CHANGELOG.md` will be generated automatically.
 
 ---
 
-## Community
+## 📖 Usage
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+```
+./changelog.sh                  # Writes CHANGELOG.md
+./changelog.sh --output=FILE    # Write to a specific file
+./changelog.sh --since=v1.0.0   # Start from a specific tag
+./changelog.sh --dry-run        # Print to stdout (no file write)
+./changelog.sh --help           # Show full help
+```
+
+## 🧠 How it works
+
+1. Fetches all commits since the **last git tag** (or all commits if no tags exist)
+2. Auto-categorizes each commit into: **Added ✨**, **Fixed 🐛**, **Changed 🔄**, or **Removed 🗑️**
+3. Uses [conventional commit](https://www.conventionalcommits.org/) prefixes and keyword heuristics for categorization
+4. Outputs a well-formatted `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/) standards
+5. Includes links to commits, author info, and summary statistics
+
+## 📋 Sample output
+
+See [`CHANGELOG_SAMPLE.md`](./CHANGELOG_SAMPLE.md) for a sample generated from this repository.
+
+## 🔧 Requirements
+
+- `git` installed and available on `PATH`
+- A git repository with at least one commit
 
 ---
 
-*Started by the Claude builder community · March 2026 · MIT License*
+*Part of the [Claude Builders Bounty](https://github.com/claude-builders-bounty/claude-builders-bounty) program.*
