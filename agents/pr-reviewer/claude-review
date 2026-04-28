@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# claude-review — review a GitHub PR with the pr-reviewer agent and print the
+# structured Markdown to stdout.
+#
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --pr 123 --repo owner/repo
+#   claude-review --diff path/to/diff.patch
+#   gh pr diff 123 | claude-review --stdin --pr-url https://github.com/owner/repo/pull/123
+#
+# Requires: gh CLI authenticated, claude CLI installed (Claude Code), bash 4+.
+# Submission for claude-builders-bounty/claude-builders-bounty issue #4.
+
+set -euo pipefail
+
+PR_URL=""
+PR_NUM=""
+REPO=""
+DIFF_FILE=""
+FROM_STDIN=0
+
+usage() {
+  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --pr)        PR_URL="$2"; shift 2 ;;
+    --pr-url)    PR_URL="$2"; shift 2 ;;
+    --repo)      REPO="$2"; shift 2 ;;
+    --diff)      DIFF_FILE="$2"; shift 2 ;;
+    --stdin)     FROM_STDIN=1; shift ;;
+    -h|--help)   usage ;;
+    *)           echo "Unknown flag: $1" >&2; exit 2 ;;
+  esac
+done
+
+# Resolve --pr <number> + --repo into a URL if needed.
+if [ -n "$PR_URL" ] && [[ ! "$PR_URL" =~ ^https?:// ]]; then
+  if [ -z "$REPO" ]; then
+    echo "When --pr is a number, --repo owner/name is required." >&2
+    exit 2
+  fi
+  PR_NUM="$PR_URL"
+  PR_URL="https://github.com/${REPO}/pull/${PR_NUM}"
+fi
+
+# Acquire diff + metadata.
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+DIFF_PATH="${TMP_DIR}/pr.diff"
+META_PATH="${TMP_DIR}/pr.json"
+
+if [ "$FROM_STDIN" -eq 1 ]; then
+  cat > "$DIFF_PATH"
+  if [ -z "$PR_URL" ]; then
+    echo "When using --stdin, also pass --pr-url for context." >&2
+    exit 2
+  fi
+  printf '{"title":"(stdin)","body":"(diff piped from stdin)","additions":0,"deletions":0,"changedFiles":0}\n' > "$META_PATH"
+elif [ -n "$DIFF_FILE" ]; then
+  cp "$DIFF_FILE" "$DIFF_PATH"
+  printf '{"title":"(local diff)","body":"(diff loaded from %s)","additions":0,"deletions":0,"changedFiles":0}\n' "$DIFF_FILE" > "$META_PATH"
+elif [ -n "$PR_URL" ]; then
+  command -v gh >/dev/null || { echo "gh CLI not found" >&2; exit 3; }
+  gh pr view "$PR_URL" --json title,body,additions,deletions,changedFiles > "$META_PATH"
+  gh pr diff "$PR_URL" > "$DIFF_PATH"
+else
+  echo "Pass --pr <url|number> or --diff <path> or --stdin." >&2
+  exit 2
+fi
+
+command -v claude >/dev/null || { echo "claude CLI not found. Install Claude Code." >&2; exit 3; }
+
+# Build the prompt and invoke the pr-reviewer agent via Claude Code.
+PROMPT_FILE="${TMP_DIR}/prompt.txt"
+{
+  printf 'Use the pr-reviewer agent to review this PR.\n\n'
+  printf 'Metadata:\n```json\n'
+  cat "$META_PATH"
+  printf '\n```\n\nDiff:\n```diff\n'
+  cat "$DIFF_PATH"
+  printf '\n```\n'
+} > "$PROMPT_FILE"
+
+# Pipe prompt into claude -p (non-interactive). The agent at agents/pr-reviewer
+# must be installed in ~/.claude/agents/ or shipped with the project.
+claude -p --agent pr-reviewer < "$PROMPT_FILE"

@@ -1,0 +1,78 @@
+# Drop this file into .github/workflows/ in any repo to auto-review PRs.
+# Requires repo secret ANTHROPIC_API_KEY (the API key, NOT a Claude Max subscription token —
+# get one from https://console.anthropic.com).
+#
+# Behavior:
+#   - Triggers on PR opened, reopened, or synchronize (new commits pushed).
+#   - Generates a structured review using the pr-reviewer agent.
+#   - Posts the review as a single sticky comment (overwrites on subsequent runs).
+#
+# Submission for claude-builders-bounty/claude-builders-bounty issue #4.
+
+name: pr-review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install pr-reviewer agent
+        run: |
+          mkdir -p "$HOME/.claude/agents"
+          # The agent.md and claude-review script live next to this workflow file
+          # in the source repo. The CI runner copies them from the consumer
+          # repo's checkout where this workflow was placed.
+          cp .github/workflows/pr-reviewer-agent.md "$HOME/.claude/agents/pr-reviewer.md" 2>/dev/null \
+            || curl -fsSL https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/agents/pr-reviewer/agent.md \
+              -o "$HOME/.claude/agents/pr-reviewer.md"
+
+      - name: Fetch diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+          echo "diff_lines=$(wc -l < /tmp/pr.diff)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          {
+            echo "Use the pr-reviewer agent to review this PR."
+            echo
+            echo "PR title: ${{ github.event.pull_request.title }}"
+            echo "PR body:"
+            cat <<'PRBODY'
+          ${{ github.event.pull_request.body }}
+          PRBODY
+            echo
+            echo "Diff:"
+            echo '```diff'
+            cat /tmp/pr.diff
+            echo '```'
+          } | claude -p --agent pr-reviewer > /tmp/review.md
+
+      - name: Post sticky review comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: /tmp/review.md
+          header: pr-reviewer (auto)
