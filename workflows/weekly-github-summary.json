@@ -1,0 +1,145 @@
+{
+  "name": "Weekly GitHub Summary",
+  "nodes": [
+    {
+      "parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "0 17 * * 5"}]}},
+      "id": "schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = { owner: 'owner', repo: 'repo', branch: 'main', language: 'en', webhookUrl: '', email: '' };\nconst now = new Date();\nconst since = new Date(now);\nsince.setDate(since.getDate() - 7);\nreturn [{ json: { ...config, sinceDate: since.toISOString().split('T')[0], untilDate: now.toISOString().split('T')[0], weekLabel: `${since.toISOString().split('T')[0]} → ${now.toISOString().split('T')[0]}` } }];"
+      },
+      "id": "setconfig",
+      "name": "Set Config & Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "owner": "={{ $('Set Config & Date Range').first().json.owner }}",
+        "repository": "={{ $('Set Config & Date Range').first().json.repo }}",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {}
+      },
+      "id": "commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [650, 150],
+      "credentials": { "githubApi": { "id": "1", "name": "GitHub Account" } }
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "owner": "={{ $('Set Config & Date Range').first().json.owner }}",
+        "repository": "={{ $('Set Config & Date Range').first().json.repo }}",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": { "state": "closed" }
+      },
+      "id": "issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [650, 350],
+      "credentials": { "githubApi": { "id": "1", "name": "GitHub Account" } }
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "owner": "={{ $('Set Config & Date Range').first().json.owner }}",
+        "repository": "={{ $('Set Config & Date Range').first().json.repo }}",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": { "state": "closed" }
+      },
+      "id": "prs",
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [650, 550],
+      "credentials": { "githubApi": { "id": "1", "name": "GitHub Account" } }
+    },
+    {
+      "parameters": { "mode": "combine", "combine": "mergeByPosition" },
+      "id": "merge",
+      "name": "Merge All Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [750, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Fetch Commits').all().map(c => c.json).filter(c => !c.commit.message.startsWith('Merge') && !c.commit.message.startsWith('chore')).slice(0, 50);\nconst issues = $('Fetch Closed Issues').all().map(i => i.json).slice(0, 30);\nconst prs = $('Fetch PRs').all().map(p => p.json).filter(p => p.merged_at).slice(0, 30);\nconst config = $('Set Config & Date Range').first().json;\nconst prompt = `Generate a weekly narrative summary for **${config.owner}/${config.repo}** covering ${config.weekLabel}.\\n\\n### Commits (${commits.length})\\n${commits.map(c => `- **${c.commit.message.split('\\n')[0]}** by ${c.commit.author?.name || 'unknown'}`).join('\\n')}\\n\\n### Closed Issues (${issues.length})\\n${issues.map(i => `- #${i.number}: ${i.title}`).join('\\n')}\\n\\n### Merged PRs (${prs.length})\\n${prs.map(p => `- #${p.number}: ${p.title} by ${p.user?.login || 'unknown'}`).join('\\n')}\\n\\nRequirements: cohesive narrative, 🔥 Highlights section, group thematically, mention contributors, ${config.language === 'fr' ? 'French' : 'English'}, max 600 words, 🔮 Looking Ahead section, markdown.`;\nreturn [{ json: { prompt, config, stats: { commits: commits.length, issues: issues.length, prs: prs.length } } }];"
+      },
+      "id": "prompt",
+      "name": "Prepare Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 350]
+    },
+    {
+      "parameters": {
+        "prompt": { "messages": [{ "role": "user", "content": "={{ $json.prompt }}" }], "options": { "model": "claude-sonnet-4-20250514", "max_tokens": 2000, "temperature": 0.7 } }
+      },
+      "id": "claude",
+      "name": "Generate Summary",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
+      "position": [1050, 350],
+      "credentials": { "anthropicApi": { "id": "1", "name": "Anthropic Account" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Config & Date Range').first().json.webhookUrl }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Content-Type", "value": "application/json" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"content\": \"{{ $json.content }}\" }"
+      },
+      "id": "webhook",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 250]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{ $('Set Config & Date Range').first().json.email }}",
+        "subject": "📊 Weekly GitHub Summary: {{ $('Set Config & Date Range').first().json.owner }}/{{ $('Set Config & Date Range').first().json.repo }}",
+        "message": "={{ $json.content }}"
+      },
+      "id": "email",
+      "name": "Send Email Summary",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [1250, 450],
+      "credentials": { "gmailOAuth2": { "id": "1", "name": "Gmail Account" } }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": { "main": [[{ "node": "Set Config & Date Range", "type": "main", "index": 0 }]] },
+    "Set Config & Date Range": { "main": [[{ "node": "Fetch Commits", "type": "main", "index": 0 }], [{ "node": "Fetch Closed Issues", "type": "main", "index": 0 }], [{ "node": "Fetch PRs", "type": "main", "index": 0 }]] },
+    "Fetch Commits": { "main": [[{ "node": "Merge All Data", "type": "main", "index": 0 }]] },
+    "Fetch Closed Issues": { "main": [[{ "node": "Merge All Data", "type": "main", "index": 0 }]] },
+    "Fetch PRs": { "main": [[{ "node": "Merge All Data", "type": "main", "index": 0 }]] },
+    "Merge All Data": { "main": [[{ "node": "Prepare Claude Prompt", "type": "main", "index": 0 }]] },
+    "Prepare Claude Prompt": { "main": [[{ "node": "Generate Summary", "type": "main", "index": 0 }]] },
+    "Generate Summary": { "main": [[{ "node": "Send to Discord/Slack", "type": "main", "index": 0 }], [{ "node": "Send Email Summary", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true },
+  "versionId": "1.0.0",
+  "meta": { "templateCredsSetupCompleted": true },
+  "id": "weekly-github-summary",
+  "tags": ["github", "weekly-summary", "claude", "n8n"]
+}
