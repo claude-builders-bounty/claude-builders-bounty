@@ -1,0 +1,179 @@
+{
+  "name": "Weekly Dev Summary - Claude Code",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Weekly Trigger (Friday 5pm)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$env.GITHUB_REPO}}/commits?since={{$json.lastWeek}}&per_page=30",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [320, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$env.GITHUB_REPO}}/issues?state=closed&since={{$json.lastWeek}}&per_page=20",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [320, 350]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$env.GITHUB_REPO}}/pulls?state=closed&since={{$json.lastWeek}}&per_page=20",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [320, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compile GitHub data into a summary prompt\nconst commits = $input.first()?.json || [];\nconst issues = $('Fetch Closed Issues').first()?.json || [];\nconst prs = $('Fetch Merged PRs').first()?.json || [];\n\nconst lastWeek = new Date();\nlastWeek.setDate(lastWeek.getDate() - 7);\nconst weekStr = lastWeek.toISOString().split('T')[0];\n\nconst commitList = commits.map(c => `- ${c.commit.message.split('\\n')[0]} (@${c.author?.login || 'unknown'})`).join('\\n');\nconst issueList = issues.map(i => `- [#${i.number}] ${i.title} (closed)`).join('\\n');\nconst prList = prs.filter(p => p.merged_at).map(p => `- [#${p.number}] ${p.title} (merged by @${p.user?.login})`).join('\\n');\n\nconst prompt = `Write a concise weekly development summary in ${$env.LANGUAGE || 'English'} based on this week's GitHub activity for ${$env.GITHUB_REPO}.\n\n## Commits (${commits.length})\n${commitList || '- No commits this week'}\n\n## Closed Issues (${issues.length})\n${issueList || '- No closed issues'}\n\n## Merged PRs (${prs.filter(p => p.merged_at).length})\n${prList || '- No merged PRs'}\n\nFormat as a friendly team update, 3-5 paragraphs. Highlight significant achievements. Use a warm but professional tone.`;\n\nreturn [{ json: { prompt, week: weekStr, counts: { commits: commits.length, issues: issues.length, prs: prs.filter(p => p.merged_at).length } } }];"
+      },
+      "id": "compile-prompt",
+      "name": "Compile Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 350]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "=",
+        "jsonBodyCustomKey": "",
+        "options": {
+          "timeout": 60
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API (claude-sonnet-4)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [760, 350]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.DISCORD_WEBHOOK}}",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "=\"",
+        "options": {}
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [980, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.SLACK_WEBHOOK}}",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "=\"",
+        "options": {}
+      },
+      "id": "send-slack",
+      "name": "Send to Slack (alt)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [980, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5pm)": {
+      "main": [
+        [
+          { "node": "Fetch Weekly Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [{ "node": "Compile Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [{ "node": "Compile Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [{ "node": "Compile Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Compile Prompt": {
+      "main": [
+        [{ "node": "Claude API (claude-sonnet-4)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API (claude-sonnet-4)": {
+      "main": [
+        [{ "node": "Send to Discord", "type": "main", "index": 0 }],
+        [{ "node": "Send to Slack (alt)", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-05-01T05:56:00.000Z",
+  "versionId": "1"
+}
