@@ -1,0 +1,62 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR info
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            core.setOutput('pr-title', pr.title);
+            core.setOutput('pr-body', pr.body || '');
+            core.setOutput('pr-number', context.issue.number);
+
+      - name: Get diff
+        run: |
+          git diff origin/${{ github.base_ref }}...HEAD > pr.diff
+          echo "diff_lines=$(wc -l < pr.diff)" >> $GITHUB_OUTPUT
+
+      - name: Run Claude Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pip install requests 2>/dev/null || true
+          python .github/workflows/claude_review.py --diff pr.diff --output review.md || echo "Claude review skipped"
+
+      - name: Post review comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let review = '';
+            try {
+              review = fs.readFileSync('review.md', 'utf-8');
+            } catch {
+              review = '_Review generation failed_';
+            }
+
+            const body = `## Claude Code PR Review\n\n${review}\n\n---\n_Bot powered by Claude Code_`;
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
