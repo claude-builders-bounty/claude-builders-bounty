@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""
+pre-tool-use — Claude Code hook that blocks destructive bash commands.
+
+Installed at ~/.claude/hooks/pre-tool-use
+Blocks: rm -rf, DROP TABLE, git push --force, TRUNCATE, DELETE FROM without WHERE
+Logs every blocked attempt to ~/.claude/hooks/blocked.log
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+PROJECT_PATH = os.getcwd()
+
+def log_blocked(command: str, reason: str):
+    """Log blocked command attempts."""
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a") as f:
+        f.write(f"[{timestamp}] BLOCKED: {command} | Reason: {reason} | Project: {PROJECT_PATH}\n")
+
+def check_destructive(cmd: str) -> tuple:
+    """
+    Check if a bash command contains destructive patterns.
+    Returns (is_blocked: bool, reason: str)
+    """
+    cmd_stripped = cmd.strip()
+    cmd_lower = cmd_stripped.lower()
+
+    # 1. rm -rf / or rm -rf ~ dangerous patterns
+    if re.search(r'\brm\s+-[rR]f\b', cmd_lower):
+        # Allow rm -rf on specific directories that are clearly project-local
+        # e.g., rm -rf node_modules, rm -rf .next, rm -rf dist
+        dangerous_targets = [
+            r'\s+\/~',       # rm -rf ~/...
+            r'\s+/\s*$',     # rm -rf /
+            r'\s+/etc',      # rm -rf /etc
+            r'\s+/var',      # rm -rf /var
+            r'\s+/usr',      # rm -rf /usr
+            r'\s+/bin',      # rm -rf /bin
+            r'\s+/home',     # rm -rf /home
+            r'\s+/root',     # rm -rf /root
+            r'\s+\.',       # rm -rf .
+            r'\s+\*\s*$',   # rm -rf *
+            r'\s+/mnt',      # rm -rf /mnt
+        ]
+        for pattern in dangerous_targets:
+            if re.search(pattern, cmd_lower):
+                return True, "rm -rf targeting system or parent directories is blocked"
+        
+        # Also block rm -rf without explicit path argument (risky)
+        if not re.search(r'\s+-[rR]f\s+', cmd_lower):
+            return True, "rm -rf without a specific safe path is blocked"
+
+    # 2. DROP TABLE (SQL)
+    if re.search(r'\bdrop\s+table\b', cmd_lower):
+        return True, "DROP TABLE is blocked — use DROP TABLE IF EXISTS with a migration instead"
+
+    # 3. git push --force
+    if re.search(r'git\s+push\s+.*--force', cmd_lower) or re.search(r'git\s+push\s+.*-f\b', cmd_lower):
+        return True, "git push --force is blocked — use git push --force-with-lease instead"
+
+    # 4. TRUNCATE (SQL)
+    if re.search(r'\btruncate\s+table\b', cmd_lower) or re.search(r'\btruncate\b', cmd_lower):
+        return True, "TRUNCATE is blocked — use DELETE with a WHERE clause instead"
+
+    # 5. DELETE FROM without WHERE
+    if re.search(r'\bdelete\s+from\b', cmd_lower):
+        if not re.search(r'\bwhere\b', cmd_lower):
+            return True, "DELETE FROM without a WHERE clause is blocked — add a WHERE condition"
+
+    # 6. Additional dangerous commands
+    if re.search(r'\b(mkfs|dd\s+if=|format|fdisk|parted)\b', cmd_lower):
+        return True, "Disk/partition operations are blocked"
+
+    if re.search(r'\bchmod\s+-?[Rr]?\s*777\b', cmd_lower):
+        return True, "chmod 777 is blocked — use more restrictive permissions"
+
+    if re.search(r'\bchown\s+-[Rr]\b', cmd_lower):
+        cmd_after = cmd_lower.split("chown", 1)[-1]
+        if re.search(r'-R', cmd_after):
+            return True, "Recursive chown is blocked — specify explicit paths"
+
+    return False, ""
+
+def main():
+    """Main hook entry point."""
+    try:
+        input_data = sys.stdin.read()
+        if not input_data.strip():
+            sys.exit(0)
+        
+        try:
+            data = json.loads(input_data)
+        except json.JSONDecodeError:
+            sys.exit(0)
+
+        # Extract the command from Claude Code's tool-use input
+        command = ""
+        
+        # Handle different possible input formats
+        if isinstance(data, dict):
+            # Format: {"command": "..."}
+            if "command" in data:
+                command = data["command"]
+            # Format: {"bash": "..."}
+            elif "bash" in data:
+                command = data["bash"]
+            # Format: {"tool": "Bash", "args": {"command": "..."}}
+            elif "args" in data and isinstance(data["args"], dict):
+                command = data["args"].get("command", data["args"].get("bash", ""))
+            # Format: {"action": "...", "payload": {...}}
+            elif "payload" in data and isinstance(data["payload"], dict):
+                command = data["payload"].get("command", "")
+        elif isinstance(data, str):
+            command = data
+
+        if not command:
+            sys.exit(0)
+
+        is_blocked, reason = check_destructive(command)
+
+        if is_blocked:
+            log_blocked(command, reason)
+            # Output a clear message to Claude explaining why
+            result = {
+                "blocked": True,
+                "reason": reason,
+                "message": f"⚠️ Command blocked: {reason}\n\nThis command was intercepted by the pre-tool-use safety hook.\nLogged to: {LOG_FILE}"
+            }
+            print(json.dumps(result))
+            sys.exit(1)
+        else:
+            # Command is safe
+            print(json.dumps({"blocked": False}))
+            sys.exit(0)
+
+    except Exception as e:
+        # On error, allow the command through (fail open)
+        print(json.dumps({"blocked": False, "error": str(e)}))
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
