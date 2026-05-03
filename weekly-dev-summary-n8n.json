@@ -1,0 +1,433 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "weekly-cron",
+      "name": "Weekly Friday 17:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "repo",
+              "name": "githubRepo",
+              "value": "={{ $env.GITHUB_REPO || 'owner/repo' }}",
+              "type": "string"
+            },
+            {
+              "id": "language",
+              "name": "language",
+              "value": "={{ $env.SUMMARY_LANGUAGE || 'EN' }}",
+              "type": "string"
+            },
+            {
+              "id": "destination",
+              "name": "destinationEmail",
+              "value": "={{ $env.DESTINATION_EMAIL || 'dev-team@example.com' }}",
+              "type": "string"
+            },
+            {
+              "id": "since",
+              "name": "since",
+              "value": "={{ $now.minus({ days: 7 }).toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "until",
+              "name": "until",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.githubRepo }}/commits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.until }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "commits",
+      "name": "Fetch commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -440,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config').item.json.githubRepo }}/issues",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $('Config').item.json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "closed-issues",
+      "name": "Fetch closed issues and PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config').item.json.githubRepo }}/pulls",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "merged-prs",
+      "name": "Fetch closed PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -440,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-1",
+      "name": "Merge commits + issues",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -180,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-2",
+      "name": "Merge with PRs",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        40,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Config').first().json;\nconst commits = $('Fetch commits').all().map(i => i.json).flat().slice(0, 100);\nconst closed = $('Fetch closed issues and PRs').all().map(i => i.json).flat();\nconst prs = $('Fetch closed PRs').all().map(i => i.json).flat().filter(pr => pr.merged_at && new Date(pr.merged_at) >= new Date(config.since));\nconst issues = closed.filter(i => !i.pull_request);\nconst compact = {\n  repo: config.githubRepo,\n  language: config.language,\n  period: { since: config.since, until: config.until },\n  commits: commits.map(c => ({ sha: c.sha?.slice(0,7), message: c.commit?.message?.split('\\n')[0], author: c.commit?.author?.name, url: c.html_url })),\n  closedIssues: issues.map(i => ({ number: i.number, title: i.title, url: i.html_url, closedAt: i.closed_at })),\n  mergedPullRequests: prs.map(p => ({ number: p.number, title: p.title, url: p.html_url, mergedAt: p.merged_at, author: p.user?.login }))\n};\nreturn [{ json: { ...config, activity: compact } }];"
+      },
+      "id": "prepare",
+      "name": "Prepare activity digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1200,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Write a concise weekly narrative development summary in {{ $json.language }}. Include: headline, shipped work, bugs/issues closed, merged PRs, risks/next week. Use this GitHub activity JSON:\\n\\n\" + JSON.stringify($json.activity)\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude",
+      "name": "Generate narrative with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "subject",
+              "name": "subject",
+              "value": "=Weekly dev summary \u2014 {{ $('Config').item.json.githubRepo }}",
+              "type": "string"
+            },
+            {
+              "id": "body",
+              "name": "body",
+              "value": "={{ $json.content[0].text }}",
+              "type": "string"
+            },
+            {
+              "id": "to",
+              "name": "to",
+              "value": "={{ $('Config').item.json.destinationEmail }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "format-email",
+      "name": "Format email",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        740,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "dev-summary@example.com",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "text": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send summary email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        980,
+        20
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 17:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch closed issues and PRs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch closed PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch commits": {
+      "main": [
+        [
+          {
+            "node": "Merge commits + issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch closed issues and PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge commits + issues",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge commits + issues": {
+      "main": [
+        [
+          {
+            "node": "Merge with PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch closed PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge with PRs",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge with PRs": {
+      "main": [
+        [
+          {
+            "node": "Prepare activity digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare activity digest": {
+      "main": [
+        [
+          {
+            "node": "Generate narrative with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate narrative with Claude": {
+      "main": [
+        [
+          {
+            "node": "Format email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format email": {
+      "main": [
+        [
+          {
+            "node": "Send summary email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "weekly-dev-summary-template"
+}
