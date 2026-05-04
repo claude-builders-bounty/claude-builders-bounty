@@ -1,53 +1,54 @@
-# Claude Builders Bounty 🤖
+# CHANGELOG Generator
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from your git commit history, auto-categorized into **Added / Fixed / Changed / Removed** sections.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (3 steps)
 
----
+1. `git clone <this-repo>`
+2. `chmod +x changelog.sh`
+3. `./changelog.sh`
 
-## How it works
+The script outputs `CHANGELOG.md` in the current directory.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Usage
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+# Run in any git repo
+cd /path/to/your/repo
+bash /path/to/changelog.sh
 
----
+# Or pass a repo path as argument
+bash changelog.sh /path/to/your/repo
+```
 
-## Active Bounties
+## How It Works
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+- Finds the **last git tag** and collects all commits since then
+- If no tags exist, uses **all commits**
+- Categorizes commits by prefix:
+  - `feat:`, `add:`, `new:` → **Added**
+  - `fix:`, `bugfix:`, `hotfix:` → **Fixed**
+  - `update:`, `refactor:`, `chore:`, `docs:`, `perf:` → **Changed**
+  - `remove:`, `delete:`, `deprecate:` → **Removed**
+  - Everything else → **Other**
+- Supports conventional commits with scopes, e.g. `feat(auth): add login`
 
----
+## Example Output
 
-## Rules
+```markdown
+# Changelog
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## [v1.2.0] - 2025-05-04
 
----
+### Added
 
-## Community
+- feat: add user authentication (a1b2c3d)
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### Fixed
 
----
+- fix: resolve login timeout (e4f5g6h)
 
-*Started by the Claude builder community · March 2026 · MIT License*
+### Changed
+
+- refactor: improve API response time (i7j8k9l)
+```
