@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# claude-review — AI-powered PR code review via Claude Code
+# Usage: claude-review --pr https://github.com/owner/repo/pull/NUM
+#
+# Requires: gh CLI (authenticated), claude CLI
+
+VERSION="1.0.0"
+PR_URL=""
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-6}"
+
+usage() {
+  cat <<EOF
+claude-review v${VERSION} — AI-powered PR code review
+
+USAGE
+  claude-review --pr <PR_URL>            Review a GitHub PR
+  claude-review --pr <PR_URL> --model <m> Use a specific Claude model
+  claude-review --version                 Print version
+  claude-review --help                    Show this help
+
+EXAMPLES
+  claude-review --pr https://github.com/owner/repo/pull/123
+  CLAUDE_MODEL=claude-opus-4-7 claude-review --pr https://github.com/owner/repo/pull/123
+
+OUTPUT
+  Structured Markdown to stdout. Pipe to a file:
+  claude-review --pr <URL> > review.md
+EOF
+  exit 0
+}
+
+parse_pr_url() {
+  local url="$1"
+  # Extract owner/repo/number from GitHub PR URL
+  if [[ "$url" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    OWNER="${BASH_REMATCH[1]}"
+    REPO="${BASH_REMATCH[2]}"
+    PR_NUM="${BASH_REMATCH[3]}"
+  else
+    echo "Error: invalid GitHub PR URL: $url" >&2
+    exit 1
+  fi
+}
+
+build_review_prompt() {
+  local owner="$1" repo="$2" num="$3"
+  cat <<PROMPT
+You are a senior code reviewer. Review this GitHub PR and produce a structured Markdown report.
+
+PR: ${owner}/${repo}#${num}
+URL: https://github.com/${owner}/${repo}/pull/${num}
+
+## Instructions
+
+Analyze the PR diff below. Produce a structured review with these sections:
+
+### Summary
+2-3 sentences summarizing what this PR changes and why.
+
+### Identified Risks
+Bullet list of risks. If none, say "No significant risks identified." Consider:
+- Security (injection, auth, data exposure)
+- Performance (N+1 queries, memory leaks, blocking calls)
+- Correctness (edge cases, error handling gaps, race conditions)
+- Breaking changes (API, schema, config)
+
+### Improvement Suggestions
+Bullet list of actionable suggestions. If none, say "No improvements to suggest." Consider:
+- Code clarity / readability
+- Test coverage gaps
+- Error handling
+- Documentation needs
+
+### Confidence Score
+**Score:** Low / Medium / High
+One sentence explaining why.
+
+---
+
+## PR Diff
+PROMPT
+}
+
+main() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --pr) PR_URL="$2"; shift 2 ;;
+      --model) CLAUDE_MODEL="$2"; shift 2 ;;
+      --version) echo "claude-review v${VERSION}"; exit 0 ;;
+      --help|-h) usage ;;
+      *) echo "Unknown flag: $1"; usage ;;
+    esac
+  done
+
+  if [[ -z "$PR_URL" ]]; then
+    echo "Error: --pr is required" >&2
+    usage
+  fi
+
+  parse_pr_url "$PR_URL"
+
+  echo ":: Reviewing ${OWNER}/${REPO}#${PR_NUM} with ${CLAUDE_MODEL}..." >&2
+
+  # Fetch PR metadata
+  local pr_title pr_body pr_diff
+  pr_title=$(gh pr view "$PR_NUM" -R "${OWNER}/${REPO}" --json title --jq '.title' 2>/dev/null || echo "Unknown")
+  pr_diff=$(gh pr diff "$PR_NUM" -R "${OWNER}/${REPO}" 2>/dev/null || echo "Error fetching diff")
+
+  if [[ "$pr_diff" == "Error fetching diff" || -z "$pr_diff" ]]; then
+    echo "Error: could not fetch PR diff" >&2
+    exit 1
+  fi
+
+  local prompt
+  prompt=$(build_review_prompt "$OWNER" "$REPO" "$PR_NUM")
+
+  # Print report header
+  cat <<EOF
+# Code Review: ${OWNER}/${REPO}#${PR_NUM}
+
+**PR Title:** ${pr_title}
+**URL:** ${PR_URL}
+**Reviewer:** Claude Code (${CLAUDE_MODEL})
+**Date:** $(date -u +"%Y-%m-%d")
+
+---
+
+EOF
+
+  # Run Claude Code to produce the review
+  echo "${prompt}" | claude --model "$CLAUDE_MODEL" --print 2>/dev/null || {
+    echo "Error: claude CLI failed. Is it installed and authenticated?" >&2
+    exit 1
+  }
+}
+
+main "$@"
