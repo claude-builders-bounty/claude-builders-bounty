@@ -1,0 +1,316 @@
+{
+  "name": "Weekly Dev Summary (Claude API)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [-250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.ghRepoUrl || 'https://api.github.com/repos/n8n-io/n8n' }}/commits?per_page=50&since={{ $now.minus(7, 'days').toISO() }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "Bearer {{ $json.ghToken || '' }}"
+          }
+        }
+      },
+      "name": "Get GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.ghRepoUrl || 'https://api.github.com/repos/n8n-io/n8n' }}/issues?state=closed&per_page=50&since={{ $now.minus(7, 'days').toISO() }}&filter=all",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "Bearer {{ $json.ghToken || '' }}"
+          }
+        }
+      },
+      "name": "Get GitHub Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.ghRepoUrl || 'https://api.github.com/repos/n8n-io/n8n' }}/pulls?state=closed&per_page=50&since={{ $now.minus(7, 'days').toISO() }}&sort=updated&direction=desc",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "Bearer {{ $json.ghToken || '' }}"
+          }
+        }
+      },
+      "name": "Get GitHub PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine data from all three GitHub API calls\nconst commits = $input.all()[0]?.json?.body || [];\nconst issues = $input.all()[1]?.json?.body || [];\nconst pulls = $input.all()[2]?.json?.body || [];\n\nconst commitsArr = Array.isArray(commits) ? commits : [];\nconst issuesArr = Array.isArray(issues) ? issues.filter(i => i.pull_request === undefined) : [];\nconst pullsArr = Array.isArray(pulls) ? pulls.filter(p => p.merged_at !== null) : [];\n\n// Build structured data for the Claude API\nconst repoInfo = {\n  repo: $json.ghRepoUrl || 'https://github.com/n8n-io/n8n',\n  period: {\n    start: $now.minus(7, 'days').format('YYYY-MM-DD'),\n    end: $now.format('YYYY-MM-DD'),\n  },\n  language: $json.language || 'EN',\n};\n\nconst summary = {\n  totalCommits: commitsArr.length,\n  totalIssuesClosed: issuesArr.length,\n  totalPRsMerged: pullsArr.length,\n  topContributors: [...new Set(commitsArr.map(c => c.commit?.author?.name || c.author?.login).filter(Boolean))],\n  recentCommits: commitsArr.slice(0, 10).map(c => ({\n    message: c.commit?.message?.split('\\n')[0] || '',\n    author: c.commit?.author?.name || c.author?.login || 'Unknown',\n    date: c.commit?.author?.date || '',\n  })),\n  closedIssues: issuesArr.slice(0, 10).map(i => ({\n    title: i.title,\n    number: i.number,\n    author: i.user?.login,\n    labels: i.labels?.map(l => l.name) || [],\n  })),\n  mergedPRs: pullsArr.slice(0, 10).map(p => ({\n    title: p.title,\n    number: p.number,\n    author: p.user?.login,\n    mergedBy: p.merged_by?.login,\n  })),\n};\n\n// Build prompt for Claude\nconst languageSuffix = repoInfo.language === 'FR' \n  ? '\\n\\nIMPORTANT: Write the entire summary in French.'\n  : '\\n\\nIMPORTANT: Write the entire summary in English.';\n\nconst prompt = `You are a technical writer creating a weekly development summary.\n\nHere is the repo activity for the week of ${repoInfo.period.start} to ${repoInfo.period.end}:\n\n**Commits**: ${summary.totalCommits} commits total\n**Issues Closed**: ${summary.totalIssuesClosed}\n**PRs Merged**: ${summary.totalPRsMerged}\n**Top Contributors**: ${summary.topContributors.join(', ') || 'N/A'}\n\nKey commits this week:\n${summary.recentCommits.map(c => `- ${c.message} (${c.author}, ${c.date?.slice(0, 10)})`).join('\\n')}\n\nIssues closed:\n${summary.closedIssues.map(i => `- #${i.number}: ${i.title}`).join('\\n')}\n\nMerged PRs:\n${summary.mergedPRs.map(p => `- #${p.number}: ${p.title} by ${p.author || p.mergedBy || 'Unknown'}`).join('\\n')}\n\nWrite a narrative weekly summary (3-5 paragraphs) highlighting:\n1. What was accomplished this week (big picture)\n2. Notable changes or breaking updates\n3. Community contributions worth mentioning\n4. What to expect next week (if inferrable from recent commits)\n\nStyle: professional but engaging. Use markdown.${languageSuffix}`;\n\nreturn [{\n  json: {\n    prompt,\n    summary,\n    repoInfo,\n    slackWebhook: $json.slackWebhook || '',\n    discordWebhook: $json.discordWebhook || '',\n    emailTo: $json.emailTo || '',\n    deliveryMethod: $json.deliveryMethod || 'slack',\n  }\n}];"
+      },
+      "name": "Prepare Data & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2048
+            },
+            {
+              "name": "system",
+              "value": "You are an expert technical writer. Generate clear, engaging weekly development summaries."
+            },
+            {
+              "name": "messages",
+              "value": "={{ [{\"role\": \"user\", \"content\": $json.prompt}] }}"
+            }
+          ]
+        },
+        "options": {
+          "headers": {
+            "x-api-key": "={{ $json.anthropicApiKey || '' }}",
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+          }
+        }
+      },
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Claude's response\nconst claudeResponse = $input.first().json;\nconst content = claudeResponse.content?.[0]?.text || claudeResponse.body?.content?.[0]?.text || JSON.stringify(claudeResponse);\nconst repoInfo = $input.first().json.repoInfo || {};\n\nreturn [{\n  json: {\n    summary: content,\n    repo: repoInfo.repo || 'N/A',\n    period: repoInfo.period || {},\n    slackWebhook: $json.slackWebhook || '',\n    discordWebhook: $json.discordWebhook || '',\n    emailTo: $json.emailTo || '',\n    deliveryMethod: $json.deliveryMethod || 'slack',\n  }\n}];"
+      },
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Route by delivery method\nconst method = ($json.deliveryMethod || 'slack').toLowerCase();\n\nif (method === 'slack' && $json.slackWebhook) {\n  return [{json: $json, ...$json}];\n} else if (method === 'discord' && $json.discordWebhook) {\n  // Returning to second output\n  return [null, {json: $json, ...$json}];\n} else if (method === 'email' && $json.emailTo) {\n  return [null, null, {json: $json, ...$json}];\n} else {\n  // Fallback to Slack\n  return [{json: $json, ...$json}];\n}"
+      },
+      "name": "Route by Delivery Method",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.slackWebhook }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.summary }}"
+            },
+            {
+              "name": "mrkdwn",
+              "value": true
+            }
+          ]
+        }
+      },
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1750, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.discordWebhook }}",
+        "sendBody": true,
+        "options": {
+          "headers": {
+            "content-type": "application/json"
+          }
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.summary }}"
+            }
+          ]
+        }
+      },
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1750, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log success and return the summary\nconst method = ($json.deliveryMethod || 'slack').toUpperCase();\nconst repoUrl = $json.repo || '';\nconst repoName = repoUrl.split('/').slice(-2).join('/');\nconst period = $json.period || {};\n\nreturn [{\n  json: {\n    success: true,\n    deliveredVia: method,\n    repo: repoName,\n    period: `${period.start || '?'} to ${period.end || '?'}`,\n    summaryPreview: ($json.summary || '').slice(0, 200) + '...',\n    timestamp: new Date().toISOString(),\n  }\n}];"
+      },
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 200]
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get GitHub Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Get GitHub Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get GitHub Issues": {
+      "main": [
+        [
+          {
+            "node": "Get GitHub PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get GitHub PRs": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data & Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Route by Delivery Method",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Delivery Method": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Send to Slack": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Discord": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "bounty"
+    }
+  ]
+}
