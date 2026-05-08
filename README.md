@@ -1,25 +1,26 @@
-# Safety First: Claude Code Security Hook
+# Claude Builders Bounty Tools 🛠️
 
-This hook intercepts and blocks dangerous bash commands before they are executed by Claude Code.
+A collection of high-performance tools and skills for Claude Code and agentic workflows.
 
-## Blocked Commands:
-- `rm -rf`
-- `DROP TABLE` (SQL)
-- `git push --force`
-- `TRUNCATE` (SQL)
-- `DELETE FROM` without a `WHERE` clause
+## 1. 📝 CHANGELOG Generator
+Automatically generate a structured `CHANGELOG.md` from git history.
 
-## Installation:
+### Setup (3 Steps):
+1. **Clone**: `git clone https://github.com/mvmax-dev/claude-builders-bounty.git`
+2. **Permissions**: `chmod +x changelog.sh`
+3. **Run**: `./changelog.sh`
 
-1. Create the hooks directory:
-```bash
-mkdir -p ~/.claude/hooks
-```
+---
 
-2. Copy the hook script:
-```bash
-cp security_hook.py ~/.claude/hooks/pre-tool-use.py
-```
+## 2. 🛡️ Security Hook
+Intercepts and blocks dangerous bash commands before execution.
 
-## Logs:
-All blocked attempts are logged to `~/.claude/hooks/blocked.log`.
+### Installation:
+1. Create hooks dir: `mkdir -p ~/.claude/hooks`
+2. Copy script: `cp security_hook.py ~/.claude/hooks/pre-tool-use.py`
+
+---
+
+## 3. 📝 PR Reviewer
+Automated PR review and feedback logic.
+Run: `python3 pr_reviewer.py`

@@ -5,10 +5,20 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 
+# Improved patterns for wider coverage
+PATTERNS = {
+    "Added": r"^(?:feat|add|new)(?:\(.*\))?:",
+    "Fixed": r"^(?:fix|bugfix|patch)(?:\(.*\))?:",
+    "Changed": r"^(?:refactor|perf|style|docs|chore|upd|change)(?:\(.*\))?:",
+    "Removed": r"^(?:remove|del|deprecate)(?:\(.*\))?:"
+}
+
 def get_last_tag():
     """Fetches the latest git tag."""
     try:
-        return subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], encoding="utf-8").strip()
+        # Get latest tag on current branch
+        return subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], 
+                                       stderr=subprocess.STDOUT, encoding="utf-8").strip()
     except subprocess.CalledProcessError:
         return None
 
@@ -20,7 +30,7 @@ def get_git_logs(since_tag=None):
             cmd.append(f"{since_tag}..HEAD")
         
         result = subprocess.check_output(cmd, encoding="utf-8")
-        return result.split("---COMMIT-END---")
+        return [c.strip() for c in result.split("---COMMIT-END---") if c.strip()]
     except Exception as e:
         print(f"Error reading git logs: {e}")
         return []
@@ -28,15 +38,9 @@ def get_git_logs(since_tag=None):
 def parse_commits(logs):
     """Categorizes commits into Added, Fixed, Changed, Removed."""
     categories = defaultdict(list)
-    patterns = {
-        "Added": r"feat(?:\(.*\))?:",
-        "Fixed": r"fix(?:\(.*\))?:",
-        "Changed": r"refactor(?:\(.*\))?:|perf(?:\(.*\))?:|style(?:\(.*\))?:",
-        "Removed": r"removed?:"
-    }
 
     for log in logs:
-        lines = log.strip().split("\n")
+        lines = log.split("\n")
         if len(lines) < 2:
             continue
         
@@ -44,9 +48,13 @@ def parse_commits(logs):
         subject = lines[1]
         
         matched = False
-        for cat, pattern in patterns.items():
+        for cat, pattern in PATTERNS.items():
             if re.match(pattern, subject, re.IGNORECASE):
+                # Clean the subject (remove the prefix)
                 clean_subject = re.sub(pattern, "", subject, flags=re.IGNORECASE).strip()
+                # Capitalize first letter
+                if clean_subject:
+                    clean_subject = clean_subject[0].upper() + clean_subject[1:]
                 categories[cat].append(f"- {clean_subject} ([{commit_hash}])")
                 matched = True
                 break
@@ -56,34 +64,45 @@ def parse_commits(logs):
             
     return categories
 
-def generate_changelog(categories, tag_name=None):
+def generate_markdown(categories, tag_name=None):
     """Formats the categories into a markdown CHANGELOG."""
-    since_info = f" since {tag_name}" if tag_name else ""
-    output = [f"# CHANGELOG\n\nGenerated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{since_info}\n"]
+    now_str = datetime.now().strftime('%Y-%m-%d')
+    since_info = f" since {tag_name}" if tag_name else " (Full History)"
+    
+    header = f"# CHANGELOG\n\nGenerated on {now_str}{since_info}\n"
+    sections = []
     
     order = ["Added", "Fixed", "Changed", "Removed", "Other"]
     
     for cat in order:
         if cat in categories and categories[cat]:
-            output.append(f"## {cat}")
-            output.extend(categories[cat])
-            output.append("")
+            sections.append(f"## {cat}")
+            sections.extend(categories[cat])
+            sections.append("")
             
-    return "\n".join(output)
+    return header + "\n" + "\n".join(sections)
 
 def main():
+    # Ensure we are in a git repo
+    try:
+        subprocess.check_call(["git", "rev-parse", "--is-inside-work-tree"], 
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except:
+        print("❌ Error: Not a git repository.")
+        sys.exit(1)
+
     tag = get_last_tag()
     logs = get_git_logs(tag)
     
-    if not logs or (len(logs) == 1 and not logs[0].strip()):
+    if not logs:
         print(f"No new commits found{' since ' + tag if tag else ''}.")
         sys.exit(0)
         
     categories = parse_commits(logs)
-    changelog_content = generate_changelog(categories, tag)
+    markdown = generate_markdown(categories, tag)
     
     with open("CHANGELOG.md", "w") as f:
-        f.write(changelog_content)
+        f.write(markdown)
         
     print(f"✅ CHANGELOG.md generated successfully{' since ' + tag if tag else ''}.")
 
