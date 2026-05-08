@@ -1,53 +1,39 @@
-# Claude Builders Bounty 🤖
+# Destructive Command Blocker Hook
 
-> A community bounty board for Claude Code builders.
+Pre-tool-use Claude Code hook that blocks dangerous bash commands.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation (2 Commands)
 
----
+```bash
+# 1. Download hook to Claude hooks directory
+mkdir -p ~/.claude/hooks && curl -o ~/.claude/hooks/hook.py https://raw.githubusercontent.com/.../hook.py && chmod +x ~/.claude/hooks/hook.py
 
-## How it works
+# 2. Add to settings.json
+cat >> ~/.claude/settings.json << 'EOF'
+{
+  "hooks": {
+    "pre-tool-use": [{"matcher": "bash", "hooks": [{"type": "command", "command": "python3 ~/.claude/hooks/hook.py"}]}]
+  }
+}
+EOF
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## What It Blocks
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+| Command | Reason |
+|---------|--------|
+| `rm -rf /` | Root filesystem deletion |
+| `rm -rf *` | All files in current directory |
+| `rm -rf ~` | Home directory deletion |
+| `DROP TABLE` | SQL table destruction |
+| `TRUNCATE TABLE` | SQL data wipe |
+| `DELETE FROM` (no WHERE) | Unconditional row deletion |
+| `git push --force` | Force push (history rewrite) |
+| `mkfs.*` | Filesystem format |
+| `dd if=/dev/zero` | Disk wipe |
 
----
+## Log File
 
-## Active Bounties
+Blocked attempts logged to: `~/.claude/hooks/blocked.log`
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+Format: `2026-05-08T20:12:00 command="rm -rf /" path="/home/user/project"`
