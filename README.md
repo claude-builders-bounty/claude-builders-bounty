@@ -1,67 +1,60 @@
-# Claude PR Reviewer Agent
+# Weekly Dev Summary Workflow
 
-Automated PR review agent that produces structured Markdown analysis.
+n8n automation that generates AI-powered weekly summaries of GitHub activity.
 
-## Installation (2 Commands)
+## Setup (5 Steps)
 
-```bash
-# 1. Download the script
-curl -o claude_review.py https://raw.githubusercontent.com/.../claude_review.py
-chmod +x claude_review.py
+1. **Import workflow**
+   - In n8n, go to Workflows → Import → From File
+   - Select `workflow.json`
 
-# 2. Install gh CLI (if not already installed)
-brew install gh  # macOS
-sudo apt-get install gh  # Ubuntu/Debian
+2. **Configure credentials**
+   - GitHub: Create Personal Access Token with `repo` scope
+   - Anthropic: Create API key with Claude access
+
+3. **Set variables**
+   - `repo`: GitHub repo in format `owner/repo`
+   - `webhookUrl`: Discord webhook URL
+   - `language`: `EN` or `FR`
+
+4. **Test manually**
+   - Click "Execute Workflow" to test
+   - Check Discord for the summary
+
+5. **Activate**
+   - Toggle workflow to active
+   - Runs every Friday at 5PM
+
+## Workflow Structure
+
+```
+Cron (Fri 5PM) → Set Date Range → GitHub API (commits/issues/PRs) 
+      → Claude API (summary) → Discord Webhook
 ```
 
-## Usage
+## Example Output
 
-### CLI Mode
-```bash
-# Review a PR
-./claude_review.py --pr https://github.com/owner/repo/pull/123
+```
+## Weekly Dev Summary for claude-builders-bounty/claude-builders-bounty
 
-# Save to file
-./claude_review.py --pr https://github.com/owner/repo/pull/123 --output review.md
+This week saw significant progress across 4 pull requests, with a focus on 
+automation tooling and documentation. The community contributed three new 
+CLAUDE.md templates and a comprehensive changelog generator.
+
+Key highlights include the addition of a pre-tool-use hook for blocking 
+destructive commands, improving project safety. Two major documentation 
+updates were merged, adding structured guidance for Next.js and SQLite 
+projects.
+
+The team closed 7 issues, primarily focused on improving developer 
+experience and tooling reliability. Overall velocity remains strong with 
+contributors actively engaging across multiple repositories.
 ```
 
-### GitHub Action Mode
-```yaml
-# Add to .github/workflows/pr-review.yml
-uses: ./workflows/pr-review.yml
-```
+## Credentials Needed
 
-See `pr-review.yml` for the workflow definition.
-
-## Output Format
-
-```markdown
-## PR Review Summary
-
-### Summary
-This PR adds 151 lines and across 2 files.
-
-### Identified Risks
-- No significant risks identified
-
-### Improvement Suggestions
-- Code looks good to merge
-
-### Confidence Score: **Medium**
-
-> Files: 2 | Additions: 151 | Deletions: 0
-```
-
-## Confidence Scoring
-
-| Level | Criteria |
-|-------|----------|
-| High | ≤50 lines, no risks |
-| Medium | 51-300 lines or minor risks |
-| Low | >300 lines or high-risk patterns |
-
-## Requirements
-
-- Python 3.8+
-- GitHub CLI (`gh`) authenticated
-- Access to target repository
+| Service | Scope |
+|---------|-------|
+| GitHub | `repo` (read) |
+| Anthropic | Claude API access |
+| Discord/Slack | Webhook URL |
