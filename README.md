@@ -1,53 +1,67 @@
-# Claude Builders Bounty 🤖
+# Claude PR Reviewer Agent
 
-> A community bounty board for Claude Code builders.
+Automated PR review agent that produces structured Markdown analysis.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation (2 Commands)
 
----
+```bash
+# 1. Download the script
+curl -o claude_review.py https://raw.githubusercontent.com/.../claude_review.py
+chmod +x claude_review.py
 
-## How it works
+# 2. Install gh CLI (if not already installed)
+brew install gh  # macOS
+sudo apt-get install gh  # Ubuntu/Debian
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Usage
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+### CLI Mode
+```bash
+# Review a PR
+./claude_review.py --pr https://github.com/owner/repo/pull/123
 
----
+# Save to file
+./claude_review.py --pr https://github.com/owner/repo/pull/123 --output review.md
+```
 
-## Active Bounties
+### GitHub Action Mode
+```yaml
+# Add to .github/workflows/pr-review.yml
+uses: ./workflows/pr-review.yml
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+See `pr-review.yml` for the workflow definition.
 
----
+## Output Format
 
-## Rules
+```markdown
+## PR Review Summary
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+### Summary
+This PR adds 151 lines and across 2 files.
 
----
+### Identified Risks
+- No significant risks identified
 
-## Community
+### Improvement Suggestions
+- Code looks good to merge
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### Confidence Score: **Medium**
 
----
+> Files: 2 | Additions: 151 | Deletions: 0
+```
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## Confidence Scoring
+
+| Level | Criteria |
+|-------|----------|
+| High | ≤50 lines, no risks |
+| Medium | 51-300 lines or minor risks |
+| Low | >300 lines or high-risk patterns |
+
+## Requirements
+
+- Python 3.8+
+- GitHub CLI (`gh`) authenticated
+- Access to target repository
