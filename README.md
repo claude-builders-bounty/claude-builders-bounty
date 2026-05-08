@@ -1,53 +1,60 @@
-# Claude Builders Bounty 🤖
+# Weekly Dev Summary Workflow
 
-> A community bounty board for Claude Code builders.
+n8n automation that generates AI-powered weekly summaries of GitHub activity.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (5 Steps)
 
----
+1. **Import workflow**
+   - In n8n, go to Workflows → Import → From File
+   - Select `workflow.json`
 
-## How it works
+2. **Configure credentials**
+   - GitHub: Create Personal Access Token with `repo` scope
+   - Anthropic: Create API key with Claude access
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+3. **Set variables**
+   - `repo`: GitHub repo in format `owner/repo`
+   - `webhookUrl`: Discord webhook URL
+   - `language`: `EN` or `FR`
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+4. **Test manually**
+   - Click "Execute Workflow" to test
+   - Check Discord for the summary
 
----
+5. **Activate**
+   - Toggle workflow to active
+   - Runs every Friday at 5PM
 
-## Active Bounties
+## Workflow Structure
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```
+Cron (Fri 5PM) → Set Date Range → GitHub API (commits/issues/PRs) 
+      → Claude API (summary) → Discord Webhook
+```
 
----
+## Example Output
 
-## Rules
+```
+## Weekly Dev Summary for claude-builders-bounty/claude-builders-bounty
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+This week saw significant progress across 4 pull requests, with a focus on 
+automation tooling and documentation. The community contributed three new 
+CLAUDE.md templates and a comprehensive changelog generator.
 
----
+Key highlights include the addition of a pre-tool-use hook for blocking 
+destructive commands, improving project safety. Two major documentation 
+updates were merged, adding structured guidance for Next.js and SQLite 
+projects.
 
-## Community
+The team closed 7 issues, primarily focused on improving developer 
+experience and tooling reliability. Overall velocity remains strong with 
+contributors actively engaging across multiple repositories.
+```
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Credentials Needed
 
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+| Service | Scope |
+|---------|-------|
+| GitHub | `repo` (read) |
+| Anthropic | Claude API access |
+| Discord/Slack | Webhook URL |
