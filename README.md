@@ -1,39 +1,67 @@
-# Destructive Command Blocker Hook
+# Claude PR Reviewer Agent
 
-Pre-tool-use Claude Code hook that blocks dangerous bash commands.
+Automated PR review agent that produces structured Markdown analysis.
 
 ## Installation (2 Commands)
 
 ```bash
-# 1. Download hook to Claude hooks directory
-mkdir -p ~/.claude/hooks && curl -o ~/.claude/hooks/hook.py https://raw.githubusercontent.com/.../hook.py && chmod +x ~/.claude/hooks/hook.py
+# 1. Download the script
+curl -o claude_review.py https://raw.githubusercontent.com/.../claude_review.py
+chmod +x claude_review.py
 
-# 2. Add to settings.json
-cat >> ~/.claude/settings.json << 'EOF'
-{
-  "hooks": {
-    "pre-tool-use": [{"matcher": "bash", "hooks": [{"type": "command", "command": "python3 ~/.claude/hooks/hook.py"}]}]
-  }
-}
-EOF
+# 2. Install gh CLI (if not already installed)
+brew install gh  # macOS
+sudo apt-get install gh  # Ubuntu/Debian
 ```
 
-## What It Blocks
+## Usage
 
-| Command | Reason |
-|---------|--------|
-| `rm -rf /` | Root filesystem deletion |
-| `rm -rf *` | All files in current directory |
-| `rm -rf ~` | Home directory deletion |
-| `DROP TABLE` | SQL table destruction |
-| `TRUNCATE TABLE` | SQL data wipe |
-| `DELETE FROM` (no WHERE) | Unconditional row deletion |
-| `git push --force` | Force push (history rewrite) |
-| `mkfs.*` | Filesystem format |
-| `dd if=/dev/zero` | Disk wipe |
+### CLI Mode
+```bash
+# Review a PR
+./claude_review.py --pr https://github.com/owner/repo/pull/123
 
-## Log File
+# Save to file
+./claude_review.py --pr https://github.com/owner/repo/pull/123 --output review.md
+```
 
-Blocked attempts logged to: `~/.claude/hooks/blocked.log`
+### GitHub Action Mode
+```yaml
+# Add to .github/workflows/pr-review.yml
+uses: ./workflows/pr-review.yml
+```
 
-Format: `2026-05-08T20:12:00 command="rm -rf /" path="/home/user/project"`
+See `pr-review.yml` for the workflow definition.
+
+## Output Format
+
+```markdown
+## PR Review Summary
+
+### Summary
+This PR adds 151 lines and across 2 files.
+
+### Identified Risks
+- No significant risks identified
+
+### Improvement Suggestions
+- Code looks good to merge
+
+### Confidence Score: **Medium**
+
+> Files: 2 | Additions: 151 | Deletions: 0
+```
+
+## Confidence Scoring
+
+| Level | Criteria |
+|-------|----------|
+| High | ≤50 lines, no risks |
+| Medium | 51-300 lines or minor risks |
+| Low | >300 lines or high-risk patterns |
+
+## Requirements
+
+- Python 3.8+
+- GitHub CLI (`gh`) authenticated
+- Access to target repository
