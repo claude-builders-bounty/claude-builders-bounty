@@ -1,0 +1,2 @@
+"""Structured PR review helper."""
+
