@@ -16,6 +16,7 @@ This workflow generates a weekly narrative summary of a GitHub repository using 
 2. Set environment variables:
 
    ```bash
+   N8N_BLOCK_ENV_ACCESS_IN_NODE=false
    GITHUB_REPO=owner/repo
    GITHUB_TOKEN=github_pat_or_token
    ANTHROPIC_API_KEY=sk-ant-...
@@ -36,6 +37,7 @@ This workflow generates a weekly narrative summary of a GitHub repository using 
 | `ANTHROPIC_API_KEY` | yes | Claude API key. |
 | `DESTINATION_WEBHOOK_URL` | no | Slack or Discord webhook URL. If empty, the workflow returns the summary without sending. |
 | `SUMMARY_LANGUAGE` | no | `EN` or `FR`. Defaults to `EN`. |
+| `N8N_BLOCK_ENV_ACCESS_IN_NODE` | yes | Set to `false` so n8n Code nodes can read the workflow environment variables. |
 
 ## Output
 

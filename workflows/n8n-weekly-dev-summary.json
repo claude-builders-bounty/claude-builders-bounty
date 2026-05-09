@@ -26,6 +26,17 @@
       ]
     },
     {
+      "parameters": {},
+      "id": "f80a66ec-9aa8-4d05-92b8-7af6fc2810f8",
+      "name": "Manual CLI Test Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -980,
+        180
+      ]
+    },
+    {
       "parameters": {
         "jsCode": "const repo = $env.GITHUB_REPO || 'owner/repo';\nconst [owner, name] = repo.split('/');\nif (!owner || !name) {\n  throw new Error('GITHUB_REPO must be in owner/repo format');\n}\nconst language = ($env.SUMMARY_LANGUAGE || 'EN').toUpperCase();\nconst since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();\nconst until = new Date().toISOString();\nreturn [{\n  json: {\n    repo,\n    owner,\n    name,\n    language: ['EN', 'FR'].includes(language) ? language : 'EN',\n    destinationWebhookUrl: $env.DESTINATION_WEBHOOK_URL || '',\n    since,\n    until\n  }\n}];"
       },
@@ -70,6 +81,7 @@
       "name": "Fetch Commits",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "alwaysOutputData": true,
       "position": [
         -520,
         -220
@@ -151,7 +163,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const config = $('Build Config').first().json;\nconst commits = $('Fetch Commits').all().flatMap(item => Array.isArray(item.json) ? item.json : [item.json]).filter(Boolean);\nconst issuePayload = $('Fetch Closed Issues').first().json;\nconst prPayload = $('Fetch Merged PRs').first().json;\nconst issues = issuePayload.items || [];\nconst prs = prPayload.items || [];\nconst shortCommits = commits.slice(0, 40).map(commit => ({\n  sha: (commit.sha || '').slice(0, 7),\n  message: commit.commit?.message?.split('\\n')[0] || '',\n  author: commit.commit?.author?.name || commit.author?.login || 'unknown',\n  url: commit.html_url\n}));\nconst shortIssues = issues.slice(0, 40).map(issue => ({\n  number: issue.number,\n  title: issue.title,\n  author: issue.user?.login,\n  url: issue.html_url,\n  labels: (issue.labels || []).map(label => label.name)\n}));\nconst shortPrs = prs.slice(0, 40).map(pr => ({\n  number: pr.number,\n  title: pr.title,\n  author: pr.user?.login,\n  url: pr.html_url,\n  labels: (pr.labels || []).map(label => label.name)\n}));\nconst prompt = `You are a senior engineering lead. Write a weekly narrative development summary in ${config.language === 'FR' ? 'French' : 'English'} for ${config.repo}.\\n\\nTime window: ${config.since} to ${config.until}.\\n\\nUse a concise narrative style, not a raw changelog. Include:\\n1. A 2-3 sentence executive summary.\\n2. Important merged PRs.\\n3. Notable closed issues.\\n4. Development themes and risks.\\n5. Suggested focus for next week.\\n\\nData:\\n${JSON.stringify({ commits: shortCommits, closedIssues: shortIssues, mergedPrs: shortPrs }, null, 2)}`;\nreturn [{\n  json: {\n    ...config,\n    metrics: {\n      commits: commits.length,\n      closedIssues: issues.length,\n      mergedPrs: prs.length\n    },\n    prompt\n  }\n}];"
+        "jsCode": "const config = $('Build Config').first().json;\nconst commits = $('Fetch Commits').all()\n  .flatMap(item => Array.isArray(item.json) ? item.json : [item.json])\n  .filter(commit => commit?.sha || commit?.commit);\nconst issuePayload = $('Fetch Closed Issues').first().json || {};\nconst prPayload = $('Fetch Merged PRs').first().json || {};\nconst issues = issuePayload.items || [];\nconst prs = prPayload.items || [];\nconst shortCommits = commits.slice(0, 40).map(commit => ({\n  sha: (commit.sha || '').slice(0, 7),\n  message: commit.commit?.message?.split('\\n')[0] || '',\n  author: commit.commit?.author?.name || commit.author?.login || 'unknown',\n  url: commit.html_url\n}));\nconst shortIssues = issues.slice(0, 40).map(issue => ({\n  number: issue.number,\n  title: issue.title,\n  author: issue.user?.login,\n  url: issue.html_url,\n  labels: (issue.labels || []).map(label => label.name)\n}));\nconst shortPrs = prs.slice(0, 40).map(pr => ({\n  number: pr.number,\n  title: pr.title,\n  author: pr.user?.login,\n  url: pr.html_url,\n  labels: (pr.labels || []).map(label => label.name)\n}));\nconst prompt = `You are a senior engineering lead. Write a weekly narrative development summary in ${config.language === 'FR' ? 'French' : 'English'} for ${config.repo}.\\n\\nTime window: ${config.since} to ${config.until}.\\n\\nUse a concise narrative style, not a raw changelog. Include:\\n1. A 2-3 sentence executive summary.\\n2. Important merged PRs.\\n3. Notable closed issues.\\n4. Development themes and risks.\\n5. Suggested focus for next week.\\n\\nData:\\n${JSON.stringify({ commits: shortCommits, closedIssues: shortIssues, mergedPrs: shortPrs }, null, 2)}`;\nreturn [{\n  json: {\n    ...config,\n    metrics: {\n      commits: commits.length,\n      closedIssues: issues.length,\n      mergedPrs: prs.length\n    },\n    prompt\n  }\n}];"
       },
       "id": "b385ad2b-754e-41b5-ad1e-71a245fb8a8c",
       "name": "Prepare Claude Prompt",
@@ -185,7 +197,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1200,\n  \"temperature\": 0.2,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": $json.prompt\n    }\n  ]\n}",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'claude-sonnet-4-20250514',\n  max_tokens: 1200,\n  temperature: 0.2,\n  messages: [\n    {\n      role: 'user',\n      content: $json.prompt\n    }\n  ]\n}) }}",
         "options": {
           "response": {
             "response": {
@@ -284,6 +296,17 @@
   "pinData": {},
   "connections": {
     "Weekly Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Build Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual CLI Test Trigger": {
       "main": [
         [
           {
