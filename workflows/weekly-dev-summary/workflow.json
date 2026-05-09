@@ -1,0 +1,318 @@
+{
+  "id": "weekly-dev-summary",
+  "name": "Weekly Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "1f2c5f83-cron",
+      "name": "Friday 5 PM Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "notes": "Fires at 17:00 in the n8n instance's local time zone every Friday. Edit the expression for a different cadence."
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repo",
+              "value": "={{ $env.GITHUB_REPO || 'pallets/click' }}"
+            },
+            {
+              "name": "destination",
+              "value": "={{ $env.SUMMARY_DESTINATION || 'discord' }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $env.SUMMARY_LANGUAGE || 'en' }}"
+            },
+            {
+              "name": "since_iso",
+              "value": "={{ DateTime.now().minus({ days: 7 }).toUTC().toISO() }}"
+            },
+            {
+              "name": "until_iso",
+              "value": "={{ DateTime.now().toUTC().toISO() }}"
+            },
+            {
+              "name": "discord_webhook_url",
+              "value": "={{ $env.DISCORD_WEBHOOK_URL }}"
+            },
+            {
+              "name": "slack_webhook_url",
+              "value": "={{ $env.SLACK_WEBHOOK_URL }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2a8c1d4e-config",
+      "name": "Config (env)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [460, 300],
+      "notes": "All knobs come from env. GITHUB_REPO defaults to pallets/click for first-run testing."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{ $json.since_iso }}" },
+            { "name": "until", "value": "={{ $json.until_iso }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {
+          "redirect": { "redirect": {} }
+        }
+      },
+      "id": "3b9d2e5f-commits",
+      "name": "GitHub: commits last 7d",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 180]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Config (env)').item.json.repo }}/issues",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "since", "value": "={{ $('Config (env)').item.json.since_iso }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        }
+      },
+      "id": "4c0e3f60-issues",
+      "name": "GitHub: closed issues last 7d",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 320]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Config (env)').item.json.repo }}/pulls",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "sort", "value": "updated" },
+            { "name": "direction", "value": "desc" },
+            { "name": "per_page", "value": "50" }
+          ]
+        }
+      },
+      "id": "5d1f4071-prs",
+      "name": "GitHub: recent PRs (filter merged)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Config (env)').item.json;\nconst sinceIso = cfg.since_iso;\n\nconst commitsRaw = $('GitHub: commits last 7d').all().map(i => i.json).flat();\nconst issuesRaw = $('GitHub: closed issues last 7d').all().map(i => i.json).flat();\nconst prsRaw = $('GitHub: recent PRs (filter merged)').all().map(i => i.json).flat();\n\nconst since = new Date(sinceIso);\n\n// Filter PRs to those MERGED in the last 7d (the API returns recently updated; we tighten).\n// Issues from the issues endpoint also include PRs — drop those (pull_request key present).\nconst issues = issuesRaw\n  .filter(i => !i.pull_request)\n  .filter(i => i.closed_at && new Date(i.closed_at) >= since);\n\nconst mergedPrs = prsRaw\n  .filter(p => p.merged_at)\n  .filter(p => new Date(p.merged_at) >= since);\n\nconst commits = commitsRaw\n  .filter(c => c.commit && c.commit.author && c.commit.author.date)\n  .filter(c => new Date(c.commit.author.date) >= since)\n  // Deduplicate merge commits — they double-count work that's also in PRs.\n  .filter(c => !(c.parents && c.parents.length > 1));\n\nconst pickCommit = c => ({\n  sha: c.sha.slice(0, 7),\n  url: c.html_url,\n  message: (c.commit.message || '').split('\\n')[0],\n  author: (c.author && c.author.login) || c.commit.author.name\n});\nconst pickIssue = i => ({\n  number: i.number,\n  url: i.html_url,\n  title: i.title,\n  closer: i.closed_by ? i.closed_by.login : null\n});\nconst pickPr = p => ({\n  number: p.number,\n  url: p.html_url,\n  title: p.title,\n  author: p.user && p.user.login,\n  additions: p.additions,\n  deletions: p.deletions\n});\n\nreturn [{\n  json: {\n    repo: cfg.repo,\n    language: cfg.language,\n    destination: cfg.destination,\n    discord_webhook_url: cfg.discord_webhook_url,\n    slack_webhook_url: cfg.slack_webhook_url,\n    since_iso: cfg.since_iso,\n    until_iso: cfg.until_iso,\n    counts: {\n      commits: commits.length,\n      merged_prs: mergedPrs.length,\n      closed_issues: issues.length\n    },\n    commits: commits.map(pickCommit),\n    merged_prs: mergedPrs.map(pickPr),\n    closed_issues: issues.map(pickIssue)\n  }\n}];"
+      },
+      "id": "6e2f5182-aggregate",
+      "name": "Aggregate week",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1200,\n  \"system\": [\n    {\n      \"type\": \"text\",\n      \"text\": \"You are a release-notes writer for engineering teams. Produce a Markdown weekly summary in {{ $json.language === 'fr' ? 'French' : 'English' }} with sections: 1) Overview (2-3 sentences on themes), 2) Highlights (3-5 most-impactful items), 3) By the numbers (counts + notable PR sizes), 4) What to watch (risk or follow-up). No fluff. No emoji headers. Cite items as [#NUMBER](URL) or [`SHA`](URL).\",\n      \"cache_control\": {\"type\": \"ephemeral\"}\n    }\n  ],\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Repo: {{ $json.repo }}\\nWindow: {{ $json.since_iso }} -> {{ $json.until_iso }}\\nCounts: commits={{ $json.counts.commits }}, merged_prs={{ $json.counts.merged_prs }}, closed_issues={{ $json.counts.closed_issues }}\\n\\nMerged PRs JSON:\\n{{ JSON.stringify($json.merged_prs).slice(0, 8000) }}\\n\\nClosed issues JSON:\\n{{ JSON.stringify($json.closed_issues).slice(0, 4000) }}\\n\\nCommits JSON (deduped, no merges):\\n{{ JSON.stringify($json.commits).slice(0, 6000) }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "7f306293-claude",
+      "name": "Claude: narrative summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1220, 320],
+      "notes": "Uses prompt caching on the system prompt — repeated runs are cheap. Model is configurable via the JSON body."
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $json;\nconst aggregated = $('Aggregate week').item.json;\nconst contentParts = (claudeResponse.content || []).filter(p => p.type === 'text');\nconst markdown = contentParts.map(p => p.text).join('\\n').trim();\n\nconst header = aggregated.language === 'fr'\n  ? `**Résumé hebdomadaire — ${aggregated.repo}**\\n_Semaine du ${aggregated.since_iso.slice(0,10)} au ${aggregated.until_iso.slice(0,10)}_\\n\\n`\n  : `**Weekly summary — ${aggregated.repo}**\\n_Week of ${aggregated.since_iso.slice(0,10)} to ${aggregated.until_iso.slice(0,10)}_\\n\\n`;\n\nconst body = header + markdown;\n\nreturn [{ json: {\n  destination: aggregated.destination,\n  discord_webhook_url: aggregated.discord_webhook_url,\n  slack_webhook_url: aggregated.slack_webhook_url,\n  body,\n  // Discord allows 2000 chars; chunk if needed.\n  body_truncated: body.length > 1900 ? body.slice(0, 1900) + '\\n_(truncated)_' : body\n}}];"
+      },
+      "id": "8a417304-format",
+      "name": "Format payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1480, 320]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "discord",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.destination }}",
+                    "rightValue": "discord",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "slack",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.destination }}",
+                    "rightValue": "slack",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9b528415-route",
+      "name": "Route by destination",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [1720, 320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.discord_webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"content\": {{ JSON.stringify($json.body_truncated) }} }",
+        "options": {}
+      },
+      "id": "ac639526-discord",
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.slack_webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"text\": {{ JSON.stringify($json.body) }} }",
+        "options": {}
+      },
+      "id": "bd74a637-slack",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 420]
+    }
+  ],
+  "connections": {
+    "Friday 5 PM Cron": {
+      "main": [[{ "node": "Config (env)", "type": "main", "index": 0 }]]
+    },
+    "Config (env)": {
+      "main": [[
+        { "node": "GitHub: commits last 7d", "type": "main", "index": 0 },
+        { "node": "GitHub: closed issues last 7d", "type": "main", "index": 0 },
+        { "node": "GitHub: recent PRs (filter merged)", "type": "main", "index": 0 }
+      ]]
+    },
+    "GitHub: commits last 7d": {
+      "main": [[{ "node": "Aggregate week", "type": "main", "index": 0 }]]
+    },
+    "GitHub: closed issues last 7d": {
+      "main": [[{ "node": "Aggregate week", "type": "main", "index": 0 }]]
+    },
+    "GitHub: recent PRs (filter merged)": {
+      "main": [[{ "node": "Aggregate week", "type": "main", "index": 0 }]]
+    },
+    "Aggregate week": {
+      "main": [[{ "node": "Claude: narrative summary", "type": "main", "index": 0 }]]
+    },
+    "Claude: narrative summary": {
+      "main": [[{ "node": "Format payload", "type": "main", "index": 0 }]]
+    },
+    "Format payload": {
+      "main": [[{ "node": "Route by destination", "type": "main", "index": 0 }]]
+    },
+    "Route by destination": {
+      "main": [
+        [{ "node": "Post to Discord", "type": "main", "index": 0 }],
+        [{ "node": "Post to Slack", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "claude-builders-bounty-weekly-dev-summary"
+  },
+  "tags": []
+}
