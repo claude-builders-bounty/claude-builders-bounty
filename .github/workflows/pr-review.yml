@@ -1,0 +1,97 @@
+name: "Claude Code PR Review"
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Generate PR Summary
+        id: pr_summary
+        run: |
+          # Generate structured review
+          cat << 'REVIEW_SCRIPT' > /tmp/review_prompt.txt
+          You are a senior code reviewer. Analyze this PR diff and produce a structured review.
+
+          Format your response EXACTLY as:
+
+          ## Summary
+          [2-3 sentence overview of changes]
+
+          ## Identified Risks
+          - [Risk 1]
+          - [Risk 2]
+
+          ## Improvement Suggestions
+          - [Suggestion 1]
+          - [Suggestion 2]
+
+          ## Confidence Score
+          [High/Medium/Low]
+          REVIEW_SCRIPT
+
+      - name: Get PR Diff
+        id: get_diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr view ${{ github.event.pull_request.number }} --json body,title,additions,deletions,files > /tmp/pr_info.json
+          curl -s -H "Authorization: token ${{ github.token }}" \
+            "${{ github.event.pull_request.diff_url }}" > /tmp/pr_diff.txt
+          echo "diff_size=$(wc -c < /tmp/pr_diff.txt)" >> $GITHUB_OUTPUT
+
+      - name: Run Claude Code Review
+        id: claude_review
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          REVIEW_INPUT=$(cat /tmp/review_prompt.txt)
+          DIFF_CONTENT=$(cat /tmp/pr_diff.txt | head -5000)
+
+          claude -p "
+          $REVIEW_INPUT
+
+          PR Info:
+          Title: ${{ github.event.pull_request.title }}
+          Files Changed: ${{ github.event.pull_request.changed_files }}
+          Additions: ${{ github.event.pull_request.additions }}
+          Deletions: ${{ github.event.pull_request.deletions }}
+
+          Diff:
+          \`\`\`
+          ${DIFF_CONTENT}
+          \`\`\`
+          " --print > /tmp/review_output.md
+
+      - name: Post Review Comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f /tmp/review_output.md ]; then
+            gh pr comment ${{ github.event.pull_request.number }} \
+              --body "$(cat /tmp/review_output.md)"
+          else
+            gh pr comment ${{ github.event.pull_request.number }} \
+              --body "## Summary\nAutomated review could not be completed.\n## Confidence Score\nLow - Review tool encountered an error."
+          fi
