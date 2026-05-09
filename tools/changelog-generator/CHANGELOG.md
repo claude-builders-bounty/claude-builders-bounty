@@ -1,0 +1,2117 @@
+# Changelog
+
+## Initial Release - 2026-05-09
+
+### Features
+- **provider,web,asr:** enhance model management with explicit provider metadata (#2701) (81a0505) by @LC
+- **i18n:** add Portuguese (Brazil) locale (#2037) (96621ef) by @Diego Fornalha
+- **agent:** stop command (a0245c7) by @afjcjsbx
+- **agent:** stop command (f3ef709) by @afjcjsbx
+- add DeepSeek vision unsupported error detection (1722cfc) by @LiusCraft
+- **config:** wire serial tool into runtime and dashboard (2114e1a) by @SiYue-ZO
+- **tools:** add cross-platform serial hardware tool (0f52076) by @SiYue-ZO
+- **tool:** tool schema semplification (cd7717b) by @afjcjsbx
+- complete tool and model restart feedback (cbe6a09) by @SiYue-ZO
+- track channel and web search restart requirements (02d9a0d) by @SiYue-ZO
+- add config save and restart prompts (afc600b) by @SiYue-ZO
+- **events:** add configurable runtime event logging (b3d9f86) by @Hoshina
+- **gateway:** publish lifecycle runtime events (e613258) by @Hoshina
+- **events:** publish runtime service events (8caf9ae) by @Hoshina
+- **events:** add runtime event bus (eedebab) by @Hoshina
+- **chat:** unify reasoning and tool call visibility (303ff81) by @lc6464
+- **pico:** add support for tool_calls in chat messages (5cd10b5) by @lc6464
+- **agent:** add pretty_print and disable_escape_html options for tool feedback (bcc3d44) by @David Siewert
+- **agent:** add network error retry with configurable max retries and backoff (06fad95) by @David Siewert
+- add thought visibility toggle (d784ec4) by @SiYue-ZO
+- **agent:** migrate tool prompts to capability slots (48d8952) by @Hoshina
+- **agent:** add structured prompt layering (2e65b1b) by @Hoshina
+- **tool-feedback:** add separate message mode for chat feedback (#2644) (9fc72c1) by @Mauro
+- **web:** download files on frontend (#2563) (3316ee6) by @Mauro
+- **feishu:** Add group chat trigger and random emoji response frontend configuration (#2607) (a5379d5) by @肆月
+- **commands:** add MCP slash commands and tool details (276f542) by @afjcjsbx
+- **agent:** add context usage ring indicator and /context command (#2537) (6ca7311) by @Guoguo
+- **web:** support list editing for channel array fields (#2595) (ba69922) by @wenjie
+- **auth:** add no-browser option for OAuth login (ab019d3) by @lc6464
+- **network:** implement network error classification and fallback handling (c3f4000) by @lc6464
+- **web:** refactor tools page into tabbed library and web search settings (#2539) (7f56ca8) by @wenjie
+- **agent:** support btw side questions (#2532) (e22b4e1) by @lxowalle
+- **agent:** wire delegate tool registration for multi-agent setups (039f355) by @xiaoen
+- **tools:** add delegate tool for synchronous cross-agent task handoff (484ef39) by @xiaoen
+- **agent:** add TargetAgentID to SubTurnConfig for cross-agent delegation (c47f5fd) by @xiaoen
+- **web:** add syntax highlighting for markdown code blocks (25ac563) by @lc6464
+- **web:** show disabled reasons in tooltips when buttons are disabled (#2430) (bf6d4fd) by @肆月
+- **web:** show disabled chat reasons in composer (d4313b5) by @lc6464
+- **host:** complete launcher and gateway multi-host binding support (d4d652b) by @lc6464
+- **launcher:** support multi-host bind and strict host semantics (7b38d43) by @lc6464
+- **launcher:** add host overrides for launcher and gateway (4e97736) by @lc6464
+- **agent:** /clear now clears seahorse DB in addition to JSONL (f7e7681) by @Liu Yuan
+- **cli:** structured terminal UI for PicoClaw CLI like modern CLIs (#2229) (b6617a4) by @dataCenter430
+- **launcher:** standard HTTP login/setup/logout flow for dashboard, frontend and backend impl. and fix windows pid lock for ws (#2339) (06023c7) by @sky5454
+- **channels:** add teams_webhook output-only channel (#2244) (1fc2710) by @Andy Lo-A-Foe
+- **provider:** support custom headers injection for HTTP providers (#2402) (38a498e) by @LC
+- **membench:** add LOCOMO memory benchmark tool (#2353) (1175f4a) by @Liu Yuan
+- **seahorse:** implement short-term memory engine (LCM) (#2285) (15a70ac) by @Liu Yuan
+- **mcp:** store oversized text results as artifacts (#2308) (d8c5183) by @Mauro
+- **web:** persist dashboard token in launcher config (#2304) (7f7b4c4) by @wenjie
+- **web:** support image messages in pico chat (#2299) (f2a19ab) by @wenjie
+- add VK channel support (#2276) (b5ce620) by @linhaolin1
+- **model:** llm rate limiting (#2198) (b114dca) by @Mauro
+- **web:** move version display to the config page header (#2273) (e075be6) by @wenjie
+- add userAgent config for ModelConfig (#2242) (2c446e1) by @Cytown
+- add ContextManager abstraction for pluggable context management (#2203) (7eba27c) by @Liu Yuan
+- **provider:** add Venice AI support and update related documentation (#2238) (bbcfeaa) by @LC
+- **updater:** robust self-update selection & extraction (nightly default)  (#2201) (49e61fa) by @sky5454
+- **routing:** add ordered dispatch rules (bef17d6) by @Hoshina
+- add load_image tool for local file vision (#2116) (31afad6) by @reusu
+- **web:** add skill marketplace hub and registry install flow (#2246) (c0464bd) by @wenjie
+- **session:** persist scope metadata and aliases (3957e2c) by @Hoshina
+- **event:** log turn context fields (bb2167e) by @Hoshina
+- **web:** refine model availability states and preserve API key preview placeholder (#2226) (3b3f95c) by @LC
+- **web:** add service log level controls (#2227) (2bf842e) by @wenjie
+- **provider:** add lmstudio and align local provider default auth/base handling (#2193) (ee02e30) by @LC
+- **channels:** make Channel.Send return delivered message IDs (#2190) (6c0798c) by @DimonB
+- **telegram:** include quoted reply context and media in inbound turns (#2200) (2d85562) by @Mauro
+- add first-time tour guide for new users (b832746) by @SiYue-ZO
+- **web:** display backend version info in sidebar (#2087) (ff0266a) by @LC
+- **tools:** add reaction tool and reply-aware message sends (#2156) (e88df4f) by @Alix-007
+- **mcp:** support DisableStandaloneSSE for HTTP transport (#2108) (e70928c) by @李光春
+- **web:** protect launcher dashboard with token and SPA login (#1953) (6ea364e) by @zeed zhao
+- **bedrock:** detect SSO token expiration and provide actionable error (4f90909) by @Andy Lo-A-Foe
+- **log:** prompt tokens (#2047) (60d7ec2) by @Mauro
+- **channels:** support multi-message sending via split marker (#2008) (ed618e1) by @柚子
+- **tools:** add exec tool enhancement with background execution and PTY support (70c4714) by @daming大铭
+- **logger:** add PICOCLAW_LOG_FILE env var for file-only logging (155af28) by @Liu Yuan
+- **tools:** add exec tool enhancement with background execution and PTY support (#1752) (3f1ac29) by @Liu Yuan
+- **config:** allow placeholder text to be string or list (dc956f2) by @hezixu
+- **web:** add WeCom QR binding flow to channel settings (#1994) (eb307e9) by @wenjie
+- **models:** add extra_body config field in model add/edit UI (#1969) (3b3062a) by @柚子
+- **config:** add command pattern detection tool in exec settings (#1971) (adf1a57) by @柚子
+- **matrix:** support encrypted messages with E2EE (9381da2) by @daming大铭
+- **matrix:** support encrypted messages with E2EE (fab9603) by @RussellLuo
+- **web:** improve Weixin channel binding flow (#1968) (4d7a629) by @wenjie
+- **wecom:** add channel-side streaming support (3b498d2) by @Hoshina
+- **wecom:** send media via temp uploads (c3631d8) by @Hoshina
+- **auth:** add wecom cli qr login (e760cb7) by @Hoshina
+- **tools:** add tool argument schema validation before execution (#1877) (fcc20ec) by @Sabyasachi Patra
+- **web:** Tool feedback on UI (#1933) (aa3300c) by @Mauro
+- add ElevenLabs Scribe STT transcriber and Telegram SendVoice support (#1905) (dd9adf8) by @Orkun Manap
+- **providers:** add AWS Bedrock provider (#1903) (b787131) by @Andy Lo-A-Foe
+- **security:** add sensitive data filtering for tool results sent to LLM (16d23d8) by @uiyzzi
+- render mixed Markdown+HTML in assistant messages and skills (#1900) (8e3e517) by @LC
+- **providers:** add extra_body config to inject custom fields into request body (c7544f7) by @uiyzzi
+- **providers:** add extra_body config to inject custom fields into request body (f2985b8) by @uiyzzi
+- **providers:** add extra_body config to inject custom fields into request body (8a046e9) by @uiyzzi
+- **search:** add Baidu Qianfan AI Search provider with i18n docs (60a7098) by @BeaconCat
+- **skills:** add channel commands to list and force installed skills (d7d2bf6) by @afjcjsbx
+- **voice:** add audio-model transcription support (8ad4b9b) by @RussellLuo
+- **providers:** add extra_body config to inject custom fields into request body (a005e5b) by @uiyzzi
+- **tools:** add exec tool enhancement with background execution and PTY support (#1752) (f901af8) by @Liu Yuan
+- add agent-browser skill and Dockerfile.heavy with full runtime (5203916) by @Amir Mamaghani
+- **agent:** add configurable hook mounting (337e43e) by @Hoshina
+- **agent:** add hook manager foundation (cf68c91) by @Hoshina
+- **telegram:** stream LLM responses via sendMessageDraft (#1101) (71134ba) by @Amir Mamaghani
+- **pico:** add pico_client outbound WebSocket channel (#1198) (5449408) by @Amir Mamaghani
+- add onboarding command execution for non-existent config directory (ed47d5f) by @taorye
+- add chat functionality to home page for interactive AI sessions (8c44597) by @taorye
+- add gateway management page to TUI and integrate into home menu (02da117) by @taorye
+- add channels management page and integrate into home menu (7b4d5d4) by @taorye
+- add model selection synchronization to main config in TUI (545b7af) by @taorye
+- implement TUI configuration and user management for picoclaw-launcher-tui (5a199ec) by @taorye
+- **agent:** centralize turn lifecycle and continue queued steering (0e075f7) by @Hoshina
+- **agent:** expand event bus coverage (57cde73) by @Hoshina
+- **agent:** make event logs show event kind clearly (50cc710) by @Hoshina
+- **agent:** add event bus foundation (af61d0b) by @Hoshina
+- **provider:** add Alibaba Coding Plan and regional Qwen endpoints (#1748) (9a3ca8e) by @Adi Susilayasa
+- **tool:** debug tool usage via channels (#1332) (7673b62) by @Mauro
+- **mcp:** per server deferred mode (#1654) (a4b5a9e) by @Mauro
+- **tool:** anti cloudflare challenge in web_fetch (#1762) (ff975ab) by @Mauro
+- add /reload to gateway api and command (#1725) (2a6ade0) by @Cytown
+- **subturn:** add configurable runtime parameters under agents.defaults (ce311be) by @Administrator
+- **subturn:** implement token budget tracking for SubTurns (99b189d) by @Administrator
+- **tool:** overwrite flag in write_file (#1761) (e931756) by @Mauro
+- **subturn:** support stateful iteration for evaluator-optimizer pattern (53404f1) by @Administrator
+- **config:** support multiple API keys for failover (#1707) (e73d9d9) by @Liu Yuan
+- add IsLark field to FeishuConfig to switch between Feishu and Lark domains (#1753) (08f305d) by @Liqiang Lau
+- telegram use parse mode ModeMarkdownV2 instead of ModeHTML (#1018) (12f4029) by @Alexander
+- Add Novita provider support (#1677) (578f908) by @Alex
+- **agent:** implement /subagents command and fix sub-turn observability (777230d) by @Administrator
+- **web:** implement macOS app feature and file logger (#1723) (e6ebeae) by @Cytown
+- **cron:** refactor scheduler to event-driven model and add unit tests (#1313) (f776611) by @juju
+- **agent:** include current sender in dynamic context (#1696) (c639e2c) by @Alix-007
+- **web:** whitelist private fetch targets (#1688) (b446831) by @Alix-007
+- **agent:** implement graceful finish vs hard abort for SubTurn lifecycle (f8defe3) by @Administrator
+- **config:** add exec controls and gate cron commands on exec settings (#1685) (7b9fdae) by @wenjie
+- add web gateway hot reload and polling state sync (#1684) (8a44410) by @wenjie
+- **tools:** add SpawnStatusTool for reporting subagent statuses (#1540) (b402888) by @Desmond Foo
+- **web:** add configurable cron command execution settings (#1647) (fcb6986) by @wenjie
+- **agent:** add session state rollback on hard abort (acd436a) by @Administrator
+- **agent:** add concurrency semaphore and hard abort for SubTurn (1236dd9) by @Administrator
+- **agent:** wire SubTurn into AgentLoop and Spawn Tool (ceeae15) by @Administrator
+- **config:** expose context_window in example config and web UI (e35906b) by @xiaoen
+- **agent:** port subturn PoC to refactor/agent branch (ae23193) by @Administrator
+- **credential:** part1 add AES-GCM encryption, SecureStore, and onboard ke… (#1521) (2f10b47) by @sky5454
+- **tool:** markdown format in output web_fetch tool (d5c2bc5) by @afjcjsbx
+- **agent:** steering (#1517) (021aa7d) by @Mauro
+- **provider:** add support for azure openai provider (#1422) (5fb4b3b) by @Kunal Karmakar
+- expose local file paths for non-image media to enable agent file tools (#1516) (0c5d750) by @dataCenter430
+- **web:** use a global WebSocket for Pico chat sessions (#1507) (4d8fdb0) by @wenjie
+- **web:** add restart-required state for default model changes (#1499) (8725781) by @wenjie
+- **provider:** add ModelScope as OpenAI-compatible provider (#1486) (b811e91) by @dataCenter430
+- **logger:** add custom console formatter for JSON and multiline strings (a01af36) by @afjcjsbx
+- **providers:** add LongCat model provider support (#1317) (9222351) by @LeaderOnePro
+- **web:** add agent management UI and improve launcher integration (#1358) (dea06c3) by @wenjie
+- **docker:** add launcher bundle image with all three binaries (#1309) (8654ec9) by @Guoguo
+- **web_search:** add load balance and failover for api keys (#982) (95716b1) by @yanhool
+- **session:** integrate JSONL persistence into agent loop (#1170) (26f623e) by @is-Xiaoen
+- **channels:** enhance QQ channel with group/typing/media support and URL sanitization (#1208) (2312553) by @美電球
+- **telegram:** support forum topics with per-topic session isolation (123275f) by @statxc
+- **mcp:** tool search tools (#1243) (b89f644) by @Mauro
+- **web:** migrate launcher to modular web frontend/backend and improve management UX (#1275) (e55b3b7) by @wenjie
+- **release:** add macOS binary notarization via goreleaser (#1274) (f505f00) by @Guoguo
+- add  /clear command to clear chat history (#1266) (aaf99d7) by @lxowalle
+- **release:** add linux/s390x and linux/mipsle to goreleaser builds (#1265) (82773fc) by @Guoguo
+- add Matrix channel support (a66eac4) by @horsley
+- **channel:** echo voice audio transcription (0c117a0) by @afjcjsbx
+- **cron:** add execution lifecycle logging (#1185) (1945436) by @fishtrees
+- **auth:** add Anthropic OAuth setup-token login (#926) (23abbb6) by @BallerIsLeet
+- **build:** add MIPS32 LE (mipsle) cross-compilation support (#1051) (c3af154) by @甜航
+- **feishu,tools:** add outbound media delivery via send_file tool (#1156) (c368b5b) by @shikihane
+- **commands:** centralized command registry with sub-command routing (#959) (b716b8a) by @Ming
+- add upload_tos toggle to release workflow (#1183) (c3c2932) by @Guoguo
+- **feishu:** add random reaction emoji config (9f017d0) by @mutezebra
+- upload release artifacts to Volcengine TOS (#1164) (46201fb) by @Guoguo
+- honor PICOCLAW_HOME env var for config, auth, and workspace paths (51e8479) by @Keith Patrick
+- **channels:** add IRC channel integration (40b7b6e) by @Amir Mamaghani
+- add extended thinking support for Anthropic models (#1076) (204038e) by @Larry Koo
+- execute LLM tool calls in parallel for faster response (#1070) (028605c) by @Guoguo
+- **tools:** add GLM Search (智谱) web search provider (#1057) (b82bb9a) by @shikihane
+- make summarization message threshold and token percent configurable (#854) (#1029) (df1b53f) by @Rahul Bansal
+- **discord:** resolve channel references and expand message links (922604f) by @王路路
+- **discord:** support referenced/quoted messages in replies (465819e) by @王路路
+- add Avian as a named LLM provider (a4546ff) by @Kyle D
+- **telegram:** add base_url support for custom Telegram Bot API server (#1021) (1265655) by @Guoguo
+- **agent:** wire media refs through agent pipeline to LLM provider (4322741) by @shikihane
+- **openai_compat:** implement serializeMessages with multipart media support (03f7ae4) by @shikihane
+- **agent:** implement resolveMediaRefs with streaming base64 and filetype detection (6fd6582) by @shikihane
+- **config:** add configurable max_media_size with 20MB default (4c6c05a) by @shikihane
+- **providers:** add Media field to Message struct for vision support (6689c0b) by @shikihane
+- add LiteLLM provider alias support (#930) (946af6b) by @Alfonso
+- **feishu:** enhance channel with markdown cards, media, mentions, and editing (c9fb681) by @Hoshina
+- add Exa AI search provider (4b7e8d9) by @I Putu Eddy Irawan
+- add .env file loading and provider env overrides (d9b4af7) by @I Putu Eddy Irawan
+- **agent:** wire model routing into the agent loop (02e8192) by @xiaoen
+- **routing:** add language-agnostic model complexity scorer (1943c3e) by @xiaoen
+- **config:** add RoutingConfig to AgentDefaults (c5a21b2) by @xiaoen
+- **agent:** add resolveMediaRefs to convert media:// refs to base64 data URLs (18b36af) by @shikihane
+- **wecom-aibot:** enhance stream task management with StreamClosedAt and improved cleanup logic (a87e6b0) by @Zhang Rui
+- **wecom-aibot:** add context management for stream tasks to improve agent cancellation (4e09c91) by @Zhang Rui
+- **wecom-aibot:** add reasoning_channel_id to configuration and enhance message handling limits (e894f8d) by @Zhang Rui
+- **wecom:** add WeCom AI Bot integration and update documentation (a25726e) by @Zhang Rui
+- **agent:** wire Media through agent pipeline (cherry-pick PR #555) (6997edc) by @shikihane
+- add Media field to Message struct and implement serializeMessages for vision API support (3d54a77) by @Zachary Guerrero
+- **config:** Add support for env var configuration (#896) (d4bc28c) by @Keith
+- add message chunking in Telegram Send method (a6f4274) by @I Putu Eddy Irawan
+- add Kimi/Moonshot and Opencode provider support (ec54031) by @I Putu Eddy Irawan
+- **telegram:** Fix conflicts (b0c8fc4) by @Artem Yadelskyi
+- **tui:** Add configurable Launcher and Gateway process management (#909) (27e988c) by @taorye
+- add picoclaw-launcher with web UI for configuration and gateway management (#904) (5e028a8) by @Guoguo
+- Add `reasoning_channel_id` to communication platform configurations and improve message bus context cancellation handling. (f96cf3f) by @Avisek
+- Introduce LLM reasoning fields to LLM responses and enable routing reasoning output to dedicated channels. (9f95aad) by @Avisek
+- **discord:** add proxy support and tests (b5a4bb2) by @nayihz
+- **channels:** auto-orchestrate Placeholder/Typing/Reaction via capability interfaces (29ed650) by @Hoshina
+- **skills:** add retry for HTTP requests in skill installer (#261) (f3c1162) by @ian
+- **line:** add StartTyping and PlaceholderRecorder integration (e450e9e) by @ex-takashima
+- **memory:** add Compact method for physical JSONL compaction (b464687) by @xiaoen
+- **memory:** support migration from legacy JSON sessions (9036812) by @xiaoen
+- **memory:** implement append-only JSONL session store (9f36e50) by @xiaoen
+- **memory:** define Store interface for session persistence (32ec8ca) by @xiaoen
+- **media:** integrate TTL cleanup into FileMediaStore (4ada406) by @ex-takashima
+- improve web proxy handling and coverage (76f2b42) by @nayihz
+- **identity:** add unified user identity with canonical platform:id format (56d8037) by @Hoshina
+- **channels:** add typing/placeholder automation and Pico Protocol channel (Phase 10 + 7) (60b68b3) by @Hoshina
+- **channels:** add MediaSender optional interface for outbound media (e10b1e1) by @Hoshina
+- integrate Tavily search (#340) (c6865fe) by @Vidish
+- add native Mistral AI provider support (65422a1) by @Edouard CLAUDE
+- **linter:** Fix govet linter (02b4d9f) by @Artem Yadelskyi
+- **telegram:** Fix conflicts (2bf467f) by @Artem Yadelskyi
+- **ci:** Remove fmt from build step (c2ace25) by @Artem Yadelskyi
+- **telegram:** Updated log message (e1ba692) by @Artem Yadelskyi
+- **telegram:** Do not fail on commands init (26bca10) by @Artem Yadelskyi
+- **fmt:** Fix formatting (0675ce7) by @Artem Yadelskyi
+- add wecom and wecomApp test (0f70f78) by @swordkee
+- add wecom and wecomApp test (ca48103) by @swordkee
+- **discord:** add mention_only option for @-mention responses (#518) (2fb2a73) by @Vernon Stinebaker
+- Add SearXNG search provider support (e7d8975) by @Truong Vinh Tran
+- add wecom and wecomApp test (14ccfb3) by @swordkee
+- add wecom and wecomApp channel support (59772cd) by @swordkee
+- **config:** add complete model_list template with all 17 providers (df6958f) by @yinwm
+- **fmt:** Fix formatting (a896831) by @Artem Yadelskyi
+- **providers:** add thought_signature support for gemini (7f24164) by @yinwm
+- **onebot:**  enhance OneBot channel (#192) (56a060f) by @hsohinna
+- **config:** validate duplicate model names (1e26312) by @yinwm
+- **fmt:** Fix fmt (d07ac54) by @Artem Yadelskyi
+- **fmt:** Run formatters (9e120f9) by @Artem Yadelskyi
+- add model_list configuration for zero-code provider addition (a73d8e1) by @yinwm
+- **linters:** Fix linter (df52d4a) by @Artem Yadelskyi
+- **linters:** Fix linter (b88f4c9) by @Artem Yadelskyi
+- **linters:** Fix version (272cabc) by @Artem Yadelskyi
+- **linters:** Fixed golangci-lint version (d6f052f) by @Artem Yadelskyi
+- Support modifying the command filtering list of the exec tool (#410) (eda6e37) by @lxowalle
+- use gemini-3-flash-preview as default model name (d3fe8c5) by @mrbeandev
+- add manual callback URL entry for headless OAuth flow (29e07ec) by @mrbeandev
+- complete Antigravity provider integration with robust error handling and docs (848aaed) by @mrbeandev
+- Add the Qwen provider (f0e90e6) by @HansonJames
+- **goreleaser:** enhance build flags with versioning and commit info (2d876ea) by @Boris Bliznioukov
+- **goreleaser:** add 'stdjson' tag to picoclaw build configuration (2d758d7) by @Boris Bliznioukov
+- Add Perplexity search provider integration (#138) (f929268) by @Hua Audio
+- **linters:** Removed fmt check (present in linters) (67d0710) by @Artem Yadelskyi
+- **linters:** Temporarily disable most linters (d9b5f64) by @Artem Yadelskyi
+- **linters:** Added job names (d69ef65) by @Artem Yadelskyi
+- **linters:** Added golangci-lint config & CI job (35670d5) by @Artem Yadelskyi
+- **telegram:** Changed command scope (1b1e472) by @Artem Yadelskyi
+- **telegram:** Fix text (d1a66cb) by @Artem Yadelskyi
+- **telegram:** Init bot commands on start (bfb9d8f) by @Artem Yadelskyi
+- update the `make deps` logic to prevent the project from frequently updating dependency package versions (#277) (17685da) by @lxowalle
+- **docker:** add full-featured Docker image with MCP tools support (ce3fc4b) by @yuchou87
+- implement structured Telegram command handling with a dedicated command service and `telegohandler` integration. (#164) (9d5728e) by @Avisek Ray
+- add Codex CLI provider for subprocess integration (#80) (e77b0a6) by @Leandro Barbosa
+- **skills:** add validation for skill info and test cases (#231) (c6c82b3) by @ian
+- **cron:** add configurable execution timeout for cron jobs (82856bc) by @yinwm
+- **mcp:** add Model Context Protocol integration (91c168d) by @yuchou87
+- add `Github Copilot` provider (5faa67b) by @Lixeer
+- Support installing built-in AGENT files and skills during `picoclaw onboard` (a9557aa) by @lxowalle
+- **docker:** Added curl for Docker image (a24cbd4) by @Artem Yadelskyi
+- add device hotplug event notifications (USB on Linux) (3780455) by @easyzoom
+- add OneBot channel support (7fa641a) by @Hoshina
+- Improve parameter fault tolerance for DeepSeek (18d3634) by @Lixeer
+- add provider `deepseek` (afc3a2c) by @Lixeer
+- **channels:** add LINE Official Account channel support (f294a71) by @ex-takashima
+- add multi-agent routing with declarative bindings (272536a) by @Leandro Barbosa
+- add model fallback chain with error classification (6e71495) by @Leandro Barbosa
+- add support for DuckDuckGo and refactor Brave search configuration support the control with config.js (2f5849b) by @Satyam Tiwari
+- **cli:** add git commit hash to version output (5aa4dd2) by @yinwm
+- add ShengSuanYun(胜算云) as a models provider. (896eae4) by @coohu
+- re-enable cronTool service after refactor completion (e353844) by @yinwm
+- merge heartbeat service improvements from feat-heartbeat branch (e7e0861) by @yinwm
+- add Docker Compose support for Discord bot deployment (1b45195) by @Sunwood-ai-labs
+- Add DuckDuckGo search fallback. (53df8d1) by @Satyam Tiwari
+- add cli-based LLM provider (f6362ce) by @Leandro Barbosa
+- add Moonshot/Kimi and NVIDIA provider support with proxy (a9a7a89) by @mxrain
+- add Telegram proxy support and flexible allow_from matching (1d143fa) by @mxrain
+- US-021 - Heartbeat calls ExecuteHeartbeatWithTools (be81ba1) by @yinwm
+- US-020 - Move heartbeat log to memory directory (e63f967) by @yinwm
+- US-019 - Enable heartbeat by default in config (03b02cc) by @yinwm
+- US-018 - Add SubagentTool with ToolResult support (28734c3) by @yinwm
+- US-016, US-017 - Mark CronTool and SpawnTool as complete (061b071) by @yinwm
+- US-016 - Refactor CronTool to use ToolResult (a141815) by @yinwm
+- US-015 - Add EditTool tests (35fa64c) by @yinwm
+- US-014 - Add WebTool tests (0ac93d4) by @yinwm
+- US-013 - Add FilesystemTool tests (88014ec) by @yinwm
+- US-012 - Add ShellTool tests (e7e3f95) by @yinwm
+- US-011 - Add MessageTool tests (2989c39) by @yinwm
+- US-010 - Add RecordLastChannel to AgentLoop with atomic state save (feba44e) by @yinwm
+- US-009 - Add state save atomicity with SetLastChannel (b94941d) by @yinwm
+- US-008 - Inject callback into async tools in AgentLoop (4c4c10c) by @yinwm
+- US-007 - Add heartbeat async task execution support (7bcd8b2) by @yinwm
+- US-006 - Add AsyncCallback type and AsyncTool interface (56ac18a) by @yinwm
+- US-005 - Update AgentLoop tool result processing logic (b573d61) by @yinwm
+- US-004 - Delete isToolConfirmationMessage function (c6c61b4) by @yinwm
+- US-002 - Modify Tool interface to return *ToolResult (ca781d4) by @yinwm
+- **telegram:** Use Telego instead of go-telegram-bot-api (ca18958) by @Artem Yadelskyi
+- **providers:** add SDK-based providers for subscription OAuth login (fbad753) by @Cory LaNou
+- **channels:** add Slack channel integration with Socket Mode (5eec80c) by @Cory LaNou
+- **migrate:** add picoclaw migrate command for OpenClaw workspace migration (3d54ec5) by @Cory LaNou
+- **auth:** add OAuth and token-based login for OpenAI and Anthropic (5efe8a2) by @Cory LaNou
+- add cron tool integration with agent (6d4d2bc) by @yinwm
+- Add DingTalk channel support via Stream Mode (c5f6bec) by @w0x7ce
+- make context compression dynamic and add thinking animation (2df60b2) by @Danieldd28
+- implement dynamic context compression for efficient memory usage (07e624c) by @Danieldd28
+
+### Fixes
+- skip canonical ID parsing for @-prefixed allow_from entries (#2815) (cfa6407) by @Ashid332
+- **docs:** correct Baidu Search free tier from 1000/day to 1500/month (#2784) (#2825) (d5c8bff) by @李光春
+- **line:** close response body on successful SendMedia calls (bacb9ab) by @ex-takashima
+- **line:** capture QuoteToken for all message types and handle location (6d7d1b0) by @ex-takashima
+- **line:** close HTTP response body from WithHttpInfo calls (ad78ba0) by @ex-takashima
+- **line:** classify SDK errors with HTTP status and add client timeout (9b7fc7a) by @ex-takashima
+- **web:** 兼容 HTTP 环境复制按钮 (#2712) (4d3070e) by @openapphub
+- **agent:** drain scoped follow-up queue when pending stop skips turn startup (a7e52e8) by @afjcjsbx
+- **agent:** send SVG attachments as files (d601b75) by @xp
+- **seahorse:** enforce target token thresholds for leaf summaries (a1b55fd) by @afjcjsbx
+- **agent:** don't arm pending stop when /stop targets idle session (d63430a) by @afjcjsbx
+- **agent:** use runtime event kind for LLM retry (057683d) by @Hoshina
+- **seahorse:** persist reasoning_content in sqlite history (#2707) (dbf5d9c) by @LC
+- **channels:** dismiss tool feedback animation when turn ends via ResponseHandled (#2713) (5db008f) by @Guoguo
+- **feishu:** fix image download with API fallback and post image support (#2708) (cb1e1a3) by @Guoguo
+- **docker:** restore `make docker-build` by adding build directives and fixing Go version (#2700) (62d0e34) by @Guoguo
+- **serial_windows:** remove unused import (#2697) (9b109dc) by @LC
+- **cron:** propagate sessionKey to prevent duplicate tool responses (0bb0fc4) by @afjcjsbx
+- align struct tag spacing in AgentDefaults config (e656ddf) by @David Siewert
+- **agent:** normalize nil args and improve error handling in FormatArgsJSON (38baf1c) by @David Siewert
+- improve error handling and nil consistency in FormatArgsJSON (8dca2a1) by @David Siewert
+- **events:** keep runtime observers non-blocking (78fd080) by @Hoshina
+- **config:** show precise malformed config diagnostics (#2415) (ed687d6) by @Mauro
+- **mcp:** sanitize MCP tool schemas for Gemini function calling (1ff8a41) by @afjcjsbx
+- **chat:** update tool_calls structure and ensure kind is always set (d6b38c4) by @lc6464
+- **chat:** add `\r?` for regular expressions (1b9e7e3) by @LC
+- **tests:** format error message (1acab59) by @lc6464
+- **channels:** bypass placeholder edits for thought and tool calls (bfc37b7) by @lc6464
+- **config:** fix golines max-len for MaxLLMRetries field (f0dc709) by @David Siewert
+- **chat:** tolerate animated legacy tool feedback parsing (9d42282) by @lc6464
+- **config:** align gci formatting for LLM retry fields (612097b) by @David Siewert
+- **tool-feedback:** dedupe duplicate content and keep full explanations (6d04d15) by @lc6464
+- **config:** align indentation for new LLM retry default fields (1b2f8aa) by @David Siewert
+- **config:** align gci formatting for MaxLLMRetries field (d2f6a08) by @David Siewert
+- **message:** ignore transient assistant thoughts in message count and history truncation (ae162a7) by @lc6464
+- **mcp:** retry tool calls on lost HTTP sessions and fix client lifecycle (8f8af08) by @afjcjsbx
+- **agent:** preserve prompt hook and cache semantics (9ca73b9) by @Hoshina
+- **tool-feedback:** format tool args as JSON code blocks (94a6b0c) by @afjcjsbx
+- isolate thought bubble collapse state (683ce31) by @SiYue-ZO
+- **launcher:** hide windows child-process console flashes (e186323) by @SiYue
+- **messageutil:** remove dead code (979ff00) by @LC
+- **reasoning:** persist canonical history for DeepSeek and web chat (bb0f983) by @lc6464
+- **mcp:** normalize local command paths and document env-file usage (07032df) by @afjcjsbx
+- treat PID=1 as stale in PID file singleton check, fix govet shadow, add .gitattributes (#2642) (f334ac6) by @BeaconCat
+- **mcp:** expand home paths for local stdio server commands (f4dbac0) by @afjcjsbx
+- **tools:** improve web search provider fallback (#2629) (cac4f21) by @wenjie
+- **web:** use raw token for Pico media proxy and refresh chat attachment UI (#2618) (f367a9c) by @wenjie
+- **mcp:** surface MCP init failures to command handlers (5a13616) by @afjcjsbx
+- **auth:** canonicalize Google Antigravity provider and enhance credential management (#2599) (9c3dc0e) by @LC
+- **web:**  clean up restored chat transcripts and optimize chat UI (#2605) (dcb4b67) by @wenjie
+- **web:** stop pinning Pico WebSocket origins during setup (f8190f0) by @wenjie
+- **web:** improve Pico URL and origin handling behind proxies (d002e15) by @wenjie
+- **tools:** centralize shared LLM note constants (743cd36) by @lc6464
+- **providers,tools:** address linter issues after reorg (9b4efdd) by @lc6464
+- **auth:** improve no-browser OAuth login (ffd30d7) by @lc6464
+- **network:** classify timeout errors as FailoverTimeout (7aa2d67) by @LC
+- **web:** support proxies in SearXNG and web fetch (#2542) (7fdc9c7) by @wenjie
+- **web:** save channel configs with nested channel_list patches (#2530) (a8d0b03) by @wenjie
+- **web:** avoid resetting web search draft on config refetch (#2536) (f32b303) by @wenjie
+- **tools:** normalize agent_id before self-check and delegation (df486b9) by @xiaoen
+- **agent:** preserve reused tool call IDs across turns (#2528) (7bd1118) by @wenjie
+- **web:** address sogou search review feedback (0b84f0a) by @SiYue-ZO
+- **web:** restore chat composer disabled-state messaging and clean up code (#2526) (51ab3b1) by @wenjie
+- **web_search:** validate missing API key/URL directly in Search methods (#2517) (773a94c) by @lxowalle
+- **agent:** recover after image-input-unsupported failures (1245f2d) by @afjcjsbx
+- **cron:** add blank line between default and localmodule imports for gci (d8e7a61) by @srcrs
+- **web:** address latest Copilot review points (0bb9bed) by @lc6464
+- **web:** show localhost entry only for local binds (79f87d1) by @lc6464
+- **web:** align wildcard advertise IP preference (2438227) by @lc6464
+- resolve PR2514 lint regressions (ae19583) by @lc6464
+- **launcher:** refine console host display (93bf871) by @lc6464
+- **host:** modernize default host selection order (e7b3654) by @lc6464
+- **host:** align launcher and gateway host normalization semantics (448027c) by @lc6464
+- **updater:** retry release fetches (#2511) (64c3542) by @wenjie
+- **session:** address review regressions (c5c5ea2) by @Hoshina
+- **runtime:** address session promotion and steering regressions (0f23535) by @Hoshina
+- **seahorse:** drop/recreate FTS5 triggers so existing DBs get corrected bodies (b8819bd) by @Liu Yuan
+- **agent:** reinitialize MCP and discovery tools after reload (815e43e) by @afjcjsbx
+- **telegram:** preserve raw OAuth links in HTML rendering (34b9d5d) by @afjcjsbx
+- **cron:** add agent: prefix to session key so resolveScopeKey preserves it (2b73978) by @srcrs
+- **gemini:** align thoughtSignature and stream tool IDs (6fbd7e0) by @lc6464
+- **review:** address copilot backpressure and SSE parse feedback (e9f55d7) by @lc6464
+- **ci:** resolve lint header casing and fallback test routing (86917fa) by @lc6464
+- **chat:** improve thought readability in dark mode (b73caeb) by @lc6464
+- **gemini:** honor pro-model thinking constraints (cbae69a) by @lc6464
+- **gemini:** align thinking-off and system prompt semantics (83e93ca) by @lc6464
+- **gemini:** harden dedicated provider compatibility (459e78c) by @lc6464
+- **cron:** make each job execution use an independent session (36b9693) by @srcrs
+- **pico:** separate thought and normal messages (c8bac69) by @lc6464
+- **chat:** keep tool-call summary and assistant output in sync (#2449) (748ac58) by @Guoguo
+- **seahorse:** sanitize user input for FTS5 MATCH queries (#2436) (187189a) by @winterfx
+- **launcher:** align react and react-dom versions (#2467) (d997771) by @wenjie
+- **launcher:** fall back to token auth on unsupported platforms (#2466) (795ec9a) by @wenjie
+- **gateway:** log startup errors before exit (#2414) (4914187) by @Mauro
+- **agent:** gate pico interim publish for internal turns (bd88385) by @lc6464
+- **review:** align tool feedback reconstruction with runtime behavior (bd13092) by @lc6464
+- **pico:** avoid duplicate final websocket message (9982ee2) by @lc6464
+- **pico:** stream assistant text between tool calls (2aeed8f) by @lc6464
+- **chat:** keep tool summaries and assistant output together (5b596ed) by @lc6464
+- **docker:** run self-built images as root for parity with release (#2435) (5e44a99) by @Guoguo
+- **test:** skip TestPrepareCommand_AppliesUserEnv on unsupported operating systems (#2434) (a9720da) by @wenjie
+- **tools:** message tool no longer suppresses reply to originating chat (#2180) (3e3b6ae) by @美電球
+- **feishu:** enrich reply context for card and file replies (#2144) (8b3e502) by @ywj
+- **gateway:** validate PID ownership and clean stale pid files (#2422) (7d16764) by @wenjie
+- **agent:** disable seahorse context manager on freebsd/arm (#2417) (330de0c) by @wenjie
+- **session:** restore thread and legacy compatibility (296077e) by @Hoshina
+- **config:** migrate legacy bindings and optimize session resolve (27db03e) by @Hoshina
+- use per candidate provider for model_fallbacks (#2143) (6ce0306) by @corevibe555
+- **web:** derive WebSocket URL from browser location instead of backend (#2405) (6a8552a) by @Guoguo
+- **gateway:** harden PID liveness handling and websocket proxy state (#2403) (7bf6cbe) by @wenjie
+- **seahorse:** correct bm25 rank semantics in comments (#2360) (f0e6b7a) by @Liu Yuan
+- **build:** gate seahorse context manager on unsupported platforms (#2384) (661ce5e) by @wenjie
+- **docker:** add -console flag and open network for launcher (#2314) (9ec2783) by @Guoguo
+- **tool:** clarify write_file nested-JSON escape semantics and add tests (#2320) (71337b6) by @LC
+- avoid duplicate v in CLI help banner (cbd0798) by @Robert Bopko
+- **web:** improve logs panel scroll handling (#2305) (bd56e10) by @wenjie
+- **channels:** fail fast when all channel startups fail (#2262) (257aa0f) by @SakoroYou
+- **api:** enhance model availability probing with backoff and caching mechanisms (#2231) (f327859) by @LC
+- **agent:** prevent double-counting system message tokens in estimator Treat SystemParts as an alternative representation of message Content rather than an additive one. This prevents systematic overestimation of system message tokens which could trigger premature context pruning or summarization. - Picks the maximum of Content vs. SystemParts to stay conservative. - Adds a per-part overhead (20 chars) to account for JSON metadata. - Streamlines the ReasoningContent counting logic. Fixes a deficiency where structured blocks for cache-aware adapters caused overestimated budgets or hidden overflows. (1a44752) by @Badgerbees
+- **agent:** include SystemParts in token estimation and add reasoning guards (93f391a) by @Badgerbees
+- **web:** hydrate cached Pico token for websocket proxy (#2222) (dd54601) by @wenjie
+- **tools:** message tool no longer suppresses reply to originating chat (89af3b2) by @smallwhite
+- **utils:** honor Retry-After for 429 retries (cd3f660) by @Alix-007
+- **web:** skills page uses theme colors for dark mode (#2166) (93f4c4a) by @沈青川
+- **web/config:** persist Discord token updates from channel settings (#2024) (a4574f7) by @Alix-007
+- **cron:** publish agent response to outbound bus for cron-triggered jobs (#2100) (e414b82) by @沈青川
+- **feishu:** skip empty random_reaction_emoji entries (4309554) by @imalasong
+- unified restart required (#1978) (27f638e) by @肆月
+- **weixin:** persist context tokens to disk to survive restarts (#2124) (11dec0c) by @champly
+- resolve typecheck errors in loop_test.go and dingtalk_test.go (#2122) (62d40a0) by @Guoguo
+- **dingtalk:** honor mention-only groups and strip leading mentions (#2054) (b6951b6) by @Alix-007
+- **loop:** polling (#2103) (230942d) by @Mauro
+- **agent:** use light provider for routed model calls (#2038) (e011284) by @xiwuqi
+- **chat:** add break-words class to user message for better text wrapping (b5e29ae) by @lc6464
+- **config:** array placeholder (d385491) by @afjcjsbx
+- **config:** disable tool feedback by default (#2026) (5c210e6) by @Alix-007
+- **providers:** improve context overflow detection and classification (97dec16) by @Badgerbees
+- **release:** ignore nightly tags in goreleaser changelog (#1999) (e4f4afc) by @Guoguo
+- correct struct field alignment for gci (123b9db) by @hezixu
+- **build:** disable Matrix gateway import on freebsd/arm (51f8285) by @wenjie
+- **lint:** remove CGO_ENABLED=0 for lint and fix (#1989) (95204db) by @Luo Peng
+- **agent:** suppress heartbeat tool feedback (#1937) (85dfb34) by @xiwuqi
+- more accurate deny pattern for disk wiping (ae021ef) by @kathent
+- **config:** persist disabled placeholder settings (#1902) (9fb01bc) by @xiwuqi
+- **build:** exclude matrix on unsupported mipsle and netbsd targets (#1975) (2ccac18) by @Luo Peng
+- agent triggered on empty message in telegram (#1927) (08fa9bb) by @Christoforus Surjoputro
+- **pico:** use O(1) session indexing and harden websocket concurrency handling (#1970) (6aff5b7) by @LC
+- **ci:** Make CI happy (74a9dca) by @RussellLuo
+- **config:** remove stale wecom security merge fields (cd48c3b) by @Hoshina
+- **linter:** fix ci lint err (11b6b10) by @Hoshina
+- **web:** auto-configure Pico channel on launcher startup (dea99da) by @wenjie
+- **web:** persist api_key when adding models (#1958) (ffbcbea) by @wenjie
+- **config:** normalize empty security config before save/load (#1956) (d23c24c) by @wenjie
+- apply security credentials before config validation in web handlers (b17cbe5) by @daming大铭
+- **web:** ensure at least 40% of the characters are hidden for api key (6e31f15) by @daming大铭
+- **web:** ensure at least 40% of the characters are masked for api key (f1ac1a1) by @lc6464
+- **chat:** avoid full secret exposure for 7-char secrets (#1942) (ce16190) by @LC
+- **qq:** preserve filenames in file uploads (#1913) (f06173a) by @美電球
+- apply security credentials before config validation in web handlers (1f9d390) by @Kristjan Kruus
+- **agent:** use ModelName in loop tests (#1923) (4e3769e) by @美電球
+- **provider:** deduplicate tool results and merge consecutive tool_result blocks for Anthropic API (#1793) (f81b44b) by @Liqiang Liu
+- **agent:** use ModelName in loop tests (1961aab) by @lc6464
+- **api:** include auth header in local model probe (#1896) (d014f3e) by @xiwuqi
+- restore missing assets and address Copilot review comments (48cba90) by @BeaconCat
+- **agent:** route reasoning_content to reasoning channel (336d5d4) by @xiwuqi
+- **lint:** run golangci-lint fmt to fix golines/gci struct tag formatting (4bc6449) by @BeaconCat
+- **lint:** fix golines/gci formatting in WebToolsConfig (c786f35) by @BeaconCat
+- **lint:** fix gci import formatting in config.go (b150d7d) by @BeaconCat
+- **lint:** fix golines line length in WebToolsConfig struct (30db993) by @BeaconCat
+- **lint:** align VoiceConfig env tags (fca0158) by @RussellLuo
+- resolve merge conflict markers in README files (724cc1b) by @yinwm
+- **test:** mock gateway health check in status tests (1984bb5) by @yinwm
+- **agent:** fix subturn panic result, hard abort rollback, and drain bus exit (7868c58) by @Administrator
+- **tool:** route binary outputs through the media pipeline. (df4f322) by @afjcjsbx
+- **qq:** send long audio as file (2c31744) by @Hoshina
+- **chat:** preserve blank lines and add input hint (7eaadfd) by @lc6464
+- **identity:** support negative integers in isNumeric for Telegram group IDs (bc0be17) by @Badgerbees
+- add fallback DNS resolver for Android with multi-DNS support (#1835) (0fe0582) by @liqianjie
+- check json.Decode errors and use errors.New instead of fmt.Errorf (2a28198) by @perhapzz
+- lint err (2b3c95b) by @Hoshina
+- lint err (a65e0e9) by @Hoshina
+- **agent:** separate empty-response and tool-limit fallbacks (82d574e) by @Alix-007
+- **test:** reduce blank identifiers to comply with dogsled linter (e71ef37) by @Administrator
+- **agent:** rebind provider after /switch model to (#1769) (276a0cb) by @Alix-007
+- **provider:** skip empty anthropic tool names (#1772) (05c65d2) by @Alix-007
+- **config:** model_list inherits api_key/api_base from providers (#1786) (38e1fe4) by @Bijin
+- **agent:** avoid process exit on exec init failure and add regression test (#1784) (844a4ee) by @SakoroYou
+- **tools:** prevent nil pointer dereference in spawn tools (29a161e) by @Administrator
+- **tools:** propagate tool registry to subagents (#1711) (eb86e10) by @Paolo Anzani
+- Avoid failure of the main agent process due to tool call failures  (#1023) (f93d2b4) by @linhaolin1
+- **anthropic:** skip tool calls with empty names to prevent API errors (#1739) (54654d2) by @Darren.Zeng
+- **feishu:** invalidate cached token on auth error to enable retry recovery (#1318) (3e9b7ce) by @Vast-stars
+- **agent:** implement Critical flag, complete tools.SubTurnConfig, remove redundant subTurnResults (3611034) by @Administrator
+- **telegram:** improve HTML chunking and preserve word boundaries (#1651) (a1e8ee5) by @badgerbees
+- **agent:** resolve subturn deadlocks, panics and context retry state (e20ff43) by @Administrator
+- **agent:** prevent duplicate history during subturn context recoveries (c7ea018) by @Administrator
+- retry on dimension failure for tg media upload (#1409) (f12c09b) by @Zenix
+- **cron:** update test to use OutboundChan instead of removed SubscribeOutbound (61a899c) by @Liu Yuan
+- Fixed the bug where the bus was closed and consumers had unfinished messages. (#1179) (9c31b0c) by @juju
+- **config:** start model round robin from the first match (fcf406b) by @Alix-007
+- **backend:** add no-cgo tray fallback for darwin and freebsd (#1691) (3e33d10) by @wenjie
+- proxy WebSocket through web server port (#1665) (1120718) by @Liu Yuan
+- **tools:** normalize whitelist path checks for symlinked allowed roots (#1660) (cef0f28) by @wenjie
+- **agent:** enhance SubTurn robustness and fix race conditions (12a8590) by @Administrator
+- **providers:** handle nil input in GLM series tool_use blocks (8d97896) by @Zane Tung
+- **agent:** forceCompression recovers from single oversized Turn (c63c644) by @xiaoen
+- **agent:** prevent double result delivery and panic bypass in SubTurn (672d11c) by @Administrator
+- **agent:** resolve race conditions and resource leaks in SubTurn (3c2d373) by @Administrator
+- **agent:** resolve critical race conditions and resource leaks in SubTurn (6b5d7e3) by @Administrator
+- **logger:** show first/last 4 chars of bot token for identification (64ceb5a) by @Dmitrii Balabanov
+- **logger:** mask bot tokens in 3rd-party logger output (8fc36a4) by @Dmitrii Balabanov
+- use fileEvent instead of event when appending fields for file logger (1ace296) by @Argobell
+- **web:** refactor pico chat flow and fix proxied websocket URLs (#1639) (c513ad2) by @wenjie
+- **agent:** findSafeBoundary returns 0 for single-Turn history (edbdc3b) by @xiaoen
+- **agent:** correct media token arithmetic and tool call double-counting (8034ee7) by @xiaoen
+- **agent:** preallocate messages slice in budget test (efd4032) by @xiaoen
+- **agent:** include ReasoningContent and Media in token estimation (d5fdd5e) by @xiaoen
+- **agent:** forceCompression must not assume history[0] is system prompt (9c65d78) by @xiaoen
+- Use secure defaults for Pico channel setup and stop leaking the token in the URL (#1563) (71e2b63) by @BitToby
+- **heartbeat:** ignore untouched default template (5660b8f) by @duomi
+- **provider/azure:** lint err (f7dd040) by @Hoshina
+- **cron:** default scheduled jobs to agent execution (f71eaaf) by @Hoshina
+- **tools:** harden whitelist path resolution (bb1a414) by @Hoshina
+- **tools:** allow sandbox access to temp media files (1bc05e8) by @Hoshina
+- **qq:** populate account bindings metadata (#1456) (c68b4f3) by @Alix-007
+- safety guard incorrectly blocks commands with URLs (#1254) (6b72326) by @Hakancan
+- **identity:** prevent allowlist ID entries from matching usernames (#1406) (4ccea5e) by @美電球
+- **claude_cli:** surface stdout in error when CLI exits non-zero (56fb0dc) by @Eric Jacksch
+- **skill:** tighten weather location matching guidance (047a9bb) by @李龙 0668001470
+- **line:** limit webhook request body size to prevent DoS (#1413) (19835b2) by @don
+- **matrix:** stream inbound media downloads to disk (#1436) (8f49af9) by @Horsley Lee
+- **web:** correct SVG MIME type to image/svg+xml (e4460d3) by @曾文锋0668000834
+- **web:** render ansi logs with wrapped lines (#1425) (d18a319) by @wenjie
+- **nightly:** reuse single nightly tag, no per-day tags (#1415) (6460a0a) by @Guoguo
+- **web:** allow horizontal scroll in raw json editor (#1386) (b5bd434) by @Alix-007
+- **channels:** stop stale typing loops on overwrite (#1392) (3bcbfd9) by @Alix-007
+- **telegram:** stop typing indicator when LLM fails or hangs (dc037f0) by @kiannidev
+- **openai_compat:** improve prompt_cache_key host matching (#1387) (6612ca0) by @Mahendra Teja
+- **openai_compat:** accept object tool call arguments (#1292) (49204df) by @amagi
+- **config:** support Chinese comma separator in allow_from environment variables (#1301) (8431fa3) by @Darren.Zeng
+- **openai_compat:** only send prompt_cache_key to OpenAI endpoints (#1353) (4a80c6f) by @Mahendra Teja
+- use native textarea scrolling for raw config editor (fcf9545) by @XYSK-lilong007
+- **agent:** initialize MCP in direct agent mode (#1361) (9b0a48a) by @Congregalis
+- **security:** harden unauthenticated tool-exec paths (#1360) (8c2a933) by @wenjie
+- skip meta json files during session migration (#1340) (e74820c) by @wenjie
+- resolve gateway binary path, pass --config flag, and clarify empty model error (#1337) (d5cbf19) by @Cage
+- **session:** sanitize '/' and '\' in session keys so forum topic keys don't create invalid paths (2e3e678) by @statxc
+- Add IsForum check so only forum topic threads get session isolation, not regular group reply threads (320fcd1) by @statxc
+- solve Lint errors (3f1e89d) by @statxc
+- retryLLM return empty (#1264) (ba4b702) by @lxowalle
+- **matrix:** satisfy golines in mention regex test (fb2bfe4) by @horsley
+- **feishu:** 用 crypto/rand 选择随机表情并修正示例配置 (6aa1d02) by @mutezebra
+- **matrix:** bound room cache and align temp media dir (6e16ac7) by @horsley
+- **ci:** resolve linter and security check failures (cd955d7) by @horsley
+- **matrix:** improve group mention detection (64b99b3) by @horsley
+- remove redundant SplitMessage in Send() per review feedback (f07dbd1) by @I Putu Eddy Irawan
+- resolve openai compat lint issues (53cba73) by @amagi
+- improve openai compat HTML response handling (6eaa49f) by @amagi
+- address review feedback from @mengzhuo (a89ba06) by @Amir Mamaghani
+- handle zero values in cron schedule type assertions (#1147) (7f6d95c) by @Qiaochu Hu
+- disable closing custom model dialog by clicking backdrop (#1180) (ac37d6b) by @wangyanfu2
+- **routing:** address review feedback on CJK estimation and observability (b84adac) by @xiaoen
+- **tools:** make exec tool timeout configurable via config (e0d2be3) by @wangyanfu2
+- improve error handling for non-JSON responses by checking content type and using a streaming JSON parser. (c1a3876) by @amagi
+- resolve gci lint errors in IRC channel files (1604582) by @Amir Mamaghani
+- resolve merge conflicts in wecom error handling (03d6ad4) by @Yasuhiro Matsumoto
+- resolve govet shadow and golines lint errors in wecom channels (b878272) by @Yasuhiro Matsumoto
+- **agent:** respect global skills toggle for skill tools (f046ba5) by @esubaalew
+- background task results silently dropped (968fff0) by @Boris Bliznioukov
+- handle ignored io.ReadAll errors across codebase (9433851) by @Yasuhiro Matsumoto
+- **openai_compat:** handle html error bodies and reduce allocations (9216cd1) by @qs3c
+- **skills:** use --registry flag value as registry name (ab120af) by @cornjosh
+- **skills:** retry ClawHub requests on 429 (7a2fdc2) by @qs3c
+- **exec:** block kill command pattern in safety guard (5c599d2) by @mosir
+- eliminate data races on shared tool instances (#1080) (aef1e8e) by @Boris Bliznioukov
+- update provider count in migration test to include Avian (0c97cb3) by @Kyle D
+- **openai_compat:** avoid predeclared identifier in preview (a305c0a) by @amagi
+- use queue-based re-splitting for HTML expansion validation (bd0018a) by @I Putu Eddy Irawan
+- pass original markdown to sendHTMLChunk for plain-text fallback (3de4cb8) by @I Putu Eddy Irawan
+- **memory:** fsync appended message for consistent durability (f9f726c) by @xiaoen
+- **openai_compat:** clarify HTML response errors (4946a8b) by @qs3c
+- **discord:** prevent duplicate link expansion and add regex tests (e061636) by @王路路
+- **discord:** prevent cross-guild message leakage in link expansion (3826333) by @王路路
+- add LiteLLM to env overrides and fix malformed .env test (e503c87) by @I Putu Eddy Irawan
+- **agent:** invalidate system prompt cache for global/builtin skills (#845) (3902061) by @pikaxinge
+- add HTTP status code check in BraveSearchProvider (7de4cc5) by @wangyanfu2
+- resolve linter issues (gci import grouping, gofumpt, govet shadow) (6ccb68c) by @shikihane
+- **feishu:** address PR #1000 review comments from @xiaket (fa1cb9c) by @Hoshina
+- **agent,openai_compat:** address review feedback on vision pipeline (8ebeefc) by @shikihane
+- tighten HTML-expansion test to stay under chunk size (0e810a2) by @I Putu Eddy Irawan
+- add kimi-code migration alias and User-Agent test (2fc8798) by @I Putu Eddy Irawan
+- format long lines in telegram_test.go to satisfy golines linter (df53f44) by @I Putu Eddy Irawan
+- **feishu:** remove dead fetchBotOpenID stub and fix misleading comment (595de78) by @Hoshina
+- **feishu:** address review findings (42eb6ea) by @Hoshina
+- **feishu:** resolve lint issues (0bee9d7) by @Hoshina
+- **mcp:** resolve TOCTOU race condition and resource leak (78aba70) by @yinwm
+- **wecom:** resolve upstream rebase conflicts after channel refactor (2e0be92) by @esubaalew
+- **wecom:** replace dedupe map rotation with circular queue (29e9b6b) by @esubaalew
+- **wecom:** correctly retain boundary message during dedupe map rotation (8640c81) by @esubaalew
+- **wecom:** remove message-dedupe data races in bot/app channels (18d8993) by @esubaalew
+- **routing:** resolve golines, gosmopolitan and misspell lint failures (09e68cb) by @xiaoen
+- **wecom:** handle empty response by encrypting and returning a default response (edd339e) by @Zhang Rui
+- **wecom:** improve error message for response_url delivery failure (619948f) by @Zhang Rui
+- **wecom:** update CanonicalID generation to use identity.BuildCanonicalID for consistency (55c556a) by @Zhang Rui
+- **wecom:** improve error handling in sendViaResponseURL and remove task on failure (79b7fb7) by @Zhang Rui
+- **docs:** update WeCom AI Bot timeout duration in README and improve streamTask comments (81f6787) by @Zhang Rui
+- **docs:** update WeCom AI Bot task timeout duration in README (4a87090) by @Zhang Rui
+- **wecom-aibot:** correct variable name in JSON parsing in message callback handler (c7d4012) by @Zhang Rui
+- **openai_compat:** preserve reasoning_content in serializeMessages (a4e5c39) by @shikihane
+- **tools:** allow /dev/null redirection and add read/write sandbox split (#967) (d5370c9) by @Huang Rui
+- error check on state (#864) (b263375) by @Mauro
+- return fetched content to LLM in web_fetch tool (#833) (fc9f1ec) by @Luca Martinetti
+- improve error handling in GitHub Copilot provider (#919) (71bdeb4) by @GhostC
+- preserve reasoning_content in multi-turn conversation history (9efdde2) by @winterfx
+- **tools:** close resp.Body on retry cancel and cache http.Client instances (#940) (44a52c0) by @Tong Niu
+- **onboard:** use AGENTS.md template instead of AGENT.md (#931) (b3c3b02) by @Owen Wu
+- **skills:** use registry-backed search for skills discovery (#929) (cadcdc0) by @DM
+- improve MCP tool name collision safety and registry overwrite warning (a2591e0) by @yuchou87
+- correct MCP server install test in test-docker-mcp.sh (0eec640) by @yuchou87
+- address PR review feedback for MCP tools support (ef738f4) by @yuchou87
+- address Copilot review feedback on PR #932 (81aeaf1) by @I Putu Eddy Irawan
+- migration ModelName, reasoning_content, shell regex, loop boundary (ee5b618) by @I Putu Eddy Irawan
+- **wecom:** fix context leak in Start() and data race in processedMsgs (e9b4886) by @Hoshina
+- **wecom:** initialize context in constructors to prevent nil panic in tests (8e06e2a) by @Hoshina
+- **wecom:** use channel context instead of HTTP request context for async message processing (62f59f7) by @Hoshina
+- propagate error when no channels are enabled during startup (#897) (6c8866d) by @wenjie
+- **whatsapp_native,agent:** fixes for resource leak and log noise (871b2d7) by @Hoshina
+- **agent:** correct misspelling of 'canceled' (7f425f1) by @Hoshina
+- **whatsapp_native,agent:** address second round of review feedback (d1b10a0) by @Hoshina
+- **whatsapp_native:** close TOCTOU race between eventHandler and Stop (fc28c26) by @Hoshina
+- **whatsapp_native,agent:** address PR #884 review feedback (9b80fdf) by @Hoshina
+- max payload size in web fetch (a9a3075) by @afjcjsbx
+- **agent:** prevent reasoning goroutine accumulation on full bus (1d0220f) by @Hoshina
+- **whatsapp_native:** fix goroutine and resource leak in Start/Stop lifecycle (c7d75a1) by @Hoshina
+- **config:** keep empty agents.defaults.model in saved config (1161aee) by @mosir
+- **lint:** format imports in agent_id_test (f2a71ca) by @Petrichor
+- set max tokens to 32k, default model to null (#858) (29d4019) by @lxowalle
+- **agent:** resolve fallback model aliases from model_list (3a38623) by @Yiliu
+- **providers:** support lookup-based fallback candidate resolution (fb96645) by @Yiliu
+- resolve wastedassign lint warnings in channel subpackages (ba98069) by @Hoshina
+- port main branch changes to channel subpackages after rebase (35a035b) by @Hoshina
+- **bus:** increase message bus buffer size from 16 to 64 (1d4fe46) by @Hoshina
+- **media:** separate import groups for gci linter (0a7c929) by @ex-takashima
+- **media:** use project logger and harden map cleanup (94aa2b1) by @ex-takashima
+- **line:** log loading refresh errors, skip typing without recorder (61eae92) by @ex-takashima
+- **memory:** use SetHistory in migration for crash idempotency (e810331) by @xiaoen
+- **memory:** write meta before JSONL rewrite for crash safety (9c72317) by @xiaoen
+- **memory:** always reconcile line count in TruncateHistory (1f0b852) by @xiaoen
+- **providers:** support per-model request_timeout in model_list (#733) (438f764) by @Yiliu
+- **memory:** bound lock memory and increase scanner buffer (d55e554) by @xiaoen
+- **media:** guard Interval<=0 panic, two-phase ReleaseAll (d804f9c) by @ex-takashima
+- **media:** address review comments on TTL cleanup (b705e58) by @ex-takashima
+- hide compressed historical messages notification (#799) (8f60673) by @lxowalle
+- exclude prompt_cache_key for Gemini API requests (ea90242) by @임창욱
+- remove redundant tools definitions from system prompt (#771) (740cdca) by @Zhaoyikaiii
+- cache system prompt with mtime-based auto-invalidation (#607) (1f7cbd9) by @Zhaoyikaiii
+- **channels:** address PR #734 review comments (c241c55) by @Hoshina
+- reject empty task in spawn tool (#740) (ec6da7a) by @Achton Smidt Winther
+- distinguish network timeouts from context window errors (a4b6cea) by @Nikita Nafranets
+- implement code review suggestions (d09c64f) by @Lixeer
+- **channels:** fix memory hazards in channel abstraction layer (72e897f) by @Hoshina
+- handle multi-tool-call orphan detection in sanitizeHistoryForProvider (b47a39a) by @winterfx
+- align map values for proper formatting (01e2354) by @yinwm
+- add generate dependency to test and vet Makefile targets (89bc7aa) by @esubaalew
+- prevent DefaultConfig template values from leaking into user model_list entries (0d761ca) by @yangmanqing
+- add CGO_ENABLED=0 for static build to fix cross-platform GLIBC errors (8405d39) by @root
+- **security:** ensure custom deny patterns extend defaults instead of replacing them (#479) (09b1992) by @Goksu Ceylan
+- **security:** change gateway default bind to 127.0.0.1 (#393) (2fa51d7) by @0x5487
+- align Docker Go version with go.mod and optimize logger (#596) (8a53cb9) by @Chujiang
+- address PR #662 review comments (bus drain, context timeouts, onebot leak) (6852f24) by @Hoshina
+- make install should be aware of the textfile busy since it tries to overwrite the file with non-atomic operation (#558) (6d487a1) by @Zenix
+- **security:** workspace sandbox avoid time-of-check/time-of-use (TOCTOU) races (#464) (19c6983) by @0x5487
+- address PR review feedback across channel system (f645e9a) by @Hoshina
+- resolve golangci-lint issues in channel system (5d304a9) by @Hoshina
+- run fmt and lint (3d605a4) by @Lixeer
+- better session management for `github_copilot_provider` (a849e02) by @Lixeer
+- remove extra fields from ToolCall JSON serialization (34a8ce5) by @Edouard CLAUDE
+- should use fmt.Printf instead of fmt.Print(fmt.Sprintf(...)) (#623) (cec6fd4) by @Yoftahe Abraham
+- **mcp:** validate workspace before resolving relative env_file (16a3b96) by @yuchou87
+- resolve Groq STT key from model_list when providers.groq is absent (#602) (b9a6624) by @kernoeb
+- updated model configuration links at readme (#544) (c51ceac) by @Albert Simon
+- preserve reasoning_content for OpenAI-compatible reasoning models (d224397) by @winterfx
+- golangci-lint run --fix (b25b3c1) by @Hoshina
+- golangci-lint run --fix (0066602) by @Hoshina
+- golangci-lint fmt (3df7f70) by @Hoshina
+- **mcp:** prevent use-after-close race between CallTool and Close (cfc29a1) by @yuchou87
+- **mcp:** include server name and cause in Close() errors (d2b3fc1) by @yuchou87
+- **mcp:** reject empty keys in loadEnvFile (33058b5) by @yuchou87
+- **mcp:** guard against nil result from CallTool (246fdf3) by @yuchou87
+- **scripts:** specify service name in docker compose build (fb2b594) by @yuchou87
+- correct docs misalignment across translations and guides (838a690) by @esubaalew
+- revert enable endy patterns (#519) (f1223ee) by @lxowalle
+- **channels:** channels session key routing (#489) (4adafa8) by @hsohinna
+- **config:** allow duplicate model_name for load balancing (7572e3b) by @yinwm
+- **migrate:** add github_copilot to supportedProviders (a1d694b) by @yinwm
+- remove unnecessary lock mechanism and upgrade Claude 3 to Claude 4 (5cd1597) by @yinwm
+- **auth:** preserve model_list and use gpt-5.2 for Codex API (6ad85d2) by @yinwm
+- Templates update (#485) (394d1d1) by @cointem
+- **agent:** avoid consecutive system messages in compression (1e96733) by @yinwm
+- keep Discord typing indicator alive during agent processing (#391) (2132740) by @Jex
+- **agent:** use fallback workspace path for MCP initialization (a7a4e88) by @yuchou87
+- **mcp:** prevent race condition between CallTool and Close (f1b7984) by @yuchou87
+- **mcp:** ensure proper environment variable override semantics (7577414) by @yuchou87
+- **agent:** scope MCP manager cleanup to successful initialization (ffa0198) by @yuchou87
+- ensure tool name is correctly assigned in LLM iteration(missing tool call name in debug mode logs) (#454) (12f0c4a) by @tpkeeper
+- **config:** support legacy config without provider field (58b5e21) by @yinwm
+- improve migration logic and reduce code duplication (ec86b21) by @yinwm
+- also use max_completion_tokens for gpt5 era models (#445) (bb0424e) by @fipso
+- add VLLM default API base and implement MaxTokensField support (09a0d19) by @yinwm
+- Add comprehensive command injection and system abuse prevention patterns (#401) (01d694b) by @lxowalle
+- **exec:** terminate process tree on timeout (acac197) by @Luna Reed
+- codex tool call (0d16525) by @zenix.huang
+- remove max_tokens (4cd3f99) by @zenix.huang
+- **antigravity:** preserve thought signature on tool call parts (84110aa) by @mrbeandev
+- **antigravity:** sanitize invalid tool-call history ordering (99c3271) by @mrbeandev
+- **antigravity:** normalize tool calls to avoid empty function names (caf3913) by @mrbeandev
+- **antigravity:** update default model from gemini-3-flash-preview to gemini-3-flash (d1655d5) by @mrbeandev
+- strip antigravity prefix and improve model list for flash-preview (1765f6d) by @mrbeandev
+- **gemini:** preserve thought_signature in tool calls to prevent 400 errors (33915fb) by @mrbeandev
+- **Makefile:** update LDFLAGS and GOFLAGS for optimized build size (ad747e8) by @Boris Bliznioukov
+- **ci:** use env var for release tag (#342) (a961a2d) by @Guoguo
+- **agent:** register MCP tools after server initialization (0f6fadb) by @yuchou87
+- **agent:** ensure MCP cleanup on all Run() exit paths (2318232) by @yuchou87
+- **agent:** tie MCP connections to agent lifecycle context (aed7296) by @yuchou87
+- **tools:** preserve MCP tool InputSchema via JSON marshal/unmarshal (02c1792) by @yuchou87
+- **mcp:** resolve relative envFile paths against workspace directory (a4265b3) by @yuchou87
+- **mcp:** return aggregated error when all servers fail to connect (77d26e5) by @yuchou87
+- **security:** block critical symlink workspace escape (#188) (e3f65fc) by @Goksu Ceylan
+- tighten file perms and enforce Slack ACL checks (#186) (5c321a9) by @is-Xiaoen
+- **docker:** use service names instead of --profile flag for build (e91e716) by @yuchou87
+- **docker:** add profiles to build commands (fcedba1) by @yuchou87
+- **docker:** correct uv installation path (1764181) by @yuchou87
+- **docker:** ensure uv is accessible in system PATH (1c9c320) by @yuchou87
+- **docker:** override entrypoint in test script to avoid interactive mode (b9c2b35) by @yuchou87
+- codex agent 400 error (#102) (0cb9387) by @Zenix
+- resolve multiple bugs from code review #116 (0a88ff0) by @xiaoen
+- **http_provider:** Remove extra parameter from CreateProvider function. (16e5a02) by @Lixeer
+- not used result (4b886b6) by @Lixeer
+- PR workflow execution failure (9eb1a53) by @lxowalle
+- openclaw crash because of empty config (6c392c3) by @Lixeer
+- Remove the waiting animation for Telegram replies to reduce the risk of being rate-limited. (dbf2739) by @lxowalle
+- improve connection handling in OneBotChannel (8cff6cf) by @Hoshina
+- update BotStatus type in oneBotRawEvent and adjust status checks (773ce9b) by @Hoshina
+- **codex:** include required instructions and improve account-id extraction (da804a0) by @qiaoborui
+- **auth:** align OpenAI OAuth authorize URL and params (7304ab7) by @qiaoborui
+- update tests to match upstream API changes (6463796) by @ex-takashima
+- correct index bug in extractCodeBlocks and extractInlineCodes (1e17bac) by @zeo
+- **version:** default to dev (#95) (92b8710) by @Guoguo
+- resolve code review issues in tool-result-refactor (474f3db) by @yinwm
+- use cmd /c on Windows for shell command execution (53c69ae) by @mxrain
+- **heartbeat:** resolve bug where service could never start (bab78de) by @Together
+- **auth:** handle string interval in device-code login (a7bbda1) by @Jared Mahotiere
+- **agent:** use atomic.Bool for AgentLoop.running to prevent data race (eff0f49) by @Together
+- **cron:** add one-time reminders and fix data paths to workspace (4bc9e2d) by @yinwm
+- enable Feishu message flow (f3f7ca7) by @Guoguo
+
+### Documentation
+- **design:** summarize hardware support and serial limits (2baeee2) by @SiYue-ZO
+- fix agents.defaults model configuration format (f62e862) by @dtapps
+- **events:** remove stale subturn event names (f4a2461) by @Hoshina
+- **events:** align hook design with runtime observation (fce8004) by @Hoshina
+- update documentation for Gemini native protocol (#2601) (b798fa4) by @LC
+- update wechat qrcode (#2604) (4e2f80b) by @Guoguo
+- add session and routing documentation (#2571) (9fe6782) by @美電球
+- reorganize docs by type and add layout guidance (#2567) (15a3560) by @Guoguo
+- fix broken wecom link in Malay README (16d174e) by @wenjie
+- add section index pages and fix localized doc links (610f68a) by @wenjie
+- **agent-refactor:** document loop.go file split (b0d3f19) by @sky5454
+- update wechat qrcode (8ca89c4) by @Guoguo
+- fix Conventional Commits links in CONTRIBUTING files (#2494) (2b2bc26) by @Guoguo
+- **tool:** use provider-agnostic JSON escaping guidance (8f7eae8) by @k
+- add Korean README translation (862421b) by @k
+- optimize readme for android (#2272) (03b97e4) by @lxowalle
+- **config:** remove legacy bindings guide (82bfe0d) by @Hoshina
+- update support android news (#2228) (ff90a65) by @lxowalle
+- document gateway.log_level in all READMEs and i18n configuration docs (#2178) (b67d3cf) by @BeaconCat
+- **wecom:** add fr/ja/pt-br/vi translations for unified WeCom channel docs (465ca03) by @Guoguo
+- add Malay README and docs, add v0.2.4 news to all languages (836cbc3) by @BeaconCat
+- update WeCom channel docs and README provider/channel tables (ba96f11) by @BeaconCat
+- add Malay language (#1770) (d7c0205) by @Muhammad Asyraf
+- add macOS Gatekeeper bypass guide to WebUI Launcher section (5d0cf36) by @BeaconCat
+- update WeChat QR code and TUI launcher screenshot (#2109) (c6061dd) by @BeaconCat
+- **providers:** clarify automatic model failover cascade (9f02a5f) by @Alix-007
+- Add Z.AI Coding Plan provider example (5db5717) by @pete
+- clarify gateway.log_level default and options (#2013) (#2015) (9d6a445) by @Alix-007
+- clarify gateway vs launcher chat endpoints (#2025) (9503f38) by @Alix-007
+- update WeChat community QR code (#2003) (a97d433) by @BeaconCat
+- **configuration:** add security config reference at document start (6b1d08f) by @Huangting-xy
+- clarify cron disabled execution behavior (59babde) by @Alix-007
+- add cron job behavior guide (f30f57b) by @Alix-007
+- **wecom:** align docs with unified channel (94fe54b) by @Hoshina
+- **matrix:** Update docs (7f16365) by @RussellLuo
+- **wecom:** update examples and docs (b0bcf1d) by @Hoshina
+- **it:** add model command to CLI Reference (5790d3e) by @yinwm
+- sync CLI Reference across all README translations (6f1737e) by @yinwm
+- add `picoclaw model` command to CLI Reference (6df5ea1) by @yinwm
+- **voice:** Update docs for audio-transcription (92678d1) by @RussellLuo
+- **hooks:** inline and translate hook examples (9978c95) by @Hoshina
+- update alt text of wechat.png with a more meaningful description (f71a6ff) by @LC
+- update WeChat QRCode for README (e2e3e6d) by @lc6464
+- clean up README by removing duplicate sections (ab93c23) by @lc6464
+- **feishu:** note that Feishu channel does not support 32-bit devices (#1851) (6148ccc) by @BeaconCat
+- fix inaccuracies, add translations, and expand channel docs (#1837) (403ceb3) by @BeaconCat
+- describe how to disable "exec" tool (#1703) (16a7da7) by @Maksim
+- expand bindings guide with recipes and troubleshooting (#1788) (d715ff5) by @美電球
+- add Indonesian (Bahasa Indonesia) README translation (#1777) (bb59518) by @I Putu Eddy Irawan
+- add Italian language (3e2ce06) by @afjcjsbx
+- restructure READMEs and add i18n documentation (#1729) (363861c) by @BeaconCat
+- add project identity statement and normalize NanoBot capitalization across all READMEs (#1695) (5bc4fe4) by @BeaconCat
+- **exec:** document build tool guard limitation (da1fddc) by @Alix-007
+- **agent-refactor:** add context.md for Track 6 boundary clarification (08259d7) by @xiaoen
+- update wechat qrcode (#1564) (0f700a6) by @Guoguo
+- reorganize README badge layout with docs and wiki links (93369c0) by @horsley
+- add Ask DeepWiki badge to all README variants (de0dd24) by @horsley
+- update wechat qrcode (#1394) (b4d00c6) by @Guoguo
+- remove stale TOOLS.md references (#1388) (8cac29d) by @Mahendra Teja
+- update wechat qrcode (#1272) (457533b) by @Guoguo
+- add agent refactor working notes (726a87b) by @yinwm
+- update wechat qrcode (#1192) (b8f8e3f) by @Guoguo
+- add user, real_name, and request_caps to IRC example config (94b6b65) by @Amir Mamaghani
+- update license (#1131) (10ad9e8) by @lxowalle
+- **config:** expose summarization thresholds in config example (b394698) by @Oceanpie
+- update wechat qrcode (16209d1) by @Guoguo
+- fix review feedback from PR #916 (cd3a4e1) by @Hoshina
+- update wechat qrcode (#955) (25f26f3) by @Guoguo
+- sync READMEs, examples, and channel docs to match current config (c57a9c1) by @Hoshina
+- **channels:** add English README for channel system architecture (779e4df) by @Hoshina
+- **channels:** add Chinese README for channel system architecture (e5788e7) by @Hoshina
+- add issue 783 investigation and execution plan (99582bb) by @Yiliu
+- fix readme typo (#798) (851920d) by @lxowalle
+- update wechat qrcode (#767) (d1d19b1) by @Guoguo
+- add wechat and discord badge (#707) (8774526) by @Guoguo
+- update wechat qrcode (#705) (0434b49) by @Guoguo
+- fix typos, broken links and inconsistencies in README (#608) (6b55fb5) by @Ali Zulfiqar
+- add MCP tool configuration documentation (6aade43) by @yuchou87
+- add Chinese channel documentation (023b245) by @Hoshina
+- **config:** restore MCP server examples in config.example.json (59e9c55) by @yuchou87
+- Update Brave Search pricing - now $5/1000 queries (no free tier) (5d2674b) by @Truong Vinh Tran
+- Add SearXNG to example configuration file (a504385) by @Truong Vinh Tran
+- Add SearXNG web search provider documentation (25d8f0e) by @Truong Vinh Tran
+- **config:** add missing duckduckgo, exec, and qq sections to example config (be55204) by @CrisisAlpha
+- update providers deprecation comment (b7c906f) by @yinwm
+- add model_list configuration to all language READMEs (9f5ff95) by @yinwm
+- add French README (README.fr.md) (#408) (521359e) by @Edouard CLAUDE
+- **readme:** add brazilian accentuation on pt-br README (f8bd883) by @Daniel Venturini
+- update PR template (193fbca) by @lxowalle
+- add Brazilian Portuguese README (README.pt-br.md) (f820da4) by @Leandro Barbosa
+- fix allow_from typo in config examples (8428446) by @AlbertBui010
+- resolve conflict in README.ja.md (b833048) by @AlbertBui010
+- update manual auth instructions (d28fc0d) by @mrbeandev
+- add Vietnamese README (README.vi.md) (75fb728) by @AlbertBui010
+- add missing Chinese language link to Japanese README (ff3c875) by @Humaid Koreshi
+- **test:** document protocol architecture and migration compatibility (362c49a) by @Jared Mahotiere
+- add LINE channel setup instructions to README (7d45101) by @ex-takashima
+- update QQ Open Platform link to correct URL (11a6f5e) by @Hoshina
+- add security sandbox documentation (e0f702f) by @yinwm
+- add heartbeat documentation with spawn/subagent details (cef1e39) by @yinwm
+- Complete tool-result-refactor - All 21 user stories done (5582b6d) by @yinwm
+
+### Performance
+- precompute BM25 index for repeated searches (#2177) (5e7545a) by @mattn
+- refactoring collecting skills (#688) (6fe3920) by @mattn
+- **agent:** cache ListAgentIDs() result before MCP tool registration loop (11dbc30) by @yuchou87
+- **agent:** reduce memory footprint by storing minimal MCP dependencies (6892d00) by @yuchou87
+- **cron:** use read lock for concurrent reads in addJob (b594642) by @yinwm
+
+### Refactors
+- **pico:** unify message kind handling of tool_calls and thought (#2680) (c44bd61) by @LC
+- **events:** emit agent runtime events directly (795ee36) by @Hoshina
+- **events:** remove legacy agent event bus (b954e6b) by @Hoshina
+- **events:** split agent event payload types (b2249df) by @Hoshina
+- **events:** start runtime event consumer migration (d9717b5) by @Hoshina
+- **onboard,api:** harden copydir repo-root detection and use platform-neutral proc attrs naming (b4a5965) by @SiYue
+- support explicit provider field in model list entries (#2609) (77b0c43) by @lxowalle
+- **web:** switch dashboard auth from tokens to passwords (#2608) (71c877a) by @wenjie
+- **agent:** Agent Looper refactor phase2, restructure pipeline and rename loop files to agent (#2585) (329e68e) by @sky5454
+- **web:** secure Pico websocket access behind launcher auth (#2545) (74c98a5) by @Guoguo
+- **web:** secure Pico websocket access behind launcher auth (4b76196) by @wenjie
+- **docs:** reorganize docs by type and locale (4e1ceee) by @wenjie
+- **tools:** reorganize tool packages and facades (4c133dc) by @lc6464
+- **providers:** reorganize provider packages and facades (ee634dc) by @lc6464
+- **agent:** split loop.go into focused sub-packages (12d5421) by @sky5454
+- **tests:** extract common logic for fallback error handling into a helper function (2b84477) by @lc6464
+- make agent loop support parallel and update docs (f5e779e) by @Cytown
+- **agent:** simplify delegate registration gate (6ee6612) by @xiaoen
+- **web:** improve theme style element management in useHighlightTheme hook (5a2e779) by @lc6464
+- **web:** use official highlight themes for markdown (389f492) by @lc6464
+- **config:**  make config.Channel to multiple instance support (667fc85) by @Cytown
+- **line:** use official LINE Bot SDK v8 (fe51cd5) by @ex-takashima
+- **session:** tighten legacy boundary and tool context (3d60385) by @Hoshina
+- **agent:** normalize dispatch and outbound turn metadata (9f23ec2) by @Hoshina
+- **channels:** merge non-web fixes from main (528c57d) by @Hoshina
+- **config:** reconcile defaults with main (e6e724a) by @Hoshina
+- **runtime:** merge bus context and handled tool delivery (718a5e7) by @Hoshina
+- **web:** load channel configs without exposing secret values (#2277) (dad5dcc) by @wenjie
+- **routing:** remove legacy bindings config (19a01d4) by @Hoshina
+- **web:** resolve pico sessions from scope metadata (53482a1) by @Hoshina
+- **runtime:** drop non-session legacy context compatibility (59dee89) by @Hoshina
+- **session:** replace dm scope with dimensions policy (ca9652e) by @Hoshina
+- **context:** carry route and scope through runtime (e0ceea9) by @Hoshina
+- **agent:** carry inbound context through events and hooks (79de00f) by @Hoshina
+- **routing:** move session allocation out of router (fcab3a1) by @Hoshina
+- **agent:** route using inbound context (2095ec8) by @Hoshina
+- **channels:** emit inbound context in secondary adapters (963ed07) by @Hoshina
+- **channels:** emit inbound context in primary adapters (cf11ff7) by @Hoshina
+- **inbound:** add inbound context compatibility bridge (9cfa3c3) by @Hoshina
+- **cron:** remove deliver and type params, unify agent execution path (#2147) (1fc5345) by @daming大铭
+- **web:** clean up systray platform build files (a10036a) by @wenjie
+- **wecom:** rebuild ai bot channel (a1f95f0) by @Hoshina
+- **voice:** share audio format support and restrict transcriber selection (4d2b244) by @RussellLuo
+- seperate security.yml for store keys (e455eb5) by @Cytown
+- replace interface{} with any for improved type clarity (670b433) by @Administrator
+- improve code readability and consistency across multiple files (087e851) by @Administrator
+- update interface types to use 'any' and improve code formatting (955d6e7) by @taorye
+- enhance TUI configuration and user management with improved UI elements and concurrency (119cc2e) by @taorye
+- **subturn:** remove redundant system prompt handling in runTurn function (01c2f8d) by @Administrator
+- centralize environment variable key constants (#1730) (c07f5c9) by @dev-miro26
+- **backend:** add darwin no-cgo tray fallback (#1689) (174fbba) by @wenjie
+- **agent:** use Turn as the atomic unit for compression cut-off (639739c) by @xiaoen
+- **agent:** context boundary detection, proactive budget check, and safe compression (9c82b0b) by @xiaoen
+- **tools:** remove unused validatePath wrapper (345452f) by @Hoshina
+- **media:** centralize temp media dir path (b9aaad9) by @Hoshina
+- **web:** split gateway logs out of the status endpoint (#1504) (c69c48a) by @wenjie
+- update model name and add VolcEngine coding plan (#1412) (1e02432) by @Guoguo
+- **tools:** remove redundant kill -9 pattern (aa2d6b3) by @mosir
+- **skills:** reuse shared HTTP retry helper (536e9ac) by @qs3c
+- **discord:** self-review fixes for resolveDiscordRefs (c3e0290) by @王路路
+- parse Kimi API hostname once in constructor instead of per-call (e54b1d3) by @I Putu Eddy Irawan
+- **aibot:** remove downloadAndDecryptImage function to streamline image handling (23f48d7) by @Zhang Rui
+- **docs:** remove webhook_host and webhook_port from configuration examples (bf4445f) by @Zhang Rui
+- **config:** remove WebhookHost and WebhookPort from WeComAIBotConfig (d4824a0) by @Zhang Rui
+- **wecom:** simplify stream message structure by introducing WeComAIBotMsgItem and WeComAIBotMsgItemImage types (79bc06c) by @Zhang Rui
+- **wecom:** streamline AES encryption/decryption and improve task management logic (880c402) by @Zhang Rui
+- **wecom:** replace generateSignature with computeSignature and update related tests (8f3d611) by @Zhang Rui
+- **memory:** use fileutil.WriteFileAtomic and log corrupt lines (6d894d6) by @xiaoen
+- **modernize:** apply safe modernize fixes (222d1a3) by @Petrichor
+- **memory:** use sync.Map for session locks and skip-scan in readMessages (5d73ee2) by @xiaoen
+- **cli:** migrate to Cobra-based command structure (#429) (73f2780) by @Ruslan Semagin
+- **pkg:** move atomic file write to dedicated fileutil package (11996f1) by @mosir
+- **pkg/utils:** improve WriteFileAtomic with stronger durability guarantees (4aed359) by @mosir
+- cleanup dead code and turn on dead code detection in CI (#515) (100356e) by @Kai Xia(夏恺)
+- **pkg/utils:** add unified atomic file write utility (c56fced) by @mosir
+- **config:** rename model field to model_name (712f5a8) by @yinwm
+- **loop:** disable media cleanup to prevent premature file deletion (26bee0b) by @Hoshina
+- **channels:** move SplitMessage from pkg/utils to pkg/channels (a7276e2) by @Hoshina
+- **channels:** standardize group chat trigger filtering (Phase 8) (f8b656e) by @Hoshina
+- **channels:** remove channel-side voice transcription (Phase 12) (e007454) by @Hoshina
+- **channels:** consolidate HTTP servers into shared server managed by Manager (65a0920) by @Hoshina
+- **channels:** standardize Send error classification with sentinel types (d72c9c1) by @Hoshina
+- **bus:** fix deadlock and concurrency issues in MessageBus (afc7a19) by @Hoshina
+- **channels:** add per-channel rate limiting and send retry with error classification (38a26d7) by @Hoshina
+- **media:** add MediaStore for unified media file lifecycle management (038fdf5) by @Hoshina
+- **channels:** unify message splitting and add per-channel worker queues (a91de85) by @Hoshina
+- **channels:** unify Start/Stop lifecycle and fix goroutine/context leaks (c669784) by @Hoshina
+- **bus,channels:** promote peer and messageID from metadata to structured fields (931093c) by @Hoshina
+- **channels:** replace bool with atomic.Bool for running state in BaseChannel (d978483) by @Hoshina
+- **channels:** remove redundant setRunning method from BaseChannel (cd22272) by @Hoshina
+- **channels:** remove old channel files from parent package (59a889b) by @Hoshina
+- **channels:** add channel subpackages and update gateway imports (6122ab6) by @Hoshina
+- **channels:** replace direct constructors with factory registry in manager (083e29e) by @Hoshina
+- **channels:** add factory registry and export SetRunning on BaseChannel (dfcf15b) by @Hoshina
+- **auth:** extract supported providers message as constant (ea447c6) by @yinwm
+- **config:** use provider-specific protocol instead of generic openai protocol (c08deb9) by @yinwm
+- **providers:** restructure provider creation with protocol-based configuration (68cdafc) by @yinwm
+- replace bool map with set-style map for internal channels (#472) (32c5c4b) by @Ruslan Semagin
+- improve SplitMessage API clarity (e03124d) by @Hua
+- extract message splitting logic to shared utils (94a1b86) by @Hua
+- simplify legacy_provider.go from 349 to 49 lines (e1583f3) by @yinwm
+- reorganize commands and provider architecture (ef7078a) by @yinwm
+- **shell:** interpret zero timeout as unlimited execution (881999a) by @yinwm
+- **tools:** use MCPManager interface in NewMCPTool constructor (20f8bb2) by @yuchou87
+- **docker:** migrate to docker compose v2 syntax (c057423) by @yuchou87
+- **docker:** switch to node:24-bookworm-slim base image (51ed54a) by @yuchou87
+- **providers:** move anthropic logic to protocol package (762565b) by @Jared Mahotiere
+- **providers:** extract protocol factory and openai-compat transport (a6e885b) by @Jared Mahotiere
+- remove unused min func (1299b20) by @moveyield
+- Trim trailing slashes from the API base URL and enhance API error messages with status codes. (45351a6) by @Avisek
+- **version:** extract version formatting helpers and improve build info display (92490fe) by @yinwm
+- update tool registry usage and enhance WebSearchTool execution result handling (c86e121) by @Satyam Tiwari
+- **tools:** extract shared logic for internal channels and tool definitions (8851152) by @yinwm
+- **agent:** extract reusable tool loop and make subagents independent (0cce9fc) by @yinwm
+- **heartbeat:** add configurable interval and channel-aware routing (4dfa133) by @yinwm
+- **heartbeat:** simplify service with single handler and direct bus usage (8fbbb67) by @yinwm
+- **docker:** consolidate compose files and move config to config/ directory (759f4cf) by @Sunwood-ai-labs
+- **channels:** consolidate media handling and improve resource cleanup (5c8626f) by @yinwm
+- **tools:** remove duplicate truncate functions and add docs (c704990) by @yinwm
+- **agent:** improve code quality and restore summarization (af60ce2) by @yinwm
+
+### Other
+- Merge pull request #2705 from hehaijunandhenry/main (8508f80) by @美電球
+- Fix stop_mqtt_channel (569939a) by @hehaijunandhenry
+- Linter fixed (2287de5) by @hehaijunandhenry
+- 1 (f062cb4) by @hehaijunandhenry
+- Merge pull request #2413 from ex-takashima/refactor/line-sdk (01280ea) by @美電球
+- **deps:** bump i18next from 26.0.8 to 26.0.10 in /web/frontend (#2809) (3788e9e) by @dependabot[bot]
+- **deps:** bump react-i18next from 17.0.4 to 17.0.6 in /web/frontend (#2808) (c2044e5) by @dependabot[bot]
+- **deps-dev:** bump globals from 17.5.0 to 17.6.0 in /web/frontend (#2807) (7c8cd7c) by @dependabot[bot]
+- **deps:** bump @tabler/icons-react in /web/frontend (#2806) (f4338d3) by @dependabot[bot]
+- **deps:** bump shadcn from 4.3.0 to 4.7.0 in /web/frontend (#2804) (b7edd35) by @dependabot[bot]
+- **deps:** bump fyne.io/systray from 1.12.0 to 1.12.1 (#2803) (d0ab5ae) by @dependabot[bot]
+- **go:** bump Go to 1.25.10 to fix stdlib vulnerabilities (#2818) (1c25dcd) by @Mauro
+- Merge pull request #2801 from sipeed/dependabot/go_modules/github.com/google/jsonschema-go-0.4.3 (2834db1) by @Mauro
+- **deps:** bump github.com/google/jsonschema-go from 0.4.2 to 0.4.3 (e948106) by @dependabot[bot]
+- **line:** shorten long line for golines linter (41d6156) by @ex-takashima
+- Merge remote-tracking branch 'remotes/upstream/main' (e7c0dc8) by @hehaijunandhenry
+- Merge pull request #2531 from is-Xiaoen/feat/delegate-tool (658961b) by @美電球
+- Merge pull request #2762 from afjcjsbx/feat/stop-command (788cda5) by @Mauro
+- **deps:** bump @tailwindcss/vite from 4.2.2 to 4.2.4 in /web/frontend (#2734) (e3a05bd) by @dependabot[bot]
+- **deps:** bump github.com/larksuite/oapi-sdk-go/v3 (#2736) (0977f59) by @dependabot[bot]
+- **deps:** bump @tanstack/react-router in /web/frontend (#2733) (00742b0) by @dependabot[bot]
+- **deps:** bump i18next from 26.0.7 to 26.0.8 in /web/frontend (#2732) (0419497) by @dependabot[bot]
+- **deps-dev:** bump typescript-eslint in /web/frontend (#2730) (864bfa1) by @dependabot[bot]
+- **deps:** bump tailwindcss from 4.2.2 to 4.2.4 in /web/frontend (#2729) (c0bc8a3) by @dependabot[bot]
+- Merge pull request #2767 from afjcjsbx/fix/leaf-summary-target-validation (eb4e187) by @Mauro
+- Merge pull request #2773 from zhangxinping666/codex/fix-telegram-svg-media (0129da1) by @Mauro
+- Merge pull request #2731 from sipeed/dependabot/go_modules/github.com/aws/aws-sdk-go-v2/service/bedrockruntime-1.50.6 (5745957) by @Mauro
+- Merge pull request #2670 from david1gp/fix/tool-feedback-pretty-print (ba4abff) by @Mauro
+- Merge pull request #2764 from alexhoshina/main (71c4981) by @美電球
+- fix test (7a1f5fe) by @afjcjsbx
+- Merge pull request #2677 from alexhoshina/feat/runtime-events-plan (be67aed) by @Mauro
+- Merge pull request #2682 from dtapps/fix/docs-agent-defaults-model-format (f4a5d6e) by @Mauro
+- **deps:** bump github.com/aws/aws-sdk-go-v2/service/bedrockruntime (330aa29) by @dependabot[bot]
+- Merge pull request #2735 from sipeed/dependabot/go_modules/github.com/aws/aws-sdk-go-v2/config-1.32.17 (4e8bd73) by @Mauro
+- Merge pull request #2681 from afjcjsbx/fix/gemini-mcp-schema-sanitization (828a7cb) by @Mauro
+- Merge pull request #2717 from LiusCraft/feat/deepseek-vision-unsupported-error (490d907) by @Mauro
+- Merge pull request #2669 from david1gp/fix/network-error-retry (272dee3) by @Mauro
+- update WeChat group QR code (#2747) (a94ba82) by @BeaconCat
+- **deps:** bump github.com/aws/aws-sdk-go-v2/config (b792d8b) by @dependabot[bot]
+- Fix/build macos launcher failed (#2724) (6e1fab8) by @lxowalle
+- * fix build failed (#2723) (a741460) by @lxowalle
+- add MQTT channel support (5c04929) by @hehaijunandhenry
+- Add CLI support for custom OpenAI-compatible endpoints and remove TUI (#2710) (a36472b) by @taonyx
+- Merge pull request #2689 from afjcjsbx/fix/cron-session-key-propagation (db1bc6a) by @美電球
+- Add cross-platform serial tool support (#2673) (fc24676) by @Guoguo
+- **tools:** wrap serial lines for golines (bd867a1) by @SiYue-ZO
+- drop unrelated go generate change from serial work (29e7461) by @SiYue-ZO
+- keep go generate on host during cross builds (688d47d) by @SiYue-ZO
+- hardware/serial: fix darwin cross-compilation build (893e61d) by @SiYue-ZO
+- hardware/serial: improve windows I/O handling (64e4816) by @SiYue-ZO
+- hardware/serial: improve unix cancellation and timeout polling (1f0a5f4) by @SiYue-ZO
+- hardware/serial: tighten validation and error handling (338fa25) by @SiYue-ZO
+- fix test (23df824) by @afjcjsbx
+- Merge remote-tracking branch 'origin/fix/gemini-mcp-schema-sanitization' into fix/gemini-mcp-schema-sanitization (87ee76b) by @afjcjsbx
+- fix test (7b3e800) by @afjcjsbx
+- Merge branch 'main' into fix/gemini-mcp-schema-sanitization (c731ecd) by @Mauro
+- fix duplicate toolFeedbackArgsPreview function declaration (97b1c3e) by @David Siewert
+- add stale bot to auto-close inactive issues and PRs (#2685) (0161298) by @Guoguo
+- Merge remote-tracking branch 'origin/main' into refactor/line-sdk (188ee24) by @ex-takashima
+- Merge pull request #2663 from SiYue-ZO/feature/config-save-restart-prompts (f90e756) by @美電球
+- fix lint (4eeb696) by @afjcjsbx
+- fix gateway boot signature after pico setup (ddf2d7c) by @SiYue-ZO
+- Merge pull request #2672 from lc6464/fix-tool-calls-thought-ui (39dec35) by @美電球
+- fix runtime event logger reload and shutdown (4d6337f) by @Hoshina
+- **events:** prefer runtime hook observation (6e8a81b) by @Hoshina
+- **events:** migrate agent tests to runtime events (dc80e8f) by @Hoshina
+- align ToolFeedbackConfig field spacing (4ddd650) by @David Siewert
+- fix test: enable pretty_print in tool feedback test (9bc702e) by @David Siewert
+- Add pretty_print and disable_escape_html to tool_feedback defaults (bdaff5c) by @David Siewert
+- **config:** add default values for max_llm_retries and llm_retry_backoff_secs (32c8b8c) by @David Siewert
+- **agent:** add unit tests for network error retry backoff strategy (3c4523e) by @David Siewert
+- **utils:** add unit tests for FormatArgsJSON (fc89fea) by @David Siewert
+- Merge pull request #2654 from SiYue-ZO/fix/launcher-hide-windows-console-flash (77be169) by @美電球
+- Merge upstream/main into feat/delegate-tool (9f0f914) by @maxiaoyang
+- Merge pull request #2661 from SiYue-ZO/feature/toggle-thought-visibility (726ef4f) by @美電球
+- Merge pull request #2657 from lc6464/fix-deepseek-v4-thinking-history (41f4d95) by @美電球
+- Merge pull request #2664 from afjcjsbx/fix/mcp-http-session-lifecycle (04b6274) by @Mauro
+- update WeChat group QR code (#2667) (78e4e59) by @BeaconCat
+- Merge pull request #2666 from afjcjsbx/fix/mcp-nil-arguments (788f76f) by @美電球
+- Merge pull request #2660 from afjcjsbx/fix/tool-feedback-json-format (2f91cc0) by @美電球
+- Merge pull request #2659 from SiYue-ZO/fix/thought-bubble-collapse-state (93e9bdd) by @美電球
+- Merge pull request #2656 from alexhoshina/prompt-layering (caaad60) by @美電球
+-   fix(mcp): send empty object instead of null for tool (9d8f0dc) by @afjcjsbx
+- fix lint (dce29c1) by @afjcjsbx
+- **onboard:** support codespace placeholder and path checks (494cc38) by @SiYue
+- **web:** avoid shell-expanding powershell vars in windows recipe (a977a92) by @SiYue
+- Fix Windows build flow (193e1a3) by @SiYue
+- Fix Windows build flow (f6bceb2) by @SiYue
+- Merge pull request #2641 from afjcjsbx/feat/mcp-cli (8d51d30) by @Mauro
+- Fix Windows build flow (#2487) (ccd19a4) by @肆月
+- Keep launcher locale changes from mutating shared web-search routing (#2573) (293477b) by @Junghwan
+- **deps-dev:** bump typescript-eslint in /web/frontend (#2638) (47a881b) by @dependabot[bot]
+- **deps:** bump github.com/larksuite/oapi-sdk-go/v3 (#2637) (743d7e6) by @dependabot[bot]
+- **deps:** bump github.com/rs/zerolog from 1.35.0 to 1.35.1 (#2635) (047a904) by @dependabot[bot]
+- **deps-dev:** bump vite from 8.0.8 to 8.0.10 in /web/frontend (#2634) (1dba8e9) by @dependabot[bot]
+- **deps:** bump github.com/aws/aws-sdk-go-v2/config (#2633) (73594a0) by @dependabot[bot]
+- **deps:** bump i18next from 26.0.3 to 26.0.7 in /web/frontend (#2632) (ffd22c7) by @dependabot[bot]
+- **deps:** bump react-i18next from 17.0.3 to 17.0.4 in /web/frontend (#2631) (39d7b3a) by @dependabot[bot]
+- Merge pull request #2485 from afjcjsbx/fix/telegram-oauth-links (0d1b041) by @美電球
+- parallel macOS CGO launcher build, lowercase Docker tags, conditional Docker Hub login (#2643) (9fba52d) by @BeaconCat
+- Merge pull request #2640 from sipeed/dependabot/go_modules/github.com/aws/aws-sdk-go-v2/service/bedrockruntime-1.50.5 (f440047) by @Mauro
+-   feat(mcp): add show, add, list, remove, test, edit cli commands (2da05c2) by @afjcjsbx
+- **deps:** bump github.com/aws/aws-sdk-go-v2/service/bedrockruntime (ac4db35) by @dependabot[bot]
+- Merge pull request #2586 from kunalk16/fix-functions-deduplication (0c0a582) by @美電球
+- Revert deduplication (7616470) by @Kunal Karmakar
+- Deduplicate further functions (4ae1140) by @Kunal Karmakar
+- Deduplicate ParseDataAudioURL function (bc077db) by @Kunal Karmakar
+- Fix linting (e901e70) by @Kunal Karmakar
+- Functions deduplication (c71146b) by @Kunal Karmakar
+- **channels:** unify animated tool feedback across chat channels and Pico (#2622) (451db2f) by @lxowalle
+- Merge pull request #2535 from afjcjsbx/feat/mcp-channel-commands (68ceb54) by @Mauro
+- **release:** split tag creation and release into separate workflows (#2614) (023ca2e) by @Guoguo
+- Merge pull request #2613 from sky5454/tmp_govet_fix (279c496) by @Mauro
+- **isolation:** fix govet shadow declaration of "err" shadows (d0507df) by @sky5454
+- refresh PR mergeability (175682f) by @afjcjsbx
+- fix lint (e5a6960) by @afjcjsbx
+- Revert "Feat/channel tool feedback animation (#2569)" (#2596) (6421f14) by @lxowalle
+- Feat/channel tool feedback animation (#2569) (e556a81) by @lxowalle
+- **web:** update linting and router dependencies (#2592) (8461c99) by @wenjie
+- Merge pull request #2566 from lc6464/refactor/providers-tools-layout (6126ede) by @美電球
+- **deps:** patch gomarkdown and upgrade shadcn (#2568) (2708c83) by @wenjie
+- **docs:** add docs layout lint target and contributor guidance (de3d042) by @wenjie
+- Merge pull request #2564 from sky5454/looper_refactor (0da962c) by @daming大铭
+- **deps-dev:** bump @types/node from 25.5.0 to 25.6.0 in /web/frontend (#2562) (72f30c5) by @dependabot[bot]
+- **deps-dev:** bump globals from 17.4.0 to 17.5.0 in /web/frontend (#2561) (235cb11) by @dependabot[bot]
+- **deps:** bump @tanstack/react-query in /web/frontend (#2560) (74856d3) by @dependabot[bot]
+- **deps:** bump react-i18next from 17.0.2 to 17.0.3 in /web/frontend (#2559) (c36a48c) by @dependabot[bot]
+- **deps:** bump maunium.net/go/mautrix from 0.26.4 to 0.27.0 (#2557) (e77c4eb) by @dependabot[bot]
+- **deps:** bump @tanstack/react-router in /web/frontend (#2555) (d73897d) by @dependabot[bot]
+- **deps:** bump go.mau.fi/util from 0.9.7 to 0.9.8 (#2553) (9c97442) by @dependabot[bot]
+- **deps:** bump pnpm/action-setup from 4 to 6 (#2552) (6375440) by @dependabot[bot]
+- Merge pull request #2549 from lc6464/gateway-auth-no-browser (928a273) by @daming大铭
+- Merge pull request #2474 from srcrs/fix-cron-independent-sessions (ba08d52) by @daming大铭
+- Merge pull request #2547 from lc6464/chore/issue-2538-network-fallback (b147512) by @daming大铭
+- Merge pull request #2503 from cytown/loop (eb24269) by @daming大铭
+- **agent:** assert child turn uses target agent model (a34120b) by @xiaoen
+- **tools:** verify normalization prevents self-delegation bypass (6db17b8) by @xiaoen
+- Merge remote-tracking branch 'origin/main' into refactor/line-sdk (5b0c9e2) by @ex-takashima
+- **tools:** add delegate tool unit tests (0ff78fa) by @xiaoen
+- **agent:** verify TargetAgentID resolves to correct agent instance (c8335bf) by @xiaoen
+- add LLM-as-Judge evaluation mode (#2484) (f1b659e) by @BeaconCat
+- Merge pull request #2524 from SiYue-ZO/feature/sogou-web-search-default (ead2dc9) by @美電球
+- Merge pull request #2529 from lc6464/feat/web-code-highlight (100e576) by @daming大铭
+- Make web search auto-switch with UI language (2784223) by @SiYue-ZO
+- **web:** move app providers out of main entry (acbe654) by @lc6464
+- Merge pull request #2525 from afjcjsbx/fix/vision-unsupported-media-stuck (bb14a5c) by @Mauro
+- **api:** fix web tools lint issues (bb953b7) by @SiYue-ZO
+- Merge remote-tracking branch 'upstream/main' into feature/sogou-web-search-default (75e93b5) by @SiYue-ZO
+- remove useless backend output for platform-token (#2500) (d0ff24a) by @Cytown
+- fix lint (e60a687) by @afjcjsbx
+- add test (7824bc7) by @afjcjsbx
+- fix lint (d3d639c) by @afjcjsbx
+- Merge pull request #2523 from lc6464/feat/web-chat-disabled-reasons-hint (c0fadc5) by @美電球
+- Merge pull request #2514 from lc6464/fix/issue-2488-host-binding (b52eb58) by @美電球
+- Fix provider return formatting for golines (dcf21ef) by @SiYue-ZO
+- Fix Sogou user agent formatting for linter (824e800) by @SiYue-ZO
+- Fix golines formatting for web search changes (9ded793) by @SiYue-ZO
+- Add configurable Sogou-backed web search (93977bf) by @SiYue-ZO
+- Merge pull request #2518 from imguoguo/update-wechat-qr (08fc305) by @Caize Wu
+- refactor skills registries and add GitHub-backed skill discovery (#2442) (0425cd4) by @lxowalle
+- Merge pull request #2249 from alexhoshina/refactor-inbound-context-routing-session (df9124b) by @daming大铭
+- Merge pull request #2489 from afjcjsbx/fix/mcp-reload-discovery-tools (08283dd) by @美電球
+- use pnpm/action-setup and sync README install steps (#2512) (f82fe5a) by @wenjie
+- integrate main channel config changes (93f69a9) by @Hoshina
+- Merge pull request #2508 from cytown/channel2 (04e99a1) by @美電球
+- fix some bugs: (f16bade) by @Cytown
+- Merge pull request #2481 from cytown/channel (cbd38df) by @daming大铭
+- Merge pull request #2507 from cytown/allow (aa1d7c5) by @美電球
+- bug fix for allowFrom contains empty string (036f65b) by @Cytown
+- integrate main seahorse context changes (69ff690) by @Hoshina
+- Merge pull request #2495 from liuy/feat/seahorse-clear (7db2e7d) by @daming大铭
+- Merge pull request #2497 from wj-xiao/build/split-core-builds (2e149f4) by @taonyx
+- integrate main into refactor-inbound-context-routing-session (0c6ad33) by @Hoshina
+- **build:** remove unused Node.js and pnpm setup from core build workflow (6a870cb) by @wenjie
+- **release:** move Android bundle publishing into GoReleaser (d73a0e8) by @wenjie
+- **seahorse:** add TestTriggerMigration for old-DB trigger upgrade path (4532627) by @Liu Yuan
+- **release:** split core builds from release-only artifacts (ea2107e) by @wenjie
+- Merge pull request #2475 from lc6464/fix/issue-2448-separate-thought-message (6d03791) by @daming大铭
+- Merge pull request #2486 from sky5454/main (18d35c7) by @daming大铭
+- address PR review — fix Android launcher flags, systray tag, rename target (681b2a2) by @sky5454
+- **android:** ci build added (168b6be) by @sky5454
+- add Android arm64 cross-compile support (080f532) by @sky5454
+- **deps:** bump github.com/modelcontextprotocol/go-sdk (#2455) (7788ed4) by @dependabot[bot]
+- **deps:** bump shadcn from 4.1.2 to 4.2.0 in /web/frontend (#2459) (e58f00b) by @dependabot[bot]
+- **deps:** bump @tanstack/react-query in /web/frontend (#2458) (f1fe2db) by @dependabot[bot]
+- **deps:** bump react from 19.2.4 to 19.2.5 in /web/frontend (#2456) (1949314) by @dependabot[bot]
+- **deps:** bump golang.org/x/sys from 0.42.0 to 0.43.0 (#2450) (c6d15da) by @dependabot[bot]
+- **deps:** bump jotai from 2.19.0 to 2.19.1 in /web/frontend (#2452) (4840707) by @dependabot[bot]
+- **deps-dev:** bump vite from 8.0.3 to 8.0.8 in /web/frontend (#2451) (0e57a44) by @dependabot[bot]
+- Merge pull request #2457 from sipeed/dependabot/go_modules/modernc.org/sqlite-1.48.2 (282ebcd) by @Mauro
+- Merge pull request #2420 from lahuman/docs/tool-escape-semantics (dde6136) by @Mauro
+- Merge pull request #2453 from sipeed/dependabot/go_modules/github.com/aws/aws-sdk-go-v2/config-1.32.14 (d7d4374) by @Mauro
+- Merge pull request #2454 from sipeed/dependabot/go_modules/github.com/mymmrac/telego-1.8.0 (d03d519) by @Mauro
+- **deps:** bump modernc.org/sqlite from 1.48.0 to 1.48.2 (919e9eb) by @dependabot[bot]
+- **deps:** bump github.com/mymmrac/telego from 1.7.0 to 1.8.0 (01a33bb) by @dependabot[bot]
+- **deps:** bump github.com/aws/aws-sdk-go-v2/config (c71cd1e) by @dependabot[bot]
+- **lint:** satisfy gci and golines for review fixes (58f634b) by @lc6464
+- Merge pull request #2418 from lahuman/docs/korean-readme (20d3522) by @Mauro
+- Revert "test(agent): remove unused respondWithMediaHook field" (a2f02e4) by @k
+- **agent:** remove unused respondWithMediaHook field (087e355) by @k
+- **agent:** remove unused respondWithMediaHook field (1dc25e7) by @k
+- Feat/support isolation (#2423) (51eecde) by @lxowalle
+- Enhance hooks with respond action and comprehensive documentation (#2215) (ee29aaa) by @Harmoon
+- **channels:** normalize manager outbound test message (a827d01) by @Hoshina
+- Merge branch 'main' into refactor-inbound-context-routing-session (e32a209) by @Hoshina
+- fix [BUG] WebUI cannot connect to the gateway started by WebUI (#2267) (778f939) by @eturn
+- update WeChat QR code image (#2385) (84edc46) by @BeaconCat
+- **deps:** bump github.com/pion/rtp from 1.8.7 to 1.10.1 (#2290) (c3e7396) by @dependabot[bot]
+- **deps:** bump modernc.org/sqlite from 1.47.0 to 1.48.0 (#2289) (29277d4) by @dependabot[bot]
+- Merge pull request #2316 from zeroznet/fix/help-banner-double-v (84e42d6) by @Mauro
+- update root help banner expectation (e8d92e4) by @Robert Bopko
+- fix typo in Makefile cause ln not work (#2301) (f3ad5d9) by @Cytown
+- fix comment in Makefile (#2300) (5b116b0) by @Cytown
+- fix windows make build error and support custom build env (#2281) (170ae09) by @Cytown
+- * Load zoneinfo from TZ and ZONEINFO env (#2279) (849e37c) by @lxowalle
+- **deps:** bump shadcn from 4.1.1 to 4.1.2 in /web/frontend (#2297) (8aa110c) by @dependabot[bot]
+- **deps:** bump @tanstack/react-query in /web/frontend (#2296) (7fd6772) by @dependabot[bot]
+- **deps:** bump react-i18next from 16.6.6 to 17.0.2 in /web/frontend (#2295) (4169eb3) by @dependabot[bot]
+- **deps-dev:** bump eslint-plugin-react-refresh in /web/frontend (#2294) (8dfea24) by @dependabot[bot]
+- **deps:** bump i18next from 26.0.1 to 26.0.3 in /web/frontend (#2292) (465baba) by @dependabot[bot]
+- Merge pull request #2288 from sipeed/dependabot/go_modules/github.com/rs/zerolog-1.35.0 (f542c92) by @Mauro
+- Merge pull request #2287 from sipeed/dependabot/github_actions/actions/upload-artifact-7 (6842a41) by @Mauro
+- **deps:** bump github.com/rs/zerolog from 1.34.0 to 1.35.0 (b732abf) by @dependabot[bot]
+- **deps:** bump actions/upload-artifact from 4 to 7 (de2f2eb) by @dependabot[bot]
+- Feat/tool read_file by lines (#1981) (bae4342) by @Mauro
+- fix typo in create_dmg.yml (#2255) (adf7809) by @Cytown
+- Merge pull request #2092 from badgerbees/fix/telegram-edit-timeout (415abc8) by @Mauro
+- resolve conflicts (33ce6ed) by @Badgerbees
+- implement create dmg for macOS 10.11 & above (#2252) (2973b30) by @Cytown
+- add missing recover panic in subturn.go (#2253) (9ac21c5) by @Cytown
+- unify all panic event to panic log file (#2250) (e2a9bb9) by @Cytown
+- **lint:** fix config and qq formatting (168b75a) by @Hoshina
+- **channels:** update inbound context assertions (3a9d1fc) by @Hoshina
+- fix picoToken is empty when gateway started by launcher (#2241) (a9c76ec) by @Cytown
+- Refactor/asr tts (#1939) (0f395ce) by @Hua Audio
+- ﻿fix(telegram): refine duplicate-message protection with narrow error classification (b90a6d1) by @Badgerbees
+- Merge pull request #2221 from Alexandersfg4/doc/option-use-markdown-v2 (c7461f9) by @Mauro
+- Merge pull request #2014 from badgerbees/fix/context-pruning-guards (848f9dd) by @Mauro
+- Merge pull request #1957 from lepotatoguy/web-ui-input-fix (a098dfb) by @Meng Zhuo
+- added documentaion for use_markdown_v2 (c783bab) by @Aleksandr Bortnikov
+- fix test and lint in web (#2219) (e4893d2) by @Cytown
+- use explicit port headers before falling back to wsPort in picoWebUIAddr (61a31df) by @LePotatoGuy
+- fix linter (#2206) (31fcf55) by @Cytown
+- update WeChat QR code image (#2207) (d11f1bc) by @BeaconCat
+- Fix Telegram HTML links broken by italic regex matching inside href URLs (#2164) (c36b06a) by @DimonB
+- Merge pull request #2196 from SiYue-ZO/feature/tour-guide (073cc3f) by @daming大铭
+- Merge pull request #2088 from badgerbees/fix/telegram-dm-policy-security (4d34824) by @Mauro
+- Merge pull request #1826 from 3mp3ri0r/fix/container-run-app-stopped-on-sigint-sigterm (a995a94) by @Mauro
+- Merge pull request #1849 from gaaralbakuu/main (4125f8a) by @Mauro
+- Merge pull request #2176 from Alix-007/fix/issue-2135-retry-after (7b3f471) by @Mauro
+- gofumpt http retry formatting (7116851) by @Alix-007
+- make retry-after numeric clamp overflow-safe (345d4fd) by @Alix-007
+- anchor date retry-after to response date and cap delay (9440beb) by @Alix-007
+- Merge pull request #2004 from Huangting-xy/docs-add-security-config-ref (187b2c2) by @Mauro
+- Merge pull request #1982 from Kathent/fix-deny-pattern (ffa65b5) by @Mauro
+- Merge pull request #1838 from jonahzheng/patch-1 (34b4848) by @Mauro
+- Merge pull request #2000 from Alix-007/docs/issue-1868-cron-docs (174c4e5) by @Mauro
+- Merge pull request #1988 from loafoe/main (0fb4550) by @Mauro
+- Merge pull request #1510 from dim/matrix/improved-formatting (45582b0) by @Mauro
+- Merge pull request #2134 from cytown/t3 (a5f8b0f) by @daming大铭
+- Merge pull request #2129 from kunalk16/chore-azure-openai-responses-tests (1154017) by @Mauro
+- Merge branch 'main' into t3 (f9bfa6b) by @Cytown
+- Merge branch 'main' into t3 (50b8d9b) by @Cytown
+- make gateway reload use new loglevel (#2155) (275c101) by @Cytown
+- update docs according to newest config version 2 (#2186) (010d807) by @Cytown
+- Merge pull request #2131 from imalasong/pr/3 (803b8bc) by @daming大铭
+- add check for gateway port and fix logger.Fatal not record issue (#2185) (7a1f2ab) by @Cytown
+- Merge pull request #2184 from cytown/config (cbe9228) by @daming大铭
+- **deps-dev:** bump globals from 16.5.0 to 17.4.0 in /web/frontend (#2067) (5e1b6a3) by @dependabot[bot]
+- **deps:** bump i18next from 25.8.20 to 25.10.10 in /web/frontend (#2065) (7dc0d02) by @dependabot[bot]
+- **deps:** bump modernc.org/sqlite from 1.46.1 to 1.47.0 (#2063) (5c6e13e) by @dependabot[bot]
+- **deps:** bump github.com/aws/aws-sdk-go-v2/service/bedrockruntime (#2061) (fd9914d) by @dependabot[bot]
+- **deps:** bump golang.org/x/time from 0.14.0 to 0.15.0 (#2059) (74dfd93) by @dependabot[bot]
+- **deps:** bump github.com/github/copilot-sdk/go from 0.1.32 to 0.2.0 (#2058) (d844bf3) by @dependabot[bot]
+- **web:** patch vulnerable frontend tooling dependencies (#2182) (f07a8a8) by @wenjie
+- **web:** refactor launcher build flow and expand WebUI documentation (#2174) (edda02c) by @wenjie
+- refactor config and add ModelConfig.Enabled (9375781) by @Cytown
+- add logger test case for console log format for component (#2162) (1ef0553) by @Cytown
+- Merge pull request #2154 from cytown/logger (e34c4f8) by @daming大铭
+- make logger more clear with highlight component and use package name for default component (42e3aaf) by @Cytown
+- fix for review (f0c0219) by @Cytown
+- Merge branch 'main' into t3 (9c28870) by @Cytown
+- Merge branch 'main' into t3 (475d377) by @Cytown
+- add pid file for gateway running and auth token for /reload and pico channel (0bb5615) by @Cytown
+- Update tests and error cases handling (e23eda5) by @Kunal Karmakar
+- **provider:** use openai responses api for azure openai endpoints (#2110) (1809d04) by @Kunal Karmakar
+- simplified duplicated code (#1935) (026a133) by @Mauro
+- Merge pull request #2119 from BeaconCat/fix/update-assets (30155c1) by @Guoguo
+- Merge branch 'main' into fix/update-assets (4d6292c) by @BeaconCat
+- fix/wechat-new-protocol (#2106) (0e13f6b) by @Hua Audio
+- fix gateway reload will cause pico stop working issue (#2082) (f1cb7cc) by @Cytown
+- refactor config and security to simplified the structure (#2068) (b646d3b) by @Cytown
+- change default debug level to warn (#2084) (98c7836) by @Cytown
+- add open-by-default warning and '*' allow_from support (8d5fc73) by @Badgerbees
+- fix for FlexibleStringSlice cause picoclaw start crash issue (#2078) (0c9e4f0) by @Cytown
+- Merge pull request #2070 from afjcjsbx/feat/improve-web-tools (25ce527) by @daming大铭
+- Merge pull request #2085 from lc6464/fix/chat/break-word (76cd7f8) by @Mauro
+- Merge pull request #2071 from afjcjsbx/fix/array-placeholder (9cbb4ab) by @Meng Zhuo
+- fix lint (e2018c4) by @afjcjsbx
+- fix conf (b7f6ab7) by @afjcjsbx
+- feat(tools) range in web_search (48c04e0) by @afjcjsbx
+- Merge pull request #2069 from Alix-007/docs/issue-1908-model-cascade (e6c05cb) by @Mauro
+- Merge pull request #2043 from apnea/main (463a647) by @Mauro
+- Fix API key links for Z.AI API key and add Z.AI example (06be65e) by @apnea
+- Merge pull request #1829 from perhapzz/test/add-fileutil-health-tests (4bdf8f0) by @Mauro
+- Merge pull request #1998 from abnerhexu/main (5db1e94) by @Mauro
+- Merge pull request #2016 from badgerbees/fix/context-overflow-errors (1dff5e6) by @Mauro
+- adding test units (ae94893) by @Badgerbees
+- **deps:** upgrade pty and reorganize sqlite dependencies (#2012) (82c78e8) by @daming大铭
+- Merge pull request #1828 from liuy/feat/logging-config (664e23e) by @daming大铭
+- Feature/add mimo provider (#1987) (bb2eddc) by @肆月
+- Merge pull request #1997 from wj-xiao/fix/freebsd-build (5f50ae5) by @taorye
+- **tui:** add build target for picoclaw-launcher TUI and create README for TUI launcher (#1995) (ee03d12) by @taorye
+- Fix security config precedence during migration (#1984) (6bd8fec) by @lxowalle
+- add baidu_search example to config.example.json (#1990) (77d4716) by @BeaconCat
+- Merge pull request #1985 from wj-xiao/refactor/split-systray (aa9bd69) by @taorye
+- Merge pull request #1948 from cytown/fix-doc (3d20976) by @daming大铭
+- Merge branch 'main' into fix-doc (4398e3e) by @Cytown
+- Merge pull request #1976 from alexhoshina/refactor/wecom (8da0638) by @daming大铭
+- Merge pull request #1977 from uiYzzi/fix/virtual-models-bug (eee74f3) by @daming大铭
+- Add virtual model support for multi-key expansion (be6bf9f) by @uiyzzi
+- Merge pull request #1955 from alexhoshina/refactor/wecom (1b9445b) by @daming大铭
+- Merge pull request #1889 from afjcjsbx/fix/binary-tool-output-handling (2a0efb6) by @Mauro
+- Prevent security.yml from being overwritten during config migration (#1966) (8b6cbd9) by @lxowalle
+- **agent:** allow mock custom tool args (#1965) (f2f6987) by @美電球
+- WeChat Web QR Code Integration (#1961) (fa5ab72) by @hsguo
+- Merge pull request #1962 from wj-xiao/fix/configure-pico-channel (ff50ffa) by @taorye
+- bug fix for security initial cause can't save model in launcher (#1952) (d921bbb) by @Cytown
+- **web:** add percentage checking of characters displaying in APIKey (1ef2b69) by @lc6464
+- update security migration documents (de11f95) by @Cytown
+- Feat/move weixin login to auth and update docs (#1945) (b23a6b3) by @Hua Audio
+- **web:** add test for maskAPIKey (66d2efc) by @lc6464
+- Merge branch 'sipeed:main' into main (d805e12) by @Phạm Minh Đạt
+- fix launcher can't save model api_key issue (#1928) (cf9e049) by @Cytown
+- Merge pull request #1938 from huaaudio/fix/weixin-load (69cf934) by @美電球
+- fix weixin config (6ea9636) by @Huaaudio
+- Merge pull request #1907 from xiwuqi/wuxi/fix-reasoning-channel-content (2c48cd3) by @daming大铭
+- Merge pull request #1930 from uiYzzi/feat/filter-sensitive-data-from-tool-results (4057199) by @daming大铭
+- fix delivery and steering (5d5536a) by @afjcjsbx
+- Update config_test.go (cf80ec8) by @uiyzzi
+- resolved conflicts (8ed171d) by @afjcjsbx
+- Merge branch 'main' into fix/binary-tool-output-handling (fddfd56) by @afjcjsbx
+- Merge pull request #1926 from cytown/fix (96e3126) by @美電球
+- fix for ci/cd (d773757) by @Cytown
+- Merge pull request #1878 from uiYzzi/feat/provider-extra-body-config (e7ee80f) by @daming大铭
+- Merge pull request #1918 from cytown/panic (c328562) by @daming大铭
+- Merge branch 'feat/provider-extra-body-config' of github.com:uiYzzi/picoclaw into feat/provider-extra-body-config (02393b3) by @uiyzzi
+- Use ModelName instead of Model in test config structs (d1d2155) by @uiyzzi
+- Use getter/setter methods for API key access in ModelConfig (79df938) by @uiyzzi
+- Move minimax reasoning_split injection to provider factory (608ec6d) by @uiyzzi
+- Add security config to ExtraBody round-trip test (b24c577) by @uiyzzi
+- Merge pull request #1893 from afjcjsbx/feat/skill-channel-commands (054b55f) by @Mauro
+- Merge branch 'feat/provider-extra-body-config' of github.com:uiYzzi/picoclaw into feat/provider-extra-body-config (7767feb) by @uiyzzi
+- Use getter/setter methods for API key access in ModelConfig (2d9517c) by @uiyzzi
+- Move minimax reasoning_split injection to provider factory (53c6dd3) by @uiyzzi
+- implement panic log for gateway and launcher (df17684) by @Cytown
+- Merge branch 'main' into feat/provider-extra-body-config (6a5a4a5) by @柚子
+- Merge pull request #1352 from cytown/version (cff9065) by @daming大铭
+- Merge branch 'main' into version (36f9d20) by @Cytown
+- **config:** move loglevel settings under gateway (#1912) (40279c8) by @Kunal Karmakar
+- Fix 1886 media cleanup policy (#1887) (75270c4) by @美電球
+- Merge branch 'main' into version (5a8aab8) by @Cytown
+- rename security.yml to .security.yml (310f788) by @Cytown
+- Merge branch 'main' into version (7bf4831) by @Cytown
+- Merge pull request #1875 from BeaconCat/docs/readme-restructure-v2 (3a61892) by @Caize Wu
+- Merge pull request #1891 from RussellLuo/audio-transcription (3500080) by @Mauro
+- Fix lint (d4e56bc) by @RussellLuo
+- fix Ooutboundmedia (1e98f86) by @afjcjsbx
+- fix (f735b05) by @afjcjsbx
+- fix lint (388505d) by @afjcjsbx
+- resolve conflicts (b90c500) by @afjcjsbx
+- Merge branch 'main' into fix/binary-tool-output-handling (14a4983) by @afjcjsbx
+- resolve conflicts (be59133) by @afjcjsbx
+- Merge branch 'main' into feat/skill-channel-commands (d3ba400) by @afjcjsbx
+- Merge pull request #1894 from sipeed/refactor/agent (4d84bd9) by @daming大铭
+- sync main into refactor/agent (c48954d) by @yinwm
+- Merge pull request #1636 from lppp04808/feat/subturn-poc (729a878) by @daming大铭
+- fix err and placeholder (930dd02) by @afjcjsbx
+- Move minimax reasoning_split injection to provider factory (de0364c) by @uiyzzi
+- Merge branch 'main' into version (284ced1) by @Cytown
+- Merge branch 'refactor/agent' into feat/subturn-poc (7ba8682) by @Administrator
+- resolve conflicts between refactor/agent and main (f7f27e2) by @Administrator
+- Merge pull request #1882 from lc6464/frontend-fix (2f6f25d) by @Mauro
+- Merge pull request #1885 from alexhoshina/fix-1884-qq-long-audio-file-fallback (809aef8) by @daming大铭
+- Merge pull request #1863 from alexhoshina/feat/hook-manager (0432fac) by @daming大铭
+- Feat/weixin openclaw port (#1873) (dd82794) by @Hua Audio
+- Merge pull request #1844 from afjcjsbx/fix/scope-steering (04def0f) by @daming大铭
+- remove merge conflict markers from .gitignore (482c88c) by @Administrator
+- merge main (88d754b) by @Administrator
+- Merge pull request #1853 from kunalk16/feat-configurable-logger (931eee9) by @daming大铭
+- Merge pull request #1857 from lc6464/main (9107740) by @Caize Wu
+- make yaml indent with 2 (3dfe484) by @Cytown
+- remove useless logs output (4e876eb) by @Cytown
+- Merge pull request #1617 from yzxlr/codex/fix-1561-heartbeat-template-idle (c0bb8d6) by @Mauro
+- Merge pull request #1855 from badgerbees/fix/telegram-group-id-validation (e6ea9c4) by @Mauro
+- Merge branch 'main' into version (7c854fe) by @Cytown
+- Merge pull request #1782 from biisal/chore/docker-data-in-gitignore (7a47d7a) by @Mauro
+- Merge pull request #1861 from amirmamaghani/feat/agent-browser-skill-heavy-dockerfile (5286464) by @Mauro
+- Merge pull request #1865 from sipeed/revert-1752-feat/exec-tool-enhancement (3cd674e) by @daming大铭
+- Revert "feat(tools): add exec tool enhancement with background execution and …" (ebcd564) by @daming大铭
+- Merge branch 'upstream-main' into feat/subturn-poc (24d6cb5) by @Administrator
+- Merge branch 'sipeed:main' into main (6b9ceaa) by @Phạm Minh Đạt
+- Merge branch 'upstream-main' into feat/subturn-poc (1bd144a) by @Administrator
+- Fix spelling (073ae48) by @Kunal Karmakar
+- Merge branch 'feat-configurable-logger' of https://github.com/kunalk16/picoclaw into feat-configurable-logger (4c8526d) by @Kunal Karmakar
+- Add default value for config (647071d) by @Kunal Karmakar
+- Add configurable logger (92b7687) by @Kunal Karmakar
+- Merge branch 'main' of https://github.com/sipeed/picoclaw into feat-configurable-logger (6508271) by @Kunal Karmakar
+- Add default value for config (f35516c) by @Kunal Karmakar
+- Merge branch 'sipeed:main' into main (f81269e) by @Phạm Minh Đạt
+- Merge branch 'main' of https://github.com/sipeed/picoclaw into feat-configurable-logger (8490084) by @Kunal Karmakar
+- Add configurable logger (3293220) by @Kunal Karmakar
+- Merge pull request #1818 from Alix-007/fix/issue-1815-empty-response-message (100720b) by @Mauro
+- fix logic (9e34459) by @afjcjsbx
+- fix lint (827449a) by @afjcjsbx
+- fix(agent) scope steering (1c65866) by @afjcjsbx
+- missing , (8f56cce) by @Phạm Minh Đạt
+- Update helpers.go (e4b104c) by @enoch.z
+- Fix bug double , (efbe806) by @Phạm Minh Đạt
+- Merge branch 'sipeed:main' into main (7970e2d) by @Phạm Minh Đạt
+- cannot create session github copilot (ba1538f) by @Phạm Minh Đạt
+- Merge pull request #1827 from alexhoshina/refactor/agent-loop (73a683f) by @daming大铭
+- Merge pull request #1822 from alexhoshina/feat/agent-eventbus (54de9ad) by @daming大铭
+- Merge pull request #1832 from taorye/main (75cfee4) by @taorye
+- apply cyberpunk theme to TUI components for enhanced visual appeal (74a145c) by @taorye
+- Remove UI components and gateway management for picoclaw-launcher-tui (998b456) by @taorye
+- **fileutil,health:** add unit tests for WriteFileAtomic and health server (0276554) by @perhapzz
+- update restart policy to unless-stopped (d08bb02) by @Christoforus Surjoputro
+- **deps:** upgrade modelcontextprotocol go-sdk to v1.4.1 for security fixes (#1823) (fe87376) by @wenjie
+- **deps:** bump Go toolchain to 1.25.8 for stdlib security fixes (#1821) (68d182a) by @wenjie
+- **deps:** upgrade eslint dependency chain to resolve flatted vulnerability (#1820) (bda18f5) by @wenjie
+- **deps:** bump tailwindcss from 4.2.1 to 4.2.2 in /web/frontend (#1809) (cff85cf) by @dependabot[bot]
+- **deps:** bump shadcn from 4.0.5 to 4.0.8 in /web/frontend (#1808) (1fd6dd1) by @dependabot[bot]
+- Feat/feishu card parsing (#1534) (009a8d7) by @ywj
+- **deps-dev:** bump typescript-eslint in /web/frontend (#1807) (8a488ee) by @dependabot[bot]
+- **deps-dev:** bump @types/node in /web/frontend (#1806) (736baf2) by @dependabot[bot]
+- **deps:** bump maunium.net/go/mautrix from 0.26.3 to 0.26.4 (#1805) (c9ac19c) by @dependabot[bot]
+- Merge branch 'main' into feat/subturn-poc (4f646ef) by @Administrator
+- **deps:** bump @tabler/icons-react in /web/frontend (#1803) (77d0c67) by @dependabot[bot]
+- **deps:** bump github.com/ergochat/irc-go from 0.5.0 to 0.6.0 (#1800) (80d9a90) by @dependabot[bot]
+- Merge pull request #1798 from sipeed/dependabot/github_actions/goreleaser/goreleaser-action-7 (71ce219) by @Mauro
+- Merge pull request #1799 from sipeed/dependabot/github_actions/docker/setup-qemu-action-4 (ffe0289) by @Mauro
+- Merge pull request #1390 from kiannidev/fix/1323-telegram-endless-typing (bd4317f) by @Mauro
+- **deps:** bump docker/setup-qemu-action from 3 to 4 (876898f) by @dependabot[bot]
+- **deps:** bump goreleaser/goreleaser-action from 6 to 7 (5ada0df) by @dependabot[bot]
+- Feat/wecom aibot processing message config (#1785) (75d8672) by @美電球
+- Fix the limitation on the number of tables in cards caused by Feishu (#1736) (e3cc5b1) by @opcache
+- Merge branch 'upstream-main' into feat/subturn-poc (c18d8a2) by @Administrator
+- Merge branch 'main' into feat/subturn-poc (583c586) by @Administrator
+- Implement the latest long-connection mode for the WeCom AI Bot. (#1295) (9a25fad) by @ZHANG RUI
+- Ignore the `docker/data` directory. (41ebe1e) by @Avisek
+- Merge branch 'main' into version (94fcb25) by @Cytown
+- Merge branch 'main' into version (cfd3a1b) by @Cytown
+- Merge branch 'upstream-main' into feat/subturn-poc (54889f2) by @Administrator
+- Merge remote branch fix/1323-telegram-endless-typing (440bc26) by @kiannidev
+- Merge upstream/main into fix/1323-telegram-endless-typing (310358d) by @kiannidev
+- Merge branch 'upstream-main' into feat/subturn-poc (532ea4b) by @Administrator
+- Feat/qq local file upload (#1722) (828971d) by @美電球
+- refactor[gateway]: just reload the changed channels on reload occurred (#1773) (a8ce992) by @Cytown
+- merge main (24a382b) by @Administrator
+- Merge branch 'upstream-main' into feat/subturn-poc (e801ccb) by @Administrator
+-   docs: note that workspace config files are hot-reloaded (#1747) (14a28ae) by @Mauro
+- Merge pull request #1759 from afjcjsbx/docs/add-italian-language (8a188cf) by @Meng Zhuo
+- Merge branch 'upstream-main' into feat/subturn-poc (c732e63) by @Administrator
+- Merge branch 'upstream-main' into feat/subturn-poc (431a53c) by @Administrator
+- Feat/issue 1218 agent md context structure (#1705) (899558b) by @美電球
+- fix for feat(web): implement macOS app feature and file logger (#1735) (affd77f) by @Cytown
+- Update qrcode of wechat group (#1744) (b6c5f58) by @lxowalle
+- Merge branch 'main' into fix/1323-telegram-endless-typing (317c70a) by @kpdev
+- Add model-native search (prefer_native) for OpenAI/Codex (#1618) (f79469c) by @dataCenter430
+- Merge pull request #1622 from afjcjsbx/feat/markdown-output-format-web-fetch (cefa140) by @Meng Zhuo
+- Merge pull request #1702 from Alix-007/fix/issue-1153-model-round-robin-cleanbase (513537d) by @Mauro
+- Merge pull request #1479 from securityguy/fix/claude-cli-error-surfacing (74f2a15) by @Mauro
+- Merge pull request #1640 from argobell/main (f901218) by @Mauro
+- Merge branch 'main' into feat/markdown-output-format-web-fetch (9835e82) by @afjcjsbx
+- Merge pull request #1710 from liuy/fix/cron-test-subscribe-outbound (7bf12c3) by @Mauro
+- Merge pull request #1490 from is-Xiaoen/refactor/context-boundary (5e92a38) by @Mauro
+- Merge branch 'main' into feat/markdown-output-format-web-fetch (13d4801) by @afjcjsbx
+- fix lint + error check (8f46072) by @afjcjsbx
+- Merge branch 'main' into feat/markdown-output-format-web-fetch (3791f06) by @Mauro
+- Added tests to verify SubTurn context cancellation behavior when parent finishes early - identified need for Critical+heartbeat+timeout mechanism. (e05d262) by @Administrator
+- Merge upstream/main into feat/subturn-poc (e00a3d9) by @Administrator
+- Merge pull request #1690 from Alix-007/docs/issue-529-exec-guard-limitations (11a7ee5) by @Mauro
+- Remove redundant Darwin tray stub (#1694) (12c0132) by @wenjie
+-  refactor(agent): improve SubTurn error handling and logging (2fec249) by @Administrator
+- bug fix: gateway should not start when gateway server is not running (#1562) (afe22c5) by @Cytown
+- Merge pull request #1663 from hyperwd/fix/glm-nil-input (8a8cc35) by @Mauro
+- use WEB_GO for web targets and preserve backend dist directory (#1671) (0499cda) by @wenjie
+- add systray ui for all platform (#1649) (e414234) by @Cytown
+- moved turnState and related code from subturn.go to a new turn_state.go file (a26a7db) by @Administrator
+- refactor gateway/helpers and add server.pid to health (#1646) (be4a33c) by @Cytown
+- Merge pull request #1536 from alexhoshina/fix/allow-picoclaw-media-tempdir (79b0568) by @Mauro
+- Merge pull request #1570 from alexhoshina/fix/cron-deliver-default-false (dfafdf7) by @Mauro
+- Merge pull request #1645 from dimonb/fix/mask-bot-tokens-in-logger (2f61440) by @Mauro
+- Delete .claude/settings.json (9d761b7) by @pixiaoka
+- Align rendering with Matrix' CommonMark guidelines (26fa98c) by @Dimitrij Denissenko
+- Initial plan (0459dec) by @Argobell
+- **agent:** use realistic session data in context retry test (b768dab) by @xiaoen
+- **agent:** fix gci comment alignment in test (7c1a1c2) by @xiaoen
+- **agent:** add realistic session-shaped tests for context budget (b7f1c2b) by @xiaoen
+- **deps:** bump docker/login-action from 3 to 4 (#1604) (0c94e6f) by @dependabot[bot]
+- **deps:** bump docker/build-push-action from 6 to 7 (#1602) (b7b8d1e) by @dependabot[bot]
+- **deps:** bump actions/setup-go from 5 to 6 (#1600) (f247c3b) by @dependabot[bot]
+- **deps:** bump actions/setup-node from 4 to 6 (#1597) (44ac304) by @dependabot[bot]
+- **deps:** bump docker/setup-buildx-action from 3 to 4 (#1595) (4d4243b) by @dependabot[bot]
+- **web:** upgrade eslint deps to resolve flatted vulnerability (#1629) (c806598) by @wenjie
+- **deps:** bump @tanstack/react-router in /web/frontend (#1609) (4178b2c) by @dependabot[bot]
+- **deps:** bump dayjs from 1.11.19 to 1.11.20 in /web/frontend (#1608) (99304d1) by @dependabot[bot]
+- **deps:** bump react-i18next from 16.5.4 to 16.5.8 in /web/frontend (#1607) (3bf8a27) by @dependabot[bot]
+- **deps-dev:** bump @vitejs/plugin-react in /web/frontend (#1606) (a93bd01) by @dependabot[bot]
+- **deps:** bump jotai from 2.18.0 to 2.18.1 in /web/frontend (#1605) (b8dfd0b) by @dependabot[bot]
+- **deps:** bump github.com/github/copilot-sdk/go from 0.1.23 to 0.1.32 (#1603) (43eb6fe) by @dependabot[bot]
+- **deps:** bump github.com/anthropics/anthropic-sdk-go (#1601) (2f40a8c) by @dependabot[bot]
+- **deps:** bump github.com/caarlos0/env/v11 from 11.3.1 to 11.4.0 (#1599) (e9d240d) by @dependabot[bot]
+- **deps:** bump github.com/mymmrac/telego from 1.6.0 to 1.7.0 (#1598) (dd93630) by @dependabot[bot]
+- **deps:** bump golang.org/x/oauth2 from 0.35.0 to 0.36.0 (#1596) (45c01f4) by @dependabot[bot]
+- fix lint (de68688) by @afjcjsbx
+- Merge pull request #1590 from sky5454/main (f2addff) by @Caize Wu
+- feat/sec add github's dependabot to scan the lib sec. (54f870c) by @sky5454
+- Merge pull request #1583 from alexhoshina/fix/#1422-lint-err (96fd4e0) by @Caize Wu
+- Merge pull request #1442 from afjcjsbx/feat/logger-stdout-formatting (5a251b4) by @Mauro
+- Merge pull request #1531 from horsley/chore/add-deepwiki-badge-readmes (9ab1450) by @Caize Wu
+- 添加使用火山coding plain配置参数 (#1511) (555af13) by @GPER
+- added tests (78c9b86) by @afjcjsbx
+- #434 added NetBSD support for picoclaw, but since then, picoclaw-launcher{-tui} appeared (#1508) (86da6a7) by @iMil
+- Merge pull request #1441 from Alix-007/fix/issue-1269-weather-skill-reliability (27fef9e) by @Meng Zhuo
+- Fix the issue where the cursor moves inaccurately left and right after entering Chinese when running the picoclaw agent. (#1505) (2f83c18) by @lxowalle
+- Fix/Add warning tips for MCP initialization when no valid servers configured (#1497) (9530883) by @lxowalle
+- add NetBSD to the list of released platforms (#434) (516f710) by @iMil
+- make gateway aware of config.json change (#1187) (9676e51) by @Cytown
+- add model command to set default model (#1250) (dfa36f3) by @Cytown
+-  feat: add anthropic-messages protocol for native Anthropic Messages API support    Fixes #269 (#1284) (9fed4ec) by @Zane Tung
+- enhance skill installer (#1252) (0fb92b2) by @leamon
+- fix 3rd party logger not correct output (#1482) (83e24e8) by @Cytown
+- update volcengine doc (#1481) (f01eeac) by @lxowalle
+- Merge pull request #1385 from Alix-007/fix/issue-1373-restore-last-session (d24fccd) by @Alix-007
+- Merge pull request #1429 from darrenzeng2025/fix/svg-mime-type (c508d6f) by @wenjie
+- Merge pull request #1421 from sipeed/refactor/config-ui (7872bb3) by @wenjie
+- Merge pull request #1377 from Alix-007/fix/issue-1364-firefox-raw-json (7273c7f) by @wenjie
+- add testcase for migrate from v0 to v1 (7359b2c) by @Cytown
+- Merge branch 'main' into version (927958e) by @Cytown
+- refactor Config to add Version and migratable (1c123e0) by @Cytown
+- refactor logger to zerolog (#1239) (d920b78) by @Cytown
+- Enable rich-text messages in matrix channel (#1370) (39a451d) by @Dimitrij Denissenko
+- **frontend:** update pnpm-lock.yaml (#1368) (4a8a2e9) by @wenjie
+- Add exec allow_remote config support in web settings (#1363) (8949a25) by @wenjie
+- refactor skills loader markdown metadata parsing (#1354) (8a39898) by @nayihz
+- Merge pull request #1214 from afjcjsbx/feat/echo-voice-audio-transcription (30584f0) by @Mauro
+- Merge pull request #1330 from statxc/fix/session-key-sanitize-slash (755fa32) by @美電球
+- resolve conflicts (08cc09e) by @afjcjsbx
+- Merge remote-tracking branch 'origin/main' into feat/echo-voice-audio-transcription (87d458f) by @afjcjsbx
+- Merge pull request #1207 from afjcjsbx/feat/debug-mode-no-truncate (9cd2d21) by @Mauro
+- Merge pull request #1291 from statxc/feat/telegram-forum-topics (54f0680) by @美電球
+- feat:Modify the location where version is obtained, and insert version information into the context (#1300) (680e845) by @lxowalle
+- no-truncate shorthand flag (86ce762) by @afjcjsbx
+- debug doc (cc95562) by @afjcjsbx
+- fix typo (68e40ae) by @afjcjsbx
+- Feat/nightly align with gorelease and release note (#1285) (c45c507) by @Hua Audio
+- drop unnessary crypto/rand (#1267) (110fc71) by @Meng Zhuo
+- Merge pull request #1107 from afjcjsbx/fix/deny-reading-binary-files (9a13ed5) by @Meng Zhuo
+- Enhance model selection and add footer navigation instructions (#1271) (ead2236) by @taorye
+- * add minimax provider (#1273) (abafa3c) by @lxowalle
+- sync sendmessage function (f89c967) by @afjcjsbx
+- fix lint (584564a) by @afjcjsbx
+- refined code (ff54128) by @afjcjsbx
+- improve history compression with retry logic and multi-byte character support (#1167) (2c3952b) by @lxowalle
+- fix:fix cmd example (#1166) (a521a49) by @zhangxiaoyu.york
+- feat(ci/cd) Add nightly build workflow (#1226) (ad9d5a3) by @Hua Audio
+- Merge remote-tracking branch 'refs/remotes/origin/main' into fix/deny-reading-binary-files (c690954) by @afjcjsbx
+- Removed the old heavy logic (536e26a) by @afjcjsbx
+- fix empty strings on failed transcription (f87ab99) by @afjcjsbx
+- telegram reply only on first message (f219ca1) by @afjcjsbx
+- fixed double message on slack thread (3b5d049) by @afjcjsbx
+- Merge pull request #1171 from mutezebra/feat/feishu-random-emoji-v2 (7ea7bb0) by @美電球
+- Merge pull request #1220 from horsley/feat/matrix-channel-support (b767ca9) by @美電球
+- **config:** gofmt 格式化 FeishuConfig 字段对齐 (08d668c) by @mutezebra
+- Merge upstream/main and resolve conflicts in .env.example (b15cff1) by @mutezebra
+- Merge pull request #1100 from zihan987/main (81dfdf5) by @Meng Zhuo
+- resolve conflicts (5b1f11a) by @afjcjsbx
+- Merge remote-tracking branch 'origin/main' into feat/echo-voice-audio-transcription (424c40e) by @afjcjsbx
+- slack reply message with audio transcription (2effc2b) by @afjcjsbx
+- Fix Vivgrid docs and inference logic (4df4138) by @zihan987
+- Merge pull request #1215 from yinwm/refactor/agent (4768edc) by @美電球
+- Merge pull request #935 from putueddy/feat/telegram-chunking (826f92c) by @美電球
+- fix lint (73243c9) by @afjcjsbx
+- unit test placeholder logic (a0591f0) by @afjcjsbx
+- fix lint (68bdf66) by @afjcjsbx
+- discord reply message on transcript echo (48d8c87) by @afjcjsbx
+- feat(agent) fallback to reasoning content (#992) (66e6fb6) by @Hua Audio
+- Merge pull request #1138 from amirmamaghani/feat/irc-channel (aeabbcf) by @Meng Zhuo
+- Merge pull request #1143 from blib/bug/parallel-execution (a32a4e0) by @Mauro
+- Merge pull request #1075 from qs3c/fix/1068-html-response-error (440d665) by @Mauro
+- no-truncate param (569d509) by @afjcjsbx
+- set offset and length in read_file tool (674f00e) by @afjcjsbx
+- **deps:** bump filippo.io/edwards25519 from 1.1.0 to 1.1.1 (#1200) (91a633c) by @dependabot[bot]
+- **deps:** bump github.com/modelcontextprotocol/go-sdk (#1199) (78aa45f) by @dependabot[bot]
+- Fix golines for vivgrid case (e6f5467) by @zihan987
+- Merge pull request #1127 from mosir/fix/reload-config-selfkill-guard (3738040) by @Meng Zhuo
+- Merge branch 'sipeed:main' into fix/reload-config-selfkill-guard (d0f6276) by @mosir
+- fix deepseek-chat bug (#1066) (7df7e04) by @Yajun Yao
+- Fix HasProvidersConfig (a2f63e4) by @zihan987
+- Merge upstream main (7308f06) by @zihan987
+- Merge pull request #994 from is-Xiaoen/feat/model-routing (9b1e73d) by @Meng Zhuo
+- Merge pull request #1047 from AaronJny/feat/discord-reply-context (4d965f2) by @美電球
+- **feishu:** add random_reaction_emoji to example config (109a382) by @mutezebra
+- **feishu:** document reaction emoji option and promote filetype dep (92a0db4) by @mutezebra
+- remove accidentally committed local files (04ddb6b) by @xiaoen
+- Merge pull request #1157 from wangyanfu2/fix-config-shell-command-exec-timeout (f600829) by @Meng Zhuo
+- resolve conflicts with upstream/main (e433bb8) by @xiaoen
+- fix gofmt formatting in ExecConfig struct (65e1434) by @wangyanfu2
+- Merge pull request #1142 from mattn/fix/handle-io-readall-errors (8581d46) by @Meng Zhuo
+- Merge pull request #1155 from keithy/feature/picoclaw-home-env (651cb2e) by @Meng Zhuo
+- Merge pull request #1145 from Esubaalew/fix/upstream-skills-global-toggle (23da450) by @Mauro
+- Merge pull request #534 from truongvinht/feat/searxng (a3648ae) by @Mauro
+- Merge upstream/main into feat/searxng (4599064) by @Truong Vinh Tran
+- **irc:** add unit tests for IRC channel (c10959b) by @Amir Mamaghani
+- Merge pull request #1135 from qs3c/fix/1134-clawhub-429-retry (445c32a) by @Mauro
+- Update pkg/agent/loop.go (00ad6be) by @Boris Bliznioukov
+- Update pkg/channels/wecom/app.go (42a32fb) by @mattn
+- Update pkg/channels/wecom/app.go (ee2ebc8) by @mattn
+- Update pkg/channels/wecom/bot.go (ca4e44b) by @mattn
+- Update pkg/channels/line/line.go (8d2f2d6) by @mattn
+- Merge pull request #1105 from cornjosh/fix/registry-flag-usage (74b5af9) by @Mauro
+- Resolve merge conflicts (91f52c4) by @zihan987
+- Feat/add tool enable or disable configuration (#1071) (6f59306) by @lxowalle
+- Resolve merge conflicts (d1cf680) by @zihan987
+- Merge branch 'sipeed:main' into fix/reload-config-selfkill-guard (0f568ac) by @mosir
+- Merge pull request #1106 from afjcjsbx/fix/prevent-audio-as-image-url (464ae18) by @美電球
+- feat(ci) govulncheck (#1086) (41bb78f) by @Mauro
+- Merge pull request #844 from avianion/feat/add-avian-provider (325af21) by @Meng Zhuo
+- resolve makezero linter error (47d7b9b) by @afjcjsbx
+- fix lint (1b990d9) by @afjcjsbx
+- prevent read binary file in tool (c873755) by @afjcjsbx
+- fix golines struct tag alignment in SearXNGConfig (de0f15d) by @Truong Vinh Tran
+- Merge upstream/main into feat/searxng (e4daab8) by @Truong Vinh Tran
+- prevent audio as image url (b9ee9b3) by @afjcjsbx
+- Merge remote-tracking branch 'origin_picoclaw/main' (0c17c07) by @zihan987
+- Merge pull request #947 from dim/fix/transcription (3e5b849) by @Mauro
+- add Vivgrid config (ea0b634) by @zihan987
+- resolve conflicts with upstream/main (11017ac) by @I Putu Eddy Irawan
+- Merge pull request #1096 from Oceanpie/docs/summarize-config-example (858e51d) by @Mauro
+- lower MaxMessageLength to 4000 for HTML expansion margin (8bd1935) by @I Putu Eddy Irawan
+- Merge pull request #1081 from rankaiyx/rankaiyx-patch-1 (a00eced) by @Mauro
+- Update README.md (93689b8) by @rankaiyx
+- Merge pull request #732 from is-Xiaoen/feat/jsonl-memory-store (c8178f4) by @daming大铭
+- Fix lint (494953f) by @Dimitrij Denissenko
+- alter env timezone from Asia/Tokyo to Asia/Shanghai (#1054) (2a577f7) by @Meng Zhuo
+- add Vivgrid config example to README (42fc589) by @zihan987
+- Merge pull request #1052 from imguoguo/update-wechat-qr (b075ee4) by @Meng Zhuo
+- Merge pull request #853 from nayihz/feat_discord_proxy (bea238c) by @美電球
+- Merge remote-tracking branch 'origin/feat/exa-search' into deploy/pi-integration (fe97387) by @I Putu Eddy Irawan
+- Merge remote-tracking branch 'origin/feat/dotenv-loading' into deploy/pi-integration (b7aaa5b) by @I Putu Eddy Irawan
+- Merge remote-tracking branch 'origin/feat/telegram-chunking' into deploy/pi-integration (8ed351c) by @I Putu Eddy Irawan
+- Merge remote-tracking branch 'origin/feat/kimi-opencode-providers' into deploy/pi-integration (c5d2298) by @I Putu Eddy Irawan
+- resolve conflict with upstream/main in provider_test.go (d257f1a) by @I Putu Eddy Irawan
+- use guardCommand directly and improve assertions in DiskWiping test (5b608ae) by @I Putu Eddy Irawan
+- Merge upstream/main into feat/dotenv-loading (56ad77b) by @I Putu Eddy Irawan
+- Merge upstream/main into fix/bugfixes (5dcd42e) by @I Putu Eddy Irawan
+- Merge pull request #1024 from wangyanfu2/fix-TavilySearch-response (4a7605e) by @Mauro
+- Merge remote-tracking branch 'origin/main' into feat_discord_proxy (69b1ae4) by @nayihz
+- Merge pull request #1020 from shikihane/feat/agent-vision-pipeline-v2 (a65ccc0) by @daming大铭
+- Merge pull request #1000 from alexhoshina/main (cf68166) by @daming大铭
+- add h2non/filetype dependency for magic-bytes MIME detection (559cef3) by @shikihane
+- Merge pull request #999 from yinwm/fix/mcp-race-condition-and-resource-leak (de2ccb5) by @daming大铭
+- Merge pull request #1002 from afjcjsbx/docs/mcp-http-server-example (227f22d) by @daming大铭
+- resolve conflict with main in loop.go (1a922c9) by @xiaoen
+- * Add new style banner for picoclaw and picoclaw-launcher-tui (#1008) (435223f) by @lxowalle
+- Merge pull request #1010 from sipeed/revert-990-feat/agent-vision-pipeline (3bb4f4e) by @Caize Wu
+- Revert "feat(agent): add vision/image support to agent pipeline" (407707a) by @Guoguo
+- Merge pull request #990 from shikihane/feat/agent-vision-pipeline (12d4570) by @Orgmar
+- mcp http server example (23bb082) by @afjcjsbx
+- Merge pull request #282 from yuchou87/mcp-tools-support (0150947) by @daming大铭
+- Merge branch 'main' into mcp-tools-support (4e348e3) by @daming大铭
+- Merge pull request #727 from Esubaalew/fix/wecom-dedupe-race (475d8f9) by @daming大铭
+- Address Copilot review feedback for .env loading (84ded81) by @I Putu Eddy Irawan
+- **wecom:** add dedupe helper coverage and align constant usage (1e2ab4a) by @esubaalew
+- **wecom:** align dedupe rotation behavior and add helper tests (db17cdc) by @esubaalew
+- Address Copilot review feedback for Exa search provider (8219b5a) by @I Putu Eddy Irawan
+- Merge pull request #300 from mymmrac/telegram-bot-commands (2563916) by @daming大铭
+- Address Copilot review: handle HTML expansion exceeding Telegram limit (33109a1) by @I Putu Eddy Irawan
+- Merge pull request #682 from Esubaalew/fix/makefile-test-vet-generate (8fddbae) by @daming大铭
+- Merge branch 'main' into feat/kimi-opencode-providers (4a067cd) by @I Putu Eddy Irawan
+- add unit tests for Telegram Send() method (3501962) by @I Putu Eddy Irawan
+- Merge pull request #893 from reevoid/rui-dev (f2ab1a7) by @美電球
+- Merge pull request #987 from lxowalle/doc/update_contribute (929589a) by @Caize Wu
+- * update contributing.md (4402fcf) by @lxowalle
+- * update contributing.md (5fa2e1d) by @lxowalle
+- Merge pull request #535 from xiaket/ci-enable-dupl-linter (faec026) by @daming大铭
+- Merge branch 'main' into feat_discord_proxy (9be6fb1) by @nayihz
+- Update pkg/channels/wecom/aibot.go (e88b39f) by @ZHANG RUI
+- Update pkg/channels/wecom/aibot.go (0b6d913) by @ZHANG RUI
+- Update pkg/channels/wecom/aibot.go (aa9ce69) by @ZHANG RUI
+- Update pkg/channels/wecom/aibot.go (e33712d) by @ZHANG RUI
+- Add WeCom AIBot channel implementation and tests (6caee42) by @Zhang Rui
+- Merge pull request #946 from winterfx/fix/preserve-reasoning-content-in-history (26d1b8e) by @daming大铭
+- Merge pull request #883 from afjcjsbx/fix/max-payload-size-in-web-fetch (83dbff7) by @Meng Zhuo
+- fixed conflicts (e066730) by @afjcjsbx
+- Merge branch 'main' into fix/max-payload-size-in-web-fetch (b86bf5b) by @Mauro
+- A more neutral and elegant voice.Transcriber interface (b74f92e) by @Dimitrij Denissenko
+- Merge pull request #916 from alexhoshina/fix/channel-config-cleanup (3926585) by @美電球
+- fix(pkg):do regex precompile insteadd on the fly (#911) (d6e88da) by @Tong Niu
+- Update docs/channels/line/README.zh.md (1ebfbc1) by @美電球
+- Fix voice transcription (b1386ad) by @Dimitrij Denissenko
+- Merge pull request #861 from p3ddd/refactor/modernize (f7136b6) by @Meng Zhuo
+- remove wrapper methods (434b03e) by @Kai Xia
+- enable dupl check (32c864c) by @Kai Xia
+- Merge branch 'main' into feat/jsonl-memory-store (cd500d2) by @xiaoen
+- Merge pull request #918 from alexhoshina/fix/wecom-resource-leaks (33f67e8) by @daming大铭
+- Address Copilot review feedback for Telegram message chunking (2dccee5) by @I Putu Eddy Irawan
+- Address Copilot review feedback for Kimi/Opencode providers (9c91d66) by @I Putu Eddy Irawan
+- fix lint issues in mcp and agent packages (077d7c8) by @yuchou87
+- Merge branch 'main' into telegram-bot-commands (aeed392) by @Artem Yadelskyi
+- Merge pull request #914 from alexhoshina/fix/wecom-context-canceled (9c9524f) by @daming大铭
+- moved fetch limit bytes in config file (b88e590) by @afjcjsbx
+- Feat/update migrate (#910) (8207c1c) by @lxowalle
+- add armv6 support to goreleaser (#905) (08599f8) by @Guoguo
+- fix(exec) fail close on invalid deny pattern (#781) (172e6eb) by @Mauro
+- Merge branch 'main' into mcp-tools-support (257b0d8) by @yuchou87
+- Merge pull request #884 from alexhoshina/fix/memory-leak-whatsapp-reasoning (feee0da) by @daming大铭
+- Merge pull request #681 from dimensi/bugfix/falsy-context-deadline (8529abb) by @daming大铭
+- resolve conflicts with upstream/main (62bdece) by @Petrichor
+- Merge branch 'sipeed:main' into main (cdbc9c4) by @美電球
+- Merge pull request #882 from sipeed/fix/issue#565 (2f4f450) by @daming大铭
+- Update config file reference from config.yaml to config.json (ebfa72a) by @美電球
+- Merge pull request #881 from mosir/fix/onboard-include-empty-model (1211218) by @daming大铭
+- Merge pull request #824 from 0xYiliu/fix/issue-783-fallback-alias-resolution (70fcbc5) by @daming大铭
+- Merge pull request #877 from sipeed/refactor/channel-system (5b96923) by @daming大铭
+- Merge pull request #655 from adityakalro/main (c119e0d) by @美電球
+- Fix formatting of WhatsAppConfig struct fields (f6c275f) by @美電球
+- Resolve merge conflict in config.example.json (75a86eb) by @美電球
+- Remove ignored files from .gitignore (6b427af) by @美電球
+- Update test case for unicode letters preservation (67e1dab) by @美電球
+- Update function comment for SanitizeMessageContent (3ad937f) by @美電球
+- Reformat WhatsAppConfig struct fields alignment (6fcc80b) by @美電球
+- Fix lint errors (7276a2d) by @Hoshina
+- Merge branch 'refactor/channel-system' into main (fa68023) by @美電球
+- Merge pull request #802 from biisal/reasoning-chnl (90e49bc) by @daming大铭
+- fix go fmt formatting issues after rebase (d429dcd) by @Hoshina
+- Merge branch 'sipeed:main' into reasoning-chnl (b1a6b38) by @Avisek Ray
+- Prompt to modify the max_tool_iterations parameter. (#855) (b6927c9) by @lxowalle
+- * update wechat qrcode & delete unused mp4 file (#852) (a91a4e5) by @lxowalle
+- Complete the whatsapp native channel implementation based on the new channel interface (42ee9ab) by @Aditya Kalro
+- Refactor whatsapp native channel based on the new channel interface (a8644ca) by @Aditya Kalro
+- Merge pull request #842 from sipeed/revert-767-update-wechat-group (2c8416e) by @daming大铭
+- Revert "docs: update wechat qrcode (#767)" (7592ccd) by @Guoguo
+- Merge pull request #706 from mosir/fix/atomic-file-writes (69e5b61) by @Meng Zhuo
+- **docker:** reorganize docker files and add first-run entrypoint (#812) (a5c8179) by @Guoguo
+- Merge branch 'sipeed:main' into fix/atomic-file-writes (b8c0d13) by @mosir
+- Merge pull request #766 from penzhan8451/main (3584c0c) by @daming大铭
+- fix gci import grouping in config, cron, and skills installer (433af43) by @mosir
+- resolve conflicts with main (d887009) by @mosir
+- Merge branch 'main' of https://github.com/sipeed/picoclaw (a161bf9) by @penglp
+- Revert "feat(line): add StartTyping and PlaceholderRecorder integration" (e268ea8) by @ex-takashima
+- Perf/precompile regex (#687) (8a1fb03) by @mattn
+- support armv81 arch in Makefile (#776) (cb3191c) by @ztechenbo
+- Merge pull request #808 from alexhoshina/config/change-default-dm-scope-to-per-channel-peer (b1c61cd) by @daming大铭
+- change default dm_scope to per-channel-peer (21654f1) by @Hoshina
+- fix go generate not running in subdirectories (#807) (6a4116b) by @Guoguo
+- Merge remote-tracking branch 'origin/main' into feat/searxng (2580ef3) by @Vinh Tran
+- remove version from rpm and deb file name (#804) (a5cc4db) by @Guoguo
+- Merge branch 'sipeed:main' into fix/atomic-file-writes (16a1c96) by @mosir
+- Merge pull request #790 from rordd/fix/gemini-prompt-cache-key (95b246f) by @美電球
+- Rebuilt after the refactoring of the base channel implementation. (49612ad) by @Aditya Kalro
+- Merge branch 'sipeed:main' into fix/atomic-file-writes (be4b8fa) by @mosir
+- Merge pull request #768 from avaksru/main (f244076) by @daming大铭
+- Merge branch 'main' of https://github.com/sipeed/picoclaw (78ba057) by @penglp
+- **memory:** add unit, concurrency, and benchmark tests (529622b) by @xiaoen
+- Merge branch 'sipeed:main' into fix/atomic-file-writes (87e674b) by @mosir
+- Merge pull request #779 from wgjtyu/main (094d659) by @daming大铭
+- Update pkg/tools/web.go (ef1989f) by @George Wang
+- add proxy support for TavilySearchProvider (c8a553f) by @George Wang
+- resolve conflicts with main (6e754a8) by @mosir
+- fix Code Review: PR #768 (162f38c) by @avaksru
+- Merge pull request #617 from Zhaoyikaiii/fix/repeated-context-reprocessing (53578da) by @daming大铭
+- Merge pull request #770 from xiaket/ci-golangci-cleanup (f7fc8bb) by @daming大铭
+- Merge pull request #730 from winterfx/main (9c7933d) by @daming大铭
+- a moved case of nakedret (9be1cd6) by @Kai Xia
+- enable whitespace (b190e6e) by @Kai Xia
+- enable wastedassign (d8b164b) by @Kai Xia
+- enable predeclared (6830790) by @Kai Xia
+- enable prealloc (4e6589d) by @Kai Xia
+- enable nakedret (09cf8ef) by @Kai Xia
+- enable misspell (c5e8e19) by @Kai Xia
+- enable goprintffuncname (1fab196) by @Kai Xia
+- enable dogsled (06daa30) by @Kai Xia
+- enable bodyclose (95f22bc) by @Kai Xia
+- add rpm and deb support in goreleaser (974337f) by @Guoguo
+- add loongarch64, remove s390x and mips64 support in goreleaser (43611e2) by @Guoguo
+- Enable Docker Hub login in release workflow (f7d487e) by @avaksru
+- Restore dockers_v2 configuration for picoclaw (a527976) by @avaksru
+- fix gci formatting in protocoltypes/types.go (edc7819) by @Zhaoyikaiii
+- Disable dockers_v2 section in goreleaser config (8527605) by @avaksru
+- Disable Docker Hub login in release.yml (7de7519) by @avaksru
+- Add goarm versions for ARM architecture in config (14cb16f) by @avaksru
+- Add ARMv7 build target to Makefile (19c6890) by @avaksru
+- fix:Openrouter in providers and modellist (81c8c07) by @penglp
+- Merge remote-tracking branch 'sipeed/main' into fix/atomic-file-writes (f86de3c) by @mosir
+- Merge branch 'main' of github.com:mosir/picoclaw into fix/atomic-file-writes (7a2d353) by @mosir
+- Merge pull request #587 from nayihz/feat_webtool_proxy (fd26fa7) by @daming大铭
+- Merge pull request #642 from Lixeer/main (eb138a3) by @daming大铭
+- Merge pull request #722 from ihao/main (18ba888) by @daming大铭
+- Merge pull request #726 from xiaket/devx-make-improvements (b10555c) by @daming大铭
+- Merge pull request #724 from mqyang56/fix/model-list-default-value-leak (9cc0f8e) by @daming大铭
+- Merge pull request #677 from yinwm/refactor/model-to-model-name (d20cb36) by @daming大铭
+- minor improvements in Makefile (78e5bda) by @Kai Xia
+- Merge pull request #604 from winterfx/fix/reasoning-content-missing (b6e965e) by @daming大铭
+- apply PR #697 comment translations to refactored channel subpackages (0ede643) by @Hoshina
+- Merge pull request #697 from xiaket/doc-remove-chinese-comments (7cbfa89) by @Meng Zhuo
+- Moving logging from INFO to DEBUG for messages Removing extrnaeous comments about mutex in loop.go (04806bf) by @Aditya Kalro
+- translate Chinese comments (6fb6153) by @Kai Xia
+- Merge pull request #541 from edouard-claude/feat/mistral-provider (ae74fa3) by @美電球
+- Merge remote-tracking branch 'origin/main' into refactor/model-to-model-name (e76e45f) by @yinwm
+- Removing the agentMu mutex from the AgentLoop (071505e) by @Aditya Kalro
+- Adding a new target to the Makefile to build for multiple platforms with WhatsApp native support. (16a36ea) by @Aditya Kalro
+- missing Tavily config in loop.go, and the invalid config param in web_search (#660) (4cc8b90) by @Vidish
+- Add new build tag for WhatsApp native support to keep the binary smaller. (25362ec) by @Aditya Kalro
+- Handle dis (76f8ab8) by @Aditya Kalro
+- Changing the logging to use the logger package to be consistent. (91eff9b) by @Aditya Kalro
+- Sanitize WhatsApp messages and remove extra log messages. (81234f7) by @Aditya Kalro
+- remove old roadmap (#632) (8928f83) by @Kai Xia(夏恺)
+- golangci-lint run --fix on master (#656) (6b429de) by @美電球
+- golangci-lint run --fix on master (4a73415) by @Kai Xia
+- Added a native WhatsApp channel implementation. (c1ed163) by @Aditya Kalro
+- **tools,utils:** add ToolRegistry unit tests and fix Truncate panic on negative maxLen (#517) (cb0c870) by @King Tai
+- **mcp:** add manager behavior and lifecycle unit tests (4e330b2) by @yuchou87
+- Merge branch 'main' into mcp-tools-support (672da98) by @yuchou87
+- Merge pull request #590 from alexhoshina/docs (40f9630) by @daming大铭
+- 1. update wechat qrcode. 2. add CONTRIBUTING.md (aea4f25) by @zepan
+- Merge pull request #592 from alexhoshina/main (bb8b924) by @美電球
+- Merge branch 'main' into mcp-tools-support (d867e86) by @yuchou87
+- Fix Memory Write (#557) (80c8b57) by @Luke Milby
+- Merge pull request #550 from mymmrac/govet-linter (273a8a2) by @Meng Zhuo
+- Merge pull request #491 from PixelTux/ollama (b3e20c7) by @Meng Zhuo
+- fix (security): ExecTool `working_dir` sandbox escape (#478) (244eb0b) by @Goksu Ceylan
+- Merge branch 'main' into telegram-bot-commands (50d2616) by @Artem Yadelskyi
+- Merge pull request #548 from mymmrac/build-no-fmt (e883e14) by @danieldd
+- Merge pull request #435 from mymmrac/fix-formatting (df2c424) by @danieldd
+- Merge pull request #546 from harshbansal7/readme_fix (1e3a9eb) by @danieldd
+- fix 2 (123cffa) by @harshbansal7
+- fix (5ca239b) by @harshbansal7
+- Merge branch 'main' into telegram-bot-commands (c319db4) by @Artem Yadelskyi
+- Merge branch 'main' into fix-formatting (ad8c2d4) by @Artem Yadelskyi
+- Merge pull request #537 from Esubaalew/main (e23795e) by @daming大铭
+- Merge pull request #378 from lunareed720/fix/exec-timeout-process-tree (5b525f6) by @Meng Zhuo
+- Merge pull request #524 from mattn/perf/strings-builder (5522776) by @Meng Zhuo
+- Merge pull request #474 from swordkee/main (1ef33c9) by @daming大铭
+- Fix (df49f66) by @Yasuhiro Matsumoto
+- Use strings.Builder instead of += concatenation in loops (bca9243) by @Yasuhiro Matsumoto
+- Implement Skill Discovery - With Clawhub Integration and Caching (#332) (d692cc0) by @Harsh Bansal
+- Merge pull request #514 from CrisisAlpha/docs/config-example-add-missing-sections (36a8a03) by @daming大铭
+- Merge pull request #492 from yinwm/feat/refactor-provider-by-protocol (e599573) by @daming大铭
+- Merge upstream main into feat/refactor-provider-by-protocol (723f4e8) by @yinwm
+- Merge upstream main into feat/refactor-provider-by-protocol (23c39f4) by @yinwm
+- update Claude model references to claude-sonnet-4.6 (dc9fb32) by @yinwm
+- Merge branch 'main' into fix-formatting (2038f04) by @Artem Yadelskyi
+- run gofmt to fix code formatting (e2d37f0) by @yinwm
+- Merge remote-tracking branch 'origin/main' into feat/refactor-provider-by-protocol (f8f1d53) by @yinwm
+- extra_hosts mapping to have enables container-to-host connectivity (676bd6d) by @PixelTux
+- **config:** use snake_case for EnvFile JSON field name (f0ce26f) by @yuchou87
+- **agent:** clarify MCP tool registration logging (dea381c) by @yuchou87
+- merge main branch into mcp-tools-support (a5d2e10) by @yuchou87
+- format code with gofmt (47533a0) by @yuchou87
+- Replace \s+ with [^\S\n]+ to preserve newlines (#299) (e8afd31) by @mattn
+- dead code cleanup (#210) (d167b47) by @Kai Xia(夏恺)
+- Merge pull request #436 from Huaaudio/feat/base-layer-message-split (59fd391) by @Hua Audio
+- Update pkg/utils/message.go (0d6b22f) by @Hua Audio
+- remove unicode (98afd39) by @Huaaudio
+- update dynamic buffer (a46fe14) by @Huaaudio
+- update message test, change dynamic buffer (7d8894d) by @Huaaudio
+- Update pkg/utils/message.go (dfc3dff) by @Hua Audio
+- Privated function (82a2fae) by @Huaaudio
+- Update to support extra long code blocks (f38ce0d) by @Huaaudio
+- Update pkg/utils/message.go (4ccee85) by @Hua Audio
+- Merge branch 'sipeed:main' into feat/base-layer-message-split (0a9d24e) by @Hua Audio
+- Merge pull request #437 from harshbansal7/fix_build (048cd08) by @Hua Audio
+- fix (b122abd) by @harshbansal7
+- update documents (e35a827) by @Huaaudio
+- Merge branch 'main' into fix-formatting (5ff4a0f) by @Artem Yadelskyi
+- Merge pull request #411 from harshbansal7/frontmatter_fix (f7ec89d) by @Leandro Barbosa
+- Comments resolved (287100f) by @harshbansal7
+- Merge pull request #304 from mymmrac/golangci-lint (b1e3b11) by @Leandro Barbosa
+- 1. update wechat group qrcode (1b3da2c) by @zepan
+- Merge pull request #418 from DanielVenturini/fix/add-missing-accentuation-in-ptbr-readme (1eb6b83) by @Leandro Barbosa
+- Merge pull request #131 from Leeaandrob/feat/multi-agent-routing (ab805fd) by @Leandro Barbosa
+- sync upstream/main (PR #213) into feat/multi-agent-routing (447c17a) by @Leandro Barbosa
+- Merge branch 'main' into golangci-lint (ef89650) by @Artem Yadelskyi
+- Merge pull request #213 from jmahotiedu/refactor/provider-protocol-122 (e61786c) by @Leandro Barbosa
+- Merge branch 'main' into golangci-lint (24e35a1) by @Artem Yadelskyi
+- Merge branch 'main' into telegram-bot-commands (bebf4b0) by @Artem Yadelskyi
+- Merge remote-tracking branch 'upstream/main' into refactor/provider-protocol-122 (8a3be99) by @Leandro Barbosa
+- Merge pull request #337 from quybquang/docs/add-vietnamese-readme (87aee78) by @Leandro Barbosa
+- sync upstream/main, wire WebSearch through factory (2276bd1) by @Leandro Barbosa
+- Merge branch 'upstream/main' into docs/add-vietnamese-readme (1e88df3) by @AlbertBui010
+- add support for \r as well (02b5811) by @harshbansal7
+- Fix parsing of SKILL.md file frontmatter - regex (994ec72) by @harshbansal7
+- Merge pull request #218 from mattn/fix-readme-ja (b77a403) by @Leandro Barbosa
+- Feature/websearch OpenAI (#118) (3390576) by @Zenix
+- Merge pull request #362 from blib/feat-bin-size (8807d82) by @Leandro Barbosa
+- Merge pull request #385 from Leeaandrob/docs/add-portuguese-br-readme (eeac7c7) by @Leandro Barbosa
+- Merge branch 'main' into telegram-bot-commands (d49ce32) by @Artem Yadelskyi
+- Merge branch 'main' into golangci-lint (0785a05) by @Artem Yadelskyi
+- Merge branch 'main' into docs/add-vietnamese-readme (2ee2858) by @QUY BUI QUANG
+- Merge PR #343: Add Google Antigravity provider and harden tool-call compatibility (5d1669e) by @yinwm
+- finalize PR213 review fixes (c4cbb5f) by @Jared Mahotiere
+- Merge pull request #327 from humaid0x/fix-japanese-readme-link (ba47892) by @Leandro Barbosa
+- Merge pull request #227 from mattn/fix-shadowing-running (4fde017) by @Leandro Barbosa
+- Merge PR #368: Add Volcengine (doubao) provider (6913edb) by @yinwm
+- Merge PR #333: Add Cerebras provider (6992012) by @yinwm
+- Merge PR #365: Add Qwen provider (de4ef9a) by @yinwm
+- Optimize ./picoclaw status output to support all config file configurations. (bb0eadd) by @likeaturtle
+- Fix the case sensitivity issue when automatically recognizing VolcEngine LLM model names. (6cd419b) by @likeaturtle
+- add Volcengine LLM (doubao) support (2f24be6) by @likeaturtle
+- Merge origin/main into refactor/provider-protocol-122 (e3c246a) by @Jared Mahotiere
+- fix:pr-272 reverted the changes from pr-227 (#361) (920e30a) by @lxowalle
+- Merge pull request #225 from yinwm/feat/cron-exec-timeout-config (7b9b810) by @daming大铭
+- Merge remote-tracking branch 'origin/main' into feat/cron-exec-timeout-config (684e741) by @yinwm
+- 1. fix typo (da79c20) by @zepan
+- 1. add android phone termux quick guide (5fb2721) by @zepan
+- 1. add AI Code Generation selection in pr template (951b05d) by @zepan
+- 1. rename doc to docs (ac4b16d) by @zepan
+- 1. add roadmap.md (0fadbcd) by @zepan
+- **docker:** migrate full image from Debian to Alpine base (e38364b) by @yuchou87
+- **config:** remove example MCP servers from default config (4113190) by @yuchou87
+- update pr template (57dac39) by @zepan
+- Better nuance (5772b92) by @Yasuhiro Matsumoto
+- Add new provider cerebras (852d361) by @Yasuhiro Matsumoto
+- Merge branch 'main' into golangci-lint (552d6f1) by @Artem Yadelskyi
+- sync upstream/main into feat/multi-agent-routing (12007b5) by @Leandro Barbosa
+- 1. update wechat group qrcode 2. publish roadmap (13e4028) by @zepan
+- **deps:** consolidate indirect require for uritemplate (a026d56) by @yuchou87
+- Update issue templates (e7f15af) by @Caize Wu
+- **docker:** add execute permission to test script (2461069) by @yuchou87
+- **deps:** format go.mod (87e0336) by @yuchou87
+- Merge branch 'main' into mcp-tools-support (acb974f) by @yuchou87
+- Feat issue 183 (#189) (8d757fb) by @Tzufucius
+- support building for linux/loong64 (#272) (159a954) by @WÁNG Xuěruì
+- Prevent panic on publish after MessageBus is closed (#223) (a371d53) by @mattn
+- Discord message length check and auto split (#143) (32cb8fd) by @Huaaudio
+- Add health check endpoints (/health and /ready) for container orchestration liveness and readiness probes. (#104) (341dbd3) by @fahadahmadansari111
+- temporary disable UPX compression (#257) (a5503ae) by @Guoguo
+- Add local AI ollama for security purpose (#226) (cd638ff) by @trungtt6
+- use goreleaser to release docker and binary (#180) (0d18210) by @Guoguo
+- Remove duplicate file extension in DownloadFile (#230) (1d748fb) by @mattn
+- add when picoclaw responsed to discord message will show its typing (#236) (811e4f8) by @Luke Milby
+- Fix shadowing field runnnig (7ce5b75) by @Yasuhiro Matsumoto
+- Fix Japanese translation (97bf4ff) by @Yasuhiro Matsumoto
+- update wechat group qrcode (214b201) by @zepan
+- Merge remote-tracking branch 'upstream/main' into feat/cron-exec-timeout-config (40f9028) by @yinwm
+- init goreleaser (9a3f361) by @Meng Zhuo
+- Merge pull request #173 from is-Xiaoen/fix/code-review-bugs-116 (8eb9dcd) by @Meng Zhuo
+- Merge pull request #151 from qiaoborui/codex/fix-openai-oauth-authorize-url (ddd73ca) by @Meng Zhuo
+- Merge pull request #134 from Sethispr/patch-1 (3334595) by @Meng Zhuo
+- Merge branch 'main' into patch-1 (25a47b5) by @seth
+- Merge pull request #165 from alexhoshina/feat/onebot (0f506d4) by @Meng Zhuo
+- Merge pull request #172 from mymmrac/docker-curl (6ce7659) by @Meng Zhuo
+- Merge pull request #178 from Lixeer/main (6f2e730) by @Meng Zhuo
+- try after workflow fix (0a4bf32) by @Lixeer
+- code fmt (5a6ad37) by @Lixeer
+- make fmt (f6d6221) by @Lixeer
+- make fmt (7a96599) by @Lixeer
+- remove redundant debug output (ecbe315) by @Lixeer
+- feat:add `github_copilot` to providers factory (0aab8d8) by @Lixeer
+- * fix fmt bug (7140e73) by @lxowalle
+- sync upstream/main into feat/multi-agent-routing (5e89264) by @Leandro Barbosa
+- fix alignment of fields in BotStatus struct (60c3d96) by @Hoshina
+- Merge pull request #153 from alexhoshina/doc/fix-errors (1cff7d4) by @Meng Zhuo
+- remove unnecessary log messages in WebSocket listener (f742112) by @Hoshina
+- Merge pull request #169 from PixelTux/architecture-32-bit (1cb690d) by @Meng Zhuo
+- Merge pull request #167 from Lixeer/main (59c7aa1) by @Meng Zhuo
+- fix format (1fcf3fd) by @Hoshina
+- Merge pull request #158 from easyzoom/feat/device-hotplug-notifications (b805ec8) by @Meng Zhuo
+- add I2C and SPI tools for hardware interaction (#140) (2720fa7) by @karan
+- Merge branch 'main' into architecture-32-bit (ba0ef4b) by @PixelTux
+- Merge pull request #147 from ex-takashima/feat/line-channel (5872e0f) by @daming大铭
+- fix gofmt formatting (CRLF -> LF) (ac79a23) by @ex-takashima
+- fix tab in build (ff92973) by @Meng Zhuo
+- fmt code in build (d7822e5) by @Meng Zhuo
+- resolve conflict with upstream main (aa7a8b8) by @ex-takashima
+- update wechat group qrcode (6083168) by @zepan
+- Merge branch 'main' into architecture-32-bit (2cb90f2) by @PixelTux
+- Merge branch 'main' into patch-1 (a286100) by @seth
+- Merge pull request #83 from carzygod/main (1aea912) by @lxowalle
+- Merge pull request #78 from SatyamDevv/main (55d5e89) by @lxowalle
+- Merge branch 'main' into main (bd9c9d7) by @lxowalle
+- lint readme (15e3c7d) by @seth
+- fix gofmt formatting in cooldown files (0f5b2f6) by @Leandro Barbosa
+- sync upstream/main into feat/multi-agent-routing (8a6fb7d) by @Leandro Barbosa
+- Merge pull request #130 from MHCP000/fix/codeblock-index-bug (82a9a80) by @Meng Zhuo
+- * fix: heartbeat/service_test.go test failed (878650c) by @lxowalle
+- Merge pull request #24 from Esubaalew/main (7f60392) by @lxowalle
+- Merge branch 'main' into main (bc27707) by @lxowalle
+- Merge pull request #128 from yinwm/feat/better-version (14de80d) by @daming大铭
+- fix var block formatting (b5a8eff) by @yinwm
+- update readme (82fea61) by @zepan
+- Merge remote-tracking branch 'origin/HEAD' into feat/better-version (3c2e467) by @yinwm
+- Merge branch 'sipeed:main' into main (9036a51) by @daming大铭
+- Merge pull request #124 from mengzhuo/mengzhuo-fmt-1 (ee3e8cc) by @Meng Zhuo
+- Add dependencies for fmt-check in vet and test jobs (b484d3f) by @Meng Zhuo
+- add pull request check (000e64c) by @Meng Zhuo
+- Merge branch 'main' of https://github.com/sipeed/picoclaw (e0a7662) by @Satyam Tiwari
+- Change Docker build trigger to on release published (1516cb5) by @Meng Zhuo
+- fmt code (584a3dc) by @Meng Zhuo
+- Merge pull request #111 from shengsuan/ssy (c58f8b7) by @Meng Zhuo
+- Merge pull request #105 from Zhaoyikaiii/bugfix/fix-duplicate-telegram-messages (5339389) by @daming大铭
+- Merge branch 'main' of https://github.com/SatyamDevv/picoclaw (f739c45) by @Satyam Tiwari
+- resolve conflicts with upstream/main (cf5a84a) by @Zhaoyikaiii
+- Merge branch 'sipeed:main' into main (0d339d9) by @daming大铭
+- Merge pull request #85 from lesichkovm/patch-1 (c0d1346) by @daming大铭
+- **docs:** remove completed PRD document from tasks (7fa70b8) by @yinwm
+- Merge pull request #108 from yinwm/ralph/tool-result-refactor (9ccfea4) by @daming大铭
+- Merge remote-tracking branch 'origin/main' into ralph/tool-result-refactor (a6aa833) by @yinwm
+- fix duplicate Telegram message sending (132fe7d) by @Zhaoyikaiii
+- Merge branch 'main' into main (fc40f29) by @Esubalew Chekol
+- Merge branch 'sipeed:main' into main (0c4b8b0) by @Satyam Tiwari
+- * The docker-build workflow will no longer run when submitting a PR. (42e0e58) by @lxowalle
+- * fix: docker build failed (68abf6b) by @lxowalle
+- add release workflow (8e15c90) by @Guoguo
+- 1. update wechat group qrcode (aa0ab72) by @zepan
+- fix concurrency and persistence safety in session/cron/heartbeat services (7fa341c) by @esubaalew
+- Update launch announcement in README (5893245) by @Milan Lesichkov
+- update telegram username support (875a16d) by @Wikig
+- Merge remote-tracking branch 'origin/main' into ralph/tool-result-refactor (53b5be8) by @yinwm
+- Merge upstream/main into ralph/tool-result-refactor (ab20314) by @yinwm
+- Merge branch 'sipeed:main' into main (fbe1152) by @Satyam Tiwari
+- * Fix typos (d83fb6e) by @lxowalle
+- Add openrouter config sample (d2a372e) by @Sunwood-ai-labs
+- add GitHub Actions workflow for Docker image build & push 🐳 (2997ea0) by @Sunwood-ai-labs
+- Merge branch 'main' of https://github.com/SatyamDevv/picoclaw (04924ed) by @Satyam Tiwari
+- Clean up Ralph agent tracking files (b36c87b) by @yinwm
+- add darwin arm64 target (#76) (d165fde) by @Guoguo
+- Remove backup cron files (3eb9d6a) by @yinwm
+- Merge pull request #74 from SatyamDevv/main (e2862c7) by @lxowalle
+- Merge remote-tracking branch 'upstream/main' (0b7f8c1) by @Satyam Tiwari
+- Merge pull request #73 from Leeaandrob/feat/claude-cli-provider (19fc918) by @lxowalle
+- Merge pull request #72 from xray918/add-clawdchat-social-network (bba44cf) by @lxowalle
+- Merge remote-tracking branch 'upstream/main' (19b9f93) by @Satyam Tiwari
+- Merge branch 'main' of https://github.com/SatyamDevv/picoclaw (2855764) by @Satyam Tiwari
+- Merge pull request #64 from DevEverything01/fix/heartbeat-service-start-bug (a8cd784) by @lxowalle
+- merged and fixed the issues (7c16afb) by @Satyam Tiwari
+- Merge branch 'main' of https://github.com/SatyamDevv/picoclaw (71a81eb) by @Satyam Tiwari
+- Add ClawdChat Agent Social Network section to README (ae2501d) by @xiexinfa
+- Enhance CronTool to support executing shell commands and update job handling (9c98c11) by @Satyam Tiwari
+- Merge pull request #56 from jmahotiedu/fix/openai-device-code-interval (930080f) by @lxowalle
+- Merge pull request #55 from Diegox-17/patch-1 (5b6ad3f) by @lxowalle
+- add build check workflow (#71) (0661d05) by @Guoguo
+- * Delete unused file (8661d54) by @lxowalle
+- Merge pull request #26 from RinZ27/fix-path-traversal-and-unrestricted-exec (8d15598) by @lxowalle
+- Merge branch 'main' into fix-path-traversal-and-unrestricted-exec (df1e4d0) by @lxowalle
+- Merge pull request #51 from victorhdchagas/fix/telegram-permission-check (8968d58) by @yinwm
+- Merge pull request #48 from victorhdchagas/fix/provider-field-support (2fb2604) by @yinwm
+- 1. update wechat group qrcode (13fcbe6) by @zepan
+- Fix LLM error by cleaning up CONSCIOUSLY message history (481eee6) by @Diegox-17
+- Enforce workspace boundaries with configurable restriction option (792639d) by @RinZ27
+- Fix telegram channel permission check (d7da39d) by @Wutachi
+- Merge pull request #49 from yinwm/main (4a7c481) by @yinwm
+- Merge pull request #45 from jadeydi/main (4a39658) by @yinwm
+- Merge pull request #40 from mymmrac/telegram-using-telego (6429595) by @yinwm
+- Merge branch 'main' into telegram-using-telego (fe49627) by @yinwm
+- Add provider field support for explicit provider selection (f4a8ff7) by @Wutachi
+- Merge pull request #34 from corylanou/issue-31-feat-add-slack-channel-integration-with-socket-mode-threads-reactions-and-slash-commands (292a371) by @yinwm
+- Merge branch 'main' into issue-31-feat-add-slack-channel-integration-with-socket-mode-threads-reactions-and-slash-commands (44e33d8) by @yinwm
+- Merge pull request #33 from corylanou/issue-27-feat-add-picoclaw-migrate-command-for-openclaw-workspace-migration (167efc5) by @yinwm
+- Merge branch 'main' into issue-27-feat-add-picoclaw-migrate-command-for-openclaw-workspace-migration (66669d6) by @yinwm
+- Merge pull request #32 from corylanou/issue-18-add-support-for-openai-anthropic-oauth-based-login (5f1caed) by @yinwm
+- Merge pull request #44 from Sethispr/patch-1 (ddd6fca) by @yinwm
+- Merge pull request #30 from DevEverything01/fix/atomic-running (fe59662) by @yinwm
+- Merge pull request #29 from DevEverything01/fix/deduplicate-truncate (91e8abf) by @yinwm
+- better version (8ceef6e) by @li
+- lint readme (af3f659) by @seth
+- add build constraints for feishu to support 32-bit builds (cddafb4) by @PixelTux
+- **deps:** upgrade openai-go from v1.12.0 to v3.21.0 (83f6e44) by @Cory LaNou
+- Remove duplicate truncate functions, reuse utils.Truncate (f12c337) by @Together
+- prioritize explicit provider prefixes and update max_tokens schema (6ccd9d0) by @Only_Xianzo
+- 1. update wechat group qrcode (4f51441) by @zepan
+- Merge pull request #23 from yinwm/fix/gateway-cron-tool (4fbf017) by @lxowalle
+- Merge upstream/main (f5b9191) by @yinwm
+- Fix typos and update API keys in README (9ec84c6) by @Harshdeep Sharma
+- Fix typos and update API keys in README (ae9cfc2) by @Harshdeep Sharma
+- Fix typos and update API keys in README (18bdbef) by @Harshdeep Sharma
+- Merge pull request #19 from n0bisuke/main (3e902ab) by @lxowalle
+- Merge pull request #14 from yinwm/fix/tool-execution (833c092) by @lxowalle
+- Merge branch 'pr-12' (8c8daf6) by @lxowalle
+- Merge pull request #5 from yinwm/add-qq-channel (7231d48) by @lxowalle
+- fix a typo (94935c5) by @n0bisuke
+- Fix BuildMessages calls, remove conflict markers, and add skills_available field (c3f5398) by @yinwm
+- Add memory system, dynamic tool loading, and fix logging issues (21d60f6) by @yinwm
+- Add memory system, debug mode, and tools (1044273) by @yinwm
+- Add logging to agent loop and tool execution (be2ed5d) by @yinwm
+- add QQ channel support (2b3de5c) by @yinwm
+-  * Discord & Telegram support ASR through groq (9936dbc) by @lxowalle
+- 1. add hardware samples (24d5e83) by @zepan
+- Merge pull request #6 from imguoguo/fix-feishu (91e7e18) by @lxowalle
+- Merge pull request #3 from Danieldd28/feature/dynamic-context-compression (ac945fa) by @lxowalle
+- 1. add discord group (f7d6a9c) by @zepan
+- 1. add wechat group (5baae33) by @zepan
+- * Fix some typos (b599a02) by @lxowalle
+- * First commit (e17693b) by @lxowalle
+
