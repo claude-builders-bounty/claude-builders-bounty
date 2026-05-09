@@ -14,83 +14,68 @@
 ## Folder Structure
 ```
 src/
-├── app/            # Next.js App Router (routes only, no logic)
+├── app/            # Next.js App Router
 │   ├── (auth)/     # Auth route group
 │   ├── (dashboard)/# Authenticated route group
 │   └── api/        # API routes
-├── components/     # React components
+├── components/
 │   ├── ui/         # shadcn/ui primitives
-│   └── features/   # Domain-specific components
-├── lib/            # Shared utilities
+│   └── features/   # Domain components
+├── lib/
 │   ├── db/         # Database (schema, migrations, queries)
 │   ├── auth/       # Auth config
 │   └── utils/      # Pure helpers
-├── server/         # Server-only code (never imported in client components)
+├── server/
 │   └── actions/    # Server Actions
-└── types/          # Shared TypeScript types
+└── types/          # Shared types
 ```
 
 ## Rules
 
 ### Database
-- **All schema changes via Drizzle migrations** — never edit SQLite files directly
-- `npx drizzle-kit generate` → review generated SQL → `npx drizzle-kit push`
-- Queries go in `src/lib/db/queries/`, one file per domain (e.g. `users.ts`, `billing.ts`)
-- **Never use raw SQL** unless Drizzle cannot express it. If you must, wrap in a migration
-- Turso in production uses HTTP API — all queries must be compatible (no `ATTACH`, no `PRAGMA` volatile)
+- All schema changes via Drizzle migrations — never edit SQLite files directly
+- `npx drizzle-kit generate` → review → `npx drizzle-kit push`
+- Queries in `src/lib/db/queries/`, one file per domain
+- Never use raw SQL unless Drizzle cannot express it; if must, wrap in migration
 
 ### Components
-- **Server Components by default** — only add `"use client"` when you need interactivity
-- Client boundary at the leaf: a `PostsList` is server, the `LikeButton` inside it is client
-- Forms use Server Actions: define in `src/server/actions/`, import in form `action` prop
-- **No `useEffect` for data fetching** — use Server Components, `fetch()`, or React Query for client-side
-- shadcn/ui components are installed via `npx shadcn-ui add`, never edited manually in `components/ui/`
+- Server Components by default — `"use client"` only for interactivity
+- Client boundary at the leaf: `PostsList` server, `LikeButton` client
+- Forms use Server Actions in `src/server/actions/`
+- No `useEffect` for data fetching — use Server Components or React Query
 
 ### Types & Validation
-- Zod schemas in `src/lib/validations/`, co-located with the domain they validate
-- Database types from Drizzle schema: `type User = typeof users.$inferSelect`
-- **Never use `any`** — if typing is complex, create an interface
-- API routes validate input with Zod before any logic
+- Zod schemas in `src/lib/validations/`
+- DB types from Drizzle: `type User = typeof users.$inferSelect`
+- Never use `any`
+- API routes validate input with Zod
 
 ### Naming
-- **Files:** kebab-case (`user-settings.ts`, `billing-webhook.ts`)
-- **Components:** PascalCase (`UserSettings.tsx`)
-- **Functions:** camelCase (`getUserByEmail`, `createCheckoutSession`)
-- **Database tables:** plural snake_case (`users`, `subscription_plans`)
-- **Branches:** `feat/description`, `fix/description`, `chore/description`
+- Files: kebab-case | Components: PascalCase | Functions: camelCase
+- DB tables: plural snake_case | Branches: `feat/`, `fix/`, `chore/`
 
 ## Dev Commands
 ```bash
-pnpm dev           # Start dev server (localhost:3000)
+pnpm dev           # localhost:3000
 pnpm build         # Production build
-pnpm db:generate   # Generate Drizzle migrations
+pnpm db:generate   # Drizzle migrations
 pnpm db:push       # Apply migrations
-pnpm db:studio     # Open Drizzle Studio
-pnpm lint          # ESLint
-pnpm format        # Prettier
+pnpm db:studio     # Drizzle Studio
+pnpm lint && pnpm format
 pnpm test          # Vitest
 ```
 
-## Anti-Patterns (What We Don't Do)
+## What We Don't Do
+- ❌ Business logic in components → `lib/` or `server/actions/`
+- ❌ Server code in client components
+- ❌ Secrets in `.env` → `.env.local` (gitignored)
+- ❌ Direct SQLite file manipulation
+- ❌ Mix concerns in single file
+- ❌ Skip Zod on user input
 
-### ❌ Don't
-- Put business logic in components — it goes in `lib/` or `server/actions/`
-- Import server code in client components — use Server Actions or API routes
-- Store secrets in `.env` — use `.env.local` (gitignored), `.env.example` for templates
-- Use `useEffect` for data fetching — React Query or Server Components
-- Direct SQLite file manipulation — always through Drizzle
-- Mix concerns in a single file — one file, one responsibility
-- Skip Zod validation on user input — everything from the boundary gets validated
-
-### ✅ Do
-- **Server-first data fetching** — the data lives on the server, components receive it as props
-- **Progressive enhancement** — form works without JS, enhanced with `useFormStatus`
-- **Edge-compatible where possible** — avoid Node.js APIs in route handlers (use Web APIs)
-- **Tailwind over CSS modules** — one styling system, no mixing
-- **Co-locate tests** — `__tests__` directory next to the code it tests
-
-## When in Doubt
-1. Check the Next.js docs before implementing routing/auth patterns
-2. Search existing `lib/db/queries/` for similar data access patterns
-3. New domain? Start with the Zod schema, then the DB schema, then the UI
-4. If a component is hard to test, it probably does too much — split it
+## What We Do
+- ✅ Server-first data fetching
+- ✅ Progressive enhancement
+- ✅ Edge-compatible Web APIs
+- ✅ Tailwind only, no CSS modules
+- ✅ Co-locate tests in `__tests__/`
