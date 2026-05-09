@@ -34,6 +34,33 @@ You're in the right place.
 
 ---
 
+## Claude Code Hooks
+
+This repo includes a `PreToolUse` Bash guard hook for bounty [#3](../../issues/3).
+It blocks common destructive commands before execution, logs denied attempts to
+`~/.claude/hooks/blocked.log`, and leaves normal Bash commands alone.
+
+Install it in 2 commands:
+
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/block_destructive_bash.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/block_destructive_bash.py
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home() / '.claude' / 'settings.json'
+p.parent.mkdir(parents=True, exist_ok=True)
+config = json.loads(p.read_text()) if p.exists() else {}
+config.setdefault('hooks', {}).setdefault('PreToolUse', []).append({
+    'matcher': 'Bash',
+    'hooks': [{'type': 'command', 'command': '$HOME/.claude/hooks/block_destructive_bash.py'}]
+})
+p.write_text(json.dumps(config, indent=2) + '\n')
+PY
+```
+
+See [hooks/README.md](hooks/README.md) for behavior details and local testing.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
