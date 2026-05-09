@@ -1,0 +1,254 @@
+{
+  "name": "Weekly Dev Summary Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": 3
+        }
+      },
+      "id": "n1",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repoUrl }}/commits",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json"
+          }
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ new Date(new Date().setDate(new Date().getDate() - 7)).toISOString() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        }
+      },
+      "id": "n2",
+      "name": "Fetch GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "httpRequest": "github-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repoUrl }}/pulls?state=closed&sort=updated&direction=desc&per_page=20&since={{ new Date(new Date().setDate(new Date().getDate() - 7)).toISOString() }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json"
+          }
+        },
+        "sendQuery": false
+      },
+      "id": "n3",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        500
+      ],
+      "credentials": {
+        "httpRequest": "github-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge GitHub data into a summary\nconst data = $input.all();\n\n// Extract data from parallel branches\nconst commits = data.filter(d => d.json.sha) || [];\nconst prs = data.filter(d => d.json.merged_at) || [];\nconst issues = data.filter(d => d.json.state === 'closed') || [];\n\n// Author stats\nconst authorStats = {};\ncommits.forEach(c => {\n  const author = c.json.commit?.author?.name || 'Unknown';\n  authorStats[author] = (authorStats[author] || 0) + 1;\n});\n\nconst summary = {\n  repoName: $json.repoName || 'unknown/repo',\n  totalCommits: commits.length,\n  totalMergedPRs: prs.length,\n  totalIssuesClosed: issues.length,\n  topContributors: Object.entries(authorStats)\n    .sort((a,b) => b[1] - a[1]).slice(0, 5)\n    .map(e => e[0] + ' (' + e[1] + ' commits)'),\n  prTitles: prs.slice(0, 10).map(p => '- ' + p.json.title).join('\\\\n'),\n  issuesClosed: issues.slice(0, 10).map(i => '- ' + i.json.title).join('\\\\n')\n};\n\nreturn { json: summary };"
+      },
+      "id": "n4",
+      "name": "Aggregate GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "options": {
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json",
+            "x-api-key": "={{ $json.claudeApiKey }}",
+            "anthropic-version": "2023-06-01"
+          }
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "2048"
+            },
+            {
+              "name": "system",
+              "value": "You are a technical writing assistant. Generate a concise weekly development summary in professional English. Include an executive summary, highlight key achievements, and end with a 'Next Week' section."
+            }
+          ]
+        },
+        "sendQuery": false
+      },
+      "id": "n5",
+      "name": "Generate Summary via Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        500
+      ],
+      "credentials": {
+        "httpRequest": "claude-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst text = response.content[0].text || 'Summary unavailable';\nreturn { json: { summary: text } };"
+      },
+      "id": "n6",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.webhookUrl }}",
+        "options": {
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ 'Weekly Dev Summary for ' + $json.repoName + '\\\\n\\\\n' + $json.summary }}"
+            }
+          ]
+        }
+      },
+      "id": "n7",
+      "name": "Send to Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate GitHub Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary via Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary via Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Send to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    "automation",
+    "github",
+    "weekly-report"
+  ]
+}
