@@ -34,6 +34,58 @@ You're in the right place.
 
 ---
 
+## Bounty #3: Destructive Command Hook
+
+This repository includes a Claude Code `PreToolUse` hook that blocks destructive
+Bash and SQL commands before they run.
+
+### What It Blocks
+
+- `rm -rf` and equivalent combined recursive/force flags such as `rm -fr`
+- `DROP TABLE`
+- `git push --force` and `git push -f`
+- `TRUNCATE`
+- `DELETE FROM` statements without a `WHERE` clause
+
+Normal commands such as `git push origin main`, `rm file.txt`,
+`python -m pytest`, and `DELETE FROM users WHERE id = 1` are allowed.
+
+### Install
+
+```bash
+git clone https://github.com/claude-builders-bounty/claude-builders-bounty.git && cd claude-builders-bounty
+./hooks/install.sh
+```
+
+The installer copies the hook to `~/.claude/hooks/block_destructive_commands.py`
+and adds a `PreToolUse` entry for the Bash tool in `~/.claude/settings.json`.
+
+### Behavior
+
+When the hook blocks a command, it exits with code `2`, writes a clear message to
+stderr for Claude Code, and appends a JSON log line to:
+
+```text
+~/.claude/hooks/blocked.log
+```
+
+Each log entry includes:
+
+- UTC timestamp
+- attempted command
+- matched blocking rule
+- project path
+
+### Test
+
+```bash
+python tests/test_block_destructive_commands.py
+```
+
+The hook and tests use only the Python 3 standard library.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
