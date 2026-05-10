@@ -1,0 +1,148 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [8.3.3] - 2026-04-17
+
+### Added
+- docs: add standalone application guide with Briefcase
+- add zizmor to scan workflows
+- Add missing PR to changelog.
+- Add cross-reference to tests from `test_defaults.py`
+- Add working ci for flask test suite.
+- Add upgrade guide section.
+- Add a section for design opinions
+- Fix typo. Add no_args_is help example.
+- Add section for help page and exit codes and cross link
+- Add latest free threaded python to tox and ci.
+- Add python 3.14 to test suite.
+- Add reference doc for primers on command line topics.
+- Add reference doc for primers on command line topics.
+- Add clarifying docs for on/off flag pattern.
+- Add {doc}
+- Add note to CHANGES.rst about #3021
+- Add changelog note for deferred UNSET conversion
+- Add new section to changes.rst. Change version in pyproject.toml
+- Add pyright --verifytypes to tox and CI
+- #2447 Add summary of PR to changelog for 8.3.x
+- #2447 Added exception forwarding to context tests
+- Add extra line to changes.rst
+- Add some discussion context
+- Add newline EOF
+- add newline at eof
+- add test for flag with naargs option auto completion
+
+### Fixed
+- fix windows import check
+- [pre-commit.ci lite] apply automatic fixes
+- fix spelling and spacing
+- Cleanup changes to fix flag_value bug
+- [pre-commit.ci lite] apply automatic fixes
+- Fix test_edit to work with BSD sed
+- Fix cross link typo.
+- Correct errors in docs for multiple options.
+- Fix import
+- Fix typing
+- [pre-commit.ci lite] apply automatic fixes
+- [pre-commit.ci lite] apply automatic fixes
+- Fix completions for quoted/escaped parameters in Fish (#3013)
+- [pre-commit.ci lite] apply automatic fixes
+- fix formatting CHANGES.rst
+- Correct the description of shell completion override parameters.
+- [pre-commit.ci lite] apply automatic fixes
+
+### Changed
+- Release 8.3.3
+- Test `show_default` set as string and its display in prompt
+- update dev dependencies
+- Change update release date.
+- Change publish to werkzeug latest.
+- refactor from rest to myst
+- rename extension from .rst to .md
+- refactor from rest to myst
+- rename extension from .rst to .md
+- Update precommit pins with tox
+- Update github action pins with tox
+- Release version 8.3.2
+- refactor from rest to myst
+- rename extension from .rst to .md
+- refactor from rest to myst
+- rename extension from .rst to .md
+- apply review suggestions
+- replace references to 'callback' and 'parameter declarations'
+- revise 'Options' documentation
+- refactor from rest to myst
+- rename from .rst to .md
+- Document show_envvar in Help Pages
+- changes myst-parser to myst
+- Bump version to 8.3.dev
+- update dev dependencies
+- release version 8.3.1
+- switch format from rest to myst
+- rename extension from .rst to .md
+- switch format from rest to myst
+- rename extension from .rst to .md
+- Shorten title.
+- Reword user exit codes docs.
+- Update requirements in uv.lock
+- Update precommit hooks.
+- convert from reST to MyST
+- switch extension from .rst to .md
+- convert from reST to MyST
+- switch extension from .rst to .md
+- convert from reST to MyST
+- switch extension from .rst to .md
+- Convert api.rst to api.md
+- Shorten the docstring annotations for confirm and prompt
+- Format reference to code objects
+- Hide UNSET values in Context.invoke
+- Inject a missing whitespace needed for RST to parse well @ `CHANGES.rst`
+- Use --ignoreexternal on pyright, for consistency with other projects
+- Require flit-core v3.11+ to ensure license metadata in the distribution
+- change function link format rst to myst
+- eval-rst switched to native MyST
+- Move Option-decorators doc from reST to MyST
+- change file extension from .rst to .md
+- Convert advanced.rst to MyST
+- Release version 8.3.0
+- #2447 Split resource exception handling tests in single and nested
+- #2447 Forward exception data to exit stack when calling `__exit__`
+- Regroup sentinels
+- Lint
+- Hint at the concepts carried by default
+- Typing
+- Lint
+- Typo
+- Check falsy sentinels
+- Typo
+- Reduce unnecessary changes
+- Keep original inconsistent ticks to reduce noise
+- Keep original inconsistent ticks to reduce noise
+- Move Parameter-types doc from reST to MyST
+- rename extension from .rst to .md
+- replace rst with python code blocks
+- Move Prompts doc from reST to MyST
+- rename extension from .rst to .md
+- Update test_imports.py
+- Update testing.py
+- Update _termui_impl.py
+- Properly lazily import shutil
+- Update CHANGES.rst
+- Update CHANGES.rst
+- restore “eval-rst … click:example::” directives
+- convert from reST to MyST
+- change ext from .rst to .md
+- Improve discoverability of Context.max_content_width
+- Revert "Merge Stable into master"
+- convert from reST to MyST
+- change extension to .md
+- update change log
+- break the loop on identifying last option
+
+### Removed
+- remove extra tabs
+- changelog v8.3.0: remove duplicate line
+- Remove bad ref
+- Remove duplicate test
+- remove trailing space in CHANGES.rst
+- remove redundant click. module link
