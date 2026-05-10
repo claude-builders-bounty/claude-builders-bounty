@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:/.*)?$")
+
+
+def fetch(url, accept="application/vnd.github+json"):
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-review-agent/1.0",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise SystemExit(f"GitHub request failed: HTTP {exc.code} {detail}") from exc
+
+
+def parse_pr_url(url):
+    match = PR_RE.match(url)
+    if not match:
+        raise SystemExit("Expected PR URL like https://github.com/owner/repo/pull/123")
+    owner, repo, number = match.groups()
+    return owner, repo, number
+
+
+def changed_files(diff):
+    files = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split(" ")
+            if len(parts) >= 4:
+                files.append(parts[3].removeprefix("b/"))
+    return files
+
+
+def diff_stats(diff):
+    added = 0
+    removed = 0
+    for line in diff.splitlines():
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            added += 1
+        elif line.startswith("-"):
+            removed += 1
+    return added, removed
+
+
+def detect_risks(diff, files):
+    risks = []
+    lower = diff.lower()
+
+    if any(name.endswith((".sql", "schema.prisma")) or "migration" in name.lower() for name in files):
+        risks.append("Database or migration files changed; verify forward and rollback behavior with real data.")
+    if any(name.endswith(("package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock")) for name in files):
+        risks.append("Dependency metadata changed; confirm lockfile integrity and supply-chain impact.")
+    if re.search(r"(password|secret|api[_-]?key|token)\s*[:=]", lower):
+        risks.append("Diff contains strings that look like credentials or secret configuration.")
+    if re.search(r"\b(eval|exec|child_process|subprocess|shell=True)\b", lower):
+        risks.append("Command execution or dynamic evaluation appears in the diff; review input boundaries carefully.")
+    if re.search(r"\b(delete from|drop table|truncate|rm -rf)\b", lower):
+        risks.append("Destructive operation appears in the diff; confirm safeguards, scoping, and tests.")
+    if not re.search(r"\b(test|spec|__tests__)\b", "\n".join(files).lower()):
+        risks.append("No obvious test files changed; behavior may be under-covered.")
+
+    return risks or ["No major risk signals were detected from the diff alone."]
+
+
+def suggestions(diff, files):
+    ideas = []
+    lower_files = "\n".join(files).lower()
+    if not re.search(r"\b(test|spec|__tests__)\b", lower_files):
+        ideas.append("Add or update focused tests that cover the changed behavior.")
+    if len(files) > 8:
+        ideas.append("Consider splitting follow-up cleanup from behavior changes if review scope feels broad.")
+    if any(name.endswith((".md", ".mdx")) for name in files):
+        ideas.append("Preview the rendered Markdown to catch broken links, heading hierarchy issues, or formatting drift.")
+    if any(name.endswith((".tsx", ".jsx", ".css")) for name in files):
+        ideas.append("Check the changed UI at desktop and mobile widths before merge.")
+    if any(name.endswith((".py", ".ts", ".tsx", ".js")) for name in files):
+        ideas.append("Run the repository's formatter, linter, and the narrowest relevant test command.")
+    return ideas or ["Keep the PR description aligned with the final behavior and note any untested edge cases."]
+
+
+def confidence(diff, files):
+    added, removed = diff_stats(diff)
+    total = added + removed
+    if total > 700 or len(files) > 15:
+        return "Low"
+    if total > 250 or len(files) > 8:
+        return "Medium"
+    return "High"
+
+
+def render(pr_url, metadata, diff):
+    files = changed_files(diff)
+    added, removed = diff_stats(diff)
+    title = metadata.get("title", "Untitled PR")
+    user = metadata.get("user", {}).get("login", "unknown")
+
+    lines = [
+        "## PR Review",
+        "",
+        "### Summary",
+        "",
+        f"This PR, **{title}**, was opened by `{user}` and changes {len(files)} file(s). "
+        f"The diff contains approximately {added} added line(s) and {removed} removed line(s).",
+        "The review below is based on the fetched diff and highlights risk signals, missing verification, and practical follow-up checks.",
+        "",
+        "### Identified Risks",
+        "",
+    ]
+    lines.extend(f"- {risk}" for risk in detect_risks(diff, files))
+    lines.extend(["", "### Improvement Suggestions", ""])
+    lines.extend(f"- {idea}" for idea in suggestions(diff, files))
+    lines.extend(
+        [
+            "",
+            "### Changed Files",
+            "",
+        ]
+    )
+    lines.extend(f"- `{file}`" for file in files[:20])
+    if len(files) > 20:
+        lines.append(f"- ...and {len(files) - 20} more")
+    lines.extend(["", f"### Confidence: {confidence(diff, files)}", "", f"Source: {pr_url}"])
+    return "\n".join(lines)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    args = parser.parse_args()
+
+    owner, repo, number = parse_pr_url(args.pr)
+    api_base = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    metadata = json.loads(fetch(api_base))
+    diff = fetch(api_base, accept="application/vnd.github.v3.diff")
+    print(render(args.pr, metadata, diff))
+
+
+if __name__ == "__main__":
+    main()
