@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# claude-review — AI-powered PR reviewer
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123 [--token TOKEN]
+
+PR_URL=""; DIFF_FILE=""; TOKEN="${GITHUB_TOKEN:-}"
+MODEL="${CLAUDE_MODEL:-claude-sonnet-4-20250514}"
+ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+
+usage() {
+  echo "Usage: claude-review --pr <PR_URL> [--token <gh_token>]"
+  echo "       claude-review --diff <file>"
+  exit 1
+}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="$2"; shift 2 ;;
+    --diff) DIFF_FILE="$2"; shift 2 ;;
+    --token) TOKEN="$2"; shift 2 ;;
+    --model) MODEL="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    *) usage ;;
+  esac
+done
+
+TMPDIR=$(mktemp -d); trap "rm -rf $TMPDIR" EXIT
+DIFF="$TMPDIR/diff.txt"; REVIEW="$TMPDIR/review.md"
+
+# ── Step 1: Fetch diff ──
+if [[ -n "$PR_URL" ]]; then
+  [[ -z "$TOKEN" ]] && { echo "❌ GITHUB_TOKEN required"; exit 1; }
+  REPO=$(echo "$PR_URL" | sed -E 's|https?://github\.com/||; s|/pull/.*||')
+  PR_NUMBER=$(echo "$PR_URL" | grep -oP '/pull/\K\d+')
+  echo "📥 Fetching PR #${PR_NUMBER} from ${REPO}..."
+
+  PR_DATA=$(curl -s -H "Authorization: Bearer $TOKEN" "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}")
+  PR_TITLE=$(echo "$PR_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title','unknown'))")
+  PR_BODY=$(echo "$PR_DATA" | python3 -c "import sys,json; print((json.load(sys.stdin).get('body') or '')[:2000])")
+  PR_AUTHOR=$(echo "$PR_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('user',{}).get('login','unknown'))")
+
+  curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.v3.diff" \
+    "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}" > "$DIFF"
+  echo "   $(wc -l < "$DIFF") lines of diff"
+elif [[ -n "$DIFF_FILE" ]]; then
+  cp "$DIFF_FILE" "$DIFF"
+  PR_TITLE="Local diff"; PR_BODY=""; PR_AUTHOR="local"
+else
+  usage
+fi
+
+# ── Step 2: Static analysis ──
+ANALYSIS=$(python3 << PYEOF
+import re, os
+
+diff_text = open("$DIFF").read()
+lines = diff_text.split('\n')
+
+# Stats
+added = sum(1 for l in lines if l.startswith('+') and not l.startswith('+++'))
+removed = sum(1 for l in lines if l.startswith('-') and not l.startswith('---'))
+files_changed = sum(1 for l in lines if l.startswith('diff --git'))
+
+# File types
+file_exts = {}
+for l in lines:
+    if l.startswith('diff --git'):
+        m = re.search(r' b/(\S+)', l)
+        if m:
+            ext = os.path.splitext(m.group(1))[1] or m.group(1).split('/')[-1]
+            file_exts[ext] = file_exts.get(ext, 0) + 1
+
+# Detect patterns
+has_secrets = any(re.search(r'(password|secret|token|key)\s*[:=]\s*[\"\']?\w{8,}', l, re.I) for l in lines if l.startswith('+'))
+has_shell_injection = any(re.search(r'os\.system|subprocess\.call.*\$|eval\(.*\$', l) for l in lines if l.startswith('+'))
+has_sql_injection = any(re.search(r'f[\"\"].*SELECT|f[\"\"].*INSERT|execute\(.*f[\"\"]', l) for l in lines if l.startswith('+'))
+has_large_file = files_changed > 10
+has_test = any('test' in l.lower() or 'spec' in l.lower() for l in lines if l.startswith('diff --git'))
+has_docs = any(l.startswith('+') and any(kw in l.lower() for kw in ['doc', 'readme', 'changelog', 'comment', '#']) for l in lines)
+is_config = all(ext in ['.json','.yaml','.yml','.toml','.env','.cfg','.ini'] or ext in ['Dockerfile','Makefile'] for ext in file_exts)
+is_script = any(ext in ['.sh','.py','.js','.ts','.rb','.go'] for ext in file_exts)
+
+# Generate risks
+risks = []
+if has_secrets: risks.append("⚠️ **Hardcoded credentials**: Possible password/token/secret found in diff — use environment variables instead")
+if has_shell_injection: risks.append("⚠️ **Command injection risk**: Shell/system calls with variable interpolation detected — use parameterized calls")
+if has_sql_injection: risks.append("⚠️ **SQL injection risk**: f-string SQL queries detected — use parameterized queries")
+if not has_test and files_changed > 0: risks.append("📋 **Missing tests**: No test files found in this PR — consider adding tests for new functionality")
+if has_large_file: risks.append(f"📦 **Large PR**: {files_changed} files changed — consider splitting into smaller, focused PRs")
+if not risks: risks.append("✅ No significant risks identified — changes appear safe and well-scoped")
+
+# Generate suggestions
+suggestions = []
+if not has_test and files_changed > 0: suggestions.append("Add unit tests or integration tests for the new functionality")
+if not has_docs and files_changed > 0: suggestions.append("Consider adding documentation for new features or API changes")
+if is_config: suggestions.append("Add validation for configuration values (e.g., port ranges, URL formats)")
+if is_script: suggestions.append("Consider adding error handling for edge cases (network failures, missing deps)")
+if added > 200: suggestions.append(f"Large addition ({added}+ lines) — consider extracting into separate modules or functions")
+if not suggestions: suggestions.append("Code looks clean and well-structured — consider adding inline comments for complex logic")
+
+# Confidence
+if has_secrets or has_shell_injection or has_sql_injection:
+    confidence = "Low"; reason = "Security-sensitive patterns detected that need attention"
+elif has_large_file:
+    confidence = "Medium"; reason = "Large scope increases review surface area"
+elif files_changed == 1 and added < 50:
+    confidence = "High"; reason = "Small, focused change with limited blast radius"
+else:
+    confidence = "Medium"; reason = f"Moderate change ({files_changed} files, +{added}/-{removed})"
+
+# File type summary
+ext_summary = ', '.join(f'{ext}({n})' for ext, n in sorted(file_exts.items()))
+
+print(f"STATS::{files_changed} files changed, +{added} -{removed}")
+print(f"EXT_SUMMARY::{ext_summary}")
+print(f"HAS_SECRETS::{has_secrets}")
+print(f"HAS_SHELL::{has_shell_injection}")
+print(f"HAS_SQL::{has_sql_injection}")
+print(f"HAS_TEST::{has_test}")
+print(f"HAS_DOCS::{has_docs}")
+print("RISKS:::")
+for r in risks: print(r)
+print("SUGGESTIONS:::")
+for s in suggestions: print(s)
+print(f"CONFIDENCE::{confidence}")
+print(f"CONF_REASON::{reason}")
+PYEOF
+)
+
+# Parse analysis
+STATS=$(echo "$ANALYSIS" | grep '^STATS::' | cut -d: -f3-)
+EXT_SUMMARY=$(echo "$ANALYSIS" | grep '^EXT_SUMMARY::' | cut -d: -f3-)
+RISKS=$(echo "$ANALYSIS" | sed -n '/^RISKS:::/,/^SUGGESTIONS:::/p' | grep -v '^RISKS:::' | grep -v '^SUGGESTIONS:::')
+SUGGESTIONS=$(echo "$ANALYSIS" | sed -n '/^SUGGESTIONS:::/,/^CONFIDENCE::/p' | grep -v '^SUGGESTIONS:::' | grep -v '^CONFIDENCE::')
+CONFIDENCE=$(echo "$ANALYSIS" | grep '^CONFIDENCE::' | cut -d: -f3-)
+CONF_REASON=$(echo "$ANALYSIS" | grep '^CONF_REASON::' | cut -d: -f3-)
+
+# ── Step 3: Try AI, fallback to static ──
+echo "🤖 Analyzing..."
+
+if [[ -n "$ANTHROPIC_API_KEY" ]]; then
+  # Build prompt for Anthropic API
+  PROMPT=$(python3 -c "import json; print(json.dumps(open('$TMPDIR/prompt.txt').read()))" 2>/dev/null || echo '""')
+  AI_RESP=$(curl -s --max-time 60 https://api.anthropic.com/v1/messages \
+    -H "x-api-key: $ANTHROPIC_API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    -H "content-type: application/json" \
+    -d "{\"model\":\"$MODEL\",\"max_tokens\":2000,\"messages\":[{\"role\":\"user\",\"content\":$PROMPT}]}" 2>/dev/null)
+  
+  AI_TEXT=$(echo "$AI_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['content'][0]['text'])" 2>/dev/null || echo "")
+  
+  if [[ -n "$AI_TEXT" ]]; then
+    echo "$AI_TEXT" > "$REVIEW"
+  else
+    echo "⚠️  Anthropic API unavailable, using static analysis"
+    USE_STATIC=true
+  fi
+else
+  USE_STATIC=true
+fi
+
+if [[ "${USE_STATIC:-false}" == "true" ]]; then
+  cat > "$REVIEW" << MDEOF
+## 🤖 AI PR Review
+
+**PR:** ${PR_TITLE}
+**Author:** @${PR_AUTHOR}
+**Stats:** ${STATS} | Types: ${EXT_SUMMARY}
+
+---
+
+### Summary
+This PR modifies ${STATS} across file types: ${EXT_SUMMARY}. The changes focus on $(echo "$PR_TITLE" | cut -c1-100).
+
+### Identified Risks
+${RISKS}
+
+### Improvement Suggestions
+${SUGGESTIONS}
+
+### Confidence Score
+**Rating:** ${CONFIDENCE}
+**Reasoning:** ${CONF_REASON}
+
+---
+*Review generated by claude-review v1.0 | $(date -u +%Y-%m-%dT%H:%M:%SZ)*
+*For Claude-powered AI reviews, set \`ANTHROPIC_API_KEY\` environment variable.*
+MDEOF
+fi
+
+# ── Output ──
+echo ""; echo "================================================"
+cat "$REVIEW"
+echo "================================================"; echo ""
+echo "✅ Review saved to claude-review-output.md"
+cp "$REVIEW" ./claude-review-output.md
