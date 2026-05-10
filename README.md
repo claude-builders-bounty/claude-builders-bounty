@@ -34,6 +34,44 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+This repo includes a Claude Code skill and a portable bash script for bounty [#1](../../issues/1). It creates a structured `CHANGELOG.md` from commits since the latest git tag.
+
+### Setup in 3 steps
+
+1. Copy `changelog.sh` and `SKILL.md` into the target repository.
+2. Run `bash changelog.sh` from the repository root.
+3. Review `CHANGELOG.md` and commit it.
+
+### Sample output
+
+Tested against this public GitHub repository:
+
+```markdown
+# Changelog
+
+All notable changes for `claude-builders-bounty` are listed here.
+
+## Unreleased - 2026-05-11
+
+_Generated from git history from initial commit._
+
+### Added
+- feat: initial README with bounty board (1aeae2a, claudebounty, 2026-03-27)
+
+### Fixed
+- No changes.
+
+### Changed
+- No changes.
+
+### Removed
+- No changes.
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
