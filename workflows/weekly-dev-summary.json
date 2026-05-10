@@ -1,0 +1,187 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude API)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "Weekly Trigger (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/{{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}/commits?since={{$now.minus({days: 7}).toISO()}}&per_page=100",
+        "options": {
+          "headers": {
+            "entries": [
+              { "name": "Authorization", "value": "Bearer {{$vars.GITHUB_TOKEN}}" },
+              { "name": "Accept", "value": "application/vnd.github.v3+json" }
+            ]
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [470, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/{{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "options": {
+          "headers": {
+            "entries": [
+              { "name": "Authorization", "value": "Bearer {{$vars.GITHUB_TOKEN}}" },
+              { "name": "Accept", "value": "application/vnd.github.v3+json" }
+            ]
+          }
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [470, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/{{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}/issues?state=closed&since={{$now.minus({days: 7}).toISO()}}&per_page=100",
+        "options": {
+          "headers": {
+            "entries": [
+              { "name": "Authorization", "value": "Bearer {{$vars.GITHUB_TOKEN}}" },
+              { "name": "Accept", "value": "application/vnd.github.v3+json" }
+            ]
+          }
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [470, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.first().json;
+const prs = $('Fetch Merged PRs').first().json;
+const issues = $('Fetch Closed Issues').first().json;
+
+const summary = {
+  commits: Array.isArray(commits) ? commits.map(c => ({
+    message: c.commit?.message?.split('\n')[0],
+    author: c.commit?.author?.name,
+    date: c.commit?.author?.date
+  })).slice(0, 30) : [],
+  prs: Array.isArray(prs) ? prs.filter(p => p.merged_at).map(p => ({
+    title: p.title,
+    number: p.number,
+    author: p.user?.login,
+    merged: p.merged_at
+  })).slice(0, 20) : [],
+  issues: Array.isArray(issues) ? issues.filter(i => !i.pull_request).map(i => ({
+    title: i.title,
+    number: i.number,
+    author: i.user?.login
+  })).slice(0, 20) : []
+};
+
+return [{ json: summary }];"
+      },
+      "id": "summarize-data",
+      "name": "Summarize Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "options": {
+          "headers": {
+            "entries": [
+              { "name": "x-api-key", "value": "{{$vars.CLAUDE_API_KEY}}" },
+              { "name": "anthropic-version", "value": "2023-06-01" },
+              { "name": "content-type", "value": "application/json" }
+            ]
+          }
+        },
+        "bodyParameters": {
+          "entries": [
+            { "name": "model", "value": "claude-sonnet-4-20250514" },
+            { "name": "max_tokens", "value": "2000" },
+            { "name": "messages", "value": "[{\"role\":\"user\",\"content\":\"Generate a weekly dev summary for {{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}. Language: {{$vars.LANGUAGE || 'EN'}}.\\n\\nCommits this week:\\n{{JSON.stringify($json.commits)}}\\n\\nMerged PRs:\\n{{JSON.stringify($json.prs)}}\\n\\nClosed Issues:\n{{JSON.stringify($json.issues)}}\\n\\nWrite a narrative summary with sections: Highlights, Commits, PRs, Issues, and Next Week Outlook.\"}]" }
+          ]
+        }
+      },
+      "id": "claude-summary",
+      "name": "Generate Summary (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{$vars.WEBHOOK_URL}}",
+        "options": {
+          "headers": {
+            "entries": [
+              { "name": "content-type", "value": "application/json" }
+            ]
+          }
+        },
+        "bodyParameters": {
+          "entries": [
+            { "name": "content", "value": "## 📊 Weekly Dev Summary — {{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}\n\n{{ $json.content[0].text }}" }
+          ]
+        }
+      },
+      "id": "deliver",
+      "name": "Deliver Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5pm)": {
+      "main": [
+        [
+          { "node": "Fetch Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [[ { "node": "Summarize Data", "type": "main", "index": 0 } ]]
+    },
+    "Summarize Data": {
+      "main": [[ { "node": "Generate Summary (Claude)", "type": "main", "index": 0 } ]]
+    },
+    "Generate Summary (Claude)": {
+      "main": [[ { "node": "Deliver Summary", "type": "main", "index": 0 } ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}
