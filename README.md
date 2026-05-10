@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. Put `changelog.sh` at the target repository root and run `bash changelog.sh`.
+2. Optionally set `CHANGELOG_VERSION=v1.2.3` or pass an output path: `bash changelog.sh RELEASE_NOTES.md`.
+3. Review the generated `Added`, `Fixed`, `Changed`, and `Removed` sections in `CHANGELOG.md`.
+
+Claude Code users can also use `skills/generate-changelog/SKILL.md` as a `/generate-changelog` workflow wrapper.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
