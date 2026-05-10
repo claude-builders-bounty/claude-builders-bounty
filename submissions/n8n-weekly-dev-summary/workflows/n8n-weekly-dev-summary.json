@@ -1,0 +1,530 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "daysOfWeek",
+              "daysOfWeek": [5],
+              "hour": 17,
+              "minute": 0
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build configuration from environment variables\nconst repo = $env.GITHUB_REPO || 'claude-builders-bounty/claude-builders-bounty';\nconst lang = $env.SUMMARY_LANGUAGE || 'EN';\nconst githubToken = $env.GITHUB_TOKEN || '';\nconst claudeApiKey = $env.ANTHROPIC_API_KEY || '';\nconst webhookUrl = $env.DESTINATION_WEBHOOK_URL || '';\nconst discordWebhook = $env.DISCORD_WEBHOOK_URL || '';\nconst slackWebhook = $env.SLACK_WEBHOOK_URL || '';\nconst emailTo = $env.SUMMARY_EMAIL_TO || '';\nconst emailFrom = $env.SUMMARY_EMAIL_FROM || 'dev-summary@n8n.local';\nconst smtpHost = $env.SMTP_HOST || '';\nconst smtpPort = parseInt($env.SMTP_PORT || '587', 10);\nconst smtpUser = $env.SMTP_USER || '';\nconst smtpPass = $env.SMTP_PASS || '';\n\n// Calculate date range (last 7 days)\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst since = weekAgo.toISOString().split('T')[0];\nconst until = now.toISOString().split('T')[0];\n\n// Determine delivery method (priority: discord > slack > email > local)\nlet deliveryMethod = 'local';\nif (discordWebhook) deliveryMethod = 'discord';\nelse if (slackWebhook) deliveryMethod = 'slack';\nelse if (webhookUrl) deliveryMethod = 'webhook';\nelse if (emailTo && smtpHost) deliveryMethod = 'email';\n\nreturn [{\n  json: {\n    repo,\n    owner: repo.split('/')[0],\n    name: repo.split('/')[1],\n    lang,\n    githubToken,\n    claudeApiKey,\n    webhookUrl,\n    discordWebhook,\n    slackWebhook,\n    emailTo,\n    emailFrom,\n    smtpHost,\n    smtpPort,\n    smtpUser,\n    smtpPass,\n    deliveryMethod,\n    since,\n    until,\n    dateRange: `${since} → ${until}`\n  }\n}];"
+      },
+      "id": "build-config",
+      "name": "Build Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.repo + '/commits?since=' + $json.since + '&until=' + $json.until + '&per_page=100' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.githubToken }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, -200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.repo + '/issues?state=closed&since=' + $json.since + '&per_page=100' }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.githubToken }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-closed-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.repo + '/pulls?state=closed&sort=updated&direction=desc&per_page=100' }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.githubToken }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-merged-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all fetched data into a unified structure\nconst config = $items('Build Config')[0].json;\n\n// Process commits\nconst commitsRaw = $items('Fetch Commits');\nconst commits = commitsRaw\n  .filter(item => item.json && Array.isArray(item.json))\n  .flatMap(item => item.json)\n  .filter(c => c && c.sha)\n  .map(c => ({\n    sha: c.sha.substring(0, 7),\n    message: (c.commit.message || '').split('\\n')[0],\n    author: c.commit?.author?.name || 'unknown',\n    date: c.commit?.author?.date?.split('T')[0] || ''\n  }));\n\n// Process closed issues (filter out PRs — GitHub API returns PRs in issues endpoint)\nconst issuesRaw = $items('Fetch Closed Issues');\nconst closedIssues = issuesRaw\n  .filter(item => item.json && Array.isArray(item.json))\n  .flatMap(item => item.json)\n  .filter(i => i && !i.pull_request && i.closed_at)\n  .filter(i => {\n    const closedDate = new Date(i.closed_at);\n    const sinceDate = new Date(config.since);\n    return closedDate >= sinceDate;\n  })\n  .map(i => ({\n    number: i.number,\n    title: i.title,\n    labels: (i.labels || []).map(l => l.name),\n    closed_at: i.closed_at?.split('T')[0] || ''\n  }));\n\n// Process merged PRs (only those merged within the date range)\nconst prsRaw = $items('Fetch Merged PRs');\nconst mergedPRs = prsRaw\n  .filter(item => item.json && Array.isArray(item.json))\n  .flatMap(item => item.json)\n  .filter(p => p && p.merged_at)\n  .filter(p => {\n    const mergedDate = new Date(p.merged_at);\n    const sinceDate = new Date(config.since);\n    return mergedDate >= sinceDate;\n  })\n  .map(p => ({\n    number: p.number,\n    title: p.title,\n    author: p.user?.login || 'unknown',\n    merged_at: p.merged_at?.split('T')[0] || '',\n    additions: p.additions || 0,\n    deletions: p.deletions || 0,\n    changed_files: p.changed_files || 0\n  }));\n\n// Build summary stats\nconst stats = {\n  commits: commits.length,\n  closedIssues: closedIssues.length,\n  mergedPRs: mergedPRs.length,\n  uniqueAuthors: [...new Set(commits.map(c => c.author))].length,\n  totalAdditions: mergedPRs.reduce((sum, p) => sum + p.additions, 0),\n  totalDeletions: mergedPRs.reduce((sum, p) => sum + p.deletions, 0)\n};\n\nreturn [{\n  json: {\n    ...config,\n    commits,\n    closedIssues,\n    mergedPRs,\n    stats,\n    commitsText: commits.map(c => `- ${c.sha} ${c.message} (${c.author}, ${c.date})`).join('\\n'),\n    issuesText: closedIssues.map(i => `- #${i.number} ${i.title} [${i.labels.join(', ')}] (${i.closed_at})`).join('\\n'),\n    prsText: mergedPRs.map(p => `- #${p.number} ${p.title} by @${p.author} (+${p.additions}/-${p.deletions}, ${p.changed_files} files, ${p.merged_at})`).join('\\n')\n  }\n}];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\nconst langInstruction = data.lang === 'FR'\n  ? 'Rédige le résumé en français.'\n  : 'Write the summary in English.';\n\nconst prompt = `You are a senior engineering manager writing a weekly dev summary for the GitHub repository ${data.repo}.\n\n## Week: ${data.dateRange}\n\n## Stats\n- ${data.stats.commits} commits by ${data.stats.uniqueAuthors} authors\n- ${data.stats.mergedPRs} merged PRs (+${data.stats.totalAdditions}/-${data.stats.totalDeletions} lines)\n- ${data.stats.closedIssues} closed issues\n\n## Commits\n${data.commitsText || '(none)'}\n\n## Closed Issues\n${data.issuesText || '(none)'}\n\n## Merged PRs\n${data.prsText || '(none)'}\n\n## Instructions\n${langInstruction}\n\nWrite a concise, well-structured weekly summary with:\n1. **Highlights** — Key accomplishments this week (2-4 bullet points)\n2. **Merged PRs** — Summarize each PR in one sentence, grouped by theme if possible\n3. **Closed Issues** — Brief summary of resolved issues\n4. **Activity Overview** — ${data.stats.commits} commits, ${data.stats.mergedPRs} PRs merged, ${data.stats.closedIssues} issues closed\n5. **Looking Ahead** — Suggest areas of focus for next week based on this week's activity\n\nFormat in Markdown. Keep it under 400 words.`;\n\nreturn [{ json: { ...data, prompt } }];"
+      },
+      "id": "prepare-claude-prompt",
+      "name": "Prepare Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"temperature\": 0.3,\n  \"messages\": [\n    {\"role\": \"user\", \"content\": {{ JSON.stringify($json.prompt) }}}\n  ]\n}",
+        "options": {}
+      },
+      "id": "generate-claude-summary",
+      "name": "Generate Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api-key-cred",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Claude's response and format for all delivery channels\nconst response = $json;\nconst config = $items('Build Config')[0].json;\n\nlet summaryText = '';\nif (response.content && Array.isArray(response.content)) {\n  summaryText = response.content\n    .filter(block => block.type === 'text')\n    .map(block => block.text)\n    .join('\\n');\n} else if (typeof response.body === 'object' && response.body?.content) {\n  summaryText = response.body.content\n    .filter(block => block.type === 'text')\n    .map(block => block.text)\n    .join('\\n');\n} else {\n  summaryText = JSON.stringify(response);\n}\n\nconst header = `📊 **Weekly Dev Summary: ${config.repo}**\\n🗓 ${config.dateRange}\\n---\\n\\n`;\nconst footer = `\\n---\\n_Generated by n8n + Claude_`;\n\nconst fullSummary = header + summaryText + footer;\nconst markdownSummary = summaryText;\n\nreturn [{\n  json: {\n    fullSummary,\n    markdownSummary,\n    header,\n    deliveryMethod: config.deliveryMethod,\n    webhookUrl: config.webhookUrl,\n    discordWebhook: config.discordWebhook,\n    slackWebhook: config.slackWebhook,\n    emailTo: config.emailTo,\n    emailFrom: config.emailFrom,\n    smtpHost: config.smtpHost,\n    smtpPort: config.smtpPort,\n    smtpUser: config.smtpUser,\n    smtpPass: config.smtpPass,\n    repo: config.repo,\n    dateRange: config.dateRange,\n    stats: $items('Aggregate Data')[0].json.stats\n  }\n}];"
+      },
+      "id": "format-delivery",
+      "name": "Format Delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-discord",
+              "leftValue": "={{ $json.deliveryMethod }}",
+              "rightValue": "discord",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-delivery-discord",
+      "name": "Discord Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1540, -200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.discordWebhook }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": {{ JSON.stringify($json.fullSummary).replace(/\\\\n/g, '\\\\n') }},\n  \"username\": \"Dev Summary Bot\",\n  \"avatar_url\": \"https://avatars.githubusercontent.com/u/1342004?s=200&v=4\"\n}",
+        "options": {}
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, -300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-slack",
+              "leftValue": "={{ $json.deliveryMethod }}",
+              "rightValue": "slack",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-delivery-slack",
+      "name": "Slack Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1540, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.slackWebhook }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": {{ JSON.stringify($json.fullSummary) }},\n  \"mrkdwn\": true\n}",
+        "options": {}
+      },
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, -100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-email",
+              "leftValue": "={{ $json.deliveryMethod }}",
+              "rightValue": "email",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-delivery-email",
+      "name": "Email Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1540, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.emailFrom }}",
+        "toEmail": "={{ $json.emailTo }}",
+        "subject": "=📊 Weekly Dev Summary: {{ $json.repo }} ({{ $json.dateRange }})",
+        "text": "={{ $json.markdownSummary }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1760, 200],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Local fallback: log summary and return as workflow output\nconsole.log($json.fullSummary);\nreturn [{\n  json: {\n    success: true,\n    deliveryMethod: 'local',\n    repo: $json.repo,\n    dateRange: $json.dateRange,\n    summary: $json.fullSummary,\n    stats: $json.stats\n  }\n}];"
+      },
+      "id": "local-output",
+      "name": "Return Summary (Local)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Build Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Delivery": {
+      "main": [
+        [
+          {
+            "node": "Discord Configured?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Configured?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord Configured?": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Summary (Local)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Configured?": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Summary (Local)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Configured?": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Summary (Local)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "github"
+    },
+    {
+      "name": "claude"
+    },
+    {
+      "name": "weekly-summary"
+    }
+  ]
+}
