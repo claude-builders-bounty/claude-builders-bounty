@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Changelog generator
+
+Generate a structured `CHANGELOG.md` from git history in 3 steps:
+
+1. Run `bash changelog.sh` from the repository root.
+2. Review the generated `CHANGELOG.md` sections: Added, Fixed, Changed, Removed.
+3. Commit the changelog when it looks right.
+
+See [`docs/sample-output.md`](docs/sample-output.md) for example output from this repository.
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
