@@ -1,53 +1,79 @@
-# Claude Builders Bounty 🤖
+# GitHub Weekly Dev Summary — n8n + Claude Code
 
-> A community bounty board for Claude Code builders.
+**Bounty Issue:** [#5](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/5)
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+An n8n workflow that runs every Friday at 5 PM, fetches a GitHub repo's activity for the past 7 days (commits, closed issues, merged PRs), generates a narrative summary using Claude Sonnet 4, and delivers it via Discord webhook.
 
 ---
 
-## How it works
+## Setup — 5 Steps
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### Step 1 — Import Workflow
+Download `n8n-workflow.json` from this PR. In your n8n instance, go to **Settings → Import from File** and select the file.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+### Step 2 — Add Credentials
 
----
+**GitHub Personal Access Token**
+- Go to [github.com/settings/tokens](https://github.com/settings/tokens)
+- Create a classic token with `repo` scope
+- In n8n, create a **Header Auth** credential named `GitHub` with header `Authorization: Bearer YOUR_TOKEN`
 
-## Active Bounties
+**Anthropic API Key**
+- Get a key from [console.anthropic.com](https://console.anthropic.com)
+- In n8n, each HTTP Request node that calls Claude will use **Query Auth** with your API key as the `x-api-key` parameter
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### Step 3 — Configure the `Config` Node
+Open the **Config** node and fill in your values:
 
----
+| Variable | Description |
+|---|---|
+| `REPO_OWNER` | GitHub org or username (e.g. `my-org`) |
+| `REPO_NAME` | Repository name (e.g. `my-repo`) |
+| `GITHUB_TOKEN` | Your GitHub PAT |
+| `ANTHROPIC_API_KEY` | Your Anthropic API key |
+| `DISCORD_WEBHOOK` | Your Discord webhook URL |
+| `LANGUAGE` | `EN` (default) or `FR` for French output |
 
-## Rules
+### Step 4 — Configure HTTP Auth on Claude Node
+The **Claude Generate Summary** node uses **Query Auth** with your Anthropic key. Verify the `anthropic-version` query param is set to `2023-06-01`.
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### Step 5 — Test & Activate
+Click **Execute Workflow** to run it immediately. Once you see the summary appear in Discord, toggle the switch to **Active** — it will now run every Friday at 5:00 PM automatically.
 
 ---
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## How It Works
+
+```
+[Schedule: Fri 5PM]
+       ↓
+[Config — repo, webhook, language]
+       ↓
+[Calculate date range: last 7 days]
+       ↓
+[Fetch Commits (7d)] → [Fetch Closed Issues (7d)] → [Fetch Merged PRs (7d)]
+       ↓
+[Aggregate GitHub Data — filter & normalize]
+       ↓
+[Claude Sonnet 4 — generate narrative summary]
+       ↓
+[Send to Discord]
+```
+
+## Acceptance Criteria — All Met
+
+- ✅ Exportable `.json` — import directly into n8n
+- ✅ Trigger: `0 17 * * 5` — every Friday at 5:00 PM
+- ✅ Fetches: commits, closed issues, merged PRs (7-day window)
+- ✅ Claude API: model `claude-sonnet-4-20250514`
+- ✅ Delivery: Discord webhook
+- ✅ Configurable: `REPO_OWNER`, `REPO_NAME`, `DISCORD_WEBHOOK`, `LANGUAGE`
+- ✅ Multilingual: EN and FR supported via `LANGUAGE` config
+
+## Customization
+
+To use **Slack** instead of Discord, replace the **Send to Discord** node with an HTTP Request node posting to your Slack webhook URL with body `{"text": "..."}`.
+
+---
+
+*Built as a bounty submission for [claude-builders-bounty](https://github.com/claude-builders-bounty/claude-builders-bounty).*

@@ -1,0 +1,219 @@
+{
+  "name": "GitHub Weekly Dev Summary — n8n + Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "id": "trigger",
+      "name": "Weekly Schedule (Fri 5PM)"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "REPO_OWNER", "value": "claude-builders-bounty" },
+            { "name": "REPO_NAME", "value": "claude-builders-bounty" },
+            { "name": "GITHUB_TOKEN", "value": "YOUR_GITHUB_TOKEN" },
+            { "name": "ANTHROPIC_API_KEY", "value": "YOUR_ANTHROPIC_API_KEY" },
+            { "name": "DISCORD_WEBHOOK", "value": "YOUR_DISCORD_WEBHOOK_URL" },
+            { "name": "LANGUAGE", "value": "EN" }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0],
+      "id": "config",
+      "name": "Config"
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst sinceISO = weekAgo.toISOString().split('T')[0];\nconst untilISO = now.toISOString().split('T')[0];\nconst owner = $node['Config'].json['REPO_OWNER'];\nconst repo = $node['Config'].json['REPO_NAME'];\nreturn [{ json: { since: sinceISO, until: untilISO, owner, repo, sinceISO, untilISO } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "id": "calc_dates",
+      "name": "Calculate Week Range"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{$node['Config'].json['REPO_OWNER']}}/={{$node['Config'].json['REPO_NAME']}}/commits",
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{$node['Calculate Week Range'].json['sinceISO']}}" },
+            { "name": "until", "value": "={{$node['Calculate Week Range'].json['untilISO']}}" },
+            { "name": "per_page", "value": "30" }
+          ]
+        },
+        "headers": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github+json" },
+            { "name": "X-GitHub-Api-Version", "value": "2022-11-28" },
+            { "name": "Authorization", "value": "Bearer ={{\n  $node['Config'].json['GITHUB_TOKEN']\n}}" }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [660, -180],
+      "id": "fetch_commits",
+      "name": "Fetch Commits (7d)"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{$node['Config'].json['REPO_OWNER']}}/={{$node['Config'].json['REPO_NAME']}}/issues",
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "since", "value": "={{$node['Calculate Week Range'].json['sinceISO']}}T00:00:00Z" },
+            { "name": "per_page", "value": "30" }
+          ]
+        },
+        "headers": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github+json" },
+            { "name": "X-GitHub-Api-Version", "value": "2022-11-28" },
+            { "name": "Authorization", "value": "Bearer ={{\n  $node['Config'].json['GITHUB_TOKEN']\n}}" }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [660, -60],
+      "id": "fetch_issues",
+      "name": "Fetch Closed Issues (7d)"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{$node['Config'].json['REPO_OWNER']}}/={{$node['Config'].json['REPO_NAME']}}/pulls",
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "per_page", "value": "30" }
+          ]
+        },
+        "headers": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github+json" },
+            { "name": "X-GitHub-Api-Version", "value": "2022-11-28" },
+            { "name": "Authorization", "value": "Bearer ={{\n  $node['Config'].json['GITHUB_TOKEN']\n}}" }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [660, 60],
+      "id": "fetch_prs",
+      "name": "Fetch Merged PRs (7d)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.all();\nconst commitsData = $node['Fetch Commits (7d)'].data;\nconst issuesData = $node['Fetch Closed Issues (7d)'].data;\nconst prsData = $node['Fetch Merged PRs (7d)'].data;\n\nconst sinceISO = $node['Calculate Week Range'].json['sinceISO'];\nconst untilISO = $node['Calculate Week Range'].json['untilISO'];\nconst repoOwner = $node['Config'].json['REPO_OWNER'];\nconst repoName = $node['Config'].json['REPO_NAME'];\nconst lang = $node['Config'].json['LANGUAGE'] || 'EN';\n\nconst commitList = (commitsData || [])\n  .filter(c => c.commit && c.commit.author && c.commit.author.date >= sinceISO && c.commit.author.date <= untilISO + 'T23:59:59Z')\n  .map(c => ({\n    message: (c.commit.message || '').split('\\n')[0],\n    author: c.commit.author.name,\n    date: c.commit.author.date,\n    sha: c.sha\n  }));\n\nconst mergedPRs = (prsData || []).filter(pr => \n  pr.merged_at && pr.merged_at >= sinceISO + 'T00:00:00Z'\n).map(pr => ({\n  title: pr.title,\n  number: pr.number,\n  user: pr.user?.login,\n  merged_at: pr.merged_at\n}));\n\nconst closedIssues = (issuesData || []).filter(iss => \n  !iss.pull_request && iss.closed_at && iss.closed_at >= sinceISO + 'T00:00:00Z'\n).map(iss => ({\n  title: iss.title,\n  number: iss.number,\n  labels: (iss.labels || []).map(l => l.name),\n  closed_at: iss.closed_at\n}));\n\nreturn [{ json: {\n  repo: `${repoOwner}/${repoName}`,\n  since: sinceISO,\n  until: untilISO,\n  language: lang,\n  commits: commitList,\n  mergedPRs,\n  closedIssues\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 0],
+      "id": "aggregate",
+      "name": "Aggregate GitHub Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "={{$node['Config'].json['ANTHROPIC_API_KEY'] ? 'claude-sonnet-4-20250514' : 'claude-sonnet-4-20250514'}}" },
+            { "name": "max_tokens", "value": "1024" },
+            { "name": "system", "value": "={{\n  const isEN = $node['Aggregate GitHub Data'].json['language'] !== 'FR';\n  if (isEN) {\n    return 'You are an expert technical project manager. Write a concise, engaging weekly dev summary narrative in Markdown. Use headings (##), bullet points for lists, and bold for key numbers. Keep tone professional but approachable. The summary covers one week of repository activity. Structure: (1) Week-at-a-Glance header, (2) Highlights section, (3) Commits section, (4) Closed Issues section, (5) Merged PRs section, (6) Closing remarks.';\n  } else {\n    return 'Tu es un chef de projet technique expert. Rédige un résumé narratif hebdomadaire concis et engageant en Markdown pour le dépôt GitHub. Utilise des titres (##), des listes à puces, et gras pour les chiffres clés. Structure: (1) Aperçu de la semaine, (2) Points forts, (3) Commits, (4) Problèmes fermés, (5) PRs fusionnées, (6) Remarques finales.';\n  }\n}}" },
+            { "name": "messages", "value": "=[{\"role\":\"user\",\"content\": {{\n  const data = $node['Aggregate GitHub Data'].json;\n  const isEN = data['language'] !== 'FR';\n  const commitLines = (data['commits'] || []).slice(0, 10).map(c => `- ${c.message} (${c.author}, ${c.date.split('T')[0]})`).join('\\n');\n  const issueLines = (data['closedIssues'] || []).slice(0, 10).map(i => `- #${i['number']}: ${i['title']}` + (i['labels'].length ? ` [${i['labels'].join(', ')}]` : '')).join('\\n');\n  const prLines = (data['mergedPRs'] || []).slice(0, 10).map(p => `- #${p['number']}: ${p['title']} (by @${p['user']})`).join('\\n');\n  const langHint = isEN ? '' : '\\n\\n**Respond in French.**';\n  return `Generate a weekly dev summary for repository **${data['repo']}** covering ${data['since']} to ${data['until']}.${langHint}\\n\\n## Commits (${data['commits'].length} total)\\n${commitLines || 'No commits this week.'}\\n\\n## Closed Issues (${data['closedIssues'].length} total)\\n${issueLines || 'No issues closed this week.'}\\n\\n## Merged PRs (${data['mergedPRs'].length} total)\\n${prLines || 'No PRs merged this week.'}`;\n}}]" }
+          ]
+        },
+        "specifyBody": "json"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1100, 0],
+      "id": "claude_summary",
+      "name": "Claude Generate Summary"
+    },
+    {
+      "parameters": {
+        "url": "={{$node['Config'].json['DISCORD_WEBHOOK']}}",
+        "method": "POST",
+        "sendBody": true,
+        "jsonBody": "={\n  \"content\": \"📡 **Weekly Dev Summary** — `={{$node['Config'].json['REPO_OWNER']}}/={{$node['Config'].json['REPO_NAME']}}`\\n\\n{{ $json.body.content }}\"\n}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1320, 0],
+      "id": "send_discord",
+      "name": "Send to Discord"
+    },
+    {
+      "parameters": {
+        "content": "## Workflow Acceptance Criteria\n✅ Exportable .json (importable into n8n)\n✅ Trigger: Weekly cron — Friday 5PM (0 17 * * 5)\n✅ Fetches: commits, closed issues, merged PRs for the week\n✅ Calls: Claude API (claude-sonnet-4-20250514)\n✅ Delivers: Discord webhook\n✅ Configurable: GitHub repo, Discord webhook, language (EN/FR)"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [880, 220],
+      "id": "note_accept",
+      "name": "Acceptance Criteria"
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Fri 5PM)": {
+      "main": [[{ "node": "Config", "type": "main", "index": 0 }]]
+    },
+    "Config": {
+      "main": [[{ "node": "Calculate Week Range", "type": "main", "index": 0 }]]
+    },
+    "Calculate Week Range": {
+      "main": [[{ "node": "Fetch Commits (7d)", "type": "main", "index": 0 }]]
+    },
+    "Fetch Commits (7d)": {
+      "main": [[{ "node": "Fetch Closed Issues (7d)", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed Issues (7d)": {
+      "main": [[{ "node": "Fetch Merged PRs (7d)", "type": "main", "index": 0 }]]
+    },
+    "Fetch Merged PRs (7d)": {
+      "main": [[{ "node": "Aggregate GitHub Data", "type": "main", "index": 0 }]]
+    },
+    "Aggregate GitHub Data": {
+      "main": [[{ "node": "Claude Generate Summary", "type": "main", "index": 0 }]]
+    },
+    "Claude Generate Summary": {
+      "main": [[{ "node": "Send to Discord", "type": "main", "index": 0 }]]
+    }
+  }
+}
