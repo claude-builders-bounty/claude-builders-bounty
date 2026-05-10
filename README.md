@@ -2,9 +2,52 @@
 
 > A community bounty board for Claude Code builders.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Destructive Bash blocker hook
+
+This repository includes a Claude Code `PreToolUse` hook that blocks high-risk Bash commands before they run.
+
+### What it blocks
+
+- `rm -rf`
+- `DROP TABLE`
+- `git push --force` / `git push -f`
+- `TRUNCATE`
+- `DELETE FROM` statements that do not include a `WHERE` clause
+
+Every blocked attempt is appended to `~/.claude/hooks/blocked.log` as JSON lines with:
+
+- timestamp
+- attempted command
+- project path
+- block reason
+
+### Install
+
+From this repository:
+
+```bash
+python3 install.py
+```
+
+That single command copies `.claude/hooks/block-destructive-bash.py` to `~/.claude/hooks/` and registers it in `~/.claude/settings.json` for Bash `PreToolUse` events.
+
+### Test
+
+```bash
+python3 test_hook.py
+```
+
+### Example denied response
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "Blocked destructive Bash command: recursive forced deletion (rm -rf). Review the command, make it narrower/reversible, or run it manually if intentional."
+  }
+}
+```
 
 ---
 
