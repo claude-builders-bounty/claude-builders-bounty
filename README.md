@@ -6,6 +6,27 @@ Building with Claude Code? Have tasks to delegate?
 Want to get paid for contributing to AI projects?
 You're in the right place.
 
+## Bounty #1: Structured changelog generator
+
+This repository includes `changelog.sh`, a small Bash tool that generates a structured `CHANGELOG.md` from git history.
+
+### Setup in 3 steps
+
+1. Copy `changelog.sh` into any git repository.
+2. Run `chmod +x changelog.sh` if needed.
+3. Run `./changelog.sh` to write `CHANGELOG.md`.
+
+The script detects the latest git tag and uses commits since that tag. If the repository has no tags, it uses the full commit history. Commits are categorized into `Added`, `Fixed`, `Changed`, and `Removed` using common conventional-commit prefixes and keywords.
+
+### Example
+
+```bash
+./changelog.sh
+# Wrote CHANGELOG.md (since v1.2.0)
+```
+
+See [`sample-output.md`](sample-output.md) for output generated from this real public GitHub repository.
+
 ---
 
 ## How it works
