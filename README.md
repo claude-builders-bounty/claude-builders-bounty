@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Submitted Bounty Tools
+
+- [Generate Changelog](./generate-changelog/README.md): create a structured `CHANGELOG.md` from git history with `python changelog.py` or `bash changelog.sh`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
