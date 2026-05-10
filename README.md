@@ -1,53 +1,44 @@
-# Claude Builders Bounty 🤖
+# Next.js 15 + SQLite SaaS Starter
 
-> A community bounty board for Claude Code builders.
+A greenfield SaaS project template with production-ready CLAUDE.md for Claude Code.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
 
----
+```bash
+# Create a new project
+npx create-next-app@latest my-saas --typescript --tailwind --eslint --app --src-dir --import-alias "@/*"
+cd my-saas
 
-## How it works
+# Add this CLAUDE.md
+curl -O https://raw.githubusercontent.com/gzmh2021/claude-builders-bounty/main/CLAUDE.md
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+# Install deps
+pnpm install
+pnpm add drizzle-orm better-sqlite3 @libsql/client @auth/core next-auth@beta
+pnpm add -D drizzle-kit @types/better-sqlite3
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+# Set up database
+mkdir -p src/db/schema
+cat > src/db/index.ts << 'EOF'
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
 
----
+const sqlite = new Database('data/saas.db');
+export const db = drizzle(sqlite);
+EOF
 
-## Active Bounties
+# Run Claude Code
+claude
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+Claude will read this CLAUDE.md and understand the full stack conventions without needing clarifying questions.
 
----
+## What This CLAUDE.md Covers
 
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+- **Stack & versions** — pinned Next.js 15, Drizzle ORM, Auth.js, shadcn/ui
+- **Folder structure** — opinionated App Router layout with clear domain separation
+- **SQL / migration rules** — Drizzle-first, no raw SQL, auto-generated migrations
+- **Component patterns** — Server Components first, typed interfaces, cn() utility
+- **Error handling** — Server Action pattern, error boundaries, structured logging
+- **Dev commands** — pnpm scripts for everything
+- **Anti-patterns** — 8 explicit things we don't do (with reasons)
