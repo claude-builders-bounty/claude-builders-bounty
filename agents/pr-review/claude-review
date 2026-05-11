@@ -1,0 +1,443 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request and emit a structured Markdown comment."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable
+
+
+PR_URL_RE = re.compile(
+    r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)(?:[/?#].*)?$"
+)
+
+SOURCE_SUFFIXES = {
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cs",
+    ".go",
+    ".java",
+    ".js",
+    ".jsx",
+    ".kt",
+    ".php",
+    ".py",
+    ".rb",
+    ".rs",
+    ".swift",
+    ".ts",
+    ".tsx",
+}
+
+TEST_PATH_HINTS = (
+    "/test/",
+    "/tests/",
+    "/spec/",
+    "/specs/",
+    "__tests__",
+    ".test.",
+    ".spec.",
+    "_test.",
+    "test_",
+)
+
+
+@dataclass(frozen=True)
+class PullRequestRef:
+    owner: str
+    repo: str
+    number: int
+
+    @property
+    def api_url(self) -> str:
+        return f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.number}"
+
+    @property
+    def html_url(self) -> str:
+        return f"https://github.com/{self.owner}/{self.repo}/pull/{self.number}"
+
+
+@dataclass
+class PullRequestMetadata:
+    title: str
+    author: str
+    base: str
+    head: str
+    additions: int
+    deletions: int
+    changed_files: int
+    html_url: str
+
+
+@dataclass
+class DiffFile:
+    path: str
+    additions: int = 0
+    deletions: int = 0
+    added_lines: list[str] = field(default_factory=list)
+    removed_lines: list[str] = field(default_factory=list)
+
+    @property
+    def suffix(self) -> str:
+        return Path(self.path).suffix.lower()
+
+    @property
+    def is_source(self) -> bool:
+        return self.suffix in SOURCE_SUFFIXES
+
+    @property
+    def is_test(self) -> bool:
+        lowered = f"/{self.path.lower()}"
+        return any(hint in lowered for hint in TEST_PATH_HINTS)
+
+
+@dataclass
+class DiffAnalysis:
+    files: list[DiffFile]
+    total_additions: int
+    total_deletions: int
+
+    @property
+    def source_files(self) -> list[DiffFile]:
+        return [file for file in self.files if file.is_source and not file.is_test]
+
+    @property
+    def test_files(self) -> list[DiffFile]:
+        return [file for file in self.files if file.is_test]
+
+
+def parse_pr_url(url: str) -> PullRequestRef:
+    match = PR_URL_RE.match(url.strip())
+    if not match:
+        raise ValueError("Expected a GitHub PR URL like https://github.com/owner/repo/pull/123")
+    return PullRequestRef(
+        owner=match.group("owner"),
+        repo=match.group("repo"),
+        number=int(match.group("number")),
+    )
+
+
+def github_request(url: str, *, accept: str, token: str | None = None) -> str:
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-pr-review-agent",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub request failed with HTTP {exc.code}: {details}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"GitHub request failed: {exc.reason}") from exc
+
+
+def fetch_pull_request(pr: PullRequestRef, token: str | None) -> tuple[PullRequestMetadata, str]:
+    metadata_payload = github_request(
+        pr.api_url,
+        accept="application/vnd.github+json",
+        token=token,
+    )
+    metadata_json = json.loads(metadata_payload)
+    metadata = PullRequestMetadata(
+        title=metadata_json["title"],
+        author=metadata_json["user"]["login"],
+        base=metadata_json["base"]["ref"],
+        head=metadata_json["head"]["ref"],
+        additions=int(metadata_json.get("additions", 0)),
+        deletions=int(metadata_json.get("deletions", 0)),
+        changed_files=int(metadata_json.get("changed_files", 0)),
+        html_url=metadata_json["html_url"],
+    )
+    diff = github_request(
+        pr.api_url,
+        accept="application/vnd.github.v3.diff",
+        token=token,
+    )
+    return metadata, diff
+
+
+def post_issue_comment(pr: PullRequestRef, body: str, token: str | None) -> str:
+    if not token:
+        raise RuntimeError("Posting a PR comment requires GITHUB_TOKEN.")
+
+    url = f"https://api.github.com/repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments"
+    payload = json.dumps({"body": body}).encode("utf-8")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "User-Agent": "claude-pr-review-agent",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    request = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            created = json.loads(response.read().decode("utf-8"))
+            return created["html_url"]
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Could not post comment. HTTP {exc.code}: {details}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not post comment: {exc.reason}") from exc
+
+
+def parse_diff(diff: str) -> DiffAnalysis:
+    files: list[DiffFile] = []
+    current: DiffFile | None = None
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            path = line.split(" b/", 1)[-1].strip()
+            current = DiffFile(path=path)
+            files.append(current)
+            continue
+
+        if current is None:
+            continue
+
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            current.additions += 1
+            current.added_lines.append(line[1:])
+        elif line.startswith("-"):
+            current.deletions += 1
+            current.removed_lines.append(line[1:])
+
+    return DiffAnalysis(
+        files=files,
+        total_additions=sum(file.additions for file in files),
+        total_deletions=sum(file.deletions for file in files),
+    )
+
+
+def has_any_path(files: Iterable[DiffFile], patterns: Iterable[str]) -> bool:
+    lowered_patterns = tuple(pattern.lower() for pattern in patterns)
+    return any(any(pattern in file.path.lower() for pattern in lowered_patterns) for file in files)
+
+
+def has_added_content(files: Iterable[DiffFile], patterns: Iterable[str]) -> bool:
+    lowered_patterns = tuple(pattern.lower() for pattern in patterns)
+    for file in files:
+        added = "\n".join(file.added_lines).lower()
+        if any(pattern in added for pattern in lowered_patterns):
+            return True
+    return False
+
+
+def summarize_files(analysis: DiffAnalysis) -> str:
+    if not analysis.files:
+        return "No changed files were present in the fetched diff."
+
+    shown = ", ".join(file.path for file in analysis.files[:4])
+    remaining = len(analysis.files) - 4
+    if remaining > 0:
+        shown = f"{shown}, and {remaining} more"
+    return shown
+
+
+def build_summary(metadata: PullRequestMetadata, analysis: DiffAnalysis) -> str:
+    changed_files = metadata.changed_files or len(analysis.files)
+    additions = metadata.additions or analysis.total_additions
+    deletions = metadata.deletions or analysis.total_deletions
+    files = summarize_files(analysis)
+    sentence_one = (
+        f"This PR, `{metadata.title}`, proposes changes from `{metadata.head}` into "
+        f"`{metadata.base}` across {changed_files} file(s), with {additions} additions "
+        f"and {deletions} deletions."
+    )
+    sentence_two = f"The main touched paths are {files}."
+    return f"{sentence_one} {sentence_two}"
+
+
+def identify_risks(analysis: DiffAnalysis) -> list[str]:
+    risks: list[str] = []
+
+    if analysis.source_files and not analysis.test_files:
+        risks.append(
+            "Source files changed without matching test files, so behavior may regress without automated coverage."
+        )
+
+    if has_any_path(
+        analysis.files,
+        ("package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "requirements.txt", "Cargo.toml"),
+    ):
+        risks.append(
+            "Dependency or lockfile changes can affect install reproducibility and should be reviewed for transitive risk."
+        )
+
+    if has_any_path(analysis.files, ("auth", "session", "permission", "security", "token", "secret")) or has_added_content(
+        analysis.files,
+        ("authorization", "password", "secret", "token", "api_key", "apikey"),
+    ):
+        risks.append(
+            "Auth, permission, or secret-handling code appears in the diff, which raises security review importance."
+        )
+
+    if has_any_path(analysis.files, ("migration", "schema", "database", "db/")):
+        risks.append(
+            "Database or schema-related files changed, so rollback and migration ordering should be checked."
+        )
+
+    if has_any_path(analysis.files, (".github/workflows", "ci.yml", "release.yml")):
+        risks.append(
+            "CI or workflow files changed, which can affect build enforcement, release automation, or repository permissions."
+        )
+
+    if has_any_path(analysis.files, (".env", "docker", "deploy", "config", "settings")):
+        risks.append(
+            "Configuration or deployment paths changed, so environment-specific behavior should be verified."
+        )
+
+    if len(analysis.files) > 12 or analysis.total_additions + analysis.total_deletions > 700:
+        risks.append(
+            "The diff is large enough that review confidence drops unless it is split or backed by focused tests."
+        )
+
+    if any(file.deletions > file.additions * 3 and file.deletions > 30 for file in analysis.files):
+        risks.append(
+            "One or more files remove substantially more code than they add, so deleted behavior should be intentional."
+        )
+
+    return risks or ["No obvious high-risk areas were detected from the diff alone."]
+
+
+def build_suggestions(analysis: DiffAnalysis, risks: list[str]) -> list[str]:
+    suggestions: list[str] = []
+
+    if analysis.source_files and not analysis.test_files:
+        suggestions.append("Add or update tests for the changed source behavior before merging.")
+
+    if any("Dependency" in risk for risk in risks):
+        suggestions.append("Confirm the dependency changes are necessary and run a clean install from the lockfile.")
+
+    if any("Auth" in risk for risk in risks):
+        suggestions.append("Check authorization boundaries, secret handling, and error messages for information leaks.")
+
+    if any("Database" in risk for risk in risks):
+        suggestions.append("Run migrations against a disposable database and document the rollback path.")
+
+    if any("CI" in risk for risk in risks):
+        suggestions.append("Verify required checks still run on pull requests from forks and protected branches.")
+
+    if any("Configuration" in risk for risk in risks):
+        suggestions.append("Document any new environment variables or deployment assumptions in the README or runbook.")
+
+    if len(analysis.files) > 12 or analysis.total_additions + analysis.total_deletions > 700:
+        suggestions.append("Consider splitting unrelated changes into smaller PRs to improve review quality.")
+
+    suggestions.append("Ask the author to confirm the exact manual or automated validation performed.")
+    return dedupe(suggestions)
+
+
+def dedupe(items: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        if item not in seen:
+            result.append(item)
+            seen.add(item)
+    return result
+
+
+def confidence_score(metadata: PullRequestMetadata, analysis: DiffAnalysis, risks: list[str]) -> str:
+    size = (metadata.additions or analysis.total_additions) + (metadata.deletions or analysis.total_deletions)
+    if size > 1200 or len(analysis.files) > 20:
+        return "Low"
+    if any(risk.startswith("No obvious") for risk in risks) and analysis.test_files:
+        return "High"
+    if len(risks) >= 4 or (analysis.source_files and not analysis.test_files):
+        return "Medium"
+    return "High"
+
+
+def markdown_list(items: Iterable[str]) -> str:
+    return "\n".join(f"- {item}" for item in items)
+
+
+def render_review(metadata: PullRequestMetadata, analysis: DiffAnalysis) -> str:
+    risks = identify_risks(analysis)
+    suggestions = build_suggestions(analysis, risks)
+    confidence = confidence_score(metadata, analysis, risks)
+    summary = build_summary(metadata, analysis)
+
+    return (
+        "## Claude PR Review\n\n"
+        f"**PR:** [{metadata.title}]({metadata.html_url})\n"
+        f"**Author:** @{metadata.author}\n\n"
+        "### Summary\n"
+        f"{summary}\n\n"
+        "### Identified risks\n"
+        f"{markdown_list(risks)}\n\n"
+        "### Improvement suggestions\n"
+        f"{markdown_list(suggestions)}\n\n"
+        f"### Confidence score: {confidence}\n"
+    )
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="claude-review",
+        description="Fetch a GitHub PR diff and print a structured Markdown review comment.",
+    )
+    parser.add_argument("--pr", required=True, help="GitHub PR URL, for example https://github.com/owner/repo/pull/123")
+    parser.add_argument("--output", help="Optional path to write the Markdown review.")
+    parser.add_argument(
+        "--post-comment",
+        action="store_true",
+        help="Post the generated review as a PR conversation comment. Requires GITHUB_TOKEN.",
+    )
+    parser.add_argument(
+        "--diff-file",
+        help="Read a local unified diff instead of fetching the PR diff. Metadata is still fetched from GitHub.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    token = os.environ.get("GITHUB_TOKEN")
+
+    try:
+        pr = parse_pr_url(args.pr)
+        metadata, diff = fetch_pull_request(pr, token)
+        if args.diff_file:
+            diff = Path(args.diff_file).read_text(encoding="utf-8")
+
+        analysis = parse_diff(diff)
+        review = render_review(metadata, analysis)
+
+        if args.output:
+            Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.output).write_text(review, encoding="utf-8")
+        else:
+            sys.stdout.write(review)
+
+        if args.post_comment:
+            comment_url = post_issue_comment(pr, review, token)
+            print(f"Posted review comment: {comment_url}", file=sys.stderr)
+
+    except Exception as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
