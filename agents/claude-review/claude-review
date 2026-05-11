@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# claude-review: CLI tool to analyze a GitHub PR and produce a structured review
+# Usage: ./claude-review --pr https://github.com/owner/repo/pull/123 [--gh-token xxx]
+
+PR_URL=""
+GH_TOKEN="${GITHUB_TOKEN:-}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="$2"; shift 2 ;;
+    --gh-token) GH_TOKEN="$2"; shift 2 ;;
+    *) echo "Usage: $0 --pr <pr-url> [--gh-token <token>]"; exit 1 ;;
+  esac
+done
+
+if [[ -z "$PR_URL" ]]; then
+  echo "Error: --pr is required"
+  exit 1
+fi
+
+# Parse PR URL
+OWNER=$(echo "$PR_URL" | sed -E 's|https://github.com/([^/]+)/([^/]+)/pull/([0-9]+).*|\1|')
+REPO=$(echo "$PR_URL" | sed -E 's|https://github.com/([^/]+)/([^/]+)/pull/([0-9]+).*|\2|')
+PR_NUM=$(echo "$PR_URL" | sed -E 's|https://github.com/([^/]+)/([^/]+)/pull/([0-9]+).*|\3|')
+
+echo "🔍 Analyzing PR #$PR_NUM from $OWNER/$REPO..."
+echo ""
+
+# Fetch PR details
+PR_DATA=$(curl -sf -H "Authorization: token $GH_TOKEN" \
+  "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR_NUM" 2>/dev/null) || {
+  echo "Error: Could not fetch PR. Check the URL and your token."
+  exit 1
+}
+
+PR_TITLE=$(echo "$PR_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))" 2>/dev/null)
+PR_BODY=$(echo "$PR_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('body','')[:500])" 2>/dev/null)
+CHANGED_FILES=$(echo "$PR_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('changed_files',0))" 2>/dev/null)
+ADDITIONS=$(echo "$PR_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('additions',0))" 2>/dev/null)
+DELETIONS=$(echo "$PR_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('deletions',0))" 2>/dev/null)
+AUTHOR=$(echo "$PR_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('user',{}).get('login',''))" 2>/dev/null)
+
+# Fetch files changed
+FILES_JSON=$(curl -sf -H "Authorization: token $GH_TOKEN" \
+  "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR_NUM/files?per_page=30" 2>/dev/null)
+
+# Generate structured review
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  CLAUDE CODE PR REVIEW"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "## Summary"
+echo ""
+echo "**PR:** [$OWNER/$REPO #$PR_NUM]($PR_URL)"
+echo "**Title:** $PR_TITLE"
+echo "**Author:** $AUTHOR"
+echo "**Changes:** $CHANGED_FILES files | +$ADDITIONS / -$DELETIONS lines"
+echo ""
+
+# Identify risks based on file patterns
+RISKS=""
+SUGGESTIONS=""
+
+# Security-sensitive patterns
+if echo "$PR_BODY" | grep -qi "password\|secret\|token\|api.key\|credential"; then
+  RISKS="$RISKS- ⚠️ PR description mentions credentials or secrets — verify they are not hardcoded\n"
+  SUGGESTIONS="$SUGGESTIONS- Use environment variables or a secrets manager for sensitive data\n"
+fi
+
+# Parse files for risk patterns
+echo "$FILES_JSON" | python3 -c "
+import sys, json, re
+try:
+    files = json.load(sys.stdin)
+except:
+    files = []
+    
+risks = []
+suggestions = []
+
+for f in files:
+    name = f.get('filename', '')
+    patch = f.get('patch', '')
+
+    # Check for hardcoded secrets
+    if re.search(r'(password|secret|api_key|apiKey|token)\s*[:=]\s*[\"\\']', patch, re.I):
+        risks.append(f'⚠️ Possible hardcoded secret in \`{name}\`')
+        suggestions.append('Move secrets to environment variables or a secrets manager')
+
+    # Check for console.log in JS
+    if name.endswith('.js') or name.endswith('.ts') or name.endswith('.tsx'):
+        if re.search(r'console\.(log|debug)\(', patch):
+            risks.append(f'📝 Debug logging left in \`{name}\`')
+            suggestions.append('Remove console.log/debug statements before merging')
+
+    # Check for large files
+    if f.get('additions', 0) > 200:
+        suggestions.append(f'Consider splitting \`{name}\` — it adds {f[\"additions\"]} lines')
+
+    # Check for TODO comments
+    if re.search(r'TODO|FIXME|HACK|XXX', patch):
+        suggestions.append(f'TODO/FIXME found in \`{name}\` — track in an issue')
+
+    # Check for commented code
+    if re.search(r'//\s*.+', patch):
+        pass  # too common, skip
+
+    # Check for missing error handling
+    if re.search(r'\.catch\(|try\s*{', patch):
+        pass  # error handling present
+
+    # New dependencies
+    if 'package.json' in name and re.search(r'\"dependencies\"|\"devDependencies\"', patch):
+        suggestions.append('Review new dependencies for security and necessity')
+
+    # Permission-related changes
+    if re.search(r'(sudo|chmod|chown|777|0755|exec|eval)', patch, re.I):
+        risks.append(f'🔐 Permission or execution change in \`{name}\`')
+        suggestions.append('Verify that permission changes are strictly necessary')
+
+    # Large deletions
+    if f.get('deletions', 0) > 100:
+        suggestions.append(f'Verify \`{name}\` deletion of {f[\"deletions\"]} lines is intentional')
+
+for r in risks:
+    print(f'RISK:{r}')
+for s in suggestions:
+    print(f'SUGGEST:{s}')
+" 2>/dev/null | while read line; do
+  if [[ "$line" == RISK:* ]]; then
+    echo "  ${line#RISK:}"
+  fi
+done
+
+echo ""
+echo "### Identified Risks"
+echo ""
+if [[ -z "$RISKS" ]]; then
+  echo "- ✅ No significant risks detected"
+else
+  echo -e "$RISKS"
+fi
+
+echo ""
+echo "### Improvement Suggestions"
+echo ""
+SUGGEST_COUNT=0
+echo "$FILES_JSON" | python3 -c "
+import sys, json, re
+try:
+    files = json.load(sys.stdin)
+except:
+    files = []
+suggestions = []
+for f in files:
+    name = f.get('filename', '')
+    patch = f.get('patch', '')
+    if f.get('additions', 0) > 200:
+        suggestions.append(f'Consider splitting \`{name}\` — adds {f[\"additions\"]} lines')
+    if re.search(r'TODO|FIXME', patch):
+        suggestions.append(f'Address TODO/FIXME in \`{name}\'')
+    if 'package.json' in name and re.search(r'\"dependencies\"', patch):
+        suggestions.append('Review new npm dependencies')
+    if f.get('deletions', 0) > 100:
+        suggestions.append(f'Verify \`{name}\' deletion is intentional')
+    if name.endswith('.js') or name.endswith('.ts') or name.endswith('.tsx'):
+        if re.search(r'console\.(log|debug)\(', patch):
+            suggestions.append(f'Remove debug logging from \`{name}\'')
+for s in suggestions:
+    print(f'- {s}')
+" 2>/dev/null
+
+# Add general suggestions
+echo "- Add tests for new functionality"
+echo "- Update documentation if this changes behavior"
+echo ""
+
+echo "### Confidence Score"
+echo ""
+
+# Calculate confidence based on PR size and clarity
+TOTAL_LINES=$((ADDITIONS + DELETIONS))
+if [[ "$CHANGED_FILES" -le 3 && "$TOTAL_LINES" -le 100 ]]; then
+  echo "**HIGH** — Small, focused PR"
+elif [[ "$CHANGED_FILES" -le 10 && "$TOTAL_LINES" -le 500 ]]; then
+  echo "**MEDIUM** — Moderate scope"
+else
+  echo "**LOW** — Large PR, recommend manual review"
+fi
+
+echo ""
+echo "### Files Changed"
+echo ""
+echo "$FILES_JSON" | python3 -c "
+import sys, json
+try:
+    files = json.load(sys.stdin)
+except:
+    files = []
+for f in files:
+    status = f.get('status', 'modified')
+    adds = f.get('additions', 0)
+    dels = f.get('deletions', 0)
+    print(f'- **{f[\"filename\"]}** ({status}, +{adds}/-{dels})')
+" 2>/dev/null
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Review generated by claude-review agent"
+echo "  https://github.com/OddXandre/claude-builders-bounty"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
