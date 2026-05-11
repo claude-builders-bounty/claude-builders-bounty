@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""
+pre_tool_use — Claude Code hook that intercepts destructive bash commands.
+
+Installed at ~/.claude/hooks/pre_tool_use, this hook runs before every
+tool call and blocks potentially destructive commands, logging each
+blocked attempt with timestamp, project path, and the attempted command.
+
+Exit codes:
+  0 — Allow the tool call (no dangerous pattern detected)
+  2 — Block the tool call and display an explanation to Claude
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+# ── Log file path ──────────────────────────────────────────────
+BLOCKED_LOG = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+# ── Dangerous patterns ─────────────────────────────────────────
+DANGEROUS_PATTERNS = [
+    # rm -rf and variants
+    {
+        "name": "recursive-force-delete",
+        "reason": "rm -rf permanently deletes files without recovery. Use a trash directory instead.",
+        "pattern": re.compile(
+            r'\brm\s+(?:-[a-zA-Z]*[rR][a-zA-Z]*[fF][a-zA-Z]*|'
+            r'-[a-zA-Z]*[fF][a-zA-Z]*[rR][a-zA-Z]*|'
+            r'--recursive\b.*--force\b|'
+            r'--force\b.*--recursive\b)',
+            re.IGNORECASE,
+        ),
+    },
+    # DROP TABLE / DROP DATABASE
+    {
+        "name": "drop-table",
+        "reason": "DROP TABLE/DATABASE destroys data irreversibly. Use DELETE or RENAME to a backup first.",
+        "pattern": re.compile(
+            r'\bDROP\s+(?:TABLE|DATABASE|SCHEMA|VIEW|INDEX|TRIGGER|FUNCTION|PROCEDURE)\b',
+            re.IGNORECASE,
+        ),
+    },
+    # TRUNCATE
+    {
+        "name": "truncate-table",
+        "reason": "TRUNCATE removes all rows without transactional rollback. Use DELETE for recoverable removal.",
+        "pattern": re.compile(r'\bTRUNCATE\s+(?:TABLE\s+)?\w+', re.IGNORECASE),
+    },
+    # DELETE FROM without WHERE (risky)
+    {
+        "name": "delete-without-where",
+        "reason": "DELETE FROM without WHERE removes ALL rows. Add a WHERE clause or use DELETE with LIMIT.",
+        "pattern": re.compile(
+            r'\bDELETE\s+FROM\b',
+            re.IGNORECASE,
+        ),
+    },
+    # git push --force / git push -f
+    {
+        "name": "force-push",
+        "reason": "git push --force overwrites remote history. Use --force-with-lease to protect others' work.",
+        "pattern": re.compile(
+            r'\bgit\s+push\s+.*(?:--force\b|-[a-zA-Z]*[fF][a-zA-Z]*)',
+            re.IGNORECASE,
+        ),
+    },
+]
+
+
+def check_delete_has_where(command):
+    """Return True if a DELETE statement has WHERE clause (safe)."""
+    # Only apply the DELETE-FROM check if there's NO WHERE clause
+    if re.search(r'\bDELETE\s+FROM\b', command, re.IGNORECASE):
+        has_where = re.search(r'\bWHERE\b', command, re.IGNORECASE)
+        if not has_where:
+            return False  # No WHERE — block it
+    return True  # Has WHERE or not a DELETE — safe
+
+
+def log_blocked(command, reason, project_path):
+    """Append a blocked attempt to the log file."""
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "command": command.strip(),
+        "reason": reason,
+        "project": project_path or os.getcwd(),
+    }
+    try:
+        os.makedirs(os.path.dirname(BLOCKED_LOG), exist_ok=True)
+        with open(BLOCKED_LOG, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError:
+        pass  # Silent failure — don't crash Claude over logging
+
+
+def main():
+    try:
+        input_data = json.load(sys.stdin)
+    except (json.JSONDecodeError, EOFError):
+        # Not a valid hook invocation — allow through
+        sys.exit(0)
+
+    tool_name = input_data.get("tool_name", "")
+    tool_input = input_data.get("tool_input", {})
+
+    # Only intercept Bash tool calls
+    if tool_name != "Bash":
+        sys.exit(0)
+
+    command = tool_input.get("command", "").strip()
+    if not command:
+        sys.exit(0)
+
+    project_path = os.environ.get("CLAUDE_PROJECT", "")
+
+    # Check each dangerous pattern
+    for entry in DANGEROUS_PATTERNS:
+        name = entry["name"]
+        reason = entry["reason"]
+        pattern = entry["pattern"]
+
+        if not pattern.search(command):
+            continue
+
+        # Special case: DELETE FROM without WHERE
+        if name == "delete-without-where":
+            if check_delete_has_where(command):
+                continue  # Has WHERE — safe
+            reason = "DELETE FROM without WHERE clause removes ALL rows. Add a WHERE clause."
+
+        # Block it
+        log_blocked(command, reason, project_path)
+
+        print(
+            f"⛔ BLOCKED: {reason}",
+            file=sys.stderr,
+        )
+        print(
+            f"   Command: {command[:200]}",
+            file=sys.stderr,
+        )
+        sys.exit(2)  # Exit code 2 = block tool call + show stderr to Claude
+
+    # No dangerous pattern matched — allow
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
