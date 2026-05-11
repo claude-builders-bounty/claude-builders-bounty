@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+1. Copy `changelog.sh` into any git repository.
+2. Run `bash changelog.sh` from inside the repository.
+3. Review and commit the generated `CHANGELOG.md`.
+
+Run `bash tests/smoke_changelog.sh` to verify that only commits after the latest tag are included and categorized into Added, Fixed, Changed, and Removed sections.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
