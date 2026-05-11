@@ -1,0 +1,231 @@
+{
+  "name": "Claude Code Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "expression": "1"
+            }
+          ]
+        }
+      },
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "webhookId": "weekly-trigger"
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "listCommits",
+        "owner": "={{ $json.repoOwner }}",
+        "repository": "={{ $json.repoName }}",
+        "since": "={{ DateTime.now().minus({ days: 7 }).toISO() }}"
+      },
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.github",
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "listPullRequests",
+        "owner": "={{ $json.repoOwner }}",
+        "repository": "={{ $json.repoName }}",
+        "state": "all"
+      },
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.github",
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getIssues",
+        "owner": "={{ $json.repoOwner }}",
+        "repository": "={{ $json.repoName }}",
+        "since": "={{ DateTime.now().minus({ days: 7 }).toISO() }}"
+      },
+      "name": "Fetch Issues",
+      "type": "n8n-nodes-base.github",
+      "position": [450, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate commits, PRs, and issues into a summary payload\nconst commits = $input.all()[0].json;\nconst prs = $input.all()[1].json;\nconst issues = $input.all()[2].json;\n\nconst summary = {\n  period: {\n    start: DateTime.now().minus({ days: 7 }).toFormat('yyyy-MM-dd'),\n    end: DateTime.now().toFormat('yyyy-MM-dd')\n  },\n  commits: {\n    count: commits.length,\n    authors: [...new Set(commits.map(c => c.commit.author.name))],\n    messages: commits.map(c => c.commit.message.split('\\n')[0]).slice(0, 20)\n  },\n  pullRequests: {\n    opened: prs.filter(p => new Date(p.created_at) > DateTime.now().minus({ days: 7 }).toJSDate()).length,\n    merged: prs.filter(p => p.merged_at && new Date(p.merged_at) > DateTime.now().minus({ days: 7 }).toJSDate()).length,\n    closed: prs.filter(p => p.closed_at && new Date(p.closed_at) > DateTime.now().minus({ days: 7 }).toJSDate() && !p.merged_at).length\n  },\n  issues: {\n    opened: issues.filter(i => new Date(i.created_at) > DateTime.now().minus({ days: 7 }).toJSDate()).length,\n    closed: issues.filter(i => i.closed_at && new Date(i.closed_at) > DateTime.now().minus({ days: 7 }).toJSDate()).length\n  }\n};\n\nreturn [{ json: summary }];"
+      },
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "position": [700, 500]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a technical project manager. Generate a concise weekly development summary in markdown."
+          },
+          {
+            "role": "user",
+            "content": "={{ JSON.stringify($json) }}"
+          }
+        ],
+        "options": {
+          "maxTokens": 2000
+        }
+      },
+      "name": "Claude Code Summary",
+      "type": "n8n-nodes-base.anthropicChatModel",
+      "position": [950, 500]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "={{ $json.slackChannel }}",
+        "text": "={{ $json.summary }}"
+      },
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "position": [1200, 400]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "create",
+        "server": "={{ $json.discordWebhook }}",
+        "content": "={{ $json.summary }}"
+      },
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.discord",
+      "position": [1200, 600]
+    },
+    {
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "subject": "Weekly Dev Summary: {{ $json.repoName }}",
+        "body": "={{ $json.summary }}",
+        "to": "={{ $json.emailRecipients }}"
+      },
+      "name": "Email Summary",
+      "type": "n8n-nodes-base.emailSend",
+      "position": [1200, 800]
+    },
+    {
+      "parameters": {
+        "fileName": "weekly-summary-{{ DateTime.now().toFormat('yyyy-MM-dd') }}.md",
+        "data": "={{ $json.summary }}"
+      },
+      "name": "Save Markdown",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "position": [1450, 500]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch PRs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Claude Code Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Code Summary": {
+      "main": [
+        [
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Discord",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "connections": {},
+  "description": "Weekly automated dev summary using Claude Code + n8n. Fetches commits, PRs, and issues from GitHub, generates a markdown summary via Claude, and distributes to Slack/Discord/email.",
+  "name": "Claude Code Weekly Dev Summary",
+  "active": false
+}
