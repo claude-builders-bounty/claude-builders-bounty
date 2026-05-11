@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""PR diff reviewer that emits a structured Markdown review comment."""
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+import urllib.request
+from dataclasses import dataclass
+from typing import Iterable
+
+PR_RE = re.compile(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)")
+
+@dataclass
+class DiffStats:
+    files: set[str]
+    added: int
+    removed: int
+    tests_changed: bool
+    docs_changed: bool
+    migrations_changed: bool
+    risky_lines: list[str]
+
+
+def fetch_diff(pr_url: str) -> str:
+    api_match = PR_RE.match(pr_url.rstrip('/'))
+    if not api_match:
+        raise SystemExit("--pr must be a GitHub pull request URL like https://github.com/owner/repo/pull/123")
+    owner, repo, number = api_match.groups()
+    # Prefer gh when authenticated because it handles rate limits and private repos.
+    try:
+        return subprocess.check_output(['gh', 'pr', 'diff', pr_url], text=True, stderr=subprocess.DEVNULL)
+    except Exception:
+        diff_url = f"https://patch-diff.githubusercontent.com/raw/{owner}/{repo}/pull/{number}.diff"
+        req = urllib.request.Request(diff_url, headers={'User-Agent': 'claude-review'})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode('utf-8', 'replace')
+
+
+def analyze(diff: str) -> DiffStats:
+    files: set[str] = set()
+    added = removed = 0
+    risky_lines: list[str] = []
+    current_file = ''
+    risk_patterns = [
+        (re.compile(r'\b(eval|exec)\s*\(', re.I), 'dynamic code execution'),
+        (re.compile(r'rm\s+-[^\n]*[rf]|DROP\s+TABLE|TRUNCATE|DELETE\s+FROM(?![^;]*\bWHERE\b)', re.I), 'destructive command or SQL'),
+        (re.compile(r'password|secret|api[_-]?key|token', re.I), 'possible secret/auth-sensitive change'),
+        (re.compile(r'\bchmod\s+777\b|allowAll|disableAuth|skipAuth', re.I), 'permission/auth bypass pattern'),
+        (re.compile(r'innerHTML|dangerouslySetInnerHTML', re.I), 'HTML injection surface'),
+    ]
+    for line in diff.splitlines():
+        if line.startswith('diff --git'):
+            parts = line.split(' b/', 1)
+            current_file = parts[1] if len(parts) == 2 else line
+            files.add(current_file)
+            continue
+        if line.startswith('+++ b/'):
+            current_file = line[6:]
+            files.add(current_file)
+            continue
+        if line.startswith('+') and not line.startswith('+++'):
+            added += 1
+            content = line[1:]
+            for pat, label in risk_patterns:
+                if pat.search(content):
+                    risky_lines.append(f"{label}: `{content[:140]}`")
+                    break
+        elif line.startswith('-') and not line.startswith('---'):
+            removed += 1
+    lower_files = [f.lower() for f in files]
+    return DiffStats(
+        files=files,
+        added=added,
+        removed=removed,
+        tests_changed=any(('test' in f or 'spec' in f or '__tests__' in f) for f in lower_files),
+        docs_changed=any(f.endswith(('.md', '.mdx', '.rst')) or 'docs/' in f for f in lower_files),
+        migrations_changed=any('migration' in f or '/migrations/' in f or f.endswith('.sql') for f in lower_files),
+        risky_lines=risky_lines[:8],
+    )
+
+
+def classify_files(files: Iterable[str]) -> str:
+    files = list(files)
+    if not files:
+        return 'No changed files were detected in the diff.'
+    sample = ', '.join(sorted(files)[:8])
+    more = f" and {len(files)-8} more" if len(files) > 8 else ''
+    return f"The PR touches {len(files)} file(s): {sample}{more}."
+
+
+def confidence(stats: DiffStats) -> str:
+    if stats.added + stats.removed > 1200 or stats.risky_lines:
+        return 'Medium'
+    if len(stats.files) <= 8 and (stats.tests_changed or stats.docs_changed):
+        return 'High'
+    return 'Medium'
+
+
+def render(pr_url: str, diff: str) -> str:
+    stats = analyze(diff)
+    summary = classify_files(stats.files)
+    scale = f"It adds {stats.added} line(s) and removes {stats.removed} line(s)."
+    intent = 'Docs-only or documentation-heavy change.' if stats.docs_changed and not stats.tests_changed else 'Code/config change detected; review behavior and integration impact carefully.'
+
+    risks = []
+    if stats.risky_lines:
+        risks.append('Potentially sensitive patterns detected:')
+        risks.extend(f'  - {r}' for r in stats.risky_lines)
+    if not stats.tests_changed and not stats.docs_changed:
+        risks.append('No obvious tests changed; behavior may be under-covered.')
+    if stats.migrations_changed:
+        risks.append('Migration/schema files changed; check rollback/compatibility and data safety.')
+    if stats.added + stats.removed > 600:
+        risks.append('Large diff size increases review risk; consider splitting if possible.')
+    if not risks:
+        risks.append('No major risks detected from static diff heuristics.')
+
+    suggestions = []
+    if not stats.tests_changed and not stats.docs_changed:
+        suggestions.append('Add or update tests covering the main changed behavior.')
+    if stats.risky_lines:
+        suggestions.append('Manually inspect the flagged sensitive lines before merge.')
+    if stats.migrations_changed:
+        suggestions.append('Document migration order and verify it against a copy of production-like data.')
+    suggestions.append('Run the project’s lint/typecheck/test suite before merging.')
+    suggestions.append('Confirm public API or user-facing behavior changes are documented.')
+
+    return f"""## Claude Review Comment\n\n**PR:** {pr_url}\n\n### Summary of changes\n{summary} {scale} {intent}\n\n### Identified risks\n""" + '\n'.join(f'- {r}' for r in risks) + f"""\n\n### Improvement suggestions\n""" + '\n'.join(f'- {s}' for s in suggestions) + f"""\n\n### Confidence score\n**{confidence(stats)}**\n"""
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description='Generate a structured Markdown review from a GitHub PR diff.')
+    ap.add_argument('--pr', required=True, help='GitHub PR URL')
+    ap.add_argument('--output', help='Optional file to write Markdown output')
+    args = ap.parse_args()
+    diff = fetch_diff(args.pr)
+    out = render(args.pr, diff)
+    if args.output:
+        with open(args.output, 'w', encoding='utf-8') as fh:
+            fh.write(out)
+    else:
+        print(out)
+    return 0
+
+if __name__ == '__main__':
+    raise SystemExit(main())
