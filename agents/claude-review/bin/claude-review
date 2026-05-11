@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""Fetch a PR diff and produce a structured Markdown review."""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+import textwrap
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass
+class FileChange:
+    path: str
+    additions: int = 0
+    deletions: int = 0
+    added_lines: list[str] = field(default_factory=list)
+
+
+def fetch_pr_diff(pr_url: str) -> str:
+    if not re.match(r"^https://github\.com/[^/]+/[^/]+/pull/\d+/?$", pr_url):
+        raise ValueError("Expected a GitHub PR URL like https://github.com/owner/repo/pull/123")
+
+    diff_url = pr_url.rstrip("/") + ".diff"
+    request = urllib.request.Request(diff_url, headers={"User-Agent": "claude-review-agent"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def post_review_comment(pr_url: str, review: str) -> None:
+    """Post a generated review using gh so auth/token handling stays outside this tool."""
+    completed = subprocess.run(
+        ["gh", "pr", "comment", pr_url, "--body", review],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        message = completed.stderr.strip() or completed.stdout.strip() or "gh pr comment failed"
+        raise RuntimeError(message)
+
+
+def parse_diff(diff: str) -> list[FileChange]:
+    files: list[FileChange] = []
+    current: FileChange | None = None
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            match = re.match(r"diff --git a/(.*?) b/(.*)", line)
+            path = match.group(2) if match else line.removeprefix("diff --git ").strip()
+            current = FileChange(path=path)
+            files.append(current)
+            continue
+
+        if current is None:
+            continue
+
+        if line.startswith("+") and not line.startswith("+++"):
+            current.additions += 1
+            current.added_lines.append(line[1:])
+        elif line.startswith("-") and not line.startswith("---"):
+            current.deletions += 1
+
+    return files
+
+
+def summarize(files: list[FileChange]) -> str:
+    total_added = sum(file.additions for file in files)
+    total_deleted = sum(file.deletions for file in files)
+    names = ", ".join(file.path for file in files[:4])
+    if len(files) > 4:
+        names += f", and {len(files) - 4} more"
+
+    return (
+        f"This PR changes {len(files)} file(s), with {total_added} added line(s) "
+        f"and {total_deleted} removed line(s). "
+        f"The main touched paths are {names or 'not visible in the diff'}."
+    )
+
+
+def risk_signals(files: list[FileChange]) -> list[str]:
+    paths = [file.path for file in files]
+    added_text = "\n".join(line for file in files for line in file.added_lines)
+    total_added = sum(file.additions for file in files)
+    total_deleted = sum(file.deletions for file in files)
+
+    risks: list[str] = []
+
+    source_changed = any(re.search(r"\.(ts|tsx|js|jsx|py|go|rs|java|php|rb|cs)$", path) for path in paths)
+    tests_changed = any(re.search(r"(^|/)(test|tests|spec|__tests__)/|(\.|_)(test|spec)\.", path) for path in paths)
+    if source_changed and not tests_changed:
+        risks.append("Source files changed without an accompanying test update.")
+
+    if any("package.json" in path or path.endswith((".lock", "pnpm-lock.yaml", "yarn.lock")) for path in paths):
+        risks.append("Dependency or lockfile changes can alter build output and should be checked against security advisories.")
+
+    if any(re.search(r"(auth|session|token|permission|security|crypto)", path, re.IGNORECASE) for path in paths):
+        risks.append("Authentication, authorization, or security-sensitive paths changed; verify negative cases and secret handling.")
+
+    if any(re.search(r"(migration|schema|database|db/)", path, re.IGNORECASE) for path in paths):
+        risks.append("Database-related files changed; verify migrations are reversible and safe for existing data.")
+
+    if re.search(r"(api[_-]?key|secret|password|private[_-]?key)\s*[:=]\s*['\"][^'\"]+", added_text, re.IGNORECASE):
+        risks.append("Added lines look like they may contain hard-coded credentials or secrets.")
+
+    if total_added + total_deleted > 800:
+        risks.append("Large diff size raises review risk; split or add a reviewer guide if possible.")
+
+    if total_deleted > total_added * 2 and total_deleted > 40:
+        risks.append("The PR removes substantially more code than it adds; confirm no behavior was unintentionally dropped.")
+
+    return risks or ["No obvious high-risk areas were detected from the diff alone."]
+
+
+def suggestions(files: list[FileChange]) -> list[str]:
+    paths = [file.path for file in files]
+    suggestions_out: list[str] = []
+
+    if not any(re.search(r"(^|/)(test|tests|spec|__tests__)/|(\.|_)(test|spec)\.", path) for path in paths):
+        suggestions_out.append("Add or update tests for the main changed behavior before merging.")
+
+    if any(path.endswith(".md") for path in paths):
+        suggestions_out.append("Check rendered Markdown so links, headings, and code fences display correctly.")
+
+    if any(path.endswith((".yml", ".yaml")) or "/.github/workflows/" in path for path in paths):
+        suggestions_out.append("Run the changed workflow or validate it with the platform linter before relying on it.")
+
+    if any("package.json" in path for path in paths):
+        suggestions_out.append("Run install, lint, tests, and build with a clean dependency cache.")
+
+    return suggestions_out or ["Run the project test suite and include the command output in the PR before requesting final review."]
+
+
+def confidence(files: list[FileChange]) -> str:
+    total = sum(file.additions + file.deletions for file in files)
+    if not files:
+        return "Low - no file-level diff was available."
+    if total > 800:
+        return "Low - the diff is large enough that heuristic review may miss interactions."
+    if any(re.search(r"(^|/)(test|tests|spec|__tests__)/|(\.|_)(test|spec)\.", file.path) for file in files):
+        return "High - the diff is reviewable and includes test changes."
+    return "Medium - the diff is reviewable, but test coverage is not visible."
+
+
+def render_review(diff: str) -> str:
+    files = parse_diff(diff)
+    risks = risk_signals(files)
+    improvements = suggestions(files)
+
+    return "\n".join(
+        [
+            "## PR Review",
+            "",
+            "### Summary",
+            "",
+            textwrap.fill(summarize(files), width=100),
+            "",
+            "### Identified Risks",
+            "",
+            *[f"- {risk}" for risk in risks],
+            "",
+            "### Improvement Suggestions",
+            "",
+            *[f"- {suggestion}" for suggestion in improvements],
+            "",
+            "### Confidence Score",
+            "",
+            confidence(files),
+            "",
+        ]
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Review a GitHub PR diff and output Markdown.")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--pr", help="GitHub pull request URL")
+    source.add_argument("--diff-file", help="Path to a local .diff file")
+    parser.add_argument("--output", help="Write review Markdown to this path")
+    parser.add_argument(
+        "--post-comment",
+        action="store_true",
+        help="Post the generated review to the PR with gh pr comment. Requires --pr and gh auth.",
+    )
+    args = parser.parse_args()
+
+    if args.post_comment and not args.pr:
+        parser.error("--post-comment requires --pr")
+
+    try:
+        diff = fetch_pr_diff(args.pr) if args.pr else Path(args.diff_file).read_text(encoding="utf-8")
+    except Exception as exc:
+        print(f"Unable to read diff: {exc}", file=sys.stderr)
+        return 2
+
+    review = render_review(diff)
+    if args.output:
+        Path(args.output).write_text(review, encoding="utf-8")
+    else:
+        print(review)
+    if args.post_comment:
+        try:
+            post_review_comment(args.pr, review)
+        except Exception as exc:
+            print(f"Unable to post review: {exc}", file=sys.stderr)
+            return 3
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
