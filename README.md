@@ -9,6 +9,6 @@ Generates structured CHANGELOG.md from git history.
 
 ## Categories
 - **Added** - feat commits
-- **Fixed** - fix commits
+- **Fixed** - fix commits  
 - **Changed** - refactor, perf, chore, style commits
 - **Removed** - revert commits
