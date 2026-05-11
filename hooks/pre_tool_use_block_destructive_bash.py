@@ -78,15 +78,30 @@ def blocks_git_force_push(command: str) -> bool:
     return bool(re.search(r"\bgit\s+push\b[^\n;&|]*(?:\s-f\b|\s--force(?:\b|=|-))", command))
 
 
+def is_single_text_rendering_command(command: str) -> bool:
+    tokens = shell_tokens(command)
+    if not tokens:
+        return False
+    if tokens[0] not in {"echo", "printf", "grep", "rg", "ag"}:
+        return False
+    return not re.search(r"[;&|]", command)
+
+
 def blocks_drop_table(command: str) -> bool:
+    if is_single_text_rendering_command(command):
+        return False
     return bool(re.search(r"\bdrop\s+table\b", command, flags=re.IGNORECASE))
 
 
 def blocks_truncate(command: str) -> bool:
+    if is_single_text_rendering_command(command):
+        return False
     return bool(re.search(r"\btruncate(?:\s+table)?\b", command, flags=re.IGNORECASE))
 
 
 def blocks_delete_without_where(command: str) -> bool:
+    if is_single_text_rendering_command(command):
+        return False
     for match in re.finditer(r"\bdelete\s+from\b(?P<body>[^;|&]*)", command, flags=re.IGNORECASE | re.DOTALL):
         if not re.search(r"\bwhere\b", match.group("body"), flags=re.IGNORECASE):
             return True

@@ -76,6 +76,11 @@ class DestructiveBashHookTests(unittest.TestCase):
         self.assert_allowed("rm build/output.txt")
         self.assert_allowed("npm test")
 
+    def test_allows_documenting_or_searching_destructive_sql_text(self):
+        self.assert_allowed('echo "DROP TABLE users"')
+        self.assert_allowed('printf "TRUNCATE audit_log"')
+        self.assert_allowed('rg "DELETE FROM sessions" docs/')
+
     def test_ignores_non_bash_tools(self):
         self.assert_allowed("rm -rf build", tool_name="Read")
 
