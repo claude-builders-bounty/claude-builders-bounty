@@ -1,53 +1,39 @@
-# Claude Builders Bounty 🤖
+# Pre-Tool-Use Hook: Block Destructive Bash Commands
 
-> A community bounty board for Claude Code builders.
+Claude Code hook that intercepts and blocks dangerous bash commands before execution.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation (2 commands)
 
----
+```bash
+curl -sL https://raw.githubusercontent.com/kiknaio/claude-hooks/main/install.sh | bash
+```
+
+Or manually:
+```bash
+mkdir -p ~/.claude/hooks && cp block_dangerous.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/block_dangerous.py
+```
+
+## What it blocks
+
+- `rm -rf` (recursive force delete)
+- `DROP TABLE` (database table deletion)
+- `git push --force` (force push)
+- `TRUNCATE` (table truncation)
+- `DELETE FROM` without `WHERE` clause
 
 ## How it works
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+The hook receives JSON input from Claude Code's pre-tool-use event, checks if it's a Bash command, scans for dangerous patterns, and blocks them with a clear message. All blocked attempts are logged to `~/.claude/hooks/blocked.log`.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Log format
 
----
+```
+[2026-05-11T12:00:00.000000] BLOCKED: tool=Bash cmd='rm -rf /' path=/home/user/project
+```
 
-## Active Bounties
+## Testing
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/test"}}' | python3 block_dangerous.py
+# Output: {"decision": "block", "reason": "Blocked destructive command: rm -rf (recursive force delete). Use safer alternatives or add explicit safeguards."}
+```
