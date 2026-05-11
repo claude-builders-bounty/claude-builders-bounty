@@ -22,6 +22,16 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+1. Run `bash changelog.sh` from the root of any git repository.
+2. Optionally pass an output path: `bash changelog.sh RELEASE_NOTES.md`.
+3. Open the generated `CHANGELOG.md` and review the Added, Fixed, Changed, and Removed sections.
+
+Claude Code users can also install the included `.claude/skills/generate-changelog/SKILL.md` skill.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
