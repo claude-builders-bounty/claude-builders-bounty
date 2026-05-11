@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown review for a GitHub pull request."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+PR_URL_RE = re.compile(r"https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)")
+
+
+@dataclass(frozen=True)
+class PullRequestRef:
+    owner: str
+    repo: str
+    number: int
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.owner}/{self.repo}"
+
+
+def parse_pr_url(url: str) -> PullRequestRef:
+    match = PR_URL_RE.fullmatch(url.strip())
+    if not match:
+        raise ValueError("Expected PR URL like https://github.com/owner/repo/pull/123")
+    return PullRequestRef(
+        owner=match.group("owner"),
+        repo=match.group("repo"),
+        number=int(match.group("number")),
+    )
+
+
+def run_gh(args: list[str]) -> str:
+    result = subprocess.run(["gh", *args], text=True, capture_output=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+    return result.stdout
+
+
+def fetch_pr(ref: PullRequestRef) -> tuple[dict[str, Any], str]:
+    view_raw = run_gh(
+        [
+            "pr",
+            "view",
+            str(ref.number),
+            "--repo",
+            ref.full_name,
+            "--json",
+            "title,body,files,additions,deletions,author,url",
+        ]
+    )
+    diff = run_gh(["pr", "diff", str(ref.number), "--repo", ref.full_name, "--patch", "--color=never"])
+    return json.loads(view_raw), diff
+
+
+def file_paths(pr: dict[str, Any]) -> list[str]:
+    return [item["path"] for item in pr.get("files", []) if isinstance(item, dict) and item.get("path")]
+
+
+def has_tests(paths: list[str]) -> bool:
+    return any(
+        "/test" in f"/{path}".lower()
+        or path.lower().startswith("test")
+        or path.lower().endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", "_test.py"))
+        for path in paths
+    )
+
+
+def markdown_list(items: list[str]) -> str:
+    if not items:
+        return "- None identified from the diff metadata."
+    return "\n".join(f"- {item}" for item in items)
+
+
+def top_extensions(paths: list[str]) -> str:
+    counts: dict[str, int] = {}
+    for path in paths:
+        suffix = Path(path).suffix or "[no extension]"
+        counts[suffix] = counts.get(suffix, 0) + 1
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:3]
+    return ", ".join(f"{ext} ({count})" for ext, count in ranked) if ranked else "no files"
+
+
+def classify_risks(pr: dict[str, Any], diff: str) -> list[str]:
+    paths = file_paths(pr)
+    lowered_paths = [path.lower() for path in paths]
+    diff_lc = diff.lower()
+    risks: list[str] = []
+
+    total_delta = int(pr.get("additions") or 0) + int(pr.get("deletions") or 0)
+    if total_delta > 500:
+        risks.append(f"Large diff size ({total_delta} changed lines) increases review and regression risk.")
+    if any("migration" in path or path.startswith("db/") or path.endswith(".sql") for path in lowered_paths):
+        risks.append("Database or migration files changed; verify forward-only migration behavior on a fresh database.")
+    if any("auth" in path or "session" in path or "permission" in path for path in lowered_paths):
+        risks.append("Auth/session/permission code changed; check cross-tenant access and role boundaries.")
+    if any(path.endswith(("package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock")) for path in lowered_paths):
+        risks.append("Dependency metadata changed; confirm lockfile integrity and supply-chain impact.")
+    if any(path.startswith(".github/workflows/") for path in lowered_paths):
+        risks.append("CI workflow files changed; confirm token permissions and trigger scope.")
+    if "delete from" in diff_lc or "drop table" in diff_lc or "truncate" in diff_lc:
+        risks.append("Destructive SQL appears in the diff; confirm it is guarded, scoped, and reversible.")
+    if not has_tests(paths):
+        risks.append("No obvious tests changed; behavior may rely on manual validation.")
+    return risks
+
+
+def suggestions(pr: dict[str, Any], risks: list[str]) -> list[str]:
+    paths = file_paths(pr)
+    items: list[str] = []
+    if not has_tests(paths):
+        items.append("Add or link targeted tests for the changed behavior before merge.")
+    if any("Database or migration" in risk for risk in risks):
+        items.append("Run migrations against an empty database and an upgraded existing database.")
+    if any("Auth/session/permission" in risk for risk in risks):
+        items.append("Add a negative authorization case for a user outside the workspace or role.")
+    if any("Dependency metadata" in risk for risk in risks):
+        items.append("Run install and audit checks from a clean checkout.")
+    if any("CI workflow" in risk for risk in risks):
+        items.append("Review workflow permissions and avoid broad write tokens unless required.")
+    if not items:
+        items.append("Run the project’s normal test, typecheck, and lint commands before merge.")
+    return items
+
+
+def confidence(pr: dict[str, Any], risks: list[str]) -> str:
+    paths = file_paths(pr)
+    total_delta = int(pr.get("additions") or 0) + int(pr.get("deletions") or 0)
+    if total_delta > 800 or len(risks) >= 4:
+        return "Low"
+    if has_tests(paths) and total_delta <= 300 and len(risks) <= 2:
+        return "High"
+    return "Medium"
+
+
+def render_review(pr: dict[str, Any], diff: str) -> str:
+    paths = file_paths(pr)
+    risks = classify_risks(pr, diff)
+    improvement_suggestions = suggestions(pr, risks)
+    changed_count = len(paths)
+    additions = int(pr.get("additions") or 0)
+    deletions = int(pr.get("deletions") or 0)
+
+    summary = (
+        f"This PR changes {changed_count} file{'s' if changed_count != 1 else ''} "
+        f"with {additions} additions and {deletions} deletions. "
+        f"The main touched file types are {top_extensions(paths)}, and the title is: "
+        f"{pr.get('title', 'Untitled')}."
+    )
+    if has_tests(paths):
+        summary += " Test files are included in the diff, which improves review confidence."
+    else:
+        summary += " I did not see an obvious test file in the changed-file list."
+
+    return "\n".join(
+        [
+            "## PR Review",
+            "",
+            "### Summary Of Changes",
+            "",
+            summary,
+            "",
+            "### Identified Risks",
+            "",
+            markdown_list(risks),
+            "",
+            "### Improvement Suggestions",
+            "",
+            markdown_list(improvement_suggestions),
+            "",
+            "### Confidence Score",
+            "",
+            confidence(pr, risks),
+            "",
+        ]
+    )
+
+
+def post_comment(ref: PullRequestRef, body: str) -> None:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+        handle.write(body)
+        body_path = handle.name
+    try:
+        run_gh(["pr", "comment", str(ref.number), "--repo", ref.full_name, "--body-file", body_path])
+    finally:
+        Path(body_path).unlink(missing_ok=True)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    parser.add_argument("--post-comment", action="store_true", help="Post the generated review as a PR comment")
+    args = parser.parse_args()
+
+    try:
+        ref = parse_pr_url(args.pr)
+        pr, diff = fetch_pr(ref)
+        body = render_review(pr, diff)
+        print(body)
+        if args.post_comment:
+            post_comment(ref, body)
+    except Exception as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
