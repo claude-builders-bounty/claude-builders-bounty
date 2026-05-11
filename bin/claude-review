@@ -1,0 +1,438 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request diff and emit a structured Markdown comment."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import textwrap
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+
+
+REQUIRED_SECTIONS = (
+    "Summary",
+    "Identified Risks",
+    "Improvement Suggestions",
+    "Confidence Score",
+)
+
+
+@dataclass(frozen=True)
+class PullRequestRef:
+    owner: str
+    repo: str
+    number: int
+
+    @property
+    def url(self) -> str:
+        return f"https://github.com/{self.owner}/{self.repo}/pull/{self.number}"
+
+
+@dataclass
+class FileChange:
+    path: str
+    additions: int = 0
+    deletions: int = 0
+
+
+@dataclass
+class DiffSummary:
+    files: list[FileChange]
+    additions: int
+    deletions: int
+    truncated: bool
+    source: str
+
+
+def parse_pr_url(value: str) -> PullRequestRef:
+    patterns = (
+        r"^https://github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)(?:[/?#].*)?$",
+        r"^([^/\s]+)/([^#\s]+)#(\d+)$",
+    )
+    for pattern in patterns:
+        match = re.match(pattern, value.strip())
+        if match:
+            owner, repo, number = match.groups()
+            return PullRequestRef(owner=owner, repo=repo, number=int(number))
+    raise ValueError(
+        "PR must be a GitHub pull request URL or owner/repo#number shorthand",
+    )
+
+
+def build_request(url: str, *, accept: str = "application/vnd.github.v3.diff"):
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-review-agent",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return urllib.request.Request(url, headers=headers)
+
+
+def fetch_pr_diff(pr: PullRequestRef, timeout: int = 30) -> str:
+    url = f"https://github.com/{pr.owner}/{pr.repo}/pull/{pr.number}.diff"
+    try:
+        with urllib.request.urlopen(build_request(url), timeout=timeout) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"GitHub returned HTTP {exc.code} while fetching {url}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not fetch PR diff from {url}: {exc.reason}") from exc
+
+
+def truncate_diff(diff_text: str, max_bytes: int) -> tuple[str, bool]:
+    raw = diff_text.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return diff_text, False
+    shortened = raw[:max_bytes].decode("utf-8", errors="ignore")
+    return (
+        f"{shortened}\n\n[... diff truncated at {max_bytes} bytes ...]\n",
+        True,
+    )
+
+
+def summarize_diff(diff_text: str, *, source: str, truncated: bool = False) -> DiffSummary:
+    files: list[FileChange] = []
+    current: FileChange | None = None
+
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            path = parts[-1][2:] if len(parts) >= 4 and parts[-1].startswith("b/") else parts[-1]
+            current = FileChange(path=path)
+            files.append(current)
+            continue
+        if not current:
+            continue
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            current.additions += 1
+        elif line.startswith("-"):
+            current.deletions += 1
+
+    return DiffSummary(
+        files=files,
+        additions=sum(file.additions for file in files),
+        deletions=sum(file.deletions for file in files),
+        truncated=truncated,
+        source=source,
+    )
+
+
+def classify_path(path: str) -> str:
+    lower = path.lower()
+    if any(part in lower for part in ("test", "spec", "__tests__")):
+        return "test"
+    if lower.endswith((".md", ".mdx", ".rst", ".txt")):
+        return "docs"
+    if lower.endswith((".yml", ".yaml")) or ".github/workflows/" in lower:
+        return "automation"
+    if any(part in lower for part in ("auth", "session", "token", "secret", "password")):
+        return "security-sensitive"
+    if any(part in lower for part in ("workflow", ".github/", "ci", "deploy")):
+        return "automation"
+    if lower.endswith((".py", ".js", ".ts", ".tsx", ".go", ".rs", ".java", ".rb", ".php", ".sh")):
+        return "application code"
+    if any(part in lower for part in ("bin/", "scripts/", "submissions/")) and "." not in Path(lower).name:
+        return "application code"
+    return "other"
+
+
+def find_risks(diff_text: str, summary: DiffSummary) -> list[str]:
+    risks: list[str] = []
+    categories = {classify_path(file.path) for file in summary.files}
+    has_code = "application code" in categories or "security-sensitive" in categories
+    has_tests = "test" in categories
+
+    if summary.truncated:
+        risks.append("The diff was truncated, so later hunks may contain unreviewed behavior.")
+    if has_code and not has_tests:
+        risks.append("Application code changed without nearby test changes, leaving regression coverage unclear.")
+    if "security-sensitive" in categories:
+        risks.append("Security-sensitive paths changed; authentication, token handling, and authorization flows need focused verification.")
+    if "automation" in categories:
+        risks.append("Automation or CI files changed; workflow permissions and secret exposure should be checked before merge.")
+
+    risky_patterns = (
+        (r"rm\s+-rf\s+[/~$*]", "Potentially destructive shell command appears in added lines."),
+        (r"curl\b.*\|\s*(bash|sh)", "Added pipeline executes downloaded shell content directly."),
+        (r"password\s*=\s*['\"][^'\"]+['\"]", "Hard-coded password-like value may have been introduced."),
+        (r"api[_-]?key\s*=\s*['\"][^'\"]+['\"]", "Hard-coded API key-like value may have been introduced."),
+        (r"SELECT\s+.*\+|execute\([^)]*\+", "SQL construction may be vulnerable to injection if inputs are not parameterized."),
+        (r"except\s*:\s*pass|catch\s*\([^)]*\)\s*\{\s*\}", "Added code may swallow errors silently."),
+    )
+    added_lines = "\n".join(
+        line[1:] for line in diff_text.splitlines() if line.startswith("+") and not line.startswith("+++")
+    )
+    for pattern, message in risky_patterns:
+        if re.search(pattern, added_lines, flags=re.IGNORECASE):
+            risks.append(message)
+
+    if not risks:
+        risks.append("No obvious high-risk pattern was detected from the diff alone.")
+    return dedupe(risks)
+
+
+def find_suggestions(diff_text: str, summary: DiffSummary, risks: list[str]) -> list[str]:
+    suggestions: list[str] = []
+    categories = {classify_path(file.path) for file in summary.files}
+
+    if "test" not in categories and any(classify_path(file.path) == "application code" for file in summary.files):
+        suggestions.append("Add or update tests that cover the changed behavior and likely failure paths.")
+    if summary.truncated:
+        suggestions.append("Run the reviewer again with a larger --max-diff-bytes value or split the PR before relying on the result.")
+    if "automation" in categories:
+        suggestions.append("Use the smallest viable workflow permissions and avoid printing secrets or tokens in CI logs.")
+    if any("security-sensitive" == classify_path(file.path) for file in summary.files):
+        suggestions.append("Exercise negative authorization cases, expired credentials, and missing-session paths before merge.")
+    if len(summary.files) > 10:
+        suggestions.append("Consider grouping the review by subsystem so maintainers can validate the large change incrementally.")
+    if not suggestions:
+        suggestions.append("Ask the author to confirm the intended behavior and include a short manual verification note.")
+
+    return dedupe(suggestions)
+
+
+def confidence_for(summary: DiffSummary, risks: list[str]) -> str:
+    if summary.truncated or len(summary.files) > 20 or summary.additions + summary.deletions > 2000:
+        return "Low"
+    if any("No obvious high-risk pattern" not in risk for risk in risks):
+        return "Medium"
+    return "High"
+
+
+def dedupe(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def heuristic_review(diff_text: str, summary: DiffSummary) -> str:
+    risks = find_risks(diff_text, summary)
+    suggestions = find_suggestions(diff_text, summary, risks)
+    confidence = confidence_for(summary, risks)
+    file_count = len(summary.files)
+    top_files = ", ".join(file.path for file in summary.files[:4]) or "no parsed files"
+    if file_count > 4:
+        top_files += f", and {file_count - 4} more"
+
+    return "\n".join(
+        [
+            "## Summary",
+            f"This PR changes {file_count} file(s), with {summary.additions} additions and {summary.deletions} deletions parsed from the diff.",
+            f"The main touched paths are {top_files}, so the review focuses on behavior, testing, and operational risk visible in the patch.",
+            "",
+            "## Identified Risks",
+            *[f"- {risk}" for risk in risks],
+            "",
+            "## Improvement Suggestions",
+            *[f"- {suggestion}" for suggestion in suggestions],
+            "",
+            "## Confidence Score",
+            confidence,
+            "",
+        ],
+    )
+
+
+def build_claude_prompt(diff_text: str, summary: DiffSummary) -> str:
+    file_lines = "\n".join(
+        f"- {file.path}: +{file.additions}/-{file.deletions} ({classify_path(file.path)})"
+        for file in summary.files[:50]
+    )
+    if len(summary.files) > 50:
+        file_lines += f"\n- ... {len(summary.files) - 50} additional files omitted from file summary"
+
+    return textwrap.dedent(
+        f"""
+        You are a senior code reviewer. Review the pull request diff below and return only structured Markdown.
+
+        Required output sections, in this exact order:
+        ## Summary
+        Write 2-3 sentences.
+
+        ## Identified Risks
+        List concrete behavioral, security, testing, compatibility, or operational risks. Use bullets.
+
+        ## Improvement Suggestions
+        List actionable suggestions. Use bullets.
+
+        ## Confidence Score
+        Write exactly one of: Low, Medium, High.
+
+        Diff source: {summary.source}
+        Parsed totals: {len(summary.files)} file(s), +{summary.additions}/-{summary.deletions}
+        Truncated: {summary.truncated}
+
+        Changed files:
+        {file_lines or "- No files parsed"}
+
+        Pull request diff:
+        ```diff
+        {diff_text}
+        ```
+        """,
+    ).strip()
+
+
+def run_claude(prompt: str, timeout: int) -> str:
+    if not shutil.which("claude"):
+        raise RuntimeError("claude CLI was not found on PATH")
+    proc = subprocess.run(
+        ["claude", "-p", prompt],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+    )
+    if proc.returncode != 0:
+        stderr = proc.stderr.strip()
+        raise RuntimeError(f"claude CLI exited with {proc.returncode}: {stderr}")
+    return proc.stdout.strip()
+
+
+def normalize_review(output: str, fallback: str) -> str:
+    if not output.strip():
+        return fallback
+    has_sections = all(f"## {section}" in output for section in REQUIRED_SECTIONS)
+    confidence_match = re.search(
+        r"## Confidence Score\s*\n\s*(Low|Medium|High)\b",
+        output,
+        flags=re.IGNORECASE,
+    )
+    if has_sections and confidence_match:
+        return output.strip() + "\n"
+    return "\n".join(
+        [
+            "## Summary",
+            "The Claude-generated review did not follow the required section format, so the raw output is preserved below.",
+            "Use the fallback findings to keep the PR comment actionable and structured.",
+            "",
+            "## Identified Risks",
+            "- The model output format was invalid and may be hard for automation or maintainers to parse.",
+            "",
+            "## Improvement Suggestions",
+            "- Re-run with a stricter prompt or inspect the raw model output below.",
+            "",
+            "## Confidence Score",
+            "Low",
+            "",
+            "<details><summary>Raw Claude output</summary>",
+            "",
+            output.strip(),
+            "",
+            "</details>",
+            "",
+            fallback.strip(),
+            "",
+        ],
+    )
+
+
+def render_review(diff_text: str, summary: DiffSummary, *, engine: str, timeout: int) -> str:
+    fallback = heuristic_review(diff_text, summary)
+    if engine == "heuristic":
+        return fallback
+    prompt = build_claude_prompt(diff_text, summary)
+    try:
+        return normalize_review(run_claude(prompt, timeout), fallback)
+    except Exception as exc:
+        if engine == "claude":
+            raise
+        return fallback
+
+
+def post_pr_comment(pr: PullRequestRef, body: str, timeout: int = 30) -> str:
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        raise RuntimeError("GITHUB_TOKEN or GH_TOKEN is required to post a PR comment")
+    url = f"https://api.github.com/repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments"
+    payload = json.dumps({"body": body}).encode("utf-8")
+    req = build_request(url, accept="application/vnd.github+json")
+    req.add_header("Content-Type", "application/json")
+    req.data = payload
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("html_url", "")
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub returned HTTP {exc.code} while posting comment: {details}") from exc
+
+
+def load_diff(args: argparse.Namespace) -> tuple[str, str, PullRequestRef | None]:
+    if args.diff_file:
+        path = Path(args.diff_file)
+        return path.read_text(encoding="utf-8"), str(path), None
+    pr = parse_pr_url(args.pr)
+    return fetch_pr_diff(pr, timeout=args.http_timeout), pr.url, pr
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Review a GitHub pull request and emit structured Markdown.",
+    )
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--pr", help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
+    source.add_argument("--diff-file", help="Read a local .diff file instead of fetching GitHub")
+    parser.add_argument("--output", help="Write the Markdown review to this file")
+    parser.add_argument("--post-comment", action="store_true", help="Post the review as a PR comment")
+    parser.add_argument(
+        "--engine",
+        choices=("auto", "claude", "heuristic"),
+        default=os.environ.get("CLAUDE_REVIEW_ENGINE", "auto"),
+        help="auto uses Claude Code when available and falls back to deterministic heuristics",
+    )
+    parser.add_argument("--max-diff-bytes", type=int, default=120_000)
+    parser.add_argument("--claude-timeout", type=int, default=120)
+    parser.add_argument("--http-timeout", type=int, default=30)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        diff_text, source, pr = load_diff(args)
+        review_diff, truncated = truncate_diff(diff_text, args.max_diff_bytes)
+        summary = summarize_diff(review_diff, source=source, truncated=truncated)
+        review = render_review(
+            review_diff,
+            summary,
+            engine=args.engine,
+            timeout=args.claude_timeout,
+        )
+        if args.output:
+            Path(args.output).write_text(review, encoding="utf-8")
+        else:
+            sys.stdout.write(review)
+        if args.post_comment:
+            if not pr:
+                raise RuntimeError("--post-comment requires --pr")
+            comment_url = post_pr_comment(pr, review, timeout=args.http_timeout)
+            print(f"\nPosted review comment: {comment_url}", file=sys.stderr)
+        return 0
+    except Exception as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
