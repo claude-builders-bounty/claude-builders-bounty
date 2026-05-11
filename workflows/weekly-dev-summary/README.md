@@ -50,7 +50,9 @@ The delivered message includes:
 - Suggested focus for next week.
 - Metrics footer with commit, PR, and issue counts.
 
-See `workflows/weekly-dev-summary/sample-output.md` for an example.
+See `workflows/weekly-dev-summary/sample-output.md` for an example and
+`workflows/weekly-dev-summary/execution-proof.md` for the local n8n execution
+record.
 
 ## Notes
 
