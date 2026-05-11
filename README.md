@@ -41,6 +41,12 @@ You're in the right place.
 - Payment is handled by [Opire](https://opire.dev) (Stripe)
 - Quality over speed — a solid PR beats a fast one
 
+## Generate a changelog from git history
+
+1. Run `bash changelog.sh` at the repo root.
+2. Open `CHANGELOG.md` and verify the generated `Added`, `Fixed`, `Changed`, and `Removed` sections.
+3. Commit the generated `CHANGELOG.md`.
+
 ---
 
 ## Community
