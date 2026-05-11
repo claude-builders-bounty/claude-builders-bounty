@@ -1,0 +1,128 @@
+name: 'Claude PR Review'
+description: 'Automatically review PRs with Claude and post a structured comment'
+
+inputs:
+  anthropic_api_key:
+    description: 'Anthropic API key'
+    required: true
+  github_token:
+    description: 'GitHub token for posting comments (defaults to GITHUB_TOKEN)'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Get PR diff and metadata
+      id: pr
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        PR_NUM=${{ github.event.pull_request.number }}
+        REPO=${{ github.repository }}
+
+        # Fetch metadata
+        gh pr view "$PR_NUM" --repo "$REPO" --json title,author,additions,deletions,files,commits > /tmp/pr_meta.json
+
+        # Fetch diff (truncate to 500 lines to stay within token limits)
+        gh pr diff "$PR_NUM" --repo "$REPO" | head -500 > /tmp/pr_diff.txt
+
+        echo "pr_num=${PR_NUM}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate review with Claude
+      id: review
+      shell: python3 {0}
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+      run: |
+        import json, os, pathlib, urllib.request
+
+        meta = json.loads(pathlib.Path("/tmp/pr_meta.json").read_text())
+        diff = pathlib.Path("/tmp/pr_diff.txt").read_text()
+
+        title = meta["title"]
+        author = meta["author"]["login"]
+        additions = meta["additions"]
+        deletions = meta["deletions"]
+        files = "\n".join(f["path"] for f in meta["files"])
+        commits = "\n".join(c["messageHeadline"] for c in meta["commits"])
+
+        prompt = f"""You are a senior code reviewer. Analyze this pull request.
+
+        ## PR: {title} by @{author} (+{additions}/-{deletions})
+
+        ### Files
+        {files}
+
+        ### Commits
+        {commits}
+
+        ### Diff
+        ```diff
+        {diff}
+        ```
+
+        Produce EXACTLY this structure:
+
+        ### Summary
+        2-3 sentences.
+
+        ### Identified Risks
+        - Severity (🔴/🟡/🟢) and description. Or "No significant risks."
+
+        ### Improvement Suggestions
+        - Specific, actionable. Or "No suggestions — looks solid."
+
+        ### Confidence Score
+        Low / Medium / High with one-line justification.
+        """
+
+        body = json.dumps({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 2048,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode()
+
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+                "anthropic-version": "2023-06-01",
+            },
+        )
+
+        with urllib.request.urlopen(req) as resp:
+            result = json.loads(resp.read())
+            review = result["content"][0]["text"]
+
+        # Write review to file for the next step
+        pathlib.Path("/tmp/review.md").write_text(review)
+
+    - name: Post review comment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        PR_NUM=${{ steps.pr.outputs.pr_num }}
+        REPO=${{ github.repository }}
+        REVIEW=$(cat /tmp/review.md)
+
+        COMMENT="## 🤖 Claude Code Review
+
+        ${REVIEW}
+
+        ---
+        *Automated review by [claude-review](https://github.com/claude-builders-bounty/claude-builders-bounty)*"
+
+        gh pr comment "$PR_NUM" --repo "$REPO" --body "$COMMENT"
