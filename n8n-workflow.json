@@ -1,0 +1,323 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": 7
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": [
+          {
+            "name": "repo",
+            "value": "={{ $json.repo || $env.GITHUB_REPO || 'owner/repo' }}"
+          },
+          {
+            "name": "webhookUrl",
+            "value": "={{ $json.webhookUrl || $env.WEBHOOK_URL || '' }}"
+          },
+          {
+            "name": "language",
+            "value": "={{ $json.language || 'EN' }}"
+          },
+          {
+            "name": "githubToken",
+            "value": "={{ $env.GITHUB_TOKEN }}"
+          },
+          {
+            "name": "claudeApiKey",
+            "value": "={{ $env.CLAUDE_API_KEY }}"
+          },
+          {
+            "name": "sinceDate",
+            "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+          }
+        ]
+      },
+      "id": "config-vars",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $node[\"Configuration\"].json[\"repo\"] }}/commits?since={{ $node[\"Configuration\"].json[\"sinceDate\"] }}&per_page=50",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "=Bearer {{ $node[\"Configuration\"].json[\"githubToken\"] }}",
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $node[\"Configuration\"].json[\"repo\"] }}/issues?state=closed&since={{ $node[\"Configuration\"].json[\"sinceDate\"] }}&per_page=50&filter=all",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "=Bearer {{ $node[\"Configuration\"].json[\"githubToken\"] }}",
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 350]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $node[\"Configuration\"].json[\"repo\"] }}/pulls?state=closed&since={{ $node[\"Configuration\"].json[\"sinceDate\"] }}&per_page=50&sort=updated&direction=desc",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "=Bearer {{ $node[\"Configuration\"].json[\"githubToken\"] }}",
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.all()[0].json;\r\nconst issues = $input.all()[1].json;\r\nconst prs = $input.all()[2].json;\r\n\r\nconst commitList = Array.isArray(commits) ? commits : (commits.data || []);\r\nconst issueList = Array.isArray(issues) ? issues.filter(i => !i.pull_request) : (issues.data || []).filter(i => !i.pull_request);\r\nconst prList = Array.isArray(prs) ? prs : (prs.data || []);\r\n\r\nconst repoVar = $node[\"Configuration\"].json[\"repo\"];\r\nconst lang = $node[\"Configuration\"].json[\"language\"] || \"EN\";\r\n\r\nconst commitSummaries = commitList.slice(0, 20).map(c => `  - ${c.commit.message.split('\\n')[0]} (${c.author?.login || 'unknown'})`).join('\\n');\r\nconst issueSummaries = issueList.slice(0, 10).map(i => `  - #${i.number}: ${i.title}`).join('\\n');\r\nconst prSummaries = prList.filter(p => p.merged_at).slice(0, 10).map(p => `  - #${p.number}: ${p.title} (${p.user?.login || 'unknown'})`).join('\\n');\r\n\r\nconst languageInstruction = lang === 'FR' \r\n  ? 'Rédige le résumé en français.' \r\n  : 'Write the summary in English.';\r\n\r\nconst prompt = `Generate a concise weekly development summary for the GitHub repository \"${repoVar}\".\r\n\r\n## Commits (${commitList.length} total, showing first 20):\r\n${commitSummaries}\r\n\r\n## Closed Issues (${issueList.length} total):\r\n${issueSummaries}\r\n\r\n## Merged Pull Requests (${prList.filter(p => p.merged_at).length} total):\r\n${prSummaries}\r\n\r\n${languageInstruction}\r\n\r\nFormat:\r\n## Weekly Summary - [date]\r\n\r\n### Highlights\r\n(2-3 most important developments)\r\n\r\n### Commits\r\n(notable changes)\r\n\r\n### Issues Closed\r\n(key fixes)\r\n\r\n### Merged PRs\r\n(significant additions)\r\n\r\n### Stats\r\n- Total commits: X\r\n- Issues closed: X\r\n- PRs merged: X\r\n- Unique contributors: X`;\r\n\r\nreturn { prompt: prompt };"
+      },
+      "id": "prompt-builder",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 350]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendBody": true,
+        "options": {
+          "headers": {
+            "x-api-key": "={{ $node[\"Configuration\"].json[\"claudeApiKey\"] }}",
+            "anthropic-version": "2023-06-01"
+          }
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2000
+            },
+            {
+              "name": "messages",
+              "value": "[{\"role\": \"user\", \"content\": \"{{ $json['prompt'] }}\"}]"
+            }
+          ]
+        },
+        "sendQuery": false,
+        "sendHeaders": true
+      },
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\r\nconst content = response.content?.[0]?.text || JSON.stringify(response);\r\nconst repoVar = $node[\"Configuration\"].json[\"repo\"];\r\nconst webhookUrl = $node[\"Configuration\"].json[\"webhookUrl\"];\r\nconst now = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\r\n\r\nconst summary = `# Weekly Dev Summary - ${repoVar}\\n\\n**Week ending:** ${now}\\n\\n${content}`;\r\n\r\nreturn {\r\n  summary: summary,\r\n  webhookUrl: webhookUrl\r\n};"
+      },
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 350]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json[\"webhookUrl\"] }}",
+              "value2": ""
+            }
+          ]
+        }
+      },
+      "id": "webhook-check",
+      "name": "Has Webhook?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 250]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json[\"webhookUrl\"] }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json[\"summary\"] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Discord/Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 150]
+    },
+    {
+      "parameters": {
+        "jsCode": "const summary = $json.summary;\r\n// No webhook configured - output to console/log\r\nconsole.log('Weekly summary generated (no webhook):\\n' + summary.substring(0, 200));\r\nreturn { summary: summary, note: 'No webhook configured. Summary is in output.' };"
+      },
+      "id": "no-webhook-output",
+      "name": "No Webhook Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          {
+            "node": "Has Webhook?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Webhook?": {
+      "main": [
+        [
+          {
+            "node": "Discord/Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Webhook Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
