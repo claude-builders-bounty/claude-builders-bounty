@@ -22,6 +22,12 @@ You're in the right place.
 
 ---
 
+## Hook Examples
+
+- [`hooks/block-destructive-bash.py`](hooks/block-destructive-bash.py) - Claude Code `PreToolUse` hook that blocks destructive Bash commands.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
