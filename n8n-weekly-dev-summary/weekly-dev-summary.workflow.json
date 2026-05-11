@@ -1,0 +1,126 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [ { "field": "weeks", "triggerAtDay": [5], "triggerAtHour": 17, "triggerAtMinute": 0 } ] } },
+      "id": "schedule-trigger",
+      "name": "Weekly Friday 5pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$env.GITHUB_OWNER}}/{{$env.GITHUB_REPO}}/commits",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [ { "name": "since", "value": "={{$now.minus({ days: 7 }).toISO()}}" }, { "name": "per_page", "value": "100" } ] },
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Accept", "value": "application/vnd.github+json" }, { "name": "Authorization", "value": "=Bearer {{$env.GITHUB_TOKEN}}" } ] }
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits This Week",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, -180]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/search/issues?q=repo:{{$env.GITHUB_OWNER}}/{{$env.GITHUB_REPO}}+is:issue+is:closed+closed:>={{$now.minus({ days: 7 }).toISODate()}}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Accept", "value": "application/vnd.github+json" }, { "name": "Authorization", "value": "=Bearer {{$env.GITHUB_TOKEN}}" } ] }
+      },
+      "id": "github-closed-issues",
+      "name": "Fetch Closed Issues This Week",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/search/issues?q=repo:{{$env.GITHUB_OWNER}}/{{$env.GITHUB_REPO}}+is:pr+is:merged+merged:>={{$now.minus({ days: 7 }).toISODate()}}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Accept", "value": "application/vnd.github+json" }, { "name": "Authorization", "value": "=Bearer {{$env.GITHUB_TOKEN}}" } ] }
+      },
+      "id": "github-merged-prs",
+      "name": "Fetch Merged PRs This Week",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 180]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-commits-issues",
+      "name": "Merge Commits + Issues",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [540, -80]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-all",
+      "name": "Merge All GitHub Activity",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [760, 40]
+    },
+    {
+      "parameters": {
+        "jsCode": "const all = $input.all().map(i => i.json);\nconst commits = Array.isArray(all[0]) ? all[0] : (all[0]?.items || all[0] || []);\nconst issues = all[1]?.items || [];\nconst prs = all[2]?.items || [];\nconst pick = (arr, fn) => (Array.isArray(arr) ? arr.slice(0, 30).map(fn) : []);\nreturn [{ json: {\n  repo: `${$env.GITHUB_OWNER}/${$env.GITHUB_REPO}`,\n  language: $env.SUMMARY_LANGUAGE || 'EN',\n  week_start: $now.minus({ days: 7 }).toISODate(),\n  week_end: $now.toISODate(),\n  commits: pick(commits, c => ({ sha: c.sha?.slice(0,7), message: c.commit?.message, author: c.commit?.author?.name })),\n  closed_issues: pick(issues, i => ({ number: i.number, title: i.title, url: i.html_url })),\n  merged_prs: pick(prs, p => ({ number: p.number, title: p.title, url: p.html_url }))\n}}];"
+      },
+      "id": "prepare-claude-prompt",
+      "name": "Prepare Claude Prompt Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 40]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}" }, { "name": "anthropic-version", "value": "2023-06-01" }, { "name": "content-type", "value": "application/json" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1200,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Write a concise weekly narrative development summary in ${$json.language}. Focus on what changed, why it matters, and notable risks/follow-ups. Use plain Markdown. Activity data: ${JSON.stringify($json)}\"\n    }\n  ]\n}"
+      },
+      "id": "claude-summary",
+      "name": "Generate Summary with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 40]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.DISCORD_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"## Weekly dev summary: {{$env.GITHUB_OWNER}}/{{$env.GITHUB_REPO}}\\n\\n{{$json.content[0].text}}\"\n}"
+      },
+      "id": "send-discord",
+      "name": "Send to Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1480, 40]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 5pm Trigger": { "main": [ [ { "node": "Fetch Commits This Week", "type": "main", "index": 0 }, { "node": "Fetch Closed Issues This Week", "type": "main", "index": 0 }, { "node": "Fetch Merged PRs This Week", "type": "main", "index": 0 } ] ] },
+    "Fetch Commits This Week": { "main": [ [ { "node": "Merge Commits + Issues", "type": "main", "index": 0 } ] ] },
+    "Fetch Closed Issues This Week": { "main": [ [ { "node": "Merge Commits + Issues", "type": "main", "index": 1 } ] ] },
+    "Merge Commits + Issues": { "main": [ [ { "node": "Merge All GitHub Activity", "type": "main", "index": 0 } ] ] },
+    "Fetch Merged PRs This Week": { "main": [ [ { "node": "Merge All GitHub Activity", "type": "main", "index": 1 } ] ] },
+    "Merge All GitHub Activity": { "main": [ [ { "node": "Prepare Claude Prompt Data", "type": "main", "index": 0 } ] ] },
+    "Prepare Claude Prompt Data": { "main": [ [ { "node": "Generate Summary with Claude", "type": "main", "index": 0 } ] ] },
+    "Generate Summary with Claude": { "main": [ [ { "node": "Send to Discord Webhook", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
