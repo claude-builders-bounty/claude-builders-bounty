@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate A Changelog
+
+1. Run `bash changelog.sh` from any git repository.
+2. Review the generated `CHANGELOG.md` sections: `Added`, `Fixed`, `Changed`, and `Removed`.
+3. Commit the changelog, or use `/generate-changelog` in Claude Code if this repo's `.claude/commands` folder is installed.
+
+The generator uses commits since the latest git tag. If a repository has no tags, it falls back to all commits. A sample run is available in [`examples/sample-output.md`](examples/sample-output.md).
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
