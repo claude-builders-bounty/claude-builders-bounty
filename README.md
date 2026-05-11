@@ -20,6 +20,12 @@ You're in the right place.
 2. Comment `/opire try` in the issue you want to work on
 3. Submit a PR — payment is automatic on merge ✅
 
+## Generate a changelog
+
+1. Run `bash scripts/changelog.sh` from a git repository.
+2. Optionally pass `--from v1.2.0`, `--version v1.3.0`, or `--stdout`.
+3. Review and commit the generated `CHANGELOG.md`.
+
 ---
 
 ## Active Bounties
