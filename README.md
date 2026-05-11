@@ -22,6 +22,19 @@ You're in the right place.
 
 ---
 
+## Block destructive Bash commands
+
+Install the Claude Code PreToolUse hook in 2 commands:
+
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/block_destructive_bash.py ~/.claude/hooks/
+python ~/.claude/hooks/block_destructive_bash.py --install
+```
+
+The hook blocks destructive Bash patterns such as `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` statements without a `WHERE` clause. Blocked attempts are written to `~/.claude/hooks/blocked.log`.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
