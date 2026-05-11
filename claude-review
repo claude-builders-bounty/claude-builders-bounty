@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown PR review from a GitHub PR diff.
+
+This is intentionally dependency-free. It can read a pull request URL via
+`gh pr diff` when GitHub CLI is available, or review a local diff file with
+`--diff-file` for testing/offline use.
+"""
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
+
+
+@dataclass
+class DiffStats:
+    files: set[str]
+    added: int
+    removed: int
+    risky_lines: list[str]
+    tests_changed: bool
+    docs_changed: bool
+    code_changed: bool
+
+
+RISK_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bsubprocess\.|\bos\.system\(|\beval\(|\bexec\("), "Shell or dynamic execution path changed; verify input handling and command boundaries."),
+    (re.compile(r"\brm\s+-rf\b|\bDROP\s+TABLE\b|\bDELETE\s+FROM\b", re.I), "Destructive operation string appears in the diff; confirm it is guarded or test-only."),
+    (re.compile(r"password|secret|token|api[_-]?key", re.I), "Credential-sensitive term appears; ensure no secret material is committed."),
+    (re.compile(r"requests\.|fetch\(|urllib\.request|curl\b"), "Network call path changed; check timeout, error handling, and destination control."),
+    (re.compile(r"chmod\s+777|sudo\b"), "Privilege or permission-sensitive command appears; validate necessity and least privilege."),
+]
+
+
+def parse_pr_url(url: str) -> tuple[str, str, str]:
+    parsed = urlparse(url)
+    parts = parsed.path.strip("/").split("/")
+    if parsed.netloc != "github.com" or len(parts) < 4 or parts[2] != "pull":
+        raise ValueError("expected GitHub PR URL like https://github.com/owner/repo/pull/123")
+    return parts[0], parts[1], parts[3]
+
+
+def fetch_diff(pr_url: str) -> str:
+    owner, repo, number = parse_pr_url(pr_url)
+    cmd = ["gh", "pr", "diff", number, "--repo", f"{owner}/{repo}"]
+    try:
+        return subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT, timeout=60)
+    except FileNotFoundError as exc:
+        raise RuntimeError("GitHub CLI (`gh`) is required when using --pr; alternatively pass --diff-file") from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"failed to fetch PR diff with gh: {exc.output.strip()}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("timed out fetching PR diff") from exc
+
+
+def analyze_diff(diff: str) -> DiffStats:
+    files: set[str] = set()
+    added = 0
+    removed = 0
+    risky_lines: list[str] = []
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                files.add(parts[3][2:] if parts[3].startswith("b/") else parts[3])
+            continue
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            added += 1
+            payload = line[1:].strip()
+            for pattern, message in RISK_PATTERNS:
+                if pattern.search(payload):
+                    risky_lines.append(f"- `{payload[:120]}` — {message}")
+                    break
+        elif line.startswith("-"):
+            removed += 1
+
+    lowered = [f.lower() for f in files]
+    tests_changed = any("test" in f or f.startswith("tests/") for f in lowered)
+    docs_changed = any(f.endswith(('.md', '.mdx', '.rst')) or f.startswith('docs/') for f in lowered)
+    code_changed = any(f.endswith(('.py', '.js', '.ts', '.tsx', '.go', '.rs', '.rb', '.java', '.sh')) for f in lowered)
+    return DiffStats(files, added, removed, risky_lines[:8], tests_changed, docs_changed, code_changed)
+
+
+def bullet_summary(stats: DiffStats) -> str:
+    file_count = len(stats.files)
+    changed = f"{file_count} file{'s' if file_count != 1 else ''} changed with {stats.added} additions and {stats.removed} removals"
+    categories = []
+    if stats.code_changed:
+        categories.append("code")
+    if stats.tests_changed:
+        categories.append("tests")
+    if stats.docs_changed:
+        categories.append("docs")
+    cat_text = ", ".join(categories) if categories else "non-code assets"
+    return f"This PR changes {changed}. The touched areas appear to be {cat_text}, based on file paths and diff content."
+
+
+def confidence(stats: DiffStats) -> str:
+    if not stats.files:
+        return "Low"
+    if stats.risky_lines and not stats.tests_changed:
+        return "Low"
+    if stats.risky_lines or stats.added + stats.removed > 600:
+        return "Medium"
+    return "High"
+
+
+def render_review(pr: str | None, stats: DiffStats) -> str:
+    files = sorted(stats.files)
+    risks = []
+    if not stats.tests_changed and stats.code_changed:
+        risks.append("- No obvious test files changed; regression coverage may be missing.")
+    if stats.added + stats.removed > 600:
+        risks.append("- Large diff size may hide unrelated changes; consider splitting if scope is broad.")
+    risks.extend(stats.risky_lines)
+    if not risks:
+        risks.append("- No high-risk patterns were detected by the static diff heuristics; maintainer review is still required.")
+
+    suggestions = []
+    if stats.code_changed and not stats.tests_changed:
+        suggestions.append("- Add or update tests that exercise the changed behavior.")
+    if stats.docs_changed and not stats.code_changed:
+        suggestions.append("- Confirm the documentation commands were run or validated in a real shell.")
+    suggestions.append("- Verify CI passes and check any project-specific lint/format commands before merge.")
+    suggestions.append("- Review the changed files for scope creep: " + (", ".join(files[:8]) if files else "no files detected"))
+
+    title = f"# Structured PR Review{f' for {pr}' if pr else ''}"
+    return "\n".join([
+        title,
+        "",
+        "## Summary of changes",
+        bullet_summary(stats),
+        "The review is generated from the PR diff and should be treated as a first-pass checklist, not a replacement for maintainer review.",
+        "",
+        "## Identified risks",
+        *risks,
+        "",
+        "## Improvement suggestions",
+        *suggestions,
+        "",
+        f"## Confidence score: {confidence(stats)}",
+        "",
+    ])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR diff.")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--pr", help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
+    source.add_argument("--diff-file", help="Path to a local diff file for offline review/testing")
+    args = parser.parse_args()
+
+    try:
+        if args.pr:
+            diff = fetch_diff(args.pr)
+            pr_label = args.pr
+        else:
+            diff = Path(args.diff_file).read_text(encoding="utf-8")
+            pr_label = None
+        stats = analyze_diff(diff)
+        print(render_review(pr_label, stats))
+        return 0
+    except Exception as exc:  # noqa: BLE001 - CLI should show clean errors
+        print(f"claude-review: error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
