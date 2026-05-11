@@ -34,6 +34,25 @@ You're in the right place.
 
 ---
 
+## Generate A Changelog
+
+`changelog.sh` writes a structured `CHANGELOG.md` from Git commits since the
+latest tag. It sorts commit subjects into `Added`, `Fixed`, `Changed`, and
+`Removed` sections using common Conventional Commit-style prefixes.
+
+Setup and usage:
+
+```bash
+chmod +x changelog.sh
+./changelog.sh
+python3 -m unittest tests/test_changelog_script.py
+```
+
+See [examples/changelog-sample.md](examples/changelog-sample.md) for sample
+output from a tagged repository.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
