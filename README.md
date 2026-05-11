@@ -1,53 +1,71 @@
-# Claude Builders Bounty 🤖
+# 🛡️ Claude Code Pre-Tool-Use Safety Hook
 
-> A community bounty board for Claude Code builders.
+Blocks destructive bash commands before they execute in Claude Code.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation
 
----
+```bash
+# 1. Create hooks directory
+mkdir -p ~/.claude/hooks
 
-## How it works
+# 2. Copy the hook
+cp pre-tool-use-hook.sh ~/.claude/hooks/pre-tool-use-hook.sh && chmod +x ~/.claude/hooks/pre-tool-use-hook.sh
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+Then add to your Claude Code settings (`~/.claude/settings.json`):
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```json
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "bash",
+        "command": "~/.claude/hooks/pre-tool-use-hook.sh"
+      }
+    ]
+  }
+}
+```
 
----
+## What It Blocks
 
-## Active Bounties
+| Pattern | Example |
+|---------|---------|
+| `rm -rf` | `rm -rf /` |
+| `DROP TABLE` | `DROP TABLE users` |
+| `TRUNCATE` | `TRUNCATE TABLE logs` |
+| `DELETE FROM` without WHERE | `DELETE FROM users` |
+| `git push --force` | `git push --force origin main` |
+| `dd` to device | `dd if=/dev/zero of=/dev/sda` |
+| `chmod -R 777 /` | `chmod -R 777 /` |
+| Fork bombs | `:(){ :|:& }:` |
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## How It Works
 
----
+1. Reads the tool use event from stdin
+2. Extracts the bash command
+3. Checks against dangerous regex patterns
+4. If matched: blocks execution, logs to `~/.claude/hooks/blocked.log`, explains why
+5. If safe: allows execution
 
-## Rules
+## Log Format
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Blocked attempts are logged to `~/.claude/hooks/blocked.log`:
 
----
+```json
+{"timestamp":"2026-05-12T00:00:00Z","command":"rm -rf /","project_path":"/home/user/project","matched_pattern":"rm\\s+-rf"}
+```
 
-## Community
+## Testing
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+```bash
+# Should be blocked
+echo '{"tool_input":{"command":"rm -rf /"}}' | ~/.claude/hooks/pre-tool-use-hook.sh
 
----
+# Should be allowed
+echo '{"tool_input":{"command":"ls -la"}}' | ~/.claude/hooks/pre-tool-use-hook.sh
+```
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## License
+
+MIT
