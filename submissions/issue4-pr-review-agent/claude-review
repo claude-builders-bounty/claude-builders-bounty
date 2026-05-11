@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""claude-review: Claude Code sub-agent for structured PR review."""
+
+import sys
+import os
+import json
+import subprocess
+import argparse
+import re
+from urllib.parse import urlparse
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    """Parse GitHub PR URL into owner, repo, pr_number."""
+    path = urlparse(url).path.strip("/")
+    parts = path.split("/")
+    if len(parts) < 4 or parts[2] != "pull":
+        raise ValueError(f"Invalid PR URL: {url}")
+    return parts[0], parts[1], int(parts[3])
+
+def get_pr_diff(owner: str, repo: str, pr_number: int) -> str:
+    """Fetch PR diff via gh CLI."""
+    result = subprocess.run(
+        ["gh", "pr", "diff", str(pr_number), "-R", f"{owner}/{repo}"],
+        capture_output=True, text=True, timeout=60
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to fetch PR diff: {result.stderr[:300]}")
+    return result.stdout
+
+def get_pr_metadata(owner: str, repo: str, pr_number: int) -> dict:
+    """Fetch PR title, body, and file list."""
+    result = subprocess.run(
+        ["gh", "pr", "view", str(pr_number), "-R", f"{owner}/{repo}",
+         "--json", "title,body,additions,deletions,changedFiles,baseRefName,headRefName,author"],
+        capture_output=True, text=True, timeout=60
+    )
+    if result.returncode != 0:
+        return {}
+    return json.loads(result.stdout)
+
+def call_claude(prompt: str) -> str:
+    """Call Claude via CLI subprocess."""
+    result = subprocess.run(
+        ["claude", "--model", "claude-sonnet-4-6", "-p", prompt],
+        capture_output=True, text=True, timeout=180
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Claude CLI error: {result.stderr[:300]}")
+    return result.stdout.strip()
+
+def build_review_prompt(meta: dict, diff: str) -> str:
+    title = meta.get("title", "Unknown")
+    body = meta.get("body", "") or ""
+    additions = meta.get("additions", 0)
+    deletions = meta.get("deletions", 0)
+    changed_files = meta.get("changedFiles", 0)
+    author = meta.get("author", {}).get("login", "unknown")
+
+    # Truncate diff if too large
+    max_diff_chars = 12000
+    diff_truncated = ""
+    if len(diff) > max_diff_chars:
+        diff_truncated = diff[:max_diff_chars] + f"\n\n[... diff truncated at {max_diff_chars} chars ...]"
+    else:
+        diff_truncated = diff
+
+    return f"""You are an expert code reviewer. Review the following GitHub Pull Request and produce a structured Markdown review.
+
+## PR Metadata
+- **Title**: {title}
+- **Author**: {author}
+- **Changes**: +{additions} / -{deletions} lines, {changed_files} files changed
+- **Description**: {body[:500] if body else "(no description)"}
+
+## PR Diff
+```diff
+{diff_truncated}
+```
+
+## Instructions
+Produce a structured review in exactly this Markdown format:
+
+---
+## PR Review
+
+### Summary of Changes
+(2–3 sentences describing what this PR does and why)
+
+### Identified Risks
+- (list each risk on its own line; if none, write "No significant risks identified")
+
+### Improvement Suggestions
+- (list each suggestion on its own line; be specific and actionable)
+
+### Confidence Score
+**Level**: Low / Medium / High
+**Reasoning**: (1 sentence explaining the confidence level based on test coverage, complexity, and clarity)
+---
+
+Be direct, specific, and constructive. Focus on correctness, security, performance, and maintainability."""
+
+def format_output(review_text: str, pr_url: str, meta: dict) -> str:
+    title = meta.get("title", "PR Review")
+    return f"""# Claude PR Review
+
+**PR**: [{title}]({pr_url})
+**Reviewed by**: Claude Code (claude-review v1.0)
+
+{review_text}
+"""
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="claude-review: AI-powered PR reviewer using Claude Code"
+    )
+    parser.add_argument("--pr", required=True, help="GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--output", help="Save output to file (optional)")
+    args = parser.parse_args()
+
+    print(f"[claude-review] Fetching PR: {args.pr}", file=sys.stderr)
+
+    owner, repo, pr_number = parse_pr_url(args.pr)
+
+    print(f"[claude-review] Fetching diff and metadata...", file=sys.stderr)
+    meta = get_pr_metadata(owner, repo, pr_number)
+    diff = get_pr_diff(owner, repo, pr_number)
+
+    if not diff.strip():
+        print("[claude-review] WARNING: Empty diff. PR may have no changes.", file=sys.stderr)
+
+    print(f"[claude-review] Calling Claude for review...", file=sys.stderr)
+    prompt = build_review_prompt(meta, diff)
+    review = call_claude(prompt)
+
+    output = format_output(review, args.pr, meta)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(output)
+        print(f"[claude-review] Review saved to: {args.output}", file=sys.stderr)
+    else:
+        print(output)
+
+if __name__ == "__main__":
+    main()
