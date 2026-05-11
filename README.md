@@ -43,6 +43,16 @@ You're in the right place.
 
 ---
 
+## Generate A Changelog
+
+1. Run `bash changelog.sh` from a git repository.
+2. Open the generated `CHANGELOG.md`.
+3. Use `/generate-changelog` with `SKILL.md` when running this as a Claude Code skill.
+
+The generator reads commits since the latest git tag, sorts them into `Added`, `Fixed`, `Changed`, and `Removed`, and writes a structured changelog.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
