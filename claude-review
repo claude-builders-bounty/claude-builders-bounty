@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""claude-review — CLI tool that uses Claude to review GitHub PRs.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --owner owner --repo repo --number 123
+    claude-review --diff /path/to/diff.patch
+
+Requires:
+    GITHUB_TOKEN  (env) — for fetching PR diff via GitHub API
+    ANTHROPIC_API_KEY (env) — for calling Claude API
+
+Output: Structured Markdown review with summary, risks, suggestions, confidence.
+"""
+
+import argparse
+import json
+import os
+import sys
+import textwrap
+import urllib.request
+import urllib.error
+
+SYSTEM_PROMPT = """\
+You are an experienced senior software engineer reviewing a pull request.
+Analyze the diff and produce a structured review.
+
+Rules:
+- Be specific — reference actual files and line changes, not generic advice
+- Distinguish between critical issues, suggestions, and nitpicks
+- If the diff is trivial (e.g., typo fix, version bump), say so briefly
+- Do NOT praise for the sake of praise — focus on substance
+"""
+
+REVIEW_TEMPLATE = """\
+## PR Review
+
+### Summary
+{summary}
+
+### Identified Risks
+{risks}
+
+### Improvement Suggestions
+{suggestions}
+
+### Confidence: {confidence}
+"""
+
+
+def fetch_diff(owner: str, repo: str, number: int) -> str:
+    """Fetch unified diff for a PR via GitHub API."""
+    token = os.environ.get("GITHUB_TOKEN", "")
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/vnd.github.v3.diff",
+        "User-Agent": "claude-review/1.0",
+    })
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        print(f"Error fetching PR diff (HTTP {e.code}): {body}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"Error fetching PR diff: {e.reason}", file=sys.stderr)
+        sys.exit(1)
+
+
+def parse_pr_url(url: str) -> tuple:
+    """Extract owner, repo, number from a GitHub PR URL."""
+    # https://github.com/owner/repo/pull/123
+    parts = url.rstrip("/").split("/")
+    if len(parts) < 7 or parts[-2] != "pull":
+        print(f"Invalid PR URL: {url}", file=sys.stderr)
+        print("Expected: https://github.com/owner/repo/pull/123", file=sys.stderr)
+        sys.exit(1)
+    return parts[-4], parts[-3], int(parts[-1])
+
+
+def call_claude_mock(diff_text: str, pr_info: str) -> dict:
+    """Generate a mock review for testing (no API key needed)."""
+    import hashlib
+    lines = diff_text.strip().split("\n")
+    files_changed = set()
+    additions = 0
+    deletions = 0
+    for line in lines:
+        if line.startswith("+++"): files_changed.add(line[6:])
+        elif line.startswith("+") and not line.startswith("+++"): additions += 1
+        elif line.startswith("-") and not line.startswith("---"): deletions += 1
+
+    is_trivial = additions + deletions < 20
+    has_typo = any("typo" in l.lower() or l.strip("+-").strip().lower().startswith("fix") for l in lines[:50])
+
+    if is_trivial and has_typo:
+        return {"summary": f"This PR fixes a typo in {', '.join(files_changed)}. No functional changes.", "risks": [], "suggestions": [], "confidence": "High"}
+    elif is_trivial:
+        return {"summary": f"This PR makes minor changes to {', '.join(files_changed)} ({additions} additions, {deletions} deletions).", "risks": [], "suggestions": [], "confidence": "High"}
+    else:
+        return {"summary": f"This PR modifies {len(files_changed)} file(s) in {pr_info} with {additions} additions and {deletions} deletions. Review the specific file changes for detailed impact.", "risks": [f"Review changes in: {', '.join(sorted(files_changed)[:3])}"], "suggestions": ["Consider adding tests for the changed behavior", "Ensure changelog/documentation is updated"], "confidence": "Medium"}
+
+
+def call_claude(diff_text: str) -> dict:
+    """Call Claude API to generate review."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY environment variable not set.", file=sys.stderr)
+        print("Hint: use --mock flag for testing without API key", file=sys.stderr)
+        sys.exit(1)
+
+    prompt = textwrap.dedent("""\
+    Review the following pull request diff. Return ONLY a JSON object with these keys:
+    - "summary": string, 2-3 sentences summarizing the changes
+    - "risks": array of strings, identified risks or concerns
+    - "suggestions": array of strings, improvement suggestions
+    - "confidence": one of "Low", "Medium", "High"
+
+    If the diff is empty or trivial, say so in the summary and set risks/suggestions to empty arrays.
+
+    Diff:
+    ---
+    {diff}
+    ---
+    """).format(diff=diff_text[:50000])  # Claude context limit safety
+
+    data = json.dumps({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 4096,
+        "system": SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            content = result["content"][0]["text"]
+            # Parse JSON from Claude's response
+            # Claude may wrap JSON in markdown code blocks
+            if "```" in content:
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+            return json.loads(content.strip())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        print(f"Claude API error (HTTP {e.code}): {body}", file=sys.stderr)
+        sys.exit(1)
+    except (json.JSONDecodeError, KeyError, IndexError) as e:
+        print(f"Failed to parse Claude response: {e}", file=sys.stderr)
+        print("Raw response:", file=sys.stderr)
+        print(content if 'content' in locals() else "(unknown)", file=sys.stderr)
+        sys.exit(1)
+
+
+def format_review(review: dict, owner: str, repo: str, number: int) -> str:
+    """Format review as Markdown."""
+    risks = "\n".join(f"- {r}" for r in review.get("risks", [])) or "- None identified"
+    suggestions = "\n".join(f"- {s}" for s in review.get("suggestions", [])) or "- None"
+
+    return REVIEW_TEMPLATE.format(
+        summary=review.get("summary", "No summary available."),
+        risks=risks,
+        suggestions=suggestions,
+        confidence=review.get("confidence", "Unknown"),
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Review a GitHub PR using Claude",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent("""\
+        Environment variables:
+          GITHUB_TOKEN        GitHub personal access token (for fetching PR diff)
+          ANTHROPIC_API_KEY   Anthropic API key (for calling Claude)
+
+        Examples:
+          claude-review --pr https://github.com/owner/repo/pull/123
+          claude-review --owner owner --repo repo --number 123
+          claude-review --diff changes.patch
+        """),
+    )
+    parser.add_argument("--pr", help="GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--owner", help="GitHub repository owner")
+    parser.add_argument("--repo", help="GitHub repository name")
+    parser.add_argument("--number", type=int, help="PR number")
+    parser.add_argument("--diff", help="Path to a diff/patch file")
+    parser.add_argument("--json", action="store_true", help="Output raw JSON instead of Markdown")
+    parser.add_argument("--mock", action="store_true", help="Use mock review for testing (no API key needed)")
+
+    args = parser.parse_args()
+
+    # Determine diff source
+    if args.diff:
+        with open(args.diff, "r") as f:
+            diff_text = f.read()
+        pr_info = f"local diff ({args.diff})"
+    elif args.pr:
+        owner, repo, number = parse_pr_url(args.pr)
+        diff_text = fetch_diff(owner, repo, number)
+        pr_info = f"{owner}/{repo}#{number}"
+    elif args.owner and args.repo and args.number:
+        diff_text = fetch_diff(args.owner, args.repo, args.number)
+        pr_info = f"{args.owner}/{args.repo}#{args.number}"
+    else:
+        parser.error("Provide --pr, --diff, or --owner/--repo/--number")
+
+    if not diff_text.strip():
+        print("Warning: diff is empty — no changes to review.", file=sys.stderr)
+
+    # Call Claude (or mock)
+    if args.mock:
+        review = call_claude_mock(diff_text, pr_info)
+    else:
+        review = call_claude(diff_text)
+
+    # Output
+    if args.json:
+        print(json.dumps(review, indent=2))
+    else:
+        header = f"# PR Review — {pr_info}\n"
+        print(header + format_review(review, "", "", 0))
+
+
+if __name__ == "__main__":
+    main()
