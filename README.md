@@ -51,3 +51,14 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Hook Setup (Bounty #3)
+
+Install the destructive-command pre-tool-use hook with two commands:
+
+```bash
+mkdir -p ~/.claude/hooks && cp .claude/hooks/pre-tool-use ~/.claude/hooks/pre-tool-use
+chmod +x ~/.claude/hooks/pre-tool-use
+```
+
+The hook blocks these patterns: `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` commands without a `WHERE` clause. All blocked attempts are logged to `~/.claude/hooks/blocked.log`.
