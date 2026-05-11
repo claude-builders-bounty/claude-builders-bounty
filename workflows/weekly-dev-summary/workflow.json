@@ -1,0 +1,762 @@
+{
+  "name": "Weekly GitHub + Claude Dev Summary",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        240,
+        320
+      ],
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "custom",
+              "cronExpression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2",
+      "name": "Workflow Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        460,
+        320
+      ],
+      "parameters": {
+        "options": {
+          "keepOnlySet": true
+        },
+        "values": {
+          "string": [
+            {
+              "name": "githubOwner",
+              "value": "={{ $env.GITHUB_OWNER || 'YOUR_GITHUB_OWNER' }}"
+            },
+            {
+              "name": "githubRepo",
+              "value": "={{ $env.GITHUB_REPO || 'YOUR_GITHUB_REPO' }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $env.SUMMARY_LANGUAGE || 'EN' }}"
+            },
+            {
+              "name": "githubToken",
+              "value": "={{ $env.GITHUB_TOKEN || '' }}"
+            },
+            {
+              "name": "claudeApiKey",
+              "value": "={{ $env.CLAUDE_API_KEY || 'YOUR_CLAUDE_API_KEY' }}"
+            },
+            {
+              "name": "destinationWebhook",
+              "value": "={{ $env.DISCORD_WEBHOOK_URL || 'https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN' }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "3",
+      "name": "Prepare Window",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        680,
+        320
+      ],
+      "parameters": {
+        "functionCode": "\nconst config = items[0]?.json || {};\nconst requiredFields = ['githubOwner', 'githubRepo', 'claudeApiKey', 'destinationWebhook'];\nfor (const field of requiredFields) {\n  if (!config[field] || String(config[field]).includes('YOUR_')) {\n    throw new Error('Set ' + field + ' in Workflow Config before activating the workflow.');\n  }\n}\n\nconst now = new Date();\nconst weekEnd = new Date(now);\nconst weekStart = new Date(weekEnd.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nreturn [\n  {\n    json: {\n      ...config,\n      category: 'metadata',\n      weekStart: weekStart.toISOString(),\n      weekEnd: weekEnd.toISOString(),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "4",
+      "name": "List Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        900,
+        120
+      ],
+      "parameters": {
+        "requestMethod": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $json.githubOwner + '/' + $json.githubRepo + '/commits' }}",
+        "sendQuery": true,
+        "queryParametersUi": {
+          "parameter": [
+            {
+              "name": "since",
+              "value": "={{ $json.weekStart }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.weekEnd }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.githubToken ? 'token ' + $json.githubToken : '' }}"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "5",
+      "name": "Tag Commit Items",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        120
+      ],
+      "parameters": {
+        "options": {
+          "keepOnlySet": false
+        },
+        "values": {
+          "string": [
+            {
+              "name": "githubOwner",
+              "value": "={{ $node['Prepare Window'].json.githubOwner }}"
+            },
+            {
+              "name": "githubRepo",
+              "value": "={{ $node['Prepare Window'].json.githubRepo }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $node['Prepare Window'].json.language }}"
+            },
+            {
+              "name": "weekStart",
+              "value": "={{ $node['Prepare Window'].json.weekStart }}"
+            },
+            {
+              "name": "weekEnd",
+              "value": "={{ $node['Prepare Window'].json.weekEnd }}"
+            },
+            {
+              "name": "claudeApiKey",
+              "value": "={{ $node['Prepare Window'].json.claudeApiKey }}"
+            },
+            {
+              "name": "destinationWebhook",
+              "value": "={{ $node['Prepare Window'].json.destinationWebhook }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6",
+      "name": "Normalize Commits",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        120
+      ],
+      "parameters": {
+        "functionCode": "\nconst cfg = items[0]?.json;\nif (!cfg) throw new Error('Missing metadata on commit rows');\n\nconst commitLines = items\n  .slice(0, 8)\n  .map((item, index) => {\n    const commitData = item.commit || {};\n    const rawMessage = (commitData.message || '').split('\\n')[0].trim();\n    const author = item.author && item.author.login\n      ? item.author.login\n      : commitData.author && commitData.author.name\n      ? commitData.author.name\n      : 'unknown';\n    return (index + 1) + '. ' + (item.sha || '').slice(0, 7) + ' ' + rawMessage + ' (' + author + ')';\n  });\n\nreturn [\n  {\n    json: {\n      kind: 'commits',\n      repository: cfg.githubOwner + '/' + cfg.githubRepo,\n      language: cfg.language,\n      weekStart: cfg.weekStart,\n      weekEnd: cfg.weekEnd,\n      claudeApiKey: cfg.claudeApiKey,\n      destinationWebhook: cfg.destinationWebhook,\n      count: items.length,\n      lines: commitLines,\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "7",
+      "name": "List Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        900,
+        340
+      ],
+      "parameters": {
+        "requestMethod": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $node['Prepare Window'].json.githubOwner + '/' + $node['Prepare Window'].json.githubRepo + '/issues' }}",
+        "sendQuery": true,
+        "queryParametersUi": {
+          "parameter": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $node['Prepare Window'].json.weekStart }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $node['Prepare Window'].json.githubToken ? 'token ' + $node['Prepare Window'].json.githubToken : '' }}"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "8",
+      "name": "Tag Issue Items",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        340
+      ],
+      "parameters": {
+        "options": {
+          "keepOnlySet": false
+        },
+        "values": {
+          "string": [
+            {
+              "name": "githubOwner",
+              "value": "={{ $node['Prepare Window'].json.githubOwner }}"
+            },
+            {
+              "name": "githubRepo",
+              "value": "={{ $node['Prepare Window'].json.githubRepo }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $node['Prepare Window'].json.language }}"
+            },
+            {
+              "name": "weekStart",
+              "value": "={{ $node['Prepare Window'].json.weekStart }}"
+            },
+            {
+              "name": "weekEnd",
+              "value": "={{ $node['Prepare Window'].json.weekEnd }}"
+            },
+            {
+              "name": "claudeApiKey",
+              "value": "={{ $node['Prepare Window'].json.claudeApiKey }}"
+            },
+            {
+              "name": "destinationWebhook",
+              "value": "={{ $node['Prepare Window'].json.destinationWebhook }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "9",
+      "name": "Normalize Issues",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        340
+      ],
+      "parameters": {
+        "functionCode": "\nconst cfg = items[0]?.json;\nif (!cfg) throw new Error('Missing metadata on issue rows');\nconst windowStart = new Date(cfg.weekStart);\nconst windowEnd = new Date(cfg.weekEnd);\n\nconst filteredIssues = items\n  .filter((item) => !item.pull_request)\n  .filter((item) => {\n    if (!item.closed_at) return false;\n    const closedAt = new Date(item.closed_at);\n    return closedAt >= windowStart && closedAt <= windowEnd;\n  });\n\nconst issueLines = filteredIssues\n  .slice(0, 8)\n  .map((item, index) => {\n    const title = (item.title || '').trim();\n    const actor = item.user && item.user.login ? item.user.login : 'unknown';\n    return (index + 1) + '. #' + item.number + ' ' + title + ' by ' + actor;\n  });\n\nreturn [\n  {\n    json: {\n      kind: 'issues',\n      repository: cfg.githubOwner + '/' + cfg.githubRepo,\n      language: cfg.language,\n      weekStart: cfg.weekStart,\n      weekEnd: cfg.weekEnd,\n      claudeApiKey: cfg.claudeApiKey,\n      destinationWebhook: cfg.destinationWebhook,\n      count: filteredIssues.length,\n      lines: issueLines,\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "10",
+      "name": "List Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        900,
+        560
+      ],
+      "parameters": {
+        "requestMethod": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $node['Prepare Window'].json.githubOwner + '/' + $node['Prepare Window'].json.githubRepo + '/pulls' }}",
+        "sendQuery": true,
+        "queryParametersUi": {
+          "parameter": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $node['Prepare Window'].json.weekStart }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            }
+          ]
+        },
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $node['Prepare Window'].json.githubToken ? 'token ' + $node['Prepare Window'].json.githubToken : '' }}"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "11",
+      "name": "Tag PR Items",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        560
+      ],
+      "parameters": {
+        "options": {
+          "keepOnlySet": false
+        },
+        "values": {
+          "string": [
+            {
+              "name": "githubOwner",
+              "value": "={{ $node['Prepare Window'].json.githubOwner }}"
+            },
+            {
+              "name": "githubRepo",
+              "value": "={{ $node['Prepare Window'].json.githubRepo }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $node['Prepare Window'].json.language }}"
+            },
+            {
+              "name": "weekStart",
+              "value": "={{ $node['Prepare Window'].json.weekStart }}"
+            },
+            {
+              "name": "weekEnd",
+              "value": "={{ $node['Prepare Window'].json.weekEnd }}"
+            },
+            {
+              "name": "claudeApiKey",
+              "value": "={{ $node['Prepare Window'].json.claudeApiKey }}"
+            },
+            {
+              "name": "destinationWebhook",
+              "value": "={{ $node['Prepare Window'].json.destinationWebhook }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "12",
+      "name": "Normalize PRs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        560
+      ],
+      "parameters": {
+        "functionCode": "\nconst cfg = items[0]?.json;\nif (!cfg) throw new Error('Missing metadata on PR rows');\nconst windowStart = new Date(cfg.weekStart);\nconst windowEnd = new Date(cfg.weekEnd);\n\nconst filteredPrs = items\n  .filter((item) => item.merged_at)\n  .filter((item) => {\n    const mergedAt = new Date(item.merged_at);\n    return mergedAt >= windowStart && mergedAt <= windowEnd;\n  });\n\nconst prLines = filteredPrs\n  .slice(0, 8)\n  .map((item, index) => {\n    const title = (item.title || '').trim();\n    const actor = item.user && item.user.login ? item.user.login : 'unknown';\n    return (index + 1) + '. #' + item.number + ' ' + title + ' by ' + actor;\n  });\n\nreturn [\n  {\n    json: {\n      kind: 'prs',\n      repository: cfg.githubOwner + '/' + cfg.githubRepo,\n      language: cfg.language,\n      weekStart: cfg.weekStart,\n      weekEnd: cfg.weekEnd,\n      claudeApiKey: cfg.claudeApiKey,\n      destinationWebhook: cfg.destinationWebhook,\n      count: filteredPrs.length,\n      lines: prLines,\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "13",
+      "name": "Merge Metadata + Commits",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        320
+      ],
+      "parameters": {
+        "mode": "append"
+      }
+    },
+    {
+      "id": "14",
+      "name": "Merge + Issues",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1720,
+        320
+      ],
+      "parameters": {
+        "mode": "append"
+      }
+    },
+    {
+      "id": "15",
+      "name": "Merge + PRs",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        320
+      ],
+      "parameters": {
+        "mode": "append"
+      }
+    },
+    {
+      "id": "16",
+      "name": "Build Claude Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        320
+      ],
+      "parameters": {
+        "functionCode": "\nconst metadata = items.find((item) => item.json.category === 'metadata');\nif (!metadata) throw new Error('Missing metadata item in merged payload.');\nconst cfg = metadata.json;\n\nconst mapByKind = {\n  commits: { count: 0, lines: [] },\n  issues: { count: 0, lines: [] },\n  prs: { count: 0, lines: [] },\n};\n\nfor (const entry of items) {\n  if (!entry.json || !entry.json.kind) continue;\n  mapByKind[entry.json.kind] = {\n    count: entry.json.count || 0,\n    lines: entry.json.lines || [],\n  };\n}\n\nconst language = String(cfg.language || 'EN').toUpperCase();\nconst intro =\n  language === 'FR'\n    ? 'Rédige un résumé narratif hebdomadaire clair de cette activité GitHub. Utilise les sections: Synthèse, Points saillants, Risques, Actions recommandées. Maximum 220 mots.'\n    : 'Write a concise weekly narrative summary of the repository activity. Use headings: Summary, Highlights, Risks, Next steps. Keep under 220 words.';\n\nconst bodyLines = [\n  intro,\n  '',\n  'Repository: ' + cfg.githubOwner + '/' + cfg.githubRepo,\n  'Window: ' + cfg.weekStart + ' to ' + cfg.weekEnd,\n  'Commits: ' + mapByKind.commits.count,\n  'Closed issues: ' + mapByKind.issues.count,\n  'Merged PRs: ' + mapByKind.prs.count,\n  '',\n  'Recent commits:',\n  mapByKind.commits.lines.length ? mapByKind.commits.lines.join('\\n') : 'None',\n  '',\n  'Closed issues:',\n  mapByKind.issues.lines.length ? mapByKind.issues.lines.join('\\n') : 'None',\n  '',\n  'Merged PRs:',\n  mapByKind.prs.lines.length ? mapByKind.prs.lines.join('\\n') : 'None',\n];\n\nconst prompt = bodyLines.join('\\n');\n\nreturn [\n  {\n    json: {\n      repository: cfg.githubOwner + '/' + cfg.githubRepo,\n      language: cfg.language,\n      weekStart: cfg.weekStart,\n      weekEnd: cfg.weekEnd,\n      claudeApiKey: cfg.claudeApiKey,\n      destinationWebhook: cfg.destinationWebhook,\n      requestPayload: {\n        model: 'claude-sonnet-4-20250514',\n        max_tokens: 900,\n        temperature: 0.2,\n        system:\n          language === 'FR'\n            ? 'You are a concise engineering lead writing in French. Use only plain UTF-8 text.'\n            : 'You are a concise engineering lead writing in English. Use only plain UTF-8 text.',\n        messages: [\n          {\n            role: 'user',\n            content: [\n              {\n                type: 'text',\n                text: prompt,\n              },\n            ],\n          },\n        ],\n      },\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "17",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        2260,
+        320
+      ],
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.claudeApiKey }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ JSON.stringify($json.requestPayload) }}",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "18",
+      "name": "Prepare Discord Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        320
+      ],
+      "parameters": {
+        "options": {
+          "keepOnlySet": true
+        },
+        "values": {
+          "string": [
+            {
+              "name": "summaryText",
+              "value": "={{ ($json.content || []).map((block) => block.text || '').filter((line) => line && line.length).join('\\n').trim() }}"
+            },
+            {
+              "name": "destinationWebhook",
+              "value": "={{ $node['Build Claude Payload'].json.destinationWebhook }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "19",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        2620,
+        320
+      ],
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{ $json.destinationWebhook }}",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ JSON.stringify({ username: \"GitHub Weekly Summary\", content: $json.summaryText }) }}",
+        "responseFormat": "json"
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "Workflow Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Config": {
+      "main": [
+        [
+          {
+            "node": "Prepare Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Window": {
+      "main": [
+        [
+          {
+            "node": "List Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "List Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "List Pull Requests",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Metadata + Commits",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "List Commits": {
+      "main": [
+        [
+          {
+            "node": "Tag Commit Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag Commit Items": {
+      "main": [
+        [
+          {
+            "node": "Normalize Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Metadata + Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Issues": {
+      "main": [
+        [
+          {
+            "node": "Tag Issue Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag Issue Items": {
+      "main": [
+        [
+          {
+            "node": "Normalize Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge + Issues",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "List Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "Tag PR Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag PR Items": {
+      "main": [
+        [
+          {
+            "node": "Normalize PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge + PRs",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Metadata + Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge + Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge + Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge + PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge + PRs": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Payload": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Prepare Discord Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Discord Message": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

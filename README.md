@@ -41,6 +41,12 @@ You're in the right place.
 - Payment is handled by [Opire](https://opire.dev) (Stripe)
 - Quality over speed — a solid PR beats a fast one
 
+## Generate a changelog from git history
+
+1. Run `bash changelog.sh` at the repo root.
+2. Open `CHANGELOG.md` and verify the generated `Added`, `Fixed`, `Changed`, and `Removed` sections.
+3. Commit the generated `CHANGELOG.md`.
+
 ---
 
 ## Community
@@ -51,3 +57,14 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Hook Setup (Bounty #3)
+
+Install the destructive-command pre-tool-use hook with two commands:
+
+```bash
+mkdir -p ~/.claude/hooks && cp .claude/hooks/pre-tool-use ~/.claude/hooks/pre-tool-use
+chmod +x ~/.claude/hooks/pre-tool-use
+```
+
+The hook blocks these patterns: `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` commands without a `WHERE` clause. All blocked attempts are logged to `~/.claude/hooks/blocked.log`.
