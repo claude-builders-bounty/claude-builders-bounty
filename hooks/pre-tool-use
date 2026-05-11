@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""Claude Code pre-tool-use hook: blocks destructive Bash commands."""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+LOG_FILE = Path.home() / ".claude" / "hooks" / "blocked.log"
+
+DANGEROUS_PATTERNS = [
+    (re.compile(r'\brm\s+-rf\b', re.IGNORECASE), "rm -rf (recursive force delete)"),
+    (re.compile(r'\bDROP\s+TABLE\b', re.IGNORECASE), "DROP TABLE (destructive SQL)"),
+    (re.compile(r'\bgit\s+push\s+--force\b', re.IGNORECASE), "git push --force (force push)"),
+    (re.compile(r'\bTRUNCATE\b', re.IGNORECASE), "TRUNCATE (destructive SQL)"),
+]
+
+DELETE_FROM_RE = re.compile(r'\bDELETE\s+FROM\b', re.IGNORECASE)
+WHERE_RE = re.compile(r'\bWHERE\b', re.IGNORECASE)
+
+
+def check_dangerous(command: str) -> str | None:
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if pattern.search(command):
+            return reason
+
+    if DELETE_FROM_RE.search(command) and not WHERE_RE.search(command):
+        return "DELETE FROM without WHERE clause (destructive SQL)"
+
+    return None
+
+
+def log_blocked(command: str, project_path: str, reason: str) -> None:
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    entry = json.dumps({
+        "timestamp": timestamp,
+        "command": command,
+        "project_path": project_path,
+        "reason": reason,
+    })
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(entry + "\n")
+
+
+def main() -> None:
+    raw = sys.stdin.read()
+    if not raw.strip():
+        sys.exit(0)
+
+    try:
+        hook_input = json.loads(raw)
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+    if not isinstance(hook_input, dict):
+        sys.exit(0)
+
+    tool_name = hook_input.get("tool_name")
+    if tool_name != "Bash":
+        sys.exit(0)
+
+    tool_input = hook_input.get("tool_input", {})
+    command = tool_input.get("command", "")
+    if not isinstance(command, str) or not command.strip():
+        sys.exit(0)
+
+    reason = check_dangerous(command)
+    if reason is None:
+        sys.exit(0)
+
+    project_path = hook_input.get("cwd", os.getcwd())
+    log_blocked(command, project_path, reason)
+
+    result = {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": f"Blocked by security hook: {reason}",
+        }
+    }
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()
