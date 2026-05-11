@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request diff and emit a structured Markdown comment."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
+
+
+@dataclass(frozen=True)
+class PullRequest:
+    owner: str
+    repo: str
+    number: int
+    title: str = ""
+    author: str = ""
+
+    @property
+    def url(self) -> str:
+        return f"https://github.com/{self.owner}/{self.repo}/pull/{self.number}"
+
+
+@dataclass(frozen=True)
+class DiffStats:
+    files: int
+    additions: int
+    deletions: int
+    tests_changed: bool
+    docs_changed: bool
+    config_changed: bool
+
+
+def parse_pr_url(url: str) -> PullRequest:
+    match = PR_RE.match(url.strip())
+    if not match:
+        raise ValueError("Expected a GitHub pull request URL like https://github.com/owner/repo/pull/123")
+    owner, repo, number = match.groups()
+    return PullRequest(owner=owner, repo=repo, number=int(number))
+
+
+def request_json(url: str) -> dict:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "claude-review",
+    }
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def request_text(url: str) -> str:
+    headers = {
+        "Accept": "application/vnd.github.v3.diff",
+        "User-Agent": "claude-review",
+    }
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def fetch_pr(pr: PullRequest) -> tuple[PullRequest, str]:
+    api_base = f"https://api.github.com/repos/{pr.owner}/{pr.repo}/pulls/{pr.number}"
+    try:
+        data = request_json(api_base)
+        diff = request_text(api_base)
+        return (
+            PullRequest(
+                owner=pr.owner,
+                repo=pr.repo,
+                number=pr.number,
+                title=data.get("title", ""),
+                author=data.get("user", {}).get("login", ""),
+            ),
+            diff,
+        )
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"GitHub API request failed with HTTP {exc.code}: {exc.reason}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not reach GitHub API: {exc.reason}") from exc
+
+
+def file_headers(diff: str) -> list[str]:
+    headers = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split(" b/", 1)
+            if len(parts) == 2:
+                headers.append(parts[1])
+    return headers
+
+
+def diff_stats(diff: str) -> DiffStats:
+    files = file_headers(diff)
+    additions = sum(1 for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    deletions = sum(1 for line in diff.splitlines() if line.startswith("-") and not line.startswith("---"))
+
+    def any_path(patterns: Iterable[str]) -> bool:
+        return any(any(re.search(pattern, path, re.IGNORECASE) for pattern in patterns) for path in files)
+
+    return DiffStats(
+        files=len(files),
+        additions=additions,
+        deletions=deletions,
+        tests_changed=any_path([r"(^|/)(test|tests|spec|__tests__)(/|$)", r"\.(test|spec)\."]),
+        docs_changed=any_path([r"(^|/)docs?(/|$)", r"README", r"\.md$"]),
+        config_changed=any_path([r"(^|/)\.github/", r"package\.json$", r"pyproject\.toml$", r"Dockerfile$", r"\.ya?ml$"]),
+    )
+
+
+def detect_risks(diff: str, stats: DiffStats) -> list[str]:
+    risks: list[str] = []
+    lower = diff.lower()
+
+    if re.search(r"^\+.*(password|secret|api[_-]?key|token)\s*[:=]\s*['\"][^'\"]+", diff, re.MULTILINE | re.IGNORECASE):
+        risks.append("Possible hard-coded secret or credential-like value added in the diff.")
+    if re.search(r"^\+.*subprocess\.(popen|run|call)|^\+.*child_process\.(exec|spawn)", diff, re.MULTILINE):
+        risks.append("New process execution path should validate inputs and failure behavior.")
+    if re.search(r"^\+.*(eval\(|new Function\(|dangerouslySetInnerHTML)", diff, re.MULTILINE):
+        risks.append("Dynamic code or HTML execution path may introduce injection risk.")
+    if re.search(r"^\+.*(drop table|truncate)\b", lower, re.MULTILINE):
+        risks.append("Destructive SQL appears in the change; confirm it is guarded, transactional, and tested.")
+    for line in lower.splitlines():
+        if line.startswith("+") and "delete from" in line and " where " not in line:
+            risks.append("Unguarded DELETE FROM statement appears in the change.")
+            break
+    if stats.additions + stats.deletions > 500:
+        risks.append("Large diff size increases review risk; consider splitting behavior changes from mechanical edits.")
+    if not stats.tests_changed and not stats.docs_changed:
+        risks.append("No tests or documentation were changed, so regressions may be harder to catch.")
+    if stats.config_changed:
+        risks.append("Configuration or workflow files changed; verify secrets, permissions, and environment assumptions.")
+
+    return risks or ["No obvious high-risk pattern detected from the diff alone."]
+
+
+def suggestions(stats: DiffStats, risks: list[str]) -> list[str]:
+    result = []
+    if not stats.tests_changed:
+        result.append("Add or update focused tests for the changed behavior before merging.")
+    if stats.config_changed:
+        result.append("Run the affected CI/workflow path once with least-privilege tokens or credentials.")
+    if any("secret" in risk.lower() for risk in risks):
+        result.append("Move credential-like values to environment variables or the platform secret store.")
+    if stats.additions + stats.deletions > 500:
+        result.append("Split unrelated refactors from functional changes to make future review easier.")
+    result.append("Confirm the PR description documents user-visible behavior and rollback considerations.")
+    return result
+
+
+def confidence(stats: DiffStats, risks: list[str]) -> str:
+    score = 0
+    if stats.tests_changed:
+        score += 1
+    if stats.files <= 5:
+        score += 1
+    if risks == ["No obvious high-risk pattern detected from the diff alone."]:
+        score += 1
+    if stats.additions + stats.deletions > 800:
+        score -= 1
+
+    if score >= 2:
+        return "High"
+    if score == 1:
+        return "Medium"
+    return "Low"
+
+
+def summarize(pr: PullRequest, stats: DiffStats, paths: list[str]) -> str:
+    file_word = "file" if stats.files == 1 else "files"
+    title = f" titled \"{pr.title}\"" if pr.title else ""
+    areas = ", ".join(paths[:4]) if paths else "the repository"
+    if len(paths) > 4:
+        areas += f", and {len(paths) - 4} more"
+    return (
+        f"This PR{title} changes {stats.files} {file_word} with "
+        f"{stats.additions} additions and {stats.deletions} deletions. "
+        f"The main touched areas are {areas}, so review should focus on behavior around those files."
+    )
+
+
+def render_review(pr: PullRequest, diff: str) -> str:
+    stats = diff_stats(diff)
+    paths = file_headers(diff)
+    risks = detect_risks(diff, stats)
+    improvements = suggestions(stats, risks)
+    level = confidence(stats, risks)
+
+    risk_lines = "\n".join(f"- {risk}" for risk in risks)
+    suggestion_lines = "\n".join(f"- {item}" for item in improvements)
+
+    return (
+        "## Claude PR Review\n\n"
+        f"**PR:** [{pr.owner}/{pr.repo}#{pr.number}]({pr.url})\n"
+        f"**Author:** {('@' + pr.author) if pr.author else 'Unknown'}\n"
+        f"**Confidence:** {level}\n\n"
+        "### Summary\n"
+        f"{summarize(pr, stats, paths)}\n\n"
+        "### Identified Risks\n"
+        f"{risk_lines}\n\n"
+        "### Improvement Suggestions\n"
+        f"{suggestion_lines}\n"
+    )
+
+
+def post_comment(pr: PullRequest, body: str) -> None:
+    command = ["gh", "pr", "comment", str(pr.number), "--repo", f"{pr.owner}/{pr.repo}", "--body", body]
+    subprocess.run(command, check=True)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    parser.add_argument("--output", help="Write Markdown review to this file")
+    parser.add_argument("--comment", action="store_true", help="Post the generated review as a PR comment with gh")
+    args = parser.parse_args()
+
+    try:
+        pr = parse_pr_url(args.pr)
+        pr, diff = fetch_pr(pr)
+        review = render_review(pr, diff)
+
+        if args.output:
+            Path(args.output).write_text(review, encoding="utf-8")
+        else:
+            sys.stdout.write(review)
+
+        if args.comment:
+            post_comment(pr, review)
+    except Exception as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
