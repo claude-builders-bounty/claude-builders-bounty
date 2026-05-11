@@ -22,6 +22,12 @@ You're in the right place.
 
 ---
 
+## Templates
+
+- [`templates/nextjs-sqlite-saas/CLAUDE.md`](templates/nextjs-sqlite-saas/CLAUDE.md) - opinionated Claude Code context for a Next.js 15 App Router SaaS using SQLite.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
