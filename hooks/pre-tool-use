@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""
+Claude Code Pre-Tool-Use Hook — Destructive Command Blocker
+============================================================
+Blocks destructive bash commands (rm -rf, DROP TABLE, git push --force,
+TRUNCATE, DELETE FROM without WHERE) before they execute.
+
+Installation:
+  cp pre_tool_use_hook.py ~/.claude/hooks/pre-tool-use
+  chmod +x ~/.claude/hooks/pre-tool-use
+
+Contract:
+  - Reads JSON payload from stdin (Claude Code hook format)
+  - Exit 0 = allow, non-zero = block + print reason to stderr
+  - Logs all blocked attempts to ~/.claude/hooks/blocked.log
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import select
+import sys
+from datetime import datetime, timezone
+from typing import Optional
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+STDIN_READY_TIMEOUT_SECONDS = 0.1
+
+# Patterns that are ALWAYS blocked (format: (regex, user-facing_reason))
+DESTRUCTIVE_PATTERNS: list[tuple[str, str]] = [
+    # ---- Filesystem nukes ----
+    (r'\brm\s+-rf\b',        "rm -rf (recursive forced deletion)"),
+
+    # ---- Git force-push (all variants) ----
+    (r'\bgit\s+push\s+.*--force\b',  "git push --force (force-push overwrites remote history)"),
+    (r'\bgit\s+push\s+.*-f\b',       "git push -f (force-push overwrites remote history)"),
+
+    # ---- SQL DDL / DML destructive statements ----
+    (r'\bDROP\s+TABLE\b',        "DROP TABLE (irreversible table deletion)"),
+    (r'\bDROP\s+DATABASE\b',     "DROP DATABASE (irreversible database deletion)"),
+    (r'\bTRUNCATE\b',            "TRUNCATE (bulk row deletion, often irreversible)"),
+
+    # ---- DELETE without WHERE clause ----
+    (r'\bDELETE\s+FROM\b(?!.*\bWHERE\b)', "DELETE FROM without WHERE clause (bulk row deletion)"),
+]
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _ensure_log_dir() -> None:
+    """Create the log directory if it doesn't exist."""
+    log_dir = os.path.dirname(LOG_FILE)
+    os.makedirs(log_dir, mode=0o755, exist_ok=True)
+
+
+def _log_blocked(command: str, reason: str) -> None:
+    """Append a structured log entry for a blocked command."""
+    _ensure_log_dir()
+    timestamp = datetime.now(timezone.utc).isoformat()
+    safe_cmd = command.replace("\n", "\\n")[:500]
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(f"[{timestamp}] BLOCKED | {reason} | cmd={safe_cmd}\n")
+    except OSError:
+        pass  # best-effort logging
+
+
+def _extract_command(payload: dict) -> str:
+    """
+    Extract the shell command string from a Claude Code hook payload.
+
+    The payload format varies between Claude Code versions; we support both
+    the structured tool-call format and a flat { "command": "..." } object.
+    """
+    # Direct field
+    cmd = payload.get("command") or payload.get("cmd") or payload.get("input")
+    if cmd:
+        return str(cmd)
+
+    # Tool-call wrapper: { "tool": "Bash", "args": { "command": "..." } }
+    args = payload.get("args") or payload.get("arguments") or payload.get("parameters") or {}
+    if isinstance(args, dict):
+        for key in ("command", "cmd", "input", "code"):
+            val = args.get(key)
+            if val:
+                return str(val)
+
+    # Nested tool-call: { "toolUse": { "name": "Bash", "input": { ... } } }
+    tool_use = payload.get("toolUse") or payload.get("tool_use") or payload.get("tool_call") or {}
+    if isinstance(tool_use, dict):
+        inp = tool_use.get("input") or tool_use.get("arguments") or {}
+        if isinstance(inp, dict):
+            for key in ("command", "cmd", "input", "code"):
+                val = inp.get(key)
+                if val:
+                    return str(val)
+
+    return ""
+
+
+def _check_command(command: str) -> Optional[str]:
+    """
+    Return a human-readable reason string if *command* matches a destructive
+    pattern, or None if the command is safe to allow.
+    """
+    for pattern, reason in DESTRUCTIVE_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return reason
+    return None
+
+
+def _read_stdin_payload() -> str:
+    """Read stdin only when data is immediately available."""
+    try:
+        if sys.stdin.isatty():
+            return ""
+
+        ready, _, _ = select.select([sys.stdin], [], [], STDIN_READY_TIMEOUT_SECONDS)
+        if not ready:
+            return ""
+    except (OSError, ValueError):
+        return ""
+
+    return sys.stdin.read()
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> int:
+    # ---- Read JSON payload from stdin ----
+    raw = _read_stdin_payload()
+    if not raw:
+        # No payload at all — allow (not a tool-use event)
+        print("[hook] No input received from Claude Code — allowing.", file=sys.stderr)
+        return 0
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        # Malformed JSON — allow (avoid breaking Claude Code)
+        print("[hook] Warning: could not parse JSON payload — allowing.", file=sys.stderr)
+        return 0
+
+    if not isinstance(payload, dict):
+        # Unexpected JSON shape — allow (avoid breaking Claude Code)
+        print("[hook] Warning: JSON payload was not an object — allowing.", file=sys.stderr)
+        return 0
+
+    # ---- Extract the command ----
+    command = _extract_command(payload)
+    if not command:
+        # Not a bash tool invocation — allow silently
+        return 0
+
+    # ---- Check for destructive patterns ----
+    reason = _check_command(command)
+    if reason is None:
+        return 0  # safe command — allow
+
+    # ---- Block & log ----
+    _log_blocked(command, reason)
+
+    message = (
+        f"\n"
+        f"  [BLOCKED by pre-tool-use hook]\n"
+        f"  {reason}\n"
+        f"\n"
+        f"  This command was prevented because it matches a destructive pattern.\n"
+        f"  If you need to run it intentionally:\n"
+        f"    - Use your terminal directly (outside Claude Code)\n"
+        f"    - Or temporarily disable the hook: chmod -x ~/.claude/hooks/pre-tool-use\n"
+        f"\n"
+        f"  Logged to: {LOG_FILE}\n"
+    )
+    print(message, file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

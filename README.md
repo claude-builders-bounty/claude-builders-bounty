@@ -10,6 +10,12 @@ You're in the right place.
 
 ## How it works
 
+**Install the destructive-command hook**
+
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/pre-tool-use ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+```
+
 **To post a bounty**
 1. Open a GitHub issue with a clear description and acceptance criteria
 2. Comment `/opire create $XXX` in the issue to set the reward
