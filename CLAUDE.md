@@ -1,0 +1,1 @@
+# PR Review Agent\n\nThis agent reviews GitHub PR diffs and returns structured Markdown reviews via CLI.
