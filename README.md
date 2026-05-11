@@ -22,6 +22,20 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+Create a structured `CHANGELOG.md` from the commits since the latest git tag:
+
+1. Run `python generate_changelog.py` from the repository root.
+2. Review the generated `CHANGELOG.md`.
+3. Commit the file when the grouped `Added`, `Fixed`, `Changed`, and `Removed` entries look right.
+
+Unix users can also run `bash changelog.sh`. To preview without writing a file, run `python generate_changelog.py --stdout`.
+
+Sample output is included in [`examples/sample-output.md`](examples/sample-output.md).
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
