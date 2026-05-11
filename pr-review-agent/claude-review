@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request diff and print a structured Markdown comment."""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import re
+import sys
+import urllib.error
+import urllib.request
+from collections import Counter
+from pathlib import Path
+
+
+PR_RE = re.compile(r"^https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)/?$")
+FILE_RE = re.compile(r"^\+\+\+ b/(.+)$", re.MULTILINE)
+ADDED_RE = re.compile(r"^\+(?!\+\+)", re.MULTILINE)
+REMOVED_RE = re.compile(r"^-(?!--)", re.MULTILINE)
+
+
+@dataclasses.dataclass(frozen=True)
+class ReviewFinding:
+    severity: str
+    message: str
+
+
+@dataclasses.dataclass(frozen=True)
+class DiffStats:
+    files: list[str]
+    added_lines: int
+    removed_lines: int
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate a structured Markdown review for a GitHub pull request."
+    )
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    parser.add_argument(
+        "--diff-file",
+        help="Read a local diff file instead of fetching from GitHub. Useful for tests.",
+    )
+    return parser.parse_args()
+
+
+def pr_diff_url(pr_url: str) -> str:
+    match = PR_RE.match(pr_url)
+    if not match:
+        raise ValueError("Expected PR URL like https://github.com/owner/repo/pull/123")
+    return f"{pr_url.rstrip('/')}.diff"
+
+
+def fetch_diff(pr_url: str) -> str:
+    request = urllib.request.Request(
+        pr_diff_url(pr_url),
+        headers={"User-Agent": "claude-review-agent"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not fetch PR diff: {exc}") from exc
+
+
+def read_diff(args: argparse.Namespace) -> str:
+    if args.diff_file:
+        return Path(args.diff_file).read_text(encoding="utf-8")
+    return fetch_diff(args.pr)
+
+
+def diff_stats(diff_text: str) -> DiffStats:
+    files = sorted(set(FILE_RE.findall(diff_text)))
+    added_lines = len(ADDED_RE.findall(diff_text))
+    removed_lines = len(REMOVED_RE.findall(diff_text))
+    return DiffStats(files=files, added_lines=added_lines, removed_lines=removed_lines)
+
+
+def language_summary(files: list[str]) -> str:
+    suffixes = Counter(Path(file_name).suffix or "[no extension]" for file_name in files)
+    if not suffixes:
+        return "no changed files detected"
+    return ", ".join(f"{suffix} x{count}" for suffix, count in suffixes.most_common(4))
+
+
+def detect_risks(diff_text: str, stats: DiffStats) -> list[ReviewFinding]:
+    findings: list[ReviewFinding] = []
+    lower_diff = diff_text.lower()
+
+    if stats.added_lines + stats.removed_lines > 500:
+        findings.append(
+            ReviewFinding(
+                "Medium",
+                "Large diff size increases review risk; consider splitting unrelated behavior into smaller PRs.",
+            )
+        )
+
+    if re.search(r"^\+.*(password|secret|token|api[_-]?key)\s*[:=]", diff_text, re.MULTILINE | re.IGNORECASE):
+        findings.append(
+            ReviewFinding(
+                "High",
+                "Added lines appear to contain credential-like names; verify no secrets or real tokens are committed.",
+            )
+        )
+
+    if re.search(r"^\+.*\b(eval|exec)\s*\(", diff_text, re.MULTILINE):
+        findings.append(
+            ReviewFinding(
+                "High",
+                "Added dynamic code execution; confirm inputs are trusted or replace with a safer parser.",
+            )
+        )
+
+    if re.search(r"^\+.*\b(skip|only)\s*\(", diff_text, re.MULTILINE):
+        findings.append(
+            ReviewFinding(
+                "Medium",
+                "Test focus marker detected; ensure `.only` or `.skip` is not committed accidentally.",
+            )
+        )
+
+    if "migration" in lower_diff and not re.search(r"rollback|down|revert", lower_diff):
+        findings.append(
+            ReviewFinding(
+                "Medium",
+                "Migration-related changes do not obviously include rollback guidance; verify deployment safety.",
+            )
+        )
+
+    if any(file.endswith((".yml", ".yaml")) and ".github/workflows/" in file for file in stats.files):
+        findings.append(
+            ReviewFinding(
+                "Low",
+                "Workflow changes can affect CI permissions and release paths; check token scopes and trigger conditions.",
+            )
+        )
+
+    if not findings:
+        findings.append(ReviewFinding("Low", "No obvious high-risk patterns detected from the diff alone."))
+
+    return findings
+
+
+def improvement_suggestions(stats: DiffStats, findings: list[ReviewFinding]) -> list[str]:
+    suggestions = [
+        "Run the narrowest relevant test suite and include the command output in the PR.",
+        "Confirm user-facing behavior or migration steps are documented when the change affects runtime behavior.",
+    ]
+
+    if any(f.severity == "High" for f in findings):
+        suggestions.insert(0, "Resolve high-severity findings before merge or document why they are false positives.")
+
+    if len(stats.files) > 8:
+        suggestions.append("Consider splitting the PR if the changed files are not part of one coherent behavior change.")
+
+    return suggestions
+
+
+def confidence(stats: DiffStats, findings: list[ReviewFinding]) -> str:
+    if any(f.severity == "High" for f in findings):
+        return "Low"
+    if stats.added_lines + stats.removed_lines > 500 or any(f.severity == "Medium" for f in findings):
+        return "Medium"
+    return "High"
+
+
+def render_review(pr_url: str, diff_text: str) -> str:
+    stats = diff_stats(diff_text)
+    findings = detect_risks(diff_text, stats)
+    suggestions = improvement_suggestions(stats, findings)
+    confidence_score = confidence(stats, findings)
+
+    file_list = "\n".join(f"- `{file}`" for file in stats.files[:12]) or "- No files detected"
+    if len(stats.files) > 12:
+        file_list += f"\n- ...and {len(stats.files) - 12} more"
+
+    risk_list = "\n".join(f"- **{finding.severity}:** {finding.message}" for finding in findings)
+    suggestion_list = "\n".join(f"- {suggestion}" for suggestion in suggestions)
+
+    return f"""## PR Review
+
+**PR:** {pr_url}
+
+### Summary
+
+This PR changes {len(stats.files)} file(s), with approximately {stats.added_lines} added line(s) and {stats.removed_lines} removed line(s). The diff appears to focus on {language_summary(stats.files)}.
+
+Changed files:
+
+{file_list}
+
+### Identified Risks
+
+{risk_list}
+
+### Improvement Suggestions
+
+{suggestion_list}
+
+### Confidence Score
+
+**{confidence_score}**
+"""
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        diff_text = read_diff(args)
+        print(render_review(args.pr, diff_text))
+    except Exception as exc:  # noqa: BLE001 - CLI should show a concise failure.
+        print(f"claude-review failed: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
