@@ -1,53 +1,53 @@
-# Claude Builders Bounty 🤖
+# changelog.sh
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from your git history — automatically categorized into **Added**, **Fixed**, **Changed**, and **Removed**.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (3 steps)
 
----
+```bash
+# 1. Download the script
+curl -O https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/changelog.sh
 
-## How it works
+# 2. Make it executable
+chmod +x changelog.sh
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+# 3. Run it inside any git repo
+./changelog.sh
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Usage
 
----
+```bash
+# Generate CHANGELOG.md from commits since last git tag
+./changelog.sh
 
-## Active Bounties
+# Preview without writing (dry-run)
+./changelog.sh --dry-run
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# Start from a specific tag
+./changelog.sh --since v2.0.0
 
----
+# Custom output file
+./changelog.sh --output RELEASE_NOTES.md
+```
 
-## Rules
+## How It Works
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+1. Finds the **latest git tag** and scans all commits since then
+2. Parses each commit message using **conventional commit prefixes** (`feat:`, `fix:`, `chore:`, etc.)
+3. Falls back to **keyword heuristics** for non-conventional commits (detects `bug`, `add`, `remove`, etc.)
+4. Outputs a formatted `CHANGELOG.md` with a stats footer
 
----
+## Sample Output
 
-## Community
+See [SAMPLE.md](SAMPLE.md) for a real-world example generated from [Express.js](https://github.com/expressjs/express).
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Requirements
 
----
+- `bash` 4+
+- `git`
+- Any Unix-like system (Linux, macOS, WSL)
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## License
+
+MIT — see [LICENSE](LICENSE)
