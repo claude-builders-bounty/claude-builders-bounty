@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request diff and emit structured Markdown.
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+
+The tool intentionally works without paid API credentials by using deterministic
+review heuristics over the PR metadata and diff. It is designed as a Claude Code
+agent/CLI building block: Claude Code can run it, inspect the Markdown, and post
+or refine the review comment.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+from dataclasses import dataclass
+from typing import Any
+
+PR_RE = re.compile(r"https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)")
+
+
+@dataclass
+class PullRequest:
+    owner: str
+    repo: str
+    number: int
+    title: str
+    body: str
+    additions: int
+    deletions: int
+    changed_files: int
+    files: list[dict[str, Any]]
+    diff: str
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    match = PR_RE.fullmatch(url.strip())
+    if not match:
+        raise SystemExit("error: --pr must look like https://github.com/owner/repo/pull/123")
+    return match.group("owner"), match.group("repo"), int(match.group("number"))
+
+
+def gh_api(path: str, accept: str = "application/vnd.github+json") -> Any:
+    gh = os.environ.get("GH_BIN", "gh")
+    try:
+        result = subprocess.run(
+            [gh, "api", path, "-H", f"Accept: {accept}"],
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        if accept.endswith("diff"):
+            return result.stdout
+        return json.loads(result.stdout)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        headers = {"Accept": accept, "User-Agent": "claude-review"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        request = urllib.request.Request(f"https://api.github.com{path}", headers=headers)
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = response.read().decode("utf-8")
+            if accept.endswith("diff"):
+                return payload
+            return json.loads(payload)
+
+
+def load_pr(url: str) -> PullRequest:
+    owner, repo, number = parse_pr_url(url)
+    pr = gh_api(f"/repos/{owner}/{repo}/pulls/{number}")
+    files = gh_api(f"/repos/{owner}/{repo}/pulls/{number}/files?per_page=100")
+    diff = gh_api(f"/repos/{owner}/{repo}/pulls/{number}", accept="application/vnd.github.v3.diff")
+    return PullRequest(
+        owner=owner,
+        repo=repo,
+        number=number,
+        title=pr.get("title") or "Untitled PR",
+        body=pr.get("body") or "",
+        additions=int(pr.get("additions") or 0),
+        deletions=int(pr.get("deletions") or 0),
+        changed_files=int(pr.get("changed_files") or len(files)),
+        files=files,
+        diff=diff,
+    )
+
+
+def summarize(pr: PullRequest) -> str:
+    filenames = [f.get("filename", "") for f in pr.files]
+    file_hint = ", ".join(filenames[:5])
+    if len(filenames) > 5:
+        file_hint += f", and {len(filenames) - 5} more"
+    return (
+        f"This PR, `{pr.title}`, changes {pr.changed_files} file(s) with "
+        f"{pr.additions} additions and {pr.deletions} deletions. "
+        f"Primary touched files: {file_hint or 'no file list available'}."
+    )
+
+
+def risks(pr: PullRequest) -> list[str]:
+    found: list[str] = []
+    files = [f.get("filename", "") for f in pr.files]
+    diff_lc = pr.diff.lower()
+
+    if pr.changed_files >= 15 or pr.additions + pr.deletions >= 800:
+        found.append("Large change size increases review risk; consider splitting if unrelated concerns are mixed.")
+    if any(name.endswith(("package-lock.json", "pnpm-lock.yaml", "yarn.lock", "requirements.txt")) for name in files):
+        found.append("Dependency or lockfile changes are present; verify supply-chain impact and generated lockfile integrity.")
+    if any("migration" in name.lower() or name.endswith(".sql") for name in files):
+        found.append("Database/schema changes are present; confirm migration rollback and data-safety behavior.")
+    if any(name.startswith((".github/workflows/", "scripts/", "bin/")) for name in files):
+        found.append("Automation/script changes are present; check command safety, secrets handling, and CI permissions.")
+    secret_patterns = ["api_key=", "apikey=", "password=", "token=", "secret="]
+    if any(secret in diff_lc for secret in secret_patterns):
+        found.append("Diff contains assignment-like secret terms; ensure no credentials or sensitive values are committed.")
+    if "delete from" in diff_lc or "drop table" in diff_lc or "rm -rf" in diff_lc:
+        found.append("Diff includes destructive command/database patterns; verify guardrails and explicit intent.")
+    def looks_like_test(path: str) -> bool:
+        parts = path.replace("\\", "/").split("/")
+        basename = parts[-1]
+        return (
+            any(part in {"test", "tests", "spec", "specs"} for part in parts)
+            or basename.startswith("test_")
+            or basename.endswith("_test.py")
+            or ".test." in basename
+            or ".spec." in basename
+        )
+
+    if not any(looks_like_test(name) for name in files):
+        found.append("No obvious test files changed; confirm coverage exists or explain why tests are unnecessary.")
+
+    return found or ["No major structural risks detected from the diff metadata and file patterns."]
+
+
+def suggestions(pr: PullRequest) -> list[str]:
+    items = [
+        "Run the project's narrowest relevant test/lint command before merge and include the result in the PR.",
+        "Confirm the PR description explains user-visible behavior, validation performed, and any known limitations.",
+    ]
+    if pr.additions + pr.deletions > 300:
+        items.append("Consider adding a short implementation note for the highest-risk files to speed maintainer review.")
+    if any((f.get("status") == "removed") for f in pr.files):
+        items.append("Double-check removed files are not referenced by docs, build scripts, or runtime imports.")
+    if any((f.get("filename", "").endswith(".md")) for f in pr.files):
+        items.append("For documentation changes, verify links, commands, and examples against the current repository layout.")
+    return items
+
+
+def confidence(pr: PullRequest, risk_list: list[str]) -> str:
+    score = 0
+    if pr.changed_files <= 5:
+        score += 1
+    if pr.additions + pr.deletions <= 300:
+        score += 1
+    if any("No major" in risk for risk in risk_list):
+        score += 1
+    if any("No obvious test" in risk for risk in risk_list):
+        score -= 1
+    if score >= 2:
+        return "High"
+    if score == 1:
+        return "Medium"
+    return "Low"
+
+
+def render(pr: PullRequest) -> str:
+    risk_list = risks(pr)
+    suggestion_list = suggestions(pr)
+    conf = confidence(pr, risk_list)
+    risk_md = "\n".join(f"- {item}" for item in risk_list)
+    suggestion_md = "\n".join(f"- {item}" for item in suggestion_list)
+    return f"""## PR Review Summary
+
+{summarize(pr)} This automated review focuses on diff metadata, changed file patterns, and common risk signals.
+
+## Identified Risks
+
+{risk_md}
+
+## Improvement Suggestions
+
+{suggestion_md}
+
+## Confidence Score
+
+**{conf}**
+""".strip() + "\n"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown PR review.")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
+    parser.add_argument("--output", help="Optional path to write Markdown output")
+    args = parser.parse_args()
+
+    review = render(load_pr(args.pr))
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as handle:
+            handle.write(review)
+    else:
+        print(review, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
