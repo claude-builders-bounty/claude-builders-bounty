@@ -1,0 +1,212 @@
+{
+  "name": "Weekly Dev Summary (n8n + Claude)",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [280, 300],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"repo\": \"owner/repo\",\n  \"discordWebhook\": \"https://discord.com/api/webhooks/your-channel-id/your-token\",\n  \"language\": \"EN\",\n  \"githubToken\": \"ghp_your_github_token\"\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Fetch GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2.1,
+      "position": [560, 300],
+      "parameters": {
+        "language": "javaScript",
+        "code": "const config = $input.first().json;\nconst repo = config.repo;\nconst token = config.githubToken;\nconst since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();\nconst headers = {\n  Authorization: 'Bearer ' + token,\n  Accept: 'application/vnd.github.v3+json',\n  'User-Agent': 'weekly-summary'\n};\n\nconst baseUrl = 'https://api.github.com/repos/' + repo;\n\nconst [commits, issues, prs] = await Promise.all([\n  this.helpers.httpRequest({\n    method: 'GET',\n    url: baseUrl + '/commits?since=' + encodeURIComponent(since) + '&per_page=100',\n    headers: headers\n  }),\n  this.helpers.httpRequest({\n    method: 'GET',\n    url: baseUrl + '/issues?state=closed&since=' + encodeURIComponent(since) + '&per_page=100',\n    headers: headers\n  }),\n  this.helpers.httpRequest({\n    method: 'GET',\n    url: baseUrl + '/pulls?state=closed&sort=updated&direction=desc&per_page=100',\n    headers: headers\n  })\n]);\n\nconst mergedPRs = prs.filter(p => p.merged_at && new Date(p.merged_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));\n\nreturn [{\n  json: {\n    repo: repo,\n    discordWebhook: config.discordWebhook,\n    language: config.language,\n    commits: commits.slice(0, 50),\n    issues: issues.filter(i => !i.pull_request).slice(0, 30),\n    mergedPRs: mergedPRs.slice(0, 30),\n    weekSince: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],\n    weekUntil: new Date().toISOString().split('T')[0]\n  }\n}];"
+      }
+    },
+    {
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2.1,
+      "position": [840, 300],
+      "parameters": {
+        "language": "javaScript",
+        "code": "const data = $input.first().json;\nconst commits = data.commits || [];\nconst issues = data.issues || [];\nconst prs = data.mergedPRs || [];\n\nconst commitLines = commits.map(c => {\n  const msg = c.commit.message.split('\\n')[0];\n  return '  - ' + msg + ' (' + c.commit.author.name + ', ' + c.sha.substring(0, 7) + ')';\n}).join('\\n');\n\nconst issueLines = issues.map(i => {\n  return '  - #' + i.number + ' ' + i.title + ' (by ' + (i.user?.login || 'unknown') + ')';\n}).join('\\n');\n\nconst prLines = prs.map(p => {\n  return '  - #' + p.number + ' ' + p.title + ' (by ' + (p.user?.login || 'unknown') + ')';\n}).join('\\n');\n\nconst summaryPrompt = 'Generate a weekly development summary for the period ' + data.weekSince + ' to ' + data.weekUntil + '.\\n\\n' +\n  'Repository activity this week for **' + data.repo + '**:\\n\\n' +\n  '**Commits (' + commits.length + ' total):**\\n' + (commitLines || '  (none)') + '\\n\\n' +\n  '**Issues Closed (' + issues.length + ' total):**\\n' + (issueLines || '  (none)') + '\\n\\n' +\n  '**Merged PRs (' + prs.length + ' total):**\\n' + (prLines || '  (none)') + '\\n\\n' +\n  'Write a concise narrative summary highlighting key changes, trends, and notable events. Use a professional but engaging tone. Group related changes. Start with a one-line headline in bold. Keep it under 1500 characters.';\n\nreturn [{\n  json: {\n    model: 'claude-sonnet-4-20250514',\n    max_tokens: 4096,\n    messages: [{ role: 'user', content: summaryPrompt }],\n    _meta: {\n      repo: data.repo,\n      discordWebhook: data.discordWebhook,\n      language: data.language,\n      weekSince: data.weekSince,\n      weekUntil: data.weekUntil\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ { model: $json.model, max_tokens: $json.max_tokens, messages: $json.messages } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2.1,
+      "position": [1400, 300],
+      "parameters": {
+        "language": "javaScript",
+        "code": "const claudeResponse = $input.first().json;\nconst summaryText = claudeResponse.content?.[0]?.text || '';\nconst meta = $input.first().json._meta || {};\n\nreturn [{\n  json: {\n    summary: summaryText,\n    repo: meta.repo || 'owner/repo',\n    discordWebhook: meta.discordWebhook || '',\n    language: meta.language || 'EN',\n    weekSince: meta.weekSince || '',\n    weekUntil: meta.weekUntil || ''\n  }\n}];"
+      }
+    },
+    {
+      "id": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+      "name": "Language Route",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [1680, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.language }}",
+              "operation": "equal",
+              "value2": "EN"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
+      "name": "Send to Discord (EN)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1960, 120],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.discordWebhook }}",
+        "sendBody": true,
+        "jsonBody": "={{ { content: '**Weekly Dev Summary** \\uD83D\\uDE80\\n**Repo:** ' + $json.repo + '\\n**Period:** ' + $json.weekSince + ' to ' + $json.weekUntil + '\\n\\n' + $json.summary } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c9d0e1f2-a3b4-5678-cdef-789012345678",
+      "name": "Send to Discord (FR)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1960, 480],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.discordWebhook }}",
+        "sendBody": true,
+        "jsonBody": "={{ { content: '**R\u00e9sum\u00e9 Hebdomadaire du Dev** \\uD83D\\uDE80\\n**D\u00e9p\u00f4t:** ' + $json.repo + '\\n**P\u00e9riode:** ' + $json.weekSince + ' au ' + $json.weekUntil + '\\n\\n' + $json.summary } }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": {
+      "main": [
+        [
+          { "node": "Config", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          { "node": "Fetch GitHub Data", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch GitHub Data": {
+      "main": [
+        [
+          { "node": "Build Claude Prompt", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [
+          { "node": "Call Claude API", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          { "node": "Parse Response", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Parse Response": {
+      "main": [
+        [
+          { "node": "Language Route", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Language Route": {
+      "main": [
+        [
+          { "node": "Send to Discord (EN)", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Send to Discord (FR)", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromBothOwnersAndWorkflow",
+    "timezone": "UTC"
+  },
+  "tags": [
+    { "name": "bounty", "id": "1" },
+    { "name": "workflow", "id": "2" },
+    { "name": "claude", "id": "3" }
+  ],
+  "versionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+}
