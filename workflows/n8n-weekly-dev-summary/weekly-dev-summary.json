@@ -1,0 +1,243 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "6ad3b97d-0d1d-4f3c-8ba6-60b8344ecf01",
+      "name": "Weekly Friday 5pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "repo",
+              "name": "githubRepo",
+              "value": "={{ $env.GITHUB_REPO || 'owner/repo' }}",
+              "type": "string"
+            },
+            {
+              "id": "github-token",
+              "name": "githubToken",
+              "value": "={{ $env.GITHUB_TOKEN || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "anthropic-key",
+              "name": "anthropicApiKey",
+              "value": "={{ $env.ANTHROPIC_API_KEY || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "discord-webhook",
+              "name": "discordWebhookUrl",
+              "value": "={{ $env.DISCORD_WEBHOOK_URL || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "language",
+              "name": "language",
+              "value": "={{ $env.SUMMARY_LANGUAGE || 'EN' }}",
+              "type": "string"
+            },
+            {
+              "id": "days-back",
+              "name": "daysBack",
+              "value": 7,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b9f4b337-a35a-4105-b233-b2203c54497d",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $input.first().json;\n\nif (!config.githubRepo || config.githubRepo === 'owner/repo') {\n  throw new Error('Set GITHUB_REPO to owner/repo before running the workflow.');\n}\n\nconst [owner, repo] = config.githubRepo.split('/');\nif (!owner || !repo) {\n  throw new Error('GITHUB_REPO must use owner/repo format.');\n}\n\nconst since = new Date(Date.now() - Number(config.daysBack || 7) * 24 * 60 * 60 * 1000);\nconst sinceIso = since.toISOString();\nconst headers = {\n  Accept: 'application/vnd.github+json',\n  'User-Agent': 'n8n-weekly-dev-summary'\n};\nif (config.githubToken) headers.Authorization = `Bearer ${config.githubToken}`;\n\nasync function github(path) {\n  const url = `https://api.github.com/repos/${owner}/${repo}${path}`;\n  const response = await fetch(url, { headers });\n  if (!response.ok) {\n    const body = await response.text();\n    throw new Error(`GitHub API ${response.status} for ${url}: ${body.slice(0, 300)}`);\n  }\n  return response.json();\n}\n\nconst [commits, closedIssues, closedPulls] = await Promise.all([\n  github(`/commits?since=${encodeURIComponent(sinceIso)}&per_page=100`),\n  github(`/issues?state=closed&since=${encodeURIComponent(sinceIso)}&per_page=100`),\n  github(`/pulls?state=closed&sort=updated&direction=desc&per_page=100`)\n]);\n\nconst mergedPulls = closedPulls\n  .filter((pr) => pr.merged_at && new Date(pr.merged_at) >= since)\n  .slice(0, 50)\n  .map((pr) => ({\n    number: pr.number,\n    title: pr.title,\n    author: pr.user?.login,\n    mergedAt: pr.merged_at,\n    url: pr.html_url\n  }));\n\nconst issues = closedIssues\n  .filter((issue) => !issue.pull_request)\n  .slice(0, 50)\n  .map((issue) => ({\n    number: issue.number,\n    title: issue.title,\n    author: issue.user?.login,\n    closedAt: issue.closed_at,\n    url: issue.html_url\n  }));\n\nconst commitItems = commits.slice(0, 80).map((commit) => ({\n  sha: commit.sha.slice(0, 7),\n  message: commit.commit?.message?.split('\\n')[0],\n  author: commit.author?.login || commit.commit?.author?.name,\n  date: commit.commit?.author?.date,\n  url: commit.html_url\n}));\n\nconst languageName = String(config.language || 'EN').toUpperCase() === 'FR' ? 'French' : 'English';\nconst activity = {\n  repo: config.githubRepo,\n  period: { since: sinceIso, until: new Date().toISOString() },\n  commits: commitItems,\n  closedIssues: issues,\n  mergedPullRequests: mergedPulls\n};\n\nconst prompt = `You are writing a weekly development summary for ${config.githubRepo}.\n\nWrite in ${languageName}. Make it narrative and useful for engineering stakeholders.\n\nUse this structure:\n1. Executive summary: 3-5 bullets.\n2. What shipped: group merged pull requests and important commits by theme.\n3. Bugs and maintenance: summarize closed issues and maintenance work.\n4. Contributors: mention notable contributors from commits and PRs.\n5. Risks or follow-ups: infer only from the supplied data; say when data is insufficient.\n\nRules:\n- Do not invent releases, metrics, or roadmap items.\n- Link PRs, issues, and commits when URLs are available.\n- Keep the summary concise enough for Discord.\n\nGitHub activity JSON:\n${JSON.stringify(activity, null, 2)}`;\n\nreturn [{\n  json: {\n    ...config,\n    since: sinceIso,\n    activity,\n    prompt\n  }\n}];"
+      },
+      "id": "ca9d301e-dce5-4bea-9f72-b02e5cd18b35",
+      "name": "Fetch GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.anthropicApiKey }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'claude-sonnet-4-20250514', max_tokens: 1400, temperature: 0.2, messages: [{ role: 'user', content: $json.prompt }] } }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "767c1a96-bad4-4e13-982d-d94610a1c49e",
+      "name": "Generate Summary with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claude = $input.first().json;\nconst text = claude.content?.map((part) => part.text || '').join('\\n').trim();\nif (!text) {\n  throw new Error('Claude response did not contain text content.');\n}\n\nconst previous = $('Fetch GitHub Activity').first().json;\nconst title = `Weekly dev summary: ${previous.githubRepo}`;\nconst content = `## ${title}\\n\\n${text}`;\n\nreturn [{\n  json: {\n    discordWebhookUrl: previous.discordWebhookUrl,\n    githubRepo: previous.githubRepo,\n    since: previous.since,\n    summary: text,\n    discordPayload: {\n      username: 'Weekly Dev Summary',\n      content: content.length > 1900 ? content.slice(0, 1890) + '\\n…' : content\n    }\n  }\n}];"
+      },
+      "id": "b14fec0f-51e0-44ce-931d-77d9b76b72de",
+      "name": "Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.discordWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.discordPayload }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "93472858-8049-4499-9ca8-7a8ccdb76e1e",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        340,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Weekly Friday 5pm Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Activity": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary with Claude": {
+      "main": [
+        [
+          {
+            "node": "Format Discord Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Discord Message": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3b21e9bd-2c89-4e51-8e4b-60488a2b3e3b",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "weekly-github-dev-summary-with-claude",
+  "tags": [
+    {
+      "name": "github"
+    },
+    {
+      "name": "claude"
+    },
+    {
+      "name": "discord"
+    }
+  ]
+}
