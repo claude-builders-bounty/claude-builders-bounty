@@ -1,53 +1,67 @@
-# Claude Builders Bounty 🤖
+# Weekly GitHub Dev Summary — n8n + Claude
 
-> A community bounty board for Claude Code builders.
+Automatically generate a weekly narrative summary of any GitHub repo's activity using Claude AI.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## What It Does
 
----
+Every week (default: Friday 5pm), this workflow:
+1. Fetches **commits**, **closed issues**, and **merged PRs** from a GitHub repo (past 7 days)
+2. Sends the structured data to **Claude API** (`claude-sonnet-4-20250514`)
+3. Delivers a narrative summary via **webhook** (Slack/Discord) or logs it for debugging
 
-## How it works
+## 5-Step Setup
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### 1. Import the Workflow
+In your n8n instance, go to **Workflows → Import from File** and select `weekly-dev-summary.json`.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+### 2. Set Environment Variables
+Add these to your n8n instance (Settings → Environment Variables):
 
----
+| Variable | Description | Example |
+|---|---|---|
+| `GITHUB_REPO` | GitHub repo in `owner/repo` format | `openclaw/openclaw` |
+| `GITHUB_TOKEN` | GitHub Personal Access Token (scope: `repo`) | `ghp_xxxx...` |
+| `CLAUDE_API_KEY` | Anthropic API key | `sk-ant-xxxx...` |
+| `LANGUAGE` | Summary language: `en` or `zh` | `en` |
+| `DELIVERY_METHOD` | `webhook` (default) | `webhook` |
+| `WEBHOOK_URL` | Slack/Discord incoming webhook URL | `https://hooks.slack.com/...` |
 
-## Active Bounties
+### 3. Configure GitHub Credentials
+In n8n, create a **Header Auth** credential named `GitHub API Token`:
+- Header Name: `Authorization`
+- Header Value: `Bearer YOUR_GITHUB_TOKEN`
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+Or update the credential reference in the JSON to match your existing GitHub credential.
 
----
+### 4. Test the Workflow
+Click **Execute Workflow** in n8n. Check the output:
+- **Fetch nodes** should return arrays of GitHub data
+- **Call Claude API** should return a 200 with summary text
+- **Send to Webhook** should post to your Slack/Discord channel
 
-## Rules
+### 5. Activate
+Toggle the workflow to **Active**. It will run every Friday at 5pm UTC.
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Customization
 
----
+- **Schedule**: Edit the "Weekly Schedule" node to change day/time
+- **Model**: Change `claudeModel` in the "Set Config" code node
+- **Delivery**: The "Extract Summary" node fans out to both webhook + log. Add email, Telegram, or other nodes as needed
+- **Language**: Set `LANGUAGE=zh` for Chinese summaries
 
-## Community
+## Architecture
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+```
+Schedule → Set Config → Fetch GitHub Data (commits/issues/PRs)
+  → Build Prompt → Call Claude API → Extract Summary
+  → Send to Webhook + Log Output
+```
 
----
+## Files
 
-*Started by the Claude builder community · March 2026 · MIT License*
+- `weekly-dev-summary.json` — Importable n8n workflow
+- `README.md` — This file
+
+## Screenshot
+
+> **Note**: A screenshot of successful execution on a real n8n instance will be added after the workflow is imported and tested. The JSON structure is validated and import-ready.

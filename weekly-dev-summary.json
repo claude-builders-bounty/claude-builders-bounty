@@ -1,0 +1,245 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "trigger-node",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- CONFIGURABLE VARIABLES ---\nconst config = {\n  githubRepo: $env.GITHUB_REPO || 'owner/repo',\n  githubToken: $env.GITHUB_TOKEN || '',\n  claudeApiKey: $env.CLAUDE_API_KEY || '',\n  claudeModel: 'claude-sonnet-4-20250514',\n  language: $env.LANGUAGE || 'en',\n  deliveryMethod: $env.DELIVERY_METHOD || 'webhook',\n  webhookUrl: $env.WEBHOOK_URL || '',\n};\n\n// Calculate date range (past 7 days)\nconst now = new Date();\nconst weekAgo = new Date(now);\nweekAgo.setDate(now.getDate() - 7);\n\nconst since = weekAgo.toISOString().split('T')[0];\nconst until = now.toISOString().split('T')[0];\nconst langName = config.language === 'zh' ? 'Chinese' : 'English';\n\nreturn [{\n  json: {\n    ...config,\n    since,\n    until,\n    langName,\n    repoUrl: `https://api.github.com/repos/${config.githubRepo}`,\n  }\n}];"
+      },
+      "id": "config-node",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "requestMethod": "GET",
+        "url": "={{ $json.repoUrl }}/commits?since={{ $json.since }}&until={{ $json.until }}&per_page=100",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "commits-node",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [690, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-auth",
+          "name": "GitHub API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "requestMethod": "GET",
+        "url": "={{ $json.repoUrl }}/issues?since={{ $json.since }}&until={{ $json.until }}&state=closed&per_page=100",
+        "options": {}
+      },
+      "id": "issues-node",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [690, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-auth",
+          "name": "GitHub API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "requestMethod": "GET",
+        "url": "={{ $json.repoUrl }}/pulls?state=closed&per_page=100",
+        "options": {}
+      },
+      "id": "prs-node",
+      "name": "Fetch Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [690, 600],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-auth",
+          "name": "GitHub API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter merged PRs (GitHub API doesn't have a 'merged' filter)\nconst allItems = [];\nfor (const item of $input.all()) {\n  if (item.json.merged_at) {\n    allItems.push(item);\n  }\n}\nreturn allItems;"
+      },
+      "id": "filter-prs-node",
+      "name": "Filter Merged PRs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all data for Claude prompt\nconst commits = $('Fetch Commits').first().json || [];\nconst issues = $('Fetch Closed Issues').first().json || [];\nconst mergedPRs = $('Filter Merged PRs').first().json || [];\n\nconst config = $('Set Config').first().json;\nconst repo = config.githubRepo;\nconst lang = config.langName;\nconst since = config.since;\nconst until = config.until;\n\n// Build structured summary\nlet commitList = (Array.isArray(commits) ? commits : []).slice(0, 50).map(c =>\n  `- ${c.commit?.message?.split('\\n')[0] || 'no message'} (${c.author?.login || c.commit?.author?.name || 'unknown'})`\n).join('\\n');\n\nlet issueList = (Array.isArray(issues) ? issues : []).filter(i => i.pull_request === undefined).slice(0, 50).map(i =>\n  `- #${i.number}: ${i.title} (${i.state})`\n).join('\\n');\n\nlet prList = (Array.isArray(mergedPRs) ? mergedPRs : []).slice(0, 50).map(pr =>\n  `- #${pr.number}: ${pr.title} by ${pr.user?.login || 'unknown'}`\n).join('\\n');\n\nconst prompt = `You are a technical writer. Write a weekly development summary for GitHub repo \"${repo}\".\n\nPeriod: ${since} to ${until}\nLanguage: ${lang}\n\nThis week's activity:\n\n**Commits** (${(Array.isArray(commits) ? commits : []).length} total):\n${commitList || 'No commits found.'}\n\n**Closed Issues** (${(Array.isArray(issues) ? issues : []).filter(i => i.pull_request === undefined).length} total):\n${issueList || 'No closed issues found.'}\n\n**Merged Pull Requests** (${(Array.isArray(mergedPRs) ? mergedPRs : []).length} total):\n${prList || 'No merged PRs found.'}\n\nWrite a narrative summary with these sections:\n1. **Overview** — 2-3 sentences on the week's main focus\n2. **Key Changes** — bullet list of important work\n3. **Notable PRs** — highlight interesting merges\n4. **Activity Stats** — commit count, issues closed, PRs merged\n\nKeep it engaging, not robotic. Use markdown formatting.`;\n\nreturn [{ json: { prompt, repo, since, until } }];"
+      },
+      "id": "build-prompt-node",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": {
+          "headerParameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $('Set Config').first().json.claudeApiKey }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": {
+          "bodyParameters": [
+            {
+              "name": "model",
+              "value": "={{ $('Set Config').first().json.claudeModel }}"
+            },
+            {
+              "name": "max_tokens",
+              "value": "2048"
+            },
+            {
+              "name": "messages",
+              "value": "=[{ \"role\": \"user\", \"content\": {{ JSON.stringify($('Build Claude Prompt').first().json.prompt) }} }]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-node",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1350, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract summary text from Claude response\nconst claudeResp = $('Call Claude API').first().json;\nconst summary = claudeResp.content?.[0]?.text || 'No summary generated.';\nconst repo = $('Set Config').first().json.githubRepo;\nconst since = $('Set Config').first().json.since;\nconst until = $('Set Config').first().json.until;\n\nreturn [{\n  json: {\n    summary,\n    repo,\n    period: `${since} to ${until}`,\n    webhookUrl: $('Set Config').first().json.webhookUrl,\n    deliveryMethod: $('Set Config').first().json.deliveryMethod,\n  }\n}];"
+      },
+      "id": "extract-node",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1570, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhookUrl }}",
+        "sendBody": {
+          "specifyBody": "json",
+          "jsonBody": "={ \"text\": \"📊 *Weekly Dev Summary: {{ $json.repo }}*\\n\\nPeriod: {{ $json.period }}\\n\\n{{ $json.summary }}\" }"
+        },
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Send to Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1790, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log output for testing/debugging\nconst summary = $('Extract Summary').first().json;\nconsole.log('=== WEEKLY DEV SUMMARY ===');\nconsole.log(`Repo: ${summary.repo}`);\nconsole.log(`Period: ${summary.period}`);\nconsole.log(summary.summary);\n\nreturn [{ json: { status: 'success', ...summary } }];"
+      },
+      "id": "log-node",
+      "name": "Log Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1790, 500]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": {
+      "main": [[{ "node": "Set Config", "type": "main", "index": 0 }]]
+    },
+    "Set Config": {
+      "main": [
+        [{ "node": "Fetch Commits", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Closed Issues", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Pull Requests", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Fetch Pull Requests": {
+      "main": [[{ "node": "Filter Merged PRs", "type": "main", "index": 0 }]]
+    },
+    "Filter Merged PRs": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Claude Prompt": {
+      "main": [[{ "node": "Call Claude API", "type": "main", "index": 0 }]]
+    },
+    "Call Claude API": {
+      "main": [[{ "node": "Extract Summary", "type": "main", "index": 0 }]]
+    },
+    "Extract Summary": {
+      "main": [
+        [{ "node": "Send to Webhook", "type": "main", "index": 0 }],
+        [{ "node": "Log Output", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["github", "weekly-summary", "claude", "automation"],
+  "triggerCount": 1,
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
