@@ -1,0 +1,300 @@
+{
+  "name": "Weekly Dev Summary v2",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2",
+      "name": "GitHub API - Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        450,
+        200
+      ],
+      "parameters": {
+        "url": "={{ $json.repo_url || 'https://api.github.com/repos/claude-builders-bounty/claude-builders-bounty' }}/commits?per_page=100&since={{ $now.minus(7, 'days').toISO() }}",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{ $credentials.githubApi.accessToken }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      }
+    },
+    {
+      "id": "3",
+      "name": "GitHub API - PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        450,
+        400
+      ],
+      "parameters": {
+        "url": "={{ $json.repo_url || 'https://api.github.com/repos/claude-builders-bounty/claude-builders-bounty' }}/pulls?state=closed&per_page=50&sort=updated&direction=desc",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{ $credentials.githubApi.accessToken }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      }
+    },
+    {
+      "id": "4",
+      "name": "GitHub API - Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        450,
+        600
+      ],
+      "parameters": {
+        "url": "={{ $json.repo_url || 'https://api.github.com/repos/claude-builders-bounty/claude-builders-bounty' }}/issues?state=closed&per_page=50&sort=updated&direction=desc&since={{ $now.minus(7, 'days').toISO() }}",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{ $credentials.githubApi.accessToken }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      }
+    },
+    {
+      "id": "5",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        650,
+        400
+      ],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByChannel"
+      }
+    },
+    {
+      "id": "6",
+      "name": "Claude API - Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        850,
+        400
+      ],
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 4096
+            },
+            {
+              "name": "system",
+              "value": "={{ $json.language === 'zh' ? '\u4f60\u662f\u4e00\u4e2a\u4e13\u4e1a\u7684\u5f00\u6e90\u9879\u76ee\u5468\u62a5\u5206\u6790\u5e08\u3002\u8bf7\u7528\u4e2d\u6587\u751f\u6210\u4e00\u4efd\u7b80\u6d01\u7684\u5468\u62a5\u3002' : $json.language === 'fr' ? 'Vous \u00eates un analyste professionnel de rapports hebdomadaires open source. G\u00e9n\u00e9rez un r\u00e9sum\u00e9 concis en fran\u00e7ais.' : 'You are a professional open-source weekly report analyst. Generate a concise weekly summary in English.' }}"
+            },
+            {
+              "name": "messages",
+              "value": "={{ [{'role': 'user', 'content': 'Generate a weekly dev summary for ' + ($json.repo_name || 'the repository') + '.\\n\\nCommits this week: ' + JSON.stringify($json.commits) + '\\n\\nMerged PRs: ' + JSON.stringify($json.prs) + '\\n\\nClosed Issues: ' + JSON.stringify($json.issues)}] }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        1050,
+        400
+      ],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "formatted_output",
+              "value": "={{ '\ud83d\udcca Weekly Dev Summary \u2014 ' + ($json.repo_name || 'Repository') + ' (' + $now.minus(7, 'days').format('MMM d') + ' - ' + $now.format('MMM d') + ')\\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\\n\\n' + $json.content }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "8",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 4,
+      "position": [
+        1250,
+        300
+      ],
+      "parameters": {
+        "options": {},
+        "webhookId": "={{ $json.discord_webhook_url }}",
+        "sendData": "={{ $json.output_channel === 'discord' }}",
+        "jsonParameters": {
+          "content": "={{ $json.formatted_output }}"
+        }
+      }
+    },
+    {
+      "id": "9",
+      "name": "Email Output",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        500
+      ],
+      "parameters": {
+        "options": {},
+        "sendData": "={{ $json.output_channel === 'email' }}",
+        "fromEmail": "={{ $json.email_from || 'weekly@devbot.local' }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ 'Weekly Dev Summary \u2014 ' + $json.repo_name }}",
+        "text": "={{ $json.formatted_output }}"
+      }
+    },
+    {
+      "id": "10",
+      "name": "Slack Output",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        700
+      ],
+      "parameters": {
+        "options": {},
+        "sendAsUser": "={{ $json.output_channel === 'slack' }}",
+        "channelId": "={{ $json.slack_channel }}",
+        "messageType": "text",
+        "messageText": "={{ $json.formatted_output }}"
+      }
+    },
+    {
+      "id": "11",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        850,
+        600
+      ],
+      "parameters": {
+        "errorMessage": "={{ 'n8n weekly summary failed: ' + $json.error }}",
+        "continueOnFail": true
+      }
+    }
+  ],
+  "connections": {
+    "1": {
+      "main": [
+        [
+          {
+            "node": "2"
+          },
+          {
+            "node": "3"
+          },
+          {
+            "node": "4"
+          }
+        ]
+      ]
+    },
+    "2": {
+      "main": [
+        [
+          {
+            "node": "5"
+          }
+        ]
+      ]
+    },
+    "3": {
+      "main": [
+        [
+          {
+            "node": "5"
+          }
+        ]
+      ]
+    },
+    "4": {
+      "main": [
+        [
+          {
+            "node": "5"
+          }
+        ]
+      ]
+    },
+    "5": {
+      "main": [
+        [
+          {
+            "node": "6"
+          }
+        ]
+      ]
+    },
+    "6": {
+      "main": [
+        [
+          {
+            "node": "7"
+          },
+          {
+            "node": "11"
+          }
+        ]
+      ]
+    },
+    "7": {
+      "main": [
+        [
+          {
+            "node": "8"
+          },
+          {
+            "node": "9"
+          },
+          {
+            "node": "10"
+          }
+        ]
+      ]
+    }
+  }
+}
