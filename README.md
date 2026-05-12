@@ -22,6 +22,18 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+Use the included changelog generator from any git repository:
+
+1. Copy `changelog.sh` into the repository you want to document.
+2. Run `bash changelog.sh`.
+3. Review the generated `CHANGELOG.md` and commit it.
+
+The script reads commits since the latest git tag. If the repository has no tags, it uses the full git history. Commit subjects are grouped into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
