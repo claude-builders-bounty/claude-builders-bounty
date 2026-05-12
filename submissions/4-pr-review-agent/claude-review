@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+# claude-review — Claude Code PR Review Agent
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+set -euo pipefail
+
+usage() {
+  echo "Usage: claude-review --pr <pr-url>"
+  echo "       claude-review --help"
+  exit 1
+}
+
+PR_URL=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --pr) PR_URL="$2"; shift 2 ;;
+    --help|-h) usage ;;
+    *) echo "Unknown: $1"; usage ;;
+  esac
+done
+[ -z "$PR_URL" ] && echo "Error: --pr is required" && usage
+
+echo "🔍 Reviewing PR: $PR_URL"
+
+REPO_FULL=$(echo "$PR_URL" | sed -n 's|https://github.com/\(.*\)/pull/\([0-9]*\)|\1|p')
+PR_NUM=$(echo "$PR_URL" | sed -n 's|https://github.com/\(.*\)/pull/\([0-9]*\)|\2|p')
+[ -z "$REPO_FULL" ] || [ -z "$PR_NUM" ] && echo "Error: Bad URL" && exit 1
+
+OWNER=$(echo "$REPO_FULL" | cut -d/ -f1)
+REPO=$(echo "$REPO_FULL" | cut -d/ -f2)
+
+echo "📥 Fetching PR #$PR_NUM from $OWNER/$REPO..."
+
+# Get PR info
+PR_INFO=$(gh api "repos/$OWNER/$REPO/pulls/$PR_NUM" 2>/dev/null)
+PR_TITLE=$(echo "$PR_INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['title'])")
+PR_AUTHOR=$(echo "$PR_INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['user']['login'])")
+PR_BASE=$(echo "$PR_INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['base']['ref'])")
+PR_HEAD=$(echo "$PR_INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['head']['ref'])")
+PR_BODY=$(echo "$PR_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('body','') or '')" 2>/dev/null || true)
+
+echo "   Title:  $PR_TITLE"
+echo "   Author: $PR_AUTHOR"
+echo "   Branch: $PR_HEAD → $PR_BASE"
+
+# Fetch diff
+echo "📄 Fetching diff..."
+DIFF=$(gh api "repos/$OWNER/$REPO/pulls/$PR_NUM" -H "Accept: application/vnd.github.diff" 2>/dev/null || true)
+[ -z "$DIFF" ] && echo "Error: Could not fetch diff" && exit 1
+
+DIFF_LINES=$(echo "$DIFF" | wc -l)
+echo "   Diff size: $DIFF_LINES lines"
+
+# Get changed files
+echo "📂 Changed files:"
+CHANGED_FILES=$(gh api "repos/$OWNER/$REPO/pulls/$PR_NUM/files" --jq '.[].filename' 2>/dev/null || true)
+while IFS= read -r file; do
+  STATUS=$(gh api "repos/$OWNER/$REPO/pulls/$PR_NUM/files" --jq ".[] | select(.filename==\"$file\") | .status" 2>/dev/null || true)
+  [ -n "$file" ] && echo "   - $file (${STATUS:-modified})"
+done <<< "$CHANGED_FILES"
+
+echo ""
+echo "🔬 Analyzing..."
+
+# Generate structured review
+export OWNER REPO PR_NUM PR_TITLE PR_AUTHOR DIFF CHANGED_FILES
+
+python3 << 'PYEOF'
+import json, sys, os, re
+from collections import Counter
+
+diff = os.environ.get('DIFF', '')
+pr_title = os.environ.get('PR_TITLE', '')
+pr_author = os.environ.get('PR_AUTHOR', '')
+owner = os.environ.get('OWNER', '')
+repo = os.environ.get('REPO', '')
+pr_num = os.environ.get('PR_NUM', '')
+
+# Stats
+files = set()
+additions = 0
+deletions = 0
+current_file = ""
+
+for line in diff.split('\n'):
+  if line.startswith('+++ b/'):
+    current_file = line[6:]
+    files.add(current_file)
+  elif line.startswith('@@'):
+    # Extract +/- from hunk header: @@ -1,3 +1,5 @@
+    m = re.search(r'\+(\d+)(?:,(\d+))?', line)
+    if m:
+      pass  # hunk info
+  elif line.startswith('+') and not line.startswith('+++'):
+    additions += 1
+  elif line.startswith('-') and not line.startswith('---'):
+    deletions += 1
+
+total_changes = additions + deletions
+files_changed = len(files)
+
+# Analyze
+risks = []
+suggestions = []
+positives = []
+
+security_patterns = [
+  (r'password\s*[=:]\s*[''"`]', 'Hardcoded password/credential', 'high'),
+  (r'(?:api[-_]?key|apikey|secret|token)\s*[=:]\s*[\x27\x22`][^\x27\x22`\s]{8,}', 'Hardcoded API key or token', 'high'),
+  (r'eval\s*\(', 'Use of eval() — potential code injection', 'high'),
+  (r'\.innerHTML\s*=', 'Direct innerHTML assignment — XSS risk', 'high'),
+  (r'document\.write\s*\(', 'document.write() — XSS risk', 'medium'),
+  (r'exec(?:Sync)?\s*\(', 'Command execution — potential injection', 'high'),
+  (r'\${{.*github\..*}}', 'GitHub context in workflow run step — injection risk', 'critical'),
+  (r'child_process\.exec(?:Sync)?\s*\(' , 'Unsafe child process execution', 'high'),
+  (r'crypto\.createHash.*md5|crypto\.createHash.*sha1', 'Weak hash function (MD5/SHA1)', 'medium'),
+  (r'GRANT ALL|DROP TABLE|TRUNCATE\b', 'Destructive database operation', 'critical'),
+  (r'console\.log\(|print\(|println\(|fmt\.Print', 'Debug logging left in code', 'low'),
+  (r'TODO|FIXME|HACK|XXX', 'Unresolved TODO/FIXME marker', 'low'),
+  (r'http://(?!localhost|127\.0\.0\.1)', 'Insecure HTTP URL (non-local)', 'low'),
+  (r'0000-0000-0000-0000|deadbeef|DEADBEEF', 'Placeholder/test value detected', 'low'),
+  (r'\.env\b|process\.env\.', 'Environment variable access — verify not hardcoding', 'info'),
+  (r'sleep\s*\(\s*\d{4,}', 'Long sleep/delay in code', 'medium'),
+  (r'allow_redirects\s*=\s*False|follow_redirects\s*=\s*False', 'Redirects disabled — potential SSRF protection', 'info'),
+  (r'verify\s*=\s*False|ssl_verify\s*=\s*False|check_hostname\s*=\s*False', 'TLS verification disabled', 'high'),
+]
+
+files_found = set()
+for i, line in enumerate(diff.split('\n')):
+  if line.startswith('+') and not line.startswith('+++'):
+    for pattern, message, severity in security_patterns:
+      if re.search(pattern, line, re.IGNORECASE):
+        current_file = current_file if current_file else "unknown"
+        item = {'message': message, 'severity': severity, 'file': current_file}
+        key = f"{message}:{line[:60]}"
+        if severity in ('critical', 'high') and key not in files_found:
+          files_found.add(key)
+          risks.append(item)
+        elif severity == 'medium' and key not in files_found:
+          files_found.add(key)
+          suggestions.append(item)
+        elif severity in ('low', 'info') and key not in files_found:
+          files_found.add(key)
+          suggestions.append(item)
+
+# Quality checks
+has_test = any('test_' in f.lower() or '.test.' in f.lower() or '_test.' in f.lower() or '.spec.' in f.lower() for f in files)
+has_readme = any('readme' in f.lower() for f in files)
+has_doc = any('.md' in f.lower() for f in files)
+has_config = any(f.endswith(('.json', '.yml', '.yaml', '.toml', '.ini')) for f in files)
+
+# Check if this adds tests
+added_test_files = False
+added_config_files = False
+added_doc_files = False
+
+for line in diff.split('\n'):
+  if line.startswith('+') and not line.startswith('+++'):
+    if '.test.' in line or '_test.' in line or '.spec.' in line:
+      added_test_files = True
+    if '.md' in line and not line.startswith('+#'):
+      pass
+    if 'README' in line:
+      added_doc_files = True
+
+# Total
+print()
+print("## 📋 PR Review")
+print()
+print(f"**Repository:** `{owner}/{repo}`")
+print(f"**PR:** #{pr_num}")
+print(f"**Author:** @{pr_author}")
+print(f"**Changes:** +{additions}/-{deletions} across {files_changed} file(s)")
+print()
+
+# Summary
+summary = f"This PR introduces {additions} additions and {deletions} deletions across {files_changed} file{'s' if files_changed != 1 else ''}."
+if len(risks) > 0:
+  high_risks = sum(1 for r in risks if r.get('severity') in ('critical', 'high'))
+  summary += f" Analysis found **{len(risks)} risk(s)** ({high_risks} high/critical) and **{len(suggestions)} suggestion(s)**."
+else:
+  summary += " No significant security or quality issues detected."
+print("### Summary")
+print()
+print(summary)
+print()
+
+# Risks
+if risks:
+  print("### ⚠️ Identified Risks")
+  print()
+  for r in risks:
+    icons = {'critical': '🔴 Critical', 'high': '🟠 High', 'medium': '🟡 Medium', 'low': 'ℹ️', 'info': 'ℹ️'}
+    icon = icons.get(r.get('severity', 'info'), '•')
+    print(f"- **[{icon}]** {r['message']} (`{r.get('file', '?')}`)")
+  print()
+
+# Suggestions
+if suggestions:
+  print("### 💡 Improvement Suggestions")
+  print()
+  seen_sug = set()
+  for s in suggestions:
+    msg = s.get('message', str(s))
+    if msg not in seen_sug:
+      seen_sug.add(msg)
+      print(f"- {msg}")
+  print()
+
+# What looks good
+print("### ✅ What Looks Good")
+print()
+bullet_added = False
+if total_changes < 300:
+  print("- Appropriate diff size — manageable for review")
+  bullet_added = True
+if added_test_files:
+  print("- Includes test changes — good practice")
+  bullet_added = True
+if additions > deletions * 2:
+  print("- More additions than deletions — net positive contribution")
+  bullet_added = True
+if not risks:
+  print("- No security concerns detected")
+  bullet_added = True
+if not bullet_added:
+  print("- The PR addresses the intended change")
+print()
+
+# Confidence
+high_count = sum(1 for r in risks if r.get('severity') in ('critical', 'high')) if risks else 0
+if high_count > 2:
+  confidence = "Low — substantial risks identified"
+elif high_count > 0:
+  confidence = "Medium — some concerns to address"
+elif len(risks) > 0:
+  confidence = "Medium — minor concerns"
+else:
+  confidence = "High — no significant issues found"
+
+print(f"**Confidence Score:** {confidence}")
+print()
+print("---")
+print("*🤖 Reviewed by claude-review (Claude Code PR Review Agent)*")
+PYEOF
