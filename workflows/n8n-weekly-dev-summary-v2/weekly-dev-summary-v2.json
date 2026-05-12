@@ -1,0 +1,397 @@
+{
+  "name": "Weekly Dev Summary v2",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cron",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "githubRepo",
+              "value": "{{$vars.GITHUB_REPO}}"
+            },
+            {
+              "name": "githubOwner",
+              "value": "{{$vars.GITHUB_OWNER}}"
+            },
+            {
+              "name": "language",
+              "value": "{{$vars.LANGUAGE || 'EN'}}"
+            },
+            {
+              "name": "discordWebhook",
+              "value": "{{$vars.DISCORD_WEBHOOK_URL}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config-vars",
+      "name": "Set Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate date range for the past week\nconst now = new Date();\nconst oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nconst formatDate = (date) => date.toISOString().split('T')[0];\n\nreturn {\n  startDate: formatDate(oneWeekAgo),\n  endDate: formatDate(now),\n  startDateTime: oneWeekAgo.toISOString(),\n  endDateTime: now.toISOString()\n};"
+      },
+      "id": "calculate-date-range",
+      "name": "Calculate Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}/commits"
+      },
+      "id": "github-commits-headers",
+      "name": "GitHub Commits Headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, -200],
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}/commits",
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{$json.startDateTime}}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxRetries": 3,
+            "retryWaitMax": 5000
+          }
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}/issues"
+      },
+      "id": "github-issues-headers",
+      "name": "GitHub Issues Headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0],
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}/issues",
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{$json.startDateTime}}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxRetries": 3,
+            "retryWaitMax": 5000
+          }
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}/pulls"
+      },
+      "id": "github-prs-headers",
+      "name": "GitHub PRs Headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 200],
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$vars.GITHUB_OWNER}}/{{$vars.GITHUB_REPO}}/pulls",
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "merged",
+              "value": "true"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxRetries": 3,
+            "retryWaitMax": 5000
+          }
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter data from GitHub API responses and format for Claude\nconst commits = $input.first()?.json || [];\nconst issues = $('GitHub Issues Headers').first()?.json || [];\nconst pulls = $('GitHub PRs Headers').first()?.json || [];\n\n// Filter commits from the past week\nconst oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\nconst recentCommits = commits.filter(c => new Date(c.commit.author.date) >= oneWeekAgo);\n\n// Filter closed issues from the past week\nconst recentIssues = issues.filter(i => {\n  if (!i.closed_at) return false;\n  return new Date(i.closed_at) >= oneWeekAgo;\n});\n\n// Filter merged PRs from the past week\nconst mergedPRs = pulls.filter(pr => {\n  if (!pr.merged_at) return false;\n  return new Date(pr.merged_at) >= oneWeekAgo;\n});\n\n// Format data for Claude prompt\nconst formattedData = {\n  period: {\n    start: $('Calculate Date Range').first()?.json?.startDate,\n    end: $('Calculate Date Range').first()?.json?.endDate\n  },\n  commits: {\n    count: recentCommits.length,\n    list: recentCommits.slice(0, 10).map(c => ({\n      sha: c.sha?.substring(0, 7),\n      message: c.commit?.message?.split('\\n')[0],\n      author: c.commit?.author?.name\n    }))\n  },\n  issues: {\n    count: recentIssues.length,\n    list: recentIssues.slice(0, 10).map(i => ({\n      number: i.number,\n      title: i.title,\n      closed_by: i.closed_by?.login\n    }))\n  },\n  pullRequests: {\n    count: mergedPRs.length,\n    list: mergedPRs.slice(0, 10).map(pr => ({\n      number: pr.number,\n      title: pr.title,\n      author: pr.user?.login,\n      merged_at: pr.merged_at\n    }))\n  }\n};\n\nreturn [{ json: formattedData }];"
+      },
+      "id": "format-data-for-claude",
+      "name": "Format Data for Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "{{$vars.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1024
+            },
+            {
+              "name": "system",
+              "value": "{{ $vars.LANGUAGE === 'FR' ? 'Tu es un assistant qui génère des résumés de développement hebdomadaire en français. Sois concis et amical.' : 'You are an assistant that generates weekly development summaries in English. Be concise and friendly.' }}"
+            },
+            {
+              "name": "messages",
+              "value": "[{\"role\": \"user\", \"content\": $json.commits.count + ' nouveaux commits, ' + $json.issues.count + ' issues fermées et ' + $json.pullRequests.count + ' PRs fusionnées cette semaine. Details: ' + JSON.stringify($json) }]"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxRetries": 3,
+            "retryWaitMax": 5000
+          }
+        }
+      },
+      "id": "call-claude-api",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "webhookUrl": "{{$vars.DISCORD_WEBHOOK_URL}}",
+        "text": "{{ $json.content[0].text }}",
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.discordWebhook",
+      "typeVersion": 1,
+      "position": [1540, 0]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Range": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commits Headers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Issues Headers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub PRs Headers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commits Headers": {
+      "main": [
+        [
+          {
+            "node": "Format Data for Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Issues Headers": {
+      "main": [
+        [
+          {
+            "node": "Format Data for Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub PRs Headers": {
+      "main": [
+        [
+          {
+            "node": "Format Data for Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Data for Claude": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discord Webhook": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "UTC"
+  },
+  "staticData": null,
+  "tags": ["github", "claude", "discord", "weekly", "summary", "automation"],
+  "variables": {
+    "GITHUB_REPO": "your-repo-name",
+    "GITHUB_OWNER": "your-github-username",
+    "LANGUAGE": "EN",
+    "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/your-webhook-url",
+    "ANTHROPIC_API_KEY": ""
+  },
+  "meta": {
+    "templateCredsSetup": [],
+    "templateId": "weekly-dev-summary-v2"
+  }
+}
