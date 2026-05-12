@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Structured PR review CLI for Claude Code workflows."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)")
+
+
+@dataclass
+class PullRequest:
+    owner: str
+    repo: str
+    number: str
+    title: str
+    author: str
+    additions: int
+    deletions: int
+    changed_files: int
+    diff: str
+
+
+def run(command: list[str]) -> str:
+    result = subprocess.run(command, text=True, capture_output=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "command failed: " + " ".join(command))
+    return result.stdout
+
+
+def parse_pr_url(url: str) -> tuple[str, str, str]:
+    match = PR_RE.match(url)
+    if not match:
+        raise ValueError("Expected PR URL like https://github.com/owner/repo/pull/123")
+    return match.group(1), match.group(2), match.group(3)
+
+
+def fetch_pr(url: str) -> PullRequest:
+    owner, repo, number = parse_pr_url(url)
+    repo_name = f"{owner}/{repo}"
+    metadata = json.loads(
+        run(
+            [
+                "gh",
+                "pr",
+                "view",
+                number,
+                "--repo",
+                repo_name,
+                "--json",
+                "title,author,additions,deletions,changedFiles",
+            ]
+        )
+    )
+    diff = run(["gh", "pr", "diff", number, "--repo", repo_name])
+    return PullRequest(
+        owner=owner,
+        repo=repo,
+        number=number,
+        title=metadata["title"],
+        author=metadata["author"]["login"],
+        additions=int(metadata["additions"]),
+        deletions=int(metadata["deletions"]),
+        changed_files=int(metadata["changedFiles"]),
+        diff=diff,
+    )
+
+
+def changed_paths(diff: str) -> list[str]:
+    return re.findall(r"^\+\+\+ b/(.+)$", diff, flags=re.MULTILINE)
+
+
+def detect_risks(pr: PullRequest) -> list[str]:
+    risks: list[str] = []
+    diff_lower = pr.diff.lower()
+    paths = changed_paths(pr.diff)
+
+    if pr.changed_files > 15 or pr.additions + pr.deletions > 800:
+        risks.append("Large review surface; split follow-up testing or staged rollout may be needed.")
+    if any(path.endswith((".sql", "schema.ts", "migration.sql")) for path in paths):
+        risks.append("Database or migration files changed; verify rollback and data-preservation behavior.")
+    if re.search(r"(api[_-]?key|secret|token|password)\s*[:=]", diff_lower):
+        risks.append("Diff contains secret-like assignment text; confirm no credentials are committed.")
+    if "TODO" in pr.diff or "FIXME" in pr.diff:
+        risks.append("New TODO/FIXME markers may indicate unfinished implementation details.")
+    if re.search(r"catch\s*\([^)]*\)\s*\{\s*\}", pr.diff):
+        risks.append("Empty catch block can hide operational failures.")
+    if not re.search(r"(test|spec|__tests__)", "\n".join(paths), flags=re.IGNORECASE):
+        risks.append("No obvious test file changed; confirm behavior is covered elsewhere.")
+
+    return risks or ["No high-signal risk detected from the diff metadata and changed paths."]
+
+
+def suggestions(pr: PullRequest) -> list[str]:
+    output = ["Run the narrowest relevant tests and include the command output in the PR."]
+    paths = changed_paths(pr.diff)
+    if any(path.endswith((".md", ".mdx")) for path in paths):
+        output.append("Check rendered documentation for broken headings, lists, and command snippets.")
+    if any(path.endswith((".ts", ".tsx", ".js", ".jsx", ".py")) for path in paths):
+        output.append("Add focused regression coverage for the main behavior changed by this PR.")
+    if pr.changed_files > 8:
+        output.append("Group the PR description by subsystem so reviewers can follow the change set quickly.")
+    return output
+
+
+def confidence(pr: PullRequest) -> str:
+    total = pr.additions + pr.deletions
+    if total <= 250 and pr.changed_files <= 6:
+        return "High"
+    if total <= 800 and pr.changed_files <= 15:
+        return "Medium"
+    return "Low"
+
+
+def review_markdown(pr: PullRequest) -> str:
+    risks = "\n".join(f"- {risk}" for risk in detect_risks(pr))
+    improvements = "\n".join(f"- {suggestion}" for suggestion in suggestions(pr))
+    paths = changed_paths(pr.diff)
+    path_summary = ", ".join(paths[:5]) if paths else "no changed paths detected"
+    if len(paths) > 5:
+        path_summary += f", and {len(paths) - 5} more"
+
+    return f"""## Claude Code PR Review
+
+### Summary
+
+This PR changes `{pr.changed_files}` file(s) with `{pr.additions}` additions and `{pr.deletions}` deletions. The main touched paths are: {path_summary}.
+
+### Identified Risks
+
+{risks}
+
+### Improvement Suggestions
+
+{improvements}
+
+### Confidence Score
+
+{confidence(pr)}
+"""
+
+
+def post_review(pr: PullRequest, body: str) -> None:
+    run(["gh", "pr", "comment", pr.number, "--repo", f"{pr.owner}/{pr.repo}", "--body", body])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--post", action="store_true", help="Post the review as a PR comment")
+    args = parser.parse_args()
+
+    try:
+        pr = fetch_pr(args.pr)
+        body = review_markdown(pr)
+        print(body)
+        if args.post:
+            post_review(pr, body)
+    except Exception as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
