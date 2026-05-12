@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. From any git repository, copy or reference `scripts/changelog.sh`.
+2. Run `bash scripts/changelog.sh`.
+3. Review the generated `CHANGELOG.md`.
+
+The script reads commits since the latest tag, falls back to full history when no tag exists, and groups commits into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
