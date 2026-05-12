@@ -1,0 +1,207 @@
+{
+  "name": "GitHub Weekly Narrative Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── CONFIGURABLE VARIABLES ──────────────────────────────────────\nconst GITHUB_OWNER  = 'YOUR_GITHUB_OWNER';   // e.g. 'microsoft'\nconst GITHUB_REPO   = 'YOUR_GITHUB_REPO';    // e.g. 'vscode'\nconst LANGUAGE      = 'EN';                  // 'EN' or 'FR'\nconst DAYS_BACK     = 7;\n// ────────────────────────────────────────────────────────────────\n\nconst since = new Date(Date.now() - DAYS_BACK * 86400000).toISOString();\nconst until = new Date().toISOString();\n\nreturn [{\n  json: {\n    owner:    GITHUB_OWNER,\n    repo:     GITHUB_REPO,\n    language: LANGUAGE,\n    since,\n    until\n  }\n}];\n"
+      },
+      "id": "set-config",
+      "name": "Set Config Variables",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{ $json.since }}" },
+            { "name": "until", "value": "={{ $json.until }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "fullResponse": false } }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 180],
+      "credentials": {
+        "httpHeaderAuth": { "id": "github-token", "name": "GitHub Token" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Set Config Variables').item.json.owner }}/{{ $('Set Config Variables').item.json.repo }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state",    "value": "closed" },
+            { "name": "since",   "value": "={{ $('Set Config Variables').item.json.since }}" },
+            { "name": "per_page","value": "100" }
+          ]
+        },
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "credentials": {
+        "httpHeaderAuth": { "id": "github-token", "name": "GitHub Token" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Set Config Variables').item.json.owner }}/{{ $('Set Config Variables').item.json.repo }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state",    "value": "closed" },
+            { "name": "sort",     "value": "updated" },
+            { "name": "direction","value": "desc" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 420],
+      "credentials": {
+        "httpHeaderAuth": { "id": "github-token", "name": "GitHub Token" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const config   = $('Set Config Variables').item.json;\nconst commits  = $('Fetch Commits').all().map(i => i.json);\nconst issues   = $('Fetch Closed Issues').all().map(i => i.json);\nconst allPRs   = $('Fetch Merged PRs').all().map(i => i.json);\n\n// Filter only truly merged PRs and within the time window\nconst since = new Date(config.since);\nconst mergedPRs = allPRs.filter(pr =>\n  pr.merged_at && new Date(pr.merged_at) >= since\n);\n\n// Filter issues that are not PRs\nconst closedIssues = issues.filter(i => !i.pull_request);\n\n// Build compact summaries\nconst commitList = commits.slice(0, 30).map(c =>\n  `- ${c.commit?.message?.split('\\n')[0]} (@${c.author?.login || 'unknown'})`\n).join('\\n');\n\nconst issueList = closedIssues.slice(0, 20).map(i =>\n  `- #${i.number}: ${i.title}`\n).join('\\n');\n\nconst prList = mergedPRs.slice(0, 20).map(p =>\n  `- #${p.number}: ${p.title} (@${p.user?.login || 'unknown'})`\n).join('\\n');\n\nconst langInstruction = config.language === 'FR'\n  ? 'Respond entirely in French.'\n  : 'Respond entirely in English.';\n\nconst prompt = `You are a technical writer summarizing a GitHub repository's weekly activity.\n${langInstruction}\n\nRepository: ${config.owner}/${config.repo}\nPeriod: ${config.since.slice(0,10)} → ${config.until.slice(0,10)}\n\n## Commits (${commits.length} total, showing first 30)\n${commitList || 'None'}\n\n## Closed Issues (${closedIssues.length} total, showing first 20)\n${issueList || 'None'}\n\n## Merged Pull Requests (${mergedPRs.length} total, showing first 20)\n${prList || 'None'}\n\nWrite a concise, engaging narrative summary (300–500 words) covering:\n1. Major features or improvements shipped\n2. Notable bug fixes or issues resolved\n3. Key contributors this week\n4. Overall health / momentum of the project\n\nUse clear sections with Markdown headers. Be specific, reference PR/issue numbers where relevant.`;\n\nreturn [{ json: { prompt, config, stats: { commits: commits.length, issues: closedIssues.length, prs: mergedPRs.length } } }];\n"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key",         "value": "={{ $credentials.anthropicApiKey }}" },
+            { "name": "anthropic-version",  "value": "2023-06-01" },
+            { "name": "content-type",       "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 300],
+      "credentials": {
+        "httpHeaderAuth": { "id": "anthropic-token", "name": "Anthropic Token" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $input.item.json;\nconst config  = $('Build Claude Prompt').item.json.config;\nconst stats   = $('Build Claude Prompt').item.json.stats;\n\nconst summary = claudeResponse.content?.[0]?.text || 'No summary generated.';\n\nconst dateLabel = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });\nconst repoLabel = `${config.owner}/${config.repo}`;\n\nconst discordPayload = {\n  username: 'GitHub Weekly Bot',\n  embeds: [\n    {\n      title: `📊 Weekly Summary — ${repoLabel}`,\n      description: summary.slice(0, 4096),   // Discord embed limit\n      color: 5814783,                         // purple\n      footer: { text: `Week ending ${dateLabel} • ${stats.commits} commits • ${stats.issues} issues closed • ${stats.prs} PRs merged` }\n    }\n  ]\n};\n\nreturn [{ json: { summary, discordPayload, repoLabel, dateLabel } }];\n"
+      },
+      "id": "extract-summary",
+      "name": "Extract & Format Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, 300]
+    },
+    {
+      "parameters": {
+        "url": "=YOUR_DISCORD_WEBHOOK_URL",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.discordPayload) }}",
+        "options": {}
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1580, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Friday 5pm)": {
+      "main": [[{ "node": "Set Config Variables", "type": "main", "index": 0 }]]
+    },
+    "Set Config Variables": {
+      "main": [
+        [
+          { "node": "Fetch Commits",       "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs",    "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Commits":       { "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]] },
+    "Fetch Closed Issues": { "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]] },
+    "Fetch Merged PRs":    { "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]] },
+    "Build Claude Prompt": { "main": [[{ "node": "Call Claude API",     "type": "main", "index": 0 }]] },
+    "Call Claude API":     { "main": [[{ "node": "Extract & Format Summary", "type": "main", "index": 0 }]] },
+    "Extract & Format Summary": { "main": [[{ "node": "Send to Discord", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "github-weekly-summary-v1"
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "triggerCount": 0,
+  "tags": []
+}
