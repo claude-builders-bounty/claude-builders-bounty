@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Hooks
+
+- [Block dangerous Bash commands](hooks/block-dangerous-bash/README.md)
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
