@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request with a Claude Code PR reviewer agent."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import textwrap
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+
+REQUIRED_SECTIONS = (
+    "## Summary",
+    "## Identified Risks",
+    "## Improvement Suggestions",
+    "## Confidence Score",
+)
+
+
+def main() -> int:
+    args = parse_args()
+    metadata, diff = load_review_input(args)
+    prompt = build_prompt(metadata, diff[: args.max_diff_chars])
+
+    if args.mode == "prompt":
+        review = prompt
+    elif args.mode == "local":
+        review = local_structured_review(metadata, diff)
+    else:
+        review = run_claude_review(prompt, args.claude_command)
+
+    if args.mode != "prompt":
+        validate_review(review)
+
+    if args.output:
+        Path(args.output).write_text(review.rstrip() + "\n", encoding="utf-8")
+    else:
+        print(review.rstrip())
+
+    return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate a structured Markdown review for a GitHub PR."
+    )
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--pr", help="GitHub PR URL, for example https://github.com/owner/repo/pull/123")
+    source.add_argument("--diff-file", help="Read a local diff file instead of fetching a PR")
+    parser.add_argument("--output", help="Write review Markdown to this file")
+    parser.add_argument(
+        "--mode",
+        choices=("claude", "local", "prompt"),
+        default=os.environ.get("CLAUDE_REVIEW_MODE", "claude"),
+        help="claude calls Claude Code, local is deterministic for tests, prompt prints the Claude prompt",
+    )
+    parser.add_argument(
+        "--claude-command",
+        default=os.environ.get("CLAUDE_REVIEW_CLAUDE_COMMAND", "claude"),
+        help="Claude Code command to execute",
+    )
+    parser.add_argument(
+        "--max-diff-chars",
+        type=int,
+        default=int(os.environ.get("CLAUDE_REVIEW_MAX_DIFF_CHARS", "120000")),
+        help="Maximum diff characters sent to Claude",
+    )
+    return parser.parse_args()
+
+
+def load_review_input(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
+    if args.pr:
+        owner, repo, number = parse_pr_url(args.pr)
+        metadata = fetch_pr_metadata(owner, repo, number)
+        diff = fetch_pr_diff(owner, repo, number, args.pr)
+        return metadata, diff
+
+    diff_path = Path(args.diff_file)
+    return (
+        {
+            "url": f"file://{diff_path.resolve()}",
+            "title": diff_path.name,
+            "author": {"login": "local"},
+            "baseRefName": "main",
+            "headRefName": "local-diff",
+            "changedFiles": count_changed_files(diff_path.read_text(encoding="utf-8")),
+            "additions": 0,
+            "deletions": 0,
+        },
+        diff_path.read_text(encoding="utf-8"),
+    )
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    match = re.fullmatch(r"https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)", url.rstrip("/"))
+    if not match:
+        raise SystemExit(f"Unsupported PR URL: {url}")
+    owner, repo, number = match.groups()
+    return owner, repo, int(number)
+
+
+def fetch_pr_metadata(owner: str, repo: str, number: int) -> dict[str, Any]:
+    gh = run_command(
+        [
+            "gh",
+            "pr",
+            "view",
+            str(number),
+            "--repo",
+            f"{owner}/{repo}",
+            "--json",
+            "url,title,author,baseRefName,headRefName,additions,deletions,changedFiles",
+        ],
+        allow_failure=True,
+    )
+    if gh.returncode == 0:
+        return json.loads(gh.stdout)
+
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}",
+        headers=github_headers(),
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    return {
+        "url": body["html_url"],
+        "title": body["title"],
+        "author": {"login": body["user"]["login"]},
+        "baseRefName": body["base"]["ref"],
+        "headRefName": body["head"]["ref"],
+        "additions": body.get("additions", 0),
+        "deletions": body.get("deletions", 0),
+        "changedFiles": body.get("changed_files", 0),
+    }
+
+
+def fetch_pr_diff(owner: str, repo: str, number: int, url: str) -> str:
+    gh = run_command(
+        ["gh", "pr", "diff", str(number), "--repo", f"{owner}/{repo}"],
+        allow_failure=True,
+    )
+    if gh.returncode == 0 and gh.stdout.strip():
+        return gh.stdout
+
+    request = urllib.request.Request(f"{url}.diff", headers=github_headers())
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8")
+    except urllib.error.URLError as error:
+        raise SystemExit(f"Unable to fetch PR diff: {error}") from error
+
+
+def github_headers() -> dict[str, str]:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "claude-pr-reviewer",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def build_prompt(metadata: dict[str, Any], diff: str) -> str:
+    agent_prompt = (Path(__file__).resolve().parents[1] / "agent" / "pr-reviewer.md").read_text(
+        encoding="utf-8"
+    )
+    return textwrap.dedent(
+        f"""
+        {agent_prompt}
+
+        Review this pull request and return only the structured Markdown review.
+
+        Pull request metadata:
+        - URL: {metadata.get("url", "unknown")}
+        - Title: {metadata.get("title", "unknown")}
+        - Author: {metadata.get("author", {}).get("login", "unknown")}
+        - Base: {metadata.get("baseRefName", "unknown")}
+        - Head: {metadata.get("headRefName", "unknown")}
+        - Changed files: {metadata.get("changedFiles", "unknown")}
+        - Additions: {metadata.get("additions", "unknown")}
+        - Deletions: {metadata.get("deletions", "unknown")}
+
+        Diff:
+        ```diff
+        {diff}
+        ```
+        """
+    ).strip()
+
+
+def run_claude_review(prompt: str, claude_command: str) -> str:
+    result = run_command(
+        [
+            claude_command,
+            "-p",
+            "--permission-mode",
+            "dontAsk",
+        ],
+        input_text=prompt,
+        allow_failure=True,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            "Claude Code review failed. "
+            "Check Claude authentication or rerun with --mode local for a deterministic smoke test.\n"
+            + result.stderr.strip()
+        )
+    return result.stdout
+
+
+def local_structured_review(metadata: dict[str, Any], diff: str) -> str:
+    files = changed_files(diff)
+    risk_items = infer_risks(files, diff)
+    suggestion_items = infer_suggestions(files, diff)
+    confidence = infer_confidence(files, diff)
+
+    summary = (
+        f"This PR updates {len(files)} file{'s' if len(files) != 1 else ''}"
+        f" on `{metadata.get('headRefName', 'the head branch')}` against"
+        f" `{metadata.get('baseRefName', 'the base branch')}`."
+        f" The diff appears focused on {summarize_file_types(files)}."
+    )
+    if metadata.get("title"):
+        summary += f" The PR title is: {metadata['title']}."
+
+    return "\n".join(
+        [
+            "## Summary",
+            "",
+            summary,
+            "",
+            "## Identified Risks",
+            "",
+            *[f"- {item}" for item in risk_items],
+            "",
+            "## Improvement Suggestions",
+            "",
+            *[f"- {item}" for item in suggestion_items],
+            "",
+            "## Confidence Score",
+            "",
+            confidence,
+            "",
+        ]
+    )
+
+
+def changed_files(diff: str) -> list[str]:
+    files = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                files.append(parts[3].removeprefix("b/"))
+    return files
+
+
+def count_changed_files(diff: str) -> int:
+    return len(changed_files(diff))
+
+
+def infer_risks(files: list[str], diff: str) -> list[str]:
+    risks: list[str] = []
+    lower_diff = diff.lower()
+
+    if any(path.endswith((".py", ".js", ".ts", ".tsx")) for path in files):
+        risks.append("Behavioral changes should be covered by tests or a documented manual verification path.")
+    if any("workflow" in path or path.startswith(".github/") for path in files):
+        risks.append("Workflow changes can affect repository automation and should be checked with least-privilege permissions.")
+    if "delete from" in lower_diff or "drop table" in lower_diff or "migration" in lower_diff:
+        risks.append("Database-related changes need rollback or forward-fix planning before release.")
+    if "api_key" in lower_diff or "secret" in lower_diff or "token" in lower_diff:
+        risks.append("Secret-handling code should be checked to avoid logging or exposing credentials.")
+    if not risks:
+        risks.append("No obvious high-risk area is visible from the diff alone; residual risk is incomplete reviewer context.")
+    return risks
+
+
+def infer_suggestions(files: list[str], diff: str) -> list[str]:
+    suggestions = [
+        "Run the repository's normal formatter, lint, test, and build commands before merge.",
+        "Keep the PR description aligned with the user-facing behavior changed in the diff.",
+    ]
+    if any(path.endswith((".md", ".mdx")) for path in files):
+        suggestions.append("Preview rendered Markdown so headings, code fences, and relative links display correctly.")
+    if len(diff) > 80000:
+        suggestions.append("Consider splitting large unrelated changes so review confidence stays high.")
+    return suggestions
+
+
+def infer_confidence(files: list[str], diff: str) -> str:
+    if not files or len(diff) > 120000:
+        return "Low"
+    if len(files) > 12 or len(diff) > 60000:
+        return "Medium"
+    return "High"
+
+
+def summarize_file_types(files: list[str]) -> str:
+    if not files:
+        return "an unavailable or empty diff"
+    extensions = {Path(file).suffix or "(no extension)" for file in files}
+    if extensions <= {".md", ".mdx"}:
+        return "documentation"
+    if any(ext in extensions for ext in {".py", ".js", ".ts", ".tsx"}):
+        return "application or automation code"
+    if any("workflow" in file or file.startswith(".github/") for file in files):
+        return "CI and repository automation"
+    return "project files"
+
+
+def validate_review(review: str) -> None:
+    missing = [section for section in REQUIRED_SECTIONS if section not in review]
+    if missing:
+        raise SystemExit(f"Review output is missing required sections: {', '.join(missing)}")
+    if not re.search(r"## Confidence Score\s+\n+\s*(Low|Medium|High)\b", review):
+        raise SystemExit("Review output must end with a Low, Medium, or High confidence score.")
+
+
+def run_command(
+    command: list[str],
+    *,
+    input_text: str | None = None,
+    allow_failure: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        result = subprocess.run(
+            command,
+            input=input_text,
+            text=True,
+            capture_output=True,
+            check=not allow_failure,
+        )
+    except FileNotFoundError as error:
+        if allow_failure:
+            return subprocess.CompletedProcess(command, 127, "", str(error))
+        raise
+    return result
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
