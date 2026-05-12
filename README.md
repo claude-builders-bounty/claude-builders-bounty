@@ -34,6 +34,20 @@ You're in the right place.
 
 ---
 
+## Next.js + SQLite CLAUDE.md Template
+
+The bounty [#2](../../issues/2) template lives in [`templates/nextjs-sqlite/CLAUDE.md`](templates/nextjs-sqlite/CLAUDE.md).
+
+It is written for greenfield Next.js 15 App Router SaaS projects using SQLite through `better-sqlite3` or Turso/libSQL, with opinionated rules and reasons for project structure, naming, migrations, Server Actions, components, auth, testing, and anti-patterns.
+
+Validation:
+
+```bash
+python3 tests/validate_nextjs_sqlite_claude.py
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
