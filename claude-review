@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# claude-review — AI-powered PR review agent
+# Bounty: https://github.com/claude-builders-bounty/claude-builders-bounty/issues/4
+set -euo pipefail
+
+PR_URL="${1:-}"
+if [ -z "$PR_URL" ]; then
+  echo "Usage: claude-review --pr https://github.com/owner/repo/pull/123"
+  echo "   or: claude-review https://github.com/owner/repo/pull/123"
+  exit 1
+fi
+
+# Remove flags if present
+PR_URL="${PR_URL#--pr }"
+
+# Parse PR URL: https://github.com/owner/repo/pull/123
+if ! echo "$PR_URL" | grep -qE 'github\.com/[^/]+/[^/]+/pull/[0-9]+'; then
+  echo "❌ Invalid PR URL format. Expected: https://github.com/owner/repo/pull/123"
+  exit 1
+fi
+
+OWNER=$(echo "$PR_URL" | sed -E 's|.*github\.com/([^/]+)/([^/]+)/pull/([0-9]+).*|\1|')
+REPO=$(echo "$PR_URL" | sed -E 's|.*github\.com/([^/]+)/([^/]+)/pull/([0-9]+).*|\2|')
+PR_NUM=$(echo "$PR_URL" | sed -E 's|.*github\.com/([^/]+)/([^/]+)/pull/([0-9]+).*|\3|')
+
+echo "🔍 Reviewing PR #${PR_NUM} in ${OWNER}/${REPO}..."
+
+# Fetch PR details
+PR_DATA=$(gh pr view "$PR_NUM" --repo "${OWNER}/${REPO}" --json title,body,author,additions,deletions,changedFiles,baseRefName,headRefName 2>/dev/null)
+
+if [ -z "$PR_DATA" ]; then
+  echo "❌ Could not fetch PR data. Check access permissions."
+  exit 1
+fi
+
+# Fetch PR diff
+PR_DIFF=$(gh pr diff "$PR_NUM" --repo "${OWNER}/${REPO}" 2>/dev/null)
+
+if [ -z "$PR_DIFF" ]; then
+  echo "❌ Could not fetch PR diff."
+  exit 1
+fi
+
+# Build review prompt for Claude
+REVIEW_PROMPT=$(cat << 'PROMPT'
+You are a senior software engineer performing a code review. Analyze the following PR diff and provide a structured review.
+
+Output format:
+## Summary
+[2-3 sentences describing what this PR does]
+
+## Identified Risks
+- [List specific risks: security, performance, correctness, maintainability]
+
+## Improvement Suggestions  
+- [List specific, actionable improvements with code examples where helpful]
+
+## Confidence: [Low / Medium / High]
+[Explain why this confidence level]
+
+---
+PR Metadata:
+PROMPT
+)
+
+# Add PR metadata
+TITLE=$(echo "$PR_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('title',''))" 2>/dev/null)
+AUTHOR=$(echo "$PR_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('author',{}).get('login',''))" 2>/dev/null)
+ADDITIONS=$(echo "$PR_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('additions',0))" 2>/dev/null)
+DELETIONS=$(echo "$PR_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('deletions',0))" 2>/dev/null)
+CHANGED=$(echo "$PR_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('changedFiles',0))" 2>/dev/null)
+BASE=$(echo "$PR_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('baseRefName',''))" 2>/dev/null)
+HEAD=$(echo "$PR_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('headRefName',''))" 2>/dev/null)
+
+METADATA="- Title: ${TITLE}
+- Author: @${AUTHOR}
+- Changes: +${ADDITIONS}/-${DELETIONS} across ${CHANGED} files
+- Branch: ${HEAD} → ${BASE}"
+
+# Truncate diff if too large (max ~50KB for API)
+MAX_DIFF=50000
+if [ ${#PR_DIFF} -gt $MAX_DIFF ]; then
+  PR_DIFF="${PR_DIFF:0:$MAX_DIFF}
+... [diff truncated: showing first 50KB of ${#PR_DIFF} bytes]"
+fi
+
+# Call Claude API
+FULL_PROMPT="${REVIEW_PROMPT}
+${METADATA}
+
+---
+PR Diff:
+\`\`\`diff
+${PR_DIFF}
+\`\`\`"
+
+# Use Claude API
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  # Direct API call
+  REVIEW=$(python3 << PYEOF
+import json, urllib.request, os
+
+api_key = os.environ["ANTHROPIC_API_KEY"]
+prompt = """${FULL_PROMPT//\"/\\\"}"""
+
+data = json.dumps({
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 4000,
+    "messages": [{"role": "user", "content": prompt}]
+}).encode()
+
+req = urllib.request.Request(
+    "https://api.anthropic.com/v1/messages",
+    data=data,
+    headers={
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+    }
+)
+
+try:
+    with urllib.request.urlopen(req) as resp:
+        result = json.loads(resp.read())
+        print(result["content"][0]["text"])
+except Exception as e:
+    print(f"Error calling Claude API: {e}")
+PYEOF
+)
+elif command -v claude &>/dev/null; then
+  # Use Claude CLI if available
+  REVIEW=$(echo "$FULL_PROMPT" | claude --print 2>/dev/null)
+else
+  echo "❌ No Anthropic API key or Claude CLI found. Set ANTHROPIC_API_KEY or install Claude CLI."
+  exit 1
+fi
+
+if [ -z "$REVIEW" ]; then
+  echo "❌ Review generation failed."
+  exit 1
+fi
+
+# Output the review
+echo ""
+echo "═══════════════════════════════════════════"
+echo "  PR Review: #${PR_NUM} — ${OWNER}/${REPO}"
+echo "═══════════════════════════════════════════"
+echo ""
+echo "$REVIEW"
+echo ""
+echo "═══════════════════════════════════════════"
+
+# Optionally post as PR comment
+if [ "${POST_COMMENT:-}" = "true" ]; then
+  echo ""
+  echo "📝 Posting review as PR comment..."
+  # GitHub API for PR comments
+  BODY=$(python3 -c "
+import json
+review = '''${REVIEW//\'/\\\'}'''
+print(json.dumps({'body': review})[:65535])
+" 2>/dev/null)
+  
+  curl -s -X POST \
+    -H "Authorization: token ${GITHUB_TOKEN:-}" \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/${OWNER}/${REPO}/issues/${PR_NUM}/comments" \
+    -d "$BODY" 2>/dev/null && echo "✅ Comment posted!" || echo "⚠️ Failed to post comment"
+fi

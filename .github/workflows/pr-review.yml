@@ -1,0 +1,62 @@
+name: AI PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR Diff
+        id: diff
+        run: |
+          DIFF=$(gh pr diff ${{ github.event.pull_request.number }} --repo ${{ github.repository }})
+          echo "diff<<EOF" >> $GITHUB_OUTPUT
+          echo "$DIFF" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate AI Review
+        id: review
+        run: |
+          REVIEW=$(curl -s -X POST "https://api.anthropic.com/v1/messages" \
+            -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$(cat << 'JSON'
+          {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4000,
+            "messages": [
+              {
+                "role": "user",
+                "content": "You are a senior software engineer performing a code review. Analyze the following PR and provide a structured review.\n\nOutput format:\n## Summary\n[2-3 sentences]\n\n## Identified Risks\n- [specific risks]\n\n## Improvement Suggestions\n- [actionable improvements]\n\n## Confidence: [Low/Medium/High]\n[explanation]\n\n---\nPR: #${{ github.event.pull_request.number }} by @${{ github.event.pull_request.user.login }}\nBranch: ${{ github.event.pull_request.head.ref }} → ${{ github.event.pull_request.base.ref }}\n\nDiff:\n```diff\n${{ steps.diff.outputs.diff }}\n```"
+              }
+            ]
+          }
+        JSON
+        )" | python3 -c "import json,sys; print(json.load(sys.stdin)['content'][0]['text'])")
+          
+          echo "review<<EOF" >> $GITHUB_OUTPUT
+          echo "$REVIEW" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post Review Comment
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "## 🤖 AI Code Review
+
+        ${{ steps.review.outputs.review }}" \
+            --repo ${{ github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
