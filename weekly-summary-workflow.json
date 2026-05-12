@@ -1,0 +1,231 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude API)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [5],
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Friday 5pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "REPO_OWNER",
+              "value": "tscircuit"
+            },
+            {
+              "name": "REPO_NAME",
+              "value": "dsn-converter"
+            },
+            {
+              "name": "LANGUAGE",
+              "value": "EN"
+            },
+            {
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/..."
+            }
+          ]
+        }
+      },
+      "id": "2",
+      "name": "Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "owner": "={{ $json.REPO_OWNER }}",
+        "repository": "={{ $json.REPO_NAME }}",
+        "filters": {
+          "since": "={{ $now.minus({ days: 7 }).toISO() }}"
+        }
+      },
+      "id": "3",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [650, 150]
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "owner": "={{ $node[\"Variables\"].json.REPO_OWNER }}",
+        "repository": "={{ $node[\"Variables\"].json.REPO_NAME }}",
+        "filters": {
+          "state": "closed",
+          "since": "={{ $now.minus({ days: 7 }).toISO() }}"
+        }
+      },
+      "id": "4",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "owner": "={{ $node[\"Variables\"].json.REPO_OWNER }}",
+        "repository": "={{ $node[\"Variables\"].json.REPO_NAME }}",
+        "filters": {
+          "state": "closed"
+        }
+      },
+      "id": "5",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [650, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $items(\"Fetch Commits\").map(i => i.json.commit.message);\nconst issues = $items(\"Fetch Closed Issues\").map(i => `#${i.json.number}: ${i.json.title}`);\nconst prs = $items(\"Fetch Merged PRs\").filter(i => {\n  if (!i.json.merged_at) return false;\n  const merged = new Date(i.json.merged_at);\n  const weekAgo = new Date();\n  weekAgo.setDate(weekAgo.getDate() - 7);\n  return merged > weekAgo;\n}).map(i => `PR #${i.json.number}: ${i.json.title}`);\n\nconst language = $node[\"Variables\"].json.LANGUAGE;\n\nreturn {\n  data_payload: `Commits:\\n${commits.join('\\n')}\\n\\nClosed Issues:\\n${issues.join('\\n')}\\n\\nMerged PRs:\\n${prs.join('\\n')}`,\n  language\n};"
+      },
+      "id": "6",
+      "name": "Aggregate Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "prompt": "=Write a narrative weekly engineering summary in {{ $json.language }} for the repo {{ $node[\"Variables\"].json.REPO_NAME }}.\n\nActivity:\n{{ $json.data_payload }}",
+        "options": {
+          "systemMessage": "You are a lead developer providing a weekly update to stakeholders. Be professional and highlight the impact of the changes."
+        }
+      },
+      "id": "7",
+      "name": "Claude Sonnet",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $node[\"Variables\"].json.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.text }}"
+            }
+          ]
+        }
+      },
+      "id": "8",
+      "name": "Deliver to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Friday 5pm Trigger": {
+      "main": [
+        [
+          {
+            "node": "Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Activity": {
+      "main": [
+        [
+          {
+            "node": "Claude Sonnet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Sonnet": {
+      "main": [
+        [
+          {
+            "node": "Deliver to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
