@@ -1,0 +1,189 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR diff and metadata
+        id: pr-data
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "Fetching PR #${PR_NUMBER} from ${REPO}..."
+
+          # Fetch PR metadata via gh CLI (safe — no untrusted input in shell)
+          gh pr view "$PR_NUMBER" --repo "$REPO" \
+            --json title,body,additions,deletions,changedFiles,baseRefName,headRefName,files,author \
+            > /tmp/pr_meta.json
+
+          # Fetch diff
+          gh pr diff "$PR_NUMBER" --repo "$REPO" > /tmp/pr_diff.txt
+
+          # Extract fields from JSON (jq handles escaping)
+          jq -r '.title // "Untitled"' /tmp/pr_meta.json > /tmp/pr_title.txt
+          jq -r '.body // "No description"' /tmp/pr_meta.json > /tmp/pr_body.txt
+          jq -r '.author.login // "unknown"' /tmp/pr_meta.json > /tmp/pr_author.txt
+          jq -r '.additions // 0' /tmp/pr_meta.json > /tmp/pr_additions.txt
+          jq -r '.deletions // 0' /tmp/pr_meta.json > /tmp/pr_deletions.txt
+          jq -r '.changedFiles // 0' /tmp/pr_meta.json > /tmp/pr_changed_files.txt
+          jq -r '.baseRefName // "main"' /tmp/pr_meta.json > /tmp/pr_base.txt
+          jq -r '.headRefName // "unknown"' /tmp/pr_meta.json > /tmp/pr_head.txt
+          jq -r '.files[].path' /tmp/pr_meta.json 2>/dev/null | head -100 > /tmp/pr_files.txt
+
+          # Truncate large diffs to stay within API limits
+          DIFF_LINES=$(wc -l < /tmp/pr_diff.txt | tr -d ' ')
+          MAX_LINES=6000
+          if [ "$DIFF_LINES" -gt "$MAX_LINES" ]; then
+            head -n "$MAX_LINES" /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
+            mv /tmp/pr_diff_truncated.txt /tmp/pr_diff.txt
+            echo "NOTE: Diff truncated from ${DIFF_LINES} to ${MAX_LINES} lines." > /tmp/pr_truncated.txt
+          else
+            echo "" > /tmp/pr_truncated.txt
+          fi
+
+          echo "$PR_NUMBER" > /tmp/pr_number.txt
+
+      - name: Generate review with Claude API
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set. Add it to your repository secrets."
+            exit 1
+          fi
+
+          PR_TITLE=$(cat /tmp/pr_title.txt)
+          PR_BODY=$(cat /tmp/pr_body.txt)
+          PR_AUTHOR=$(cat /tmp/pr_author.txt)
+          ADDITIONS=$(cat /tmp/pr_additions.txt)
+          DELETIONS=$(cat /tmp/pr_deletions.txt)
+          CHANGED_FILES=$(cat /tmp/pr_changed_files.txt)
+          BASE_BRANCH=$(cat /tmp/pr_base.txt)
+          HEAD_BRANCH=$(cat /tmp/pr_head.txt)
+          FILES_LIST=$(cat /tmp/pr_files.txt)
+          TRUNCATED=$(cat /tmp/pr_truncated.txt)
+          PR_DIFF=$(cat /tmp/pr_diff.txt)
+          PR_NUMBER=$(cat /tmp/pr_number.txt)
+
+          # Build the user message content
+          USER_MSG="# Pull Request Review Request
+
+          ## PR Metadata
+          - Title: ${PR_TITLE}
+          - Author: ${PR_AUTHOR}
+          - PR Number: #${PR_NUMBER}
+          - Repository: ${REPO}
+          - Branch: ${HEAD_BRANCH} -> ${BASE_BRANCH}
+          - Stats: +${ADDITIONS}/-${DELETIONS} across ${CHANGED_FILES} files
+
+          ## PR Description
+          ${PR_BODY}
+
+          ## Changed Files
+          ${FILES_LIST}
+
+          ${TRUNCATED}
+
+          ## Diff
+          ${PR_DIFF}"
+
+          SYSTEM_MSG='You are a senior software engineer performing a thorough code review. Analyze the PR and produce a structured Markdown review with these exact sections:
+
+          ## PR Review: {title}
+
+          **PR**: #{number} | **Author**: {author} | **Branch**: head -> base
+          **Changes**: +X/-Y across N files
+
+          ### Summary
+          2-3 sentence overview of what the PR does.
+
+          ### Risk Assessment
+          Table with columns: Risk, Severity (Critical/High/Medium/Low), Details.
+          Cover: security, performance, correctness, compatibility. Reference specific files/lines.
+
+          ### Suggestions
+          Numbered list of actionable improvements with file/line references.
+
+          ### What Looks Good
+          Brief list of things done well.
+
+          ### Confidence
+          Low/Medium/High with one sentence justification.
+
+          Focus on real issues: SQL injection, XSS, auth bypasses, race conditions, N+1 queries, memory leaks, missing error handling, breaking changes, untested edge cases. Be specific with file names and line numbers.'
+
+          # Escape for JSON using Python
+          SYSTEM_JSON=$(echo "$SYSTEM_MSG" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
+          USER_JSON=$(echo "$USER_MSG" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
+
+          # Call Anthropic Messages API
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            https://api.anthropic.com/v1/messages \
+            -H "content-type: application/json" \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "{
+              \"model\": \"claude-sonnet-4-20250514\",
+              \"max_tokens\": 4096,
+              \"system\": ${SYSTEM_JSON},
+              \"messages\": [
+                {\"role\": \"user\", \"content\": ${USER_JSON}}
+              ]
+            }")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Anthropic API returned HTTP ${HTTP_CODE}"
+            echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+            exit 1
+          fi
+
+          # Extract the text content from the response
+          REVIEW=$(echo "$BODY" | jq -r '.content[0].text // "Review generation failed."')
+
+          # Save for the comment posting step
+          echo "$REVIEW" > /tmp/review_output.txt
+          echo "Review generated successfully."
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          PR_NUMBER=$(cat /tmp/pr_number.txt)
+          REVIEW=$(cat /tmp/review_output.txt)
+
+          # Compose comment with bot marker for idempotency
+          {
+            echo "<!-- claude-review-bot -->"
+            echo "> *This review was automatically generated by Claude PR Review.*"
+            echo ""
+            echo "$REVIEW"
+          } > /tmp/comment_body.txt
+
+          gh pr comment "$PR_NUMBER" \
+            --repo "$REPO" \
+            --body-file /tmp/comment_body.txt
+
+          echo "Review posted to PR #${PR_NUMBER}."
