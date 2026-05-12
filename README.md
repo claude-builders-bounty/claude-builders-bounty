@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Templates
+
+- [Next.js + SQLite SaaS CLAUDE.md](templates/nextjs-sqlite-saas/CLAUDE.md)
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
