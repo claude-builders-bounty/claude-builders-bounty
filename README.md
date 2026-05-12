@@ -34,6 +34,14 @@ You're in the right place.
 
 ---
 
+## Generate a CHANGELOG
+
+1. Copy `changelog.sh` (or `changelog.py`) into any Git repository.
+2. Run `bash changelog.sh` or `python3 changelog.py`.
+3. Commit the generated `CHANGELOG.md`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
