@@ -43,6 +43,18 @@ You're in the right place.
 
 ---
 
+## Generate Changelog Solution
+
+Setup in 3 steps:
+
+1. Copy `changelog.sh` into the target git repository.
+2. Run `bash changelog.sh` from the repository root.
+3. Review the generated `CHANGELOG.md` before committing it.
+
+Claude Code users can also run `/generate-changelog` with the included command definition.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
