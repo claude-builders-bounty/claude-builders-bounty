@@ -51,3 +51,35 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Generate a changelog
+
+Use `changelog.sh` to create a structured `CHANGELOG.md` from commits since the latest git tag.
+
+1. Run `./changelog.sh` from the repository root.
+2. Review the generated `CHANGELOG.md` sections: Added, Fixed, Changed, Removed.
+3. Commit the changelog when it looks right.
+
+Example output from this repository:
+
+```markdown
+# Changelog
+
+All notable changes are generated from git history.
+
+## [Unreleased] - 2026-05-12
+
+_Generated from commits from project history._
+
+### Added
+- initial README with bounty board (1aeae2a)
+
+### Fixed
+- None
+
+### Changed
+- Initial commit (a80a580)
+
+### Removed
+- None
+```
