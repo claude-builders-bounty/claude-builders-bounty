@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+Create a structured `CHANGELOG.md` from the current repository's git history:
+
+1. Run `python generate_changelog.py` from a git repository root.
+2. Or run `bash changelog.sh` on Unix-like systems.
+3. Review the generated `CHANGELOG.md` before publishing it.
+
+Claude Code users can also run `/generate-changelog`, which delegates to the same generator.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
