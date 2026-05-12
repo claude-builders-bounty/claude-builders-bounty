@@ -1,0 +1,357 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Friday 5PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "config-repo",
+              "name": "repo",
+              "value": "={{ $json.repo || 'owner/repo' }}",
+              "type": "string"
+            },
+            {
+              "id": "config-language",
+              "name": "language",
+              "value": "={{ $json.language || 'en' }}",
+              "type": "string"
+            },
+            {
+              "id": "config-webhook-url",
+              "name": "webhook_url",
+              "value": "={{ $json.webhook_url || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "config-api-key",
+              "name": "api_key",
+              "value": "={{ $json.api_key || '' }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-config",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300],
+      "notes": "Set your repo, language, webhook URL, and API key here. Override via workflow static data or external config."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ DateTime.now().minus({days: 7}).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Configuration').item.json.repo }}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ DateTime.now().minus({days: 7}).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Configuration').item.json.repo }}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 600],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate GitHub activity from all three sources\nconst commits = $('Fetch Commits').all();\nconst issues = $('Fetch Closed Issues').all();\nconst prs = $('Fetch Pull Requests').all();\nconst config = $('Configuration').first().json;\nconst oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\n\n// Filter commits from the past week\nconst recentCommits = commits.filter(item => {\n  const date = new Date(item.json.commit?.committer?.date || item.json.commit?.author?.date);\n  return date >= oneWeekAgo;\n}).map(item => ({\n  message: item.json.commit?.message?.split('\\n')[0] || 'No message',\n  author: item.json.commit?.author?.name || item.json.author?.login || 'Unknown',\n  date: item.json.commit?.committer?.date || item.json.commit?.author?.date,\n  sha: item.json.sha?.substring(0, 7)\n}));\n\n// Filter issues closed in the past week (exclude PRs)\nconst recentIssues = issues.filter(item => {\n  if (item.json.pull_request) return false;\n  const closedAt = new Date(item.json.closed_at);\n  return closedAt >= oneWeekAgo;\n}).map(item => ({\n  title: item.json.title,\n  number: item.json.number,\n  author: item.json.user?.login || 'Unknown',\n  labels: (item.json.labels || []).map(l => l.name)\n}));\n\n// Filter PRs merged in the past week\nconst recentPRs = prs.filter(item => {\n  if (!item.json.merged_at) return false;\n  const mergedAt = new Date(item.json.merged_at);\n  return mergedAt >= oneWeekAgo;\n}).map(item => ({\n  title: item.json.title,\n  number: item.json.number,\n  author: item.json.user?.login || 'Unknown',\n  merged_at: item.json.merged_at,\n  additions: item.json.additions || 0,\n  deletions: item.json.deletions || 0\n}));\n\nconst reportDate = new Date().toISOString().split('T')[0];\nconst weekStart = oneWeekAgo.toISOString().split('T')[0];\n\nreturn [{\n  json: {\n    repo: config.repo,\n    language: config.language,\n    webhook_url: config.webhook_url,\n    api_key: config.api_key,\n    report_date: reportDate,\n    week_start: weekStart,\n    commits: recentCommits,\n    issues: recentIssues,\n    pull_requests: recentPRs,\n    stats: {\n      total_commits: recentCommits.length,\n      total_issues_closed: recentIssues.length,\n      total_prs_merged: recentPRs.length,\n      contributors: [...new Set([\n        ...recentCommits.map(c => c.author),\n        ...recentIssues.map(i => i.author),\n        ...recentPRs.map(p => p.author)\n      ])]\n    }\n  }\n}];"
+      },
+      "id": "aggregate-activity",
+      "name": "Aggregate Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a technical writer generating a weekly development summary. Write a concise, engaging narrative summary of this week's repository activity. Use the following data:\\n\\nRepository: {{ $json.repo }}\\nReport period: {{ $json.week_start }} to {{ $json.report_date }}\\n\\nCommits ({{ $json.stats.total_commits }}):\\n{{ JSON.stringify($json.commits.slice(0, 20), null, 2) }}\\n\\nIssues closed ({{ $json.stats.total_issues_closed }}):\\n{{ JSON.stringify($json.issues.slice(0, 20), null, 2) }}\\n\\nPull requests merged ({{ $json.stats.total_prs_merged }}):\\n{{ JSON.stringify($json.pull_requests.slice(0, 20), null, 2) }}\\n\\nActive contributors: {{ $json.stats.contributors.join(', ') }}\\n\\nWrite the summary in {{ $json.language === 'fr' ? 'French' : 'English' }}. Structure it with:\\n1. A brief overview paragraph\\n2. Key highlights and notable changes\\n3. Contributor recognition\\n4. What to watch next week\\n\\nKeep it under 500 words. Use a professional but friendly tone.\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-key",
+          "name": "Anthropic API Key"
+        }
+      },
+      "notes": "Calls the Anthropic Messages API. Credential should have header name 'x-api-key' and your API key as value."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the summary text from the API response\nconst response = $input.first().json;\nconst config = $('Aggregate Activity').first().json;\n\nlet summary = '';\nif (response.content && response.content.length > 0) {\n  summary = response.content[0].text || '';\n} else if (response.error) {\n  summary = 'Error generating summary: ' + (response.error.message || JSON.stringify(response.error));\n}\n\nconst formattedMessage = [\n  `# Weekly Dev Summary: ${config.repo}`,\n  `**Period:** ${config.week_start} to ${config.report_date}`,\n  '',\n  summary,\n  '',\n  '---',\n  `**Stats:** ${config.stats.total_commits} commits | ${config.stats.total_issues_closed} issues closed | ${config.stats.total_prs_merged} PRs merged`,\n  `**Contributors:** ${config.stats.contributors.join(', ') || 'None detected'}`\n].join('\\n');\n\nreturn [{\n  json: {\n    summary: formattedMessage,\n    repo: config.repo,\n    webhook_url: config.webhook_url,\n    report_date: config.report_date\n  }\n}];"
+      },
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook_url }}",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": {{ JSON.stringify($json.summary) }},\n  \"username\": \"Dev Summary Bot\",\n  \"embeds\": [\n    {\n      \"title\": \"Weekly Summary: {{ $json.repo }}\",\n      \"description\": {{ JSON.stringify($json.summary.substring(0, 4000)) }},\n      \"color\": 5814783,\n      \"footer\": {\n        \"text\": \"Generated {{ $json.report_date }}\"\n      }\n    }\n  ]\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "deliver-webhook",
+      "name": "Deliver to Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1580, 400],
+      "notes": "Delivers the formatted summary to your configured webhook URL. Works with Discord webhooks out of the box. For Slack, adjust the payload format in the body."
+    }
+  ],
+  "connections": {
+    "Every Friday 5PM": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Pull Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Activity": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          {
+            "node": "Deliver to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "weekly-summary",
+      "id": "1"
+    },
+    {
+      "name": "github",
+      "id": "2"
+    }
+  ]
+}
