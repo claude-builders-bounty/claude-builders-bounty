@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown review for a public GitHub pull request."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from collections import Counter
+from dataclasses import dataclass
+from typing import Any
+
+
+PR_RE = re.compile(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)")
+
+
+@dataclass
+class PullRequest:
+    owner: str
+    repo: str
+    number: str
+    title: str
+    body: str
+    additions: int
+    deletions: int
+    changed_files: int
+    files: list[dict[str, Any]]
+
+
+def parse_pr_url(url: str) -> tuple[str, str, str]:
+    match = PR_RE.fullmatch(url.rstrip("/"))
+    if not match:
+        raise ValueError("Expected PR URL like https://github.com/owner/repo/pull/123")
+    return match.group(1), match.group(2), match.group(3)
+
+
+def github_get_json(url: str) -> Any:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "claude-review-agent",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub API request failed: {exc.code} {detail}") from exc
+    except urllib.error.URLError:
+        return github_get_json_with_curl(url)
+
+
+def github_get_json_with_curl(url: str) -> Any:
+    try:
+        completed = subprocess.run(
+            [
+                "curl",
+                "-fsSL",
+                "-H",
+                "Accept: application/vnd.github+json",
+                "-H",
+                "User-Agent: claude-review-agent",
+                url,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(f"GitHub API request failed and curl fallback failed: {exc}") from exc
+    return json.loads(completed.stdout)
+
+
+def load_pull_request(pr_url: str) -> PullRequest:
+    owner, repo, number = parse_pr_url(pr_url)
+    base = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    pr = github_get_json(base)
+    files = github_get_json(f"{base}/files?per_page=100")
+    return PullRequest(
+        owner=owner,
+        repo=repo,
+        number=number,
+        title=pr.get("title") or "",
+        body=pr.get("body") or "",
+        additions=int(pr.get("additions") or 0),
+        deletions=int(pr.get("deletions") or 0),
+        changed_files=int(pr.get("changed_files") or len(files)),
+        files=files,
+    )
+
+
+def extension(filename: str) -> str:
+    if "." not in filename:
+        return "[no extension]"
+    return filename.rsplit(".", 1)[-1].lower()
+
+
+def summarize(pr: PullRequest) -> str:
+    file_names = [file["filename"] for file in pr.files]
+    top_extensions = Counter(extension(name) for name in file_names).most_common(3)
+    ext_summary = ", ".join(f"{count} .{ext}" for ext, count in top_extensions)
+    return (
+        f"PR #{pr.number} in `{pr.owner}/{pr.repo}` changes {pr.changed_files} files "
+        f"with +{pr.additions}/-{pr.deletions} lines. The main touched areas are "
+        f"{ext_summary or 'not clear from file extensions'}."
+    )
+
+
+def identify_risks(pr: PullRequest) -> list[str]:
+    risks: list[str] = []
+    names = [file["filename"].lower() for file in pr.files]
+    patches = "\n".join(file.get("patch", "") or "" for file in pr.files).lower()
+
+    if pr.changed_files > 20 or pr.additions + pr.deletions > 800:
+        risks.append("Large change size; review should be split by subsystem or backed by strong tests.")
+    if any("package-lock.json" in name or "pnpm-lock.yaml" in name or "yarn.lock" in name for name in names):
+        risks.append("Dependency lockfile changed; verify package updates are intentional and audit-sensitive.")
+    if any("migration" in name or "/db/" in name or name.endswith(".sql") for name in names):
+        risks.append("Database-related files changed; confirm migrations are reversible or safely forward-only.")
+    if any(".github/workflows/" in name for name in names):
+        risks.append("CI workflow changed; confirm secrets are not exposed to untrusted pull requests.")
+    if any("auth" in name or "session" in name or "permission" in name for name in names):
+        risks.append("Authentication or authorization path changed; test cross-user and cross-tenant access.")
+    if any("delete from" in patches or "drop table" in patches or "truncate" in patches for _ in [patches]):
+        risks.append("Destructive SQL appears in the diff; confirm WHERE clauses, backups, and migration safety.")
+    if not risks:
+        risks.append("No obvious high-risk areas detected from file names and patch text.")
+    return risks
+
+
+def suggestions(pr: PullRequest) -> list[str]:
+    suggestions_list = [
+        "Run the repository's formatter, type checker, and targeted tests for touched modules.",
+        "Add or update regression tests for the behavior changed by this PR.",
+    ]
+    if pr.changed_files > 10:
+        suggestions_list.append("Consider a short reviewer guide in the PR body that maps files to intent.")
+    if any((file.get("patch") or "").count("\n+") > 80 for file in pr.files):
+        suggestions_list.append("Review large new files for smaller helpers or clearer boundaries.")
+    if "test" not in " ".join(file["filename"].lower() for file in pr.files):
+        suggestions_list.append("No test files were detected; explain why tests are unnecessary or add coverage.")
+    return suggestions_list
+
+
+def confidence(pr: PullRequest, risks: list[str]) -> str:
+    if pr.changed_files > 25 or pr.additions + pr.deletions > 1200:
+        return "Low"
+    if len(risks) >= 3 or pr.changed_files > 8:
+        return "Medium"
+    return "High"
+
+
+def render_review(pr: PullRequest) -> str:
+    risks = identify_risks(pr)
+    review = [
+        "# Claude PR Review",
+        "",
+        "## Summary",
+        "",
+        f"{summarize(pr)} The PR title is: `{pr.title}`.",
+        "",
+        "## Identified risks",
+        "",
+        *[f"- {risk}" for risk in risks],
+        "",
+        "## Improvement suggestions",
+        "",
+        *[f"- {suggestion}" for suggestion in suggestions(pr)],
+        "",
+        "## Confidence score",
+        "",
+        confidence(pr, risks),
+        "",
+    ]
+    return "\n".join(review)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    args = parser.parse_args()
+
+    try:
+        pr = load_pull_request(args.pr)
+        print(render_review(pr))
+        return 0
+    except Exception as exc:
+        print(f"claude-review failed: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
