@@ -5,14 +5,14 @@ Claude Code `PreToolUse` hook that denies dangerous Bash commands before they ru
 ## Install
 
 ```bash
-mkdir -p ~/.claude/hooks && cp block_destructive_commands.py ~/.claude/hooks/
+git clone https://github.com/claude-builders-bounty/claude-builders-bounty.git
 ```
 
-```json
-{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"python3 ~/.claude/hooks/block_destructive_commands.py"}]}]}}
+```bash
+sh claude-builders-bounty/hooks/block-destructive-commands/install.sh
 ```
 
-Put the JSON in `~/.claude/settings.json`, or merge the `hooks` object into your existing settings file.
+The installer copies the hook into `~/.claude/hooks/` and registers the Bash `PreToolUse` hook in `~/.claude/settings.json`.
 
 ## What It Blocks
 
@@ -44,3 +44,11 @@ Expected response:
 ```
 
 Normal commands such as `npm test` return no output and exit successfully.
+
+## Tests
+
+```bash
+python3 -m unittest hooks/block-destructive-commands/test_block_destructive_commands.py
+```
+
+The tests cover all required blocked patterns, representative allowed commands, deny JSON output, and blocked-attempt logging.
