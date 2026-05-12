@@ -1,53 +1,46 @@
-# Claude Builders Bounty 🤖
+# Claude destructive bash guard
 
-> A community bounty board for Claude Code builders.
+A Claude Code `pre-tool-use` hook that blocks destructive bash commands before they run.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## What it blocks
 
----
+- `rm -rf`
+- `DROP TABLE`
+- `git push --force` and `git push --force-with-lease`
+- `TRUNCATE`
+- `DELETE FROM` statements without a `WHERE` clause
 
-## How it works
+Every blocked attempt is appended to `~/.claude/hooks/blocked.log` with:
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+- timestamp
+- attempted command
+- project path
+- block reason
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Install
 
----
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/block_destructive_bash.py ~/.claude/hooks/
+cat hooks/settings.example.json >> ~/.claude/settings.json
+```
 
-## Active Bounties
+## Usage
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+Once installed, Claude Code calls the hook before Bash tool use. Safe commands continue normally. Dangerous commands return a clear block message to Claude.
 
----
+Example block response:
 
-## Rules
+```json
+{
+  "decision": "block",
+  "reason": "Blocked destructive bash command: rm -rf removes files recursively and forcefully. Review the command and use a safer, explicit alternative."
+}
+```
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Test
 
----
+```bash
+python -m unittest tests/test_block_destructive_bash.py
+```
 
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+If `pytest` is unavailable, the hook itself has no runtime dependency beyond Python 3.10+.
