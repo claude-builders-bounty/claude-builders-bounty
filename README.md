@@ -34,6 +34,94 @@ You're in the right place.
 
 ---
 
+## Destructive Bash Command Hook
+
+The `hooks/block_destructive_bash.py` hook protects Claude Code projects by
+checking each Bash command before execution. It blocks commands that match the
+bounty requirements:
+
+- `rm -rf`
+- `DROP TABLE` in direct SQL or database CLI invocations
+- `git push --force` and `git push --force-with-lease`
+- `TRUNCATE` in direct SQL or database CLI invocations
+- `DELETE FROM` statements without a `WHERE` clause in direct SQL or database CLI invocations
+
+Every blocked command is appended to `~/.claude/hooks/blocked.log` as JSON with
+the timestamp, attempted command, project path, and matched rule. Normal Bash
+commands such as `ls`, `cat README.md`, and `npm test` pass through without
+output. Searches such as `grep -R 'DROP TABLE' migrations/` are treated as
+normal commands instead of destructive SQL execution. Blocked commands return
+Claude Code `PreToolUse` JSON with `permissionDecision: "deny"` and a clear
+reason for Claude.
+
+Install in one command from this repository:
+
+```bash
+python3 scripts/install_block_destructive_bash_hook.py
+```
+
+The installer copies the hook into `~/.claude/hooks/` and adds this Claude Code
+settings entry for the Bash tool:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/block_destructive_bash.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Optional custom rules can be loaded with `DESTRUCTIVE_BASH_HOOK_CONFIG`:
+
+```json
+{
+  "allow": [
+    {
+      "name": "fixture cleanup",
+      "pattern": "^rm -rf \\.pytest_cache$"
+    }
+  ],
+  "deny": [
+    {
+      "name": "remove build output",
+      "pattern": "^rm -rf dist$"
+    }
+  ]
+}
+```
+
+Allow rules are checked before deny rules, so teams can create narrow exceptions
+without turning the blocker off.
+
+Demo transcript:
+
+```text
+$ printf '{"tool_name":"Bash","tool_input":{"command":"rm -rf ./dist"},"cwd":"/repo"}' | python3 hooks/block_destructive_bash.py
+{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "Blocked destructive Bash command before execution.\nReason: recursive forced removal\nProject: /repo\nThe attempted command was logged to ~/.claude/hooks/blocked.log."}}
+
+$ printf '{"tool_name":"Bash","tool_input":{"command":"npm test"},"cwd":"/repo"}' | python3 hooks/block_destructive_bash.py
+$ echo $?
+0
+```
+
+Run tests:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
