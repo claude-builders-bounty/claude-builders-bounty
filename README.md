@@ -1,53 +1,90 @@
-# Claude Builders Bounty 🤖
+# changelog.sh
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from git history. Works with conventional commits and auto-categorizes into **Added / Fixed / Changed / Removed / Other**.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (3 steps)
 
----
+```bash
+# 1. Download
+curl -sO https://raw.githubusercontent.com/mrzhangkris/claude-builders-bounty/main/changelog.sh
+
+# 2. Make executable
+chmod +x changelog.sh
+
+# 3. Run in any git repo
+./changelog.sh
+```
+
+## Usage
+
+```bash
+# Generate since last tag (default)
+./changelog.sh
+
+# Generate from a specific tag
+./changelog.sh --from v1.0.0
+
+# Generate between two tags
+./changelog.sh --range v1.0.0..v2.0.0
+
+# Custom output file
+./changelog.sh --output RELEASE_NOTES.md
+```
 
 ## How it works
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+1. Finds commits since the last git tag (or uses `--from`/`--range`)
+2. Categorizes each commit by **conventional commit type** (`feat:`, `fix:`, `refactor:`, etc.)
+3. Falls back to **keyword matching** for non-conventional commits
+4. Outputs a clean `CHANGELOG.md` with emoji section headers
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+### Categories
 
----
+| Section | Conventional Commits | Keyword Fallback |
+|---------|---------------------|------------------|
+| ✨ Added | `feat`, `feature` | add, new, implement, create, introduce, support |
+| 🐛 Fixed | `fix`, `bugfix`, `hotfix` | fix, resolve, patch, correct, bug |
+| 🔧 Changed | `refactor`, `style`, `perf`, `change`, `update` | update, refactor, improve, optimize, rename |
+| 🗑️ Removed | `remove`, `deprecate` | remove, delete, deprecate, drop |
+| 📝 Other | `chore`, `ci`, `build`, `docs` | (everything else) |
 
-## Active Bounties
+## Sample Output
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```markdown
+# Changelog
 
----
+## [Unreleased] — 2026-05-12
 
-## Rules
+### ✨ Added
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+- GitHub OAuth integration for user authentication
+- Toast notification system with auto-dismiss
 
----
+### 🐛 Fixed
 
-## Community
+- Resolve crash when loading empty state
+- Fix memory leak in WebSocket connection handler
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### 🔧 Changed
 
----
+- Refactor database connection pooling logic
+- Update dependencies to latest versions
+- Improve mobile responsive layout for dashboard
 
-*Started by the Claude builder community · March 2026 · MIT License*
+### 🗑️ Removed
+
+- Deprecate legacy v1 API endpoints
+
+### 📝 Other
+
+- Bump CI runner to Ubuntu 24.04
+- Add contributing guidelines
+```
+
+## Requirements
+
+- `git` (macOS & Linux compatible, no extra dependencies)
+
+## License
+
+MIT
