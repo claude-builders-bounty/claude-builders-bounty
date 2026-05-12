@@ -22,6 +22,20 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+This repository includes a small Claude Code skill and Bash utility for generating a structured `CHANGELOG.md` from git history.
+
+Setup in 3 steps:
+
+1. Copy `changelog.sh` into the root of any git repository.
+2. Run `bash changelog.sh` from that repository.
+3. Review the generated `CHANGELOG.md` and commit it.
+
+The script fetches commits since the latest reachable git tag, categorizes them into `Added`, `Fixed`, `Changed`, and `Removed`, and links commits automatically when the repository remote points to GitHub. See `sample-output.md` for a tested example.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
