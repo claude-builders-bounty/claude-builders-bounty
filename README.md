@@ -34,6 +34,19 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+Create a structured `CHANGELOG.md` from commits since the latest git tag:
+
+1. Run `bash changelog.sh`.
+2. Optionally pass `--repo PATH` or `--output PATH`.
+3. Review the generated `Added`, `Fixed`, `Changed`, and `Removed` sections.
+
+Claude Code users can also run `/generate-changelog` from this repository.
+See [samples/CHANGELOG.sample.md](samples/CHANGELOG.sample.md) for output generated from real repository history.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
