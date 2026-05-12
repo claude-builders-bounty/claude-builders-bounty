@@ -43,6 +43,21 @@ You're in the right place.
 
 ---
 
+## Bounty #1 submission: CHANGELOG generator
+
+Generate a `CHANGELOG.md` from git history with either the shell entrypoint or the Claude Code slash command.
+
+### Setup in 3 steps
+1. Clone the repository and `cd` into it.
+2. Run `bash ./changelog.sh`.
+3. Open the generated `CHANGELOG.md` (or run `/generate-changelog` inside Claude Code).
+
+### Included files
+- `changelog.sh` — dependency-free generator
+- `.claude/commands/generate-changelog.md` — Claude Code slash command wrapper
+- `skills/generate-changelog/SKILL.md` — reusable skill instructions
+- `examples/cli-gh_CHANGELOG.md` — sample output generated from a real GitHub repository
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
