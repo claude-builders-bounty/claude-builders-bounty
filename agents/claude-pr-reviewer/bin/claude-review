@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request with Claude and print structured Markdown.
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+
+The tool fetches PR metadata and diff from GitHub, builds a review prompt, and
+calls the local Claude Code CLI in print mode. It can also post the generated
+review as a PR comment when --post-comment is supplied.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import textwrap
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Any
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
+MAX_DIFF_CHARS = 120_000
+
+
+@dataclass(frozen=True)
+class PullRequestRef:
+    owner: str
+    repo: str
+    number: int
+
+    @property
+    def api_base(self) -> str:
+        return f"https://api.github.com/repos/{self.owner}/{self.repo}"
+
+    @property
+    def html_url(self) -> str:
+        return f"https://github.com/{self.owner}/{self.repo}/pull/{self.number}"
+
+
+def parse_pr_url(url: str) -> PullRequestRef:
+    match = PR_RE.match(url.strip())
+    if not match:
+        raise SystemExit("--pr must be a GitHub pull request URL like https://github.com/owner/repo/pull/123")
+    owner, repo, number = match.groups()
+    return PullRequestRef(owner=owner, repo=repo, number=int(number))
+
+
+def github_headers(accept: str = "application/vnd.github+json") -> dict[str, str]:
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-pr-review-agent",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def fetch_json(url: str) -> Any:
+    request = urllib.request.Request(url, headers=github_headers())
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise SystemExit(f"GitHub API error {exc.code} for {url}: {body[:500]}") from exc
+
+
+def fetch_text(url: str, accept: str) -> str:
+    request = urllib.request.Request(url, headers=github_headers(accept=accept))
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise SystemExit(f"GitHub API error {exc.code} for {url}: {body[:500]}") from exc
+
+
+def build_prompt(pr: PullRequestRef, metadata: dict[str, Any], files: list[dict[str, Any]], diff: str) -> str:
+    changed_files = [
+        {
+            "filename": f.get("filename"),
+            "status": f.get("status"),
+            "additions": f.get("additions"),
+            "deletions": f.get("deletions"),
+            "changes": f.get("changes"),
+        }
+        for f in files[:100]
+    ]
+    if len(diff) > MAX_DIFF_CHARS:
+        diff = diff[:MAX_DIFF_CHARS] + "\n\n[Diff truncated for review prompt size.]"
+
+    return textwrap.dedent(
+        f"""
+        You are a senior software engineer reviewing a GitHub pull request.
+
+        Return ONLY a structured Markdown review comment with exactly these sections:
+
+        ## Summary of changes
+        2-3 sentences describing what changed.
+
+        ## Identified risks
+        - Bulleted list of concrete risks. Use "- No major risks found." if appropriate.
+
+        ## Improvement suggestions
+        - Bulleted list of actionable suggestions. Use "- No immediate improvements suggested." if appropriate.
+
+        ## Confidence score
+        Low, Medium, or High, followed by one sentence explaining why.
+
+        Review rules:
+        - Do not invent files or behavior that are not present in the metadata or diff.
+        - Prefer actionable, specific feedback over generic advice.
+        - Mention test gaps when the diff changes behavior without tests.
+        - Call out security, data loss, migration, auth, or concurrency risks when relevant.
+        - Keep the comment concise enough to post directly on GitHub.
+
+        Pull request:
+        - URL: {pr.html_url}
+        - Title: {metadata.get('title')}
+        - Author: {metadata.get('user', {}).get('login')}
+        - Base: {metadata.get('base', {}).get('ref')}
+        - Head: {metadata.get('head', {}).get('ref')}
+        - Additions: {metadata.get('additions')}
+        - Deletions: {metadata.get('deletions')}
+        - Changed files: {metadata.get('changed_files')}
+
+        PR body:
+        {metadata.get('body') or '(no body)'}
+
+        Changed file summary JSON:
+        {json.dumps(changed_files, indent=2)}
+
+        Unified diff:
+        ```diff
+        {diff}
+        ```
+        """
+    ).strip()
+
+
+def run_claude(prompt: str, model: str | None = None) -> str:
+    command = ["claude", "-p", prompt, "--max-turns", "1"]
+    if model:
+        command.extend(["--model", model])
+    try:
+        proc = subprocess.run(command, text=True, capture_output=True, check=False, timeout=180)
+    except FileNotFoundError as exc:
+        raise SystemExit("Claude Code CLI not found. Install it with: npm install -g @anthropic-ai/claude-code") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit("Claude review timed out after 180 seconds") from exc
+
+    if proc.returncode != 0:
+        raise SystemExit(f"Claude CLI failed with exit code {proc.returncode}:\n{proc.stderr}")
+    return proc.stdout.strip()
+
+
+def post_comment(pr: PullRequestRef, body: str) -> str:
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise SystemExit("--post-comment requires GITHUB_TOKEN with permission to comment on the PR")
+    url = f"{pr.api_base}/issues/{pr.number}/comments"
+    payload = json.dumps({"body": body}).encode("utf-8")
+    request = urllib.request.Request(url, data=payload, method="POST", headers={**github_headers(), "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return data.get("html_url", "")
+    except urllib.error.HTTPError as exc:
+        body_text = exc.read().decode("utf-8", errors="replace")
+        raise SystemExit(f"Failed to post comment: {exc.code}: {body_text[:500]}") from exc
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Review a GitHub PR with Claude and print structured Markdown.")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
+    parser.add_argument("--post-comment", action="store_true", help="Post the generated review as a PR comment")
+    parser.add_argument("--model", default=os.environ.get("CLAUDE_REVIEW_MODEL"), help="Optional Claude Code model alias/name")
+    args = parser.parse_args()
+
+    pr = parse_pr_url(args.pr)
+    metadata = fetch_json(f"{pr.api_base}/pulls/{pr.number}")
+    files = fetch_json(f"{pr.api_base}/pulls/{pr.number}/files?per_page=100")
+    diff = fetch_text(f"{pr.api_base}/pulls/{pr.number}", accept="application/vnd.github.v3.diff")
+    prompt = build_prompt(pr, metadata, files, diff)
+    review = run_claude(prompt, model=args.model)
+
+    print(review)
+    if args.post_comment:
+        comment_url = post_comment(pr, review)
+        print(f"\nPosted review comment: {comment_url}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
