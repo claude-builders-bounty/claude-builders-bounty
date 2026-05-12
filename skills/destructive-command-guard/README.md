@@ -20,15 +20,14 @@ All other bash commands pass through normally.
 
 ## Install
 
-**1. Copy the hook scripts into your project:**
+From this repository, install into any Claude Code project in two commands:
 
 ```bash
-mkdir -p .claude/hooks
-cp guard.py .claude/hooks/guard.py
-chmod +x .claude/hooks/guard.py
+cd /path/to/your/project
+python3 /path/to/claude-builders-bounty/skills/destructive-command-guard/install.py
 ```
 
-**2. Add the hook configuration to `.claude/settings.json`:**
+The installer copies the hook to `.claude/hooks/destructive-command-guard.py`, makes it executable, and merges this Bash `PreToolUse` entry into `.claude/settings.json`:
 
 ```json
 {
@@ -39,8 +38,7 @@ chmod +x .claude/hooks/guard.py
         "hooks": [
           {
             "type": "command",
-            "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py"]
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/destructive-command-guard.py"
           }
         ]
       }
@@ -49,11 +47,13 @@ chmod +x .claude/hooks/guard.py
 }
 ```
 
-That's it. Restart Claude Code and try running `rm -rf /tmp/test` to verify it blocks.
+Restart Claude Code and try running `rm -rf /tmp/test` to verify it blocks.
 
 ## Test
 
 ```bash
+python3 test_guard.py
+
 # Quick test with sample JSON input
 echo '{"tool_input":{"command":"rm -rf /var/log/app.log"},"cwd":"/home/user/project"}' | python3 guard.py
 # Expected: JSON deny response + log entry in ~/.claude/hooks/blocked.log
@@ -72,17 +72,17 @@ echo '{"tool_input":{"command":"DELETE FROM users WHERE id = 5;"},"cwd":"/home/u
 
 Each blocked attempt appends a line to `~/.claude/hooks/blocked.log`:
 
-```
-2026-05-12T14:30:00Z | project=/home/user/myapp | reason=rm -rf: destructive recursive delete | command=rm -rf /var/log
+```json
+{"command": "rm -rf /var/log", "project_path": "/home/user/myapp", "reason": "rm -rf: destructive recursive force delete", "timestamp": "2026-05-12T14:30:00Z"}
 ```
 
 ## Uninstall
 
-Remove the `"Bash"` matcher entry from `.claude/settings.json` and delete `.claude/hooks/guard.py`.
+Remove the hook entry from `.claude/settings.json` and delete `.claude/hooks/destructive-command-guard.py`.
 
 ## Coverage
 
-This guard uses five regex patterns covering command-style invocations (`rm -rf`, `git push --force`, plain SQL, and command-piped SQL). It handles case variations (`DROP TABLE`, `drop table`, `Drop Table`), multiline inputs (`DELETE FROM ... ;` without `WHERE` on any line), and common flag shortcuts (`rm -fr`, `git push -f`).
+This guard parses shell words for command-style invocations and uses SQL-aware checks for database statements. It handles case variations (`DROP TABLE`, `drop table`, `Drop Table`), common flag shortcuts (`rm -fr`, `git push -f`), long flags (`rm --recursive --force`), force-push refspecs (`git push origin +main`), nested shell commands (`bash -c 'rm -rf build'`), and SQL passed through common clients such as `psql -c`.
 
 ## License
 
