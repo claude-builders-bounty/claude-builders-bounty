@@ -43,6 +43,25 @@ You're in the right place.
 
 ---
 
+## Generate Changelog
+
+This repository includes a solution for bounty [#1](../../issues/1): a portable
+changelog generator that reads git history and writes a structured
+`CHANGELOG.md`.
+
+Setup and usage:
+
+1. Run `bash changelog.sh` from any git repository root.
+2. Optionally pass an output path, for example `bash changelog.sh docs/CHANGELOG.md`.
+3. Review the generated `Added`, `Fixed`, `Changed`, and `Removed` sections.
+
+Claude Code users can invoke `/generate-changelog` from
+`.claude/commands/generate-changelog.md` or install the skill from
+`.claude/skills/generate-changelog/SKILL.md`. See `examples/sample-output.md` for
+output generated against this GitHub repo.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
