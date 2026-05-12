@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Agents
+
+- [Claude PR Reviewer](agents/pr-reviewer/) — CLI agent that reviews GitHub PR diffs and emits structured Markdown comments.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
