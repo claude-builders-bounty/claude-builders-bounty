@@ -1,0 +1,239 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "81fff6dc-ed94-4d08-a15f-a33badd7184f",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -780,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "e8700e73-82ad-441c-af43-329fc239e89b",
+      "name": "Weekly Friday 5pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -780,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "repo",
+              "name": "githubRepo",
+              "type": "string",
+              "value": "={{$env.GITHUB_REPO || 'owner/repo'}}"
+            },
+            {
+              "id": "gh_token",
+              "name": "githubToken",
+              "type": "string",
+              "value": "={{$env.GITHUB_TOKEN || ''}}"
+            },
+            {
+              "id": "anthropic",
+              "name": "anthropicApiKey",
+              "type": "string",
+              "value": "={{$env.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "id": "slack",
+              "name": "slackWebhookUrl",
+              "type": "string",
+              "value": "={{$env.SLACK_WEBHOOK_URL}}"
+            },
+            {
+              "id": "lang",
+              "name": "language",
+              "type": "string",
+              "value": "={{$env.SUMMARY_LANGUAGE || 'EN'}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e9fe1fa4-8a33-4db5-adac-e778dcc28fe7",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $input.first().json;\nconst [owner, repo] = cfg.githubRepo.split('/');\nconst since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();\nconst until = new Date().toISOString();\nconst headers = {\n  'Accept': 'application/vnd.github+json',\n  'User-Agent': 'n8n-weekly-dev-summary'\n};\nif (cfg.githubToken) headers.Authorization = `Bearer ${cfg.githubToken}`;\n\nasync function gh(path) {\n  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}${path}`, { headers });\n  if (!response.ok) throw new Error(`GitHub ${path} failed: ${response.status} ${await response.text()}`);\n  return response.json();\n}\n\nconst commits = await gh(`/commits?since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}&per_page=100`);\nconst issues = await gh(`/issues?state=closed&since=${encodeURIComponent(since)}&per_page=100`);\nconst pulls = await gh(`/pulls?state=closed&sort=updated&direction=desc&per_page=100`);\nconst mergedPulls = pulls.filter(pr => pr.merged_at && new Date(pr.merged_at) >= new Date(since));\n\nconst prompt = `Write a concise weekly development activity summary in ${cfg.language} for ${cfg.githubRepo}.\nPeriod: ${since} to ${until}.\nUse a narrative style with sections: Highlights, Merged PRs, Closed Issues, Notable Commits, Risks/Follow-ups.\n\nCommits:\n${commits.map(c => `- ${c.sha.slice(0, 7)} ${c.commit.message.split('\\n')[0]} by ${c.commit.author?.name || 'unknown'}`).join('\\n') || '- None'}\n\nClosed issues:\n${issues.filter(i => !i.pull_request).map(i => `- #${i.number} ${i.title}`).join('\\n') || '- None'}\n\nMerged PRs:\n${mergedPulls.map(pr => `- #${pr.number} ${pr.title}`).join('\\n') || '- None'}\n`;\n\nreturn [{ json: { ...cfg, since, until, counts: { commits: commits.length, closedIssues: issues.filter(i => !i.pull_request).length, mergedPulls: mergedPulls.length }, prompt } }];"
+      },
+      "id": "80a3f509-2326-41b6-a1d9-eda0fad22424",
+      "name": "Fetch GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$json.anthropicApiKey}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1200, messages: [{ role: 'user', content: $json.prompt }] }) }}",
+        "options": {}
+      },
+      "id": "20677095-ab57-44a9-bcd9-9f5c8dbaf7c2",
+      "name": "Generate Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\nconst text = body.content?.map(part => part.text).join('\\n') || body.summary || JSON.stringify(body);\nreturn [{ json: { text } }];"
+      },
+      "id": "579590bb-083a-4d9a-99b4-912c49bb43ca",
+      "name": "Extract Summary Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node['Config'].json.slackWebhookUrl}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.text }) }}",
+        "options": {}
+      },
+      "id": "6e8c694d-79b3-425f-bf66-887387c56a12",
+      "name": "Send Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Friday 5pm Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Activity": {
+      "main": [
+        [
+          {
+            "node": "Generate Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary Text": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 2,
+  "updatedAt": "2026-05-12T00:00:00.000Z",
+  "versionId": "1"
+}
