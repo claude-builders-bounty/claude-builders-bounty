@@ -1,0 +1,373 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "9f1e559b-c3d9-4d8a-b0c8-5f6e68b58201",
+      "name": "Weekly Friday 17:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "owner",
+              "name": "owner",
+              "type": "string",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "id": "repo",
+              "name": "repo",
+              "type": "string",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "id": "language",
+              "name": "language",
+              "type": "string",
+              "value": "EN"
+            },
+            {
+              "id": "slackWebhookUrl",
+              "name": "slackWebhookUrl",
+              "type": "string",
+              "value": "https://hooks.slack.com/services/REPLACE/ME"
+            },
+            {
+              "id": "since",
+              "name": "since",
+              "type": "string",
+              "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "155f7c86-c9d7-4c78-857a-2ab223af0b80",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits?since={{ encodeURIComponent($json.since) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d304bdfa-babe-4f51-b13d-72e2a8689452",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        -180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_GITHUB_CREDENTIAL",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config').item.json.owner }}/{{ $('Config').item.json.repo }}/issues?state=closed&since={{ encodeURIComponent($('Config').item.json.since) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "82f827e0-0ddb-48bc-8bd7-b0e6c2af0554",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_GITHUB_CREDENTIAL",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config').item.json.owner }}/{{ $('Config').item.json.repo }}/pulls?state=closed&sort=updated&direction=desc",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4857fa07-cd6a-41ac-b029-b3300702bb65",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_GITHUB_CREDENTIAL",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Config').first().json;\nconst commits = $('Fetch Commits').all().map(item => item.json).flat().slice(0, 30).map(c => ({ sha: c.sha?.slice(0, 7), message: c.commit?.message, author: c.commit?.author?.name }));\nconst closedIssues = $('Fetch Closed Issues').all().map(item => item.json).flat().filter(i => !i.pull_request).slice(0, 30).map(i => ({ number: i.number, title: i.title, closed_at: i.closed_at }));\nconst sinceMs = Date.parse(config.since);\nconst mergedPrs = $('Fetch Merged PRs').all().map(item => item.json).flat().filter(pr => pr.merged_at && Date.parse(pr.merged_at) >= sinceMs).slice(0, 30).map(pr => ({ number: pr.number, title: pr.title, merged_at: pr.merged_at, author: pr.user?.login }));\nreturn [{ json: { config, activity: { commits, closedIssues, mergedPrs } } }];"
+      },
+      "id": "6106f724-cf96-4a19-b0eb-408c6a10f66f",
+      "name": "Build Activity Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'claude-sonnet-4-20250514', max_tokens: 900, messages: [{ role: 'user', content: `Write a concise weekly narrative development summary in ${$json.config.language}. Focus on outcomes, risks, and next steps. Activity JSON: ${JSON.stringify($json.activity)}` }] } }}",
+        "options": {}
+      },
+      "id": "79cfc6ef-d637-4c4e-8168-ec1360a01a1a",
+      "name": "Generate Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        140,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_ANTHROPIC_CREDENTIAL",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst text = response.content?.map(part => part.text || '').join('\\n').trim() || 'No summary generated.';\nconst config = $('Config').first().json;\nreturn [{ json: { slackWebhookUrl: config.slackWebhookUrl, text } }];"
+      },
+      "id": "632a8994-bbc7-40a8-b502-7c1ac9f5f4c1",
+      "name": "Format Slack Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.slackWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { text: $json.text } }}",
+        "options": {}
+      },
+      "id": "2433534c-a8aa-4861-b742-2c0fb20f9db3",
+      "name": "Post To Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 17:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Build Activity Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Build Activity Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Build Activity Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Activity Payload": {
+      "main": [
+        [
+          {
+            "node": "Generate Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Slack Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slack Message": {
+      "main": [
+        [
+          {
+            "node": "Post To Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-05-12T10:20:00.000Z",
+  "versionId": "5b84f5ac-90ec-4ed8-a31e-f7df1686ee9d"
+}
