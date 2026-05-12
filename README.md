@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+Generate a Markdown changelog from git history in three steps:
+
+1. Run `scripts/generate_changelog.sh --output CHANGELOG.md`
+2. Review the generated `Features`, `Fixes`, `Documentation`, and `Maintenance` sections
+3. Commit the changelog with your release or PR
+
+Use `--from <ref>` and `--to <ref>` to generate a changelog for a specific release range.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
