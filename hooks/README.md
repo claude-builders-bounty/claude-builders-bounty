@@ -58,12 +58,36 @@ All blocked attempts are logged to `~/.claude/hooks/blocked.log`:
 
 Set `CLAUDE_HOOKS_LOG` to customize the log path.
 
+## Allowlist
+
+Create `~/.claude/hooks/allowlist.txt` to whitelist specific commands:
+
+```bash
+# Lines starting with # are comments
+# Each line is a literal substring match
+rm -rf node_modules
+git push --force origin feature-branch
+```
+
+Set `CLAUDE_HOOKS_ALLOWLIST` to customize the allowlist path.
+
+## Testing
+
+Run the test suite:
+
+```bash
+bash hooks/test-hook.sh
+```
+
+Tests cover all 5 categories: filesystem, remote code exec, SQL, git, and system commands.
+
 ## False positives
 
 If a command is incorrectly blocked, you can:
-1. Temporarily disable the hook in `.claude/settings.json`
-2. Modify the pattern lists in the script
-3. The hook only blocks — it never auto-approves
+1. Add it to `~/.claude/hooks/allowlist.txt`
+2. Temporarily disable the hook in `.claude/settings.json`
+3. Modify the pattern lists in the script
+4. The hook only blocks — it never auto-approves
 
 ## Acceptance Criteria
 

@@ -4,6 +4,7 @@
 set -euo pipefail
 
 LOG_FILE="${CLAUDE_HOOKS_LOG:-$HOME/.claude/hooks/blocked.log}"
+ALLOWLIST_FILE="${CLAUDE_HOOKS_ALLOWLIST:-$HOME/.claude/hooks/allowlist.txt}"
 
 # Read JSON from stdin
 INPUT=$(cat)
@@ -92,6 +93,17 @@ check_patterns() {
   done
   return 1
 }
+
+# --- Allowlist check ---
+# If the command matches any line in the allowlist, skip all pattern checks
+if [[ -f "$ALLOWLIST_FILE" ]]; then
+  while IFS= read -r allowed; do
+    [[ -z "$allowed" || "$allowed" == \#* ]] && continue
+    if echo "$COMMAND" | grep -qF "$allowed"; then
+      exit 0
+    fi
+  done < "$ALLOWLIST_FILE"
+fi
 
 # --- Main logic ---
 
