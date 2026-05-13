@@ -22,6 +22,14 @@ You're in the right place.
 
 ---
 
+## Generate Changelog Tool
+
+1. Copy `changelog.sh`, `SKILL.md`, and `.claude/commands/generate-changelog.md` into a git repository.
+2. From the repository root, run `bash changelog.sh` or use `/generate-changelog` in Claude Code.
+3. Review and commit the generated `CHANGELOG.md`.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
