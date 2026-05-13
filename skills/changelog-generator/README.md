@@ -27,6 +27,8 @@ chmod +x changelog.sh
 ./changelog.sh --verbose
 ```
 
+As a Claude Code skill, open `SKILL.md` and run the same script from the target repository.
+
 ## How It Works
 
 1. Detects the most recent git tag (or falls back to full history)
@@ -34,6 +36,7 @@ chmod +x changelog.sh
 3. Auto-categorizes into **Added**, **Fixed**, **Changed**, and **Removed** using conventional commit prefixes
 4. Outputs a clean Markdown changelog following [keepachangelog.com](https://keepachangelog.com) conventions
 5. Strips conventional-commit prefixes for cleaner bullet text
+6. Falls back to all history when the repository has no tags
 
 ### Categorization Rules
 
@@ -69,4 +72,10 @@ chmod +x changelog.sh
 
 ---
 _47 commits covering v0.1.2..HEAD_
+```
+
+## Test
+
+```bash
+bash test_changelog.sh
 ```

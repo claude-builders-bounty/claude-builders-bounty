@@ -49,9 +49,11 @@ cd "${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
 LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo '')"
 if [ -n "$LAST_TAG" ]; then
   RANGE="${LAST_TAG}..HEAD"
+  RANGE_LABEL="$RANGE"
   VERSION="${LAST_TAG#v}"
 else
-  RANGE="$(git rev-list --max-parents=0 HEAD)..HEAD"
+  RANGE="HEAD"
+  RANGE_LABEL="all history"
   VERSION="Unreleased"
 fi
 
@@ -59,12 +61,12 @@ TODAY="$(date +%Y-%m-%d)"
 TOTAL="$(git log "$RANGE" --oneline 2>/dev/null | wc -l | tr -d ' ')"
 
 if [ "$TOTAL" -eq 0 ]; then
-  echo "No commits found in range $RANGE" >&2
+  echo "No commits found in range $RANGE_LABEL" >&2
   exit 1
 fi
 
 if [ "$VERBOSE" = true ]; then
-  echo "Generating changelog: $RANGE ($TOTAL commits)" >&2
+  echo "Generating changelog: $RANGE_LABEL ($TOTAL commits)" >&2
 fi
 
 ADDED=""
@@ -82,24 +84,29 @@ categorize() {
     stripped="$(echo "$msg" | sed -E 's/^[a-z]+(\([^)]+\))?:\s*//')"
   fi
 
-  if echo "$msg" | grep -qiE '^(feat|add|implement|introduce|create|new)\b'; then
+  if echo "$msg" | grep -qiE '^(feat|feature|add|implement|introduce|create|new)(\([^)]+\))?([[:space:]:]|$)'; then
     ADDED+="- ${stripped}"$'\n'
-  elif echo "$msg" | grep -qiE '^(fix|bug|resolve|patch|correct|hotfix)\b'; then
+  elif echo "$msg" | grep -qiE '^(fix|bug|resolve|patch|correct|hotfix)(\([^)]+\))?([[:space:]:]|$)'; then
     FIXED+="- ${stripped}"$'\n'
-  elif echo "$msg" | grep -qiE '^(remove|drop|delete|deprecate|revert)\b'; then
+  elif echo "$msg" | grep -qiE '^(remove|drop|delete|deprecate|revert)(\([^)]+\))?([[:space:]:]|$)'; then
     REMOVED+="- ${stripped}"$'\n'
-  elif echo "$msg" | grep -qiE '^(chore|refactor|style|docs|test|ci|perf|build|update|improve|bump)\b'; then
+  elif echo "$msg" | grep -qiE '^(chore|refactor|style|docs|test|ci|perf|build|update|improve|bump)(\([^)]+\))?([[:space:]:]|$)'; then
     CHANGED+="- ${stripped}"$'\n'
   else
     UNCATEGORIZED+="- ${msg}"$'\n'
   fi
 }
 
-while IFS= read -r msg; do
+LOG_ORDER=()
+if [ "$REVERSE" = true ]; then
+  LOG_ORDER=(--reverse)
+fi
+
+while IFS= read -r msg || [ -n "$msg" ]; do
   [ -z "$msg" ] && continue
   msg="$(echo "$msg" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   categorize "$msg"
-done < <(git log "$RANGE" --pretty=format:"%s" 2>/dev/null)
+done < <(git log "${LOG_ORDER[@]}" "$RANGE" --pretty=format:"%s" 2>/dev/null)
 
 render_section() {
   local title="$1"
@@ -133,7 +140,7 @@ render_section() {
   fi
 
   echo "---"
-  echo "_${TOTAL} commits covering ${RANGE}_"
+  echo "_${TOTAL} commits covering ${RANGE_LABEL}_"
 } > "$OUTPUT"
 
 echo "Generated ${OUTPUT} (${VERSION}, ${TOTAL} commits)"
