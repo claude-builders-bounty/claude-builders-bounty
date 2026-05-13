@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. Copy `changelog.sh` into a git repository.
+2. Run `bash changelog.sh`.
+3. Review the generated `CHANGELOG.md`.
+
+See [`docs/generate-changelog.md`](docs/generate-changelog.md) for options and [`docs/SAMPLE_CHANGELOG.md`](docs/SAMPLE_CHANGELOG.md) for tested output.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
