@@ -51,3 +51,29 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+---
+
+## CHANGELOG Generator
+
+Generate a structured `CHANGELOG.md` from git history (since the latest tag).
+
+### Install / run (2 commands)
+
+```bash
+chmod +x changelog.sh
+bash changelog.sh
+```
+
+### What it does
+
+- Reads commit subjects since the latest git tag (`<last-tag>..HEAD`)
+- Categorizes commits into **Added / Fixed / Changed / Removed**
+- Writes Markdown output to `CHANGELOG.md` (or custom output file argument)
+
+### Example
+
+```bash
+bash changelog.sh CHANGELOG.generated.md
+```
