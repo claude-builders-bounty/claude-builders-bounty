@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""
+pre-tool-use hook — Block dangerous bash commands before execution
+for claude-builders-bounty · Bounty $100
+
+Usage:
+  Place this file at: ~/.claude/hooks/pre-tool-use
+  Make executable: chmod +x ~/.claude/hooks/pre-tool-use
+
+  Claude Code will invoke this hook before every tool use.
+  Exit code 0 = allow, Exit code 1 = block.
+
+Protocol:
+  The hook receives JSON on stdin with the tool call details:
+  {
+    "tool_name": "bash",
+    "tool_input": { "command": "rm -rf /tmp/*" },
+    "session_id": "...",
+    "cwd": "/home/user/project"
+  }
+"""
+
+import json
+import sys
+import os
+import re
+from datetime import datetime
+
+# ─── Logging ─────────────────────────────────────────────
+LOG_DIR = os.path.expanduser("~/.claude/hooks")
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, "blocked.log")
+
+
+def log_blocked_command(command, cwd, reason):
+    """Log blocked command attempt to ~/.claude/hooks/blocked.log"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = (
+        f"[{timestamp}] BLOCKED"
+        f" | CWD: {cwd}"
+        f" | Command: {command}"
+        f" | Reason: {reason}\n"
+    )
+    with open(LOG_FILE, "a") as f:
+        f.write(log_entry)
+
+
+# ─── Block patterns ──────────────────────────────────────
+BLOCK_PATTERNS = [
+    (r'\brm\s+(-[rRf]+\S*\s+)*[/~]', "rm targeting root or home directory"),
+    (r'\brm\s+-rf\s+/', "rm -rf /"),
+    (r'\brm\s+-rf\s+\*', "rm -rf * (recursive wildcard)"),
+    (r'\brm\s+-rf\s+\.\b', "rm -rf . (current dir)"),
+    (r'\bDROP\s+(TABLE|DATABASE)', "DROP TABLE/DATABASE"),
+    (r'\bTRUNCATE\s+(TABLE\s+)?\w+', "TRUNCATE TABLE"),
+    (r'\bDELETE\s+FROM\s+\w+\s*(WHERE\s+1\s*=\s*1|;|$)', "DELETE FROM without WHERE clause"),
+    (r'\bgit\s+push\s+(-f|--force)\b', "git push --force"),
+    (r'\bgit\s+push\s+.*--delete\b', "git push --delete"),
+    (r'>\s*/dev/sd[a-z]', "writing directly to block device"),
+    (r'\bdd\s+if=.*of=/dev/', "dd to block device"),
+    (r':\(\)\s*\{\s*:\|:&\s*\}\s*;', "fork bomb pattern"),
+    (r'\bchmod\s+(-R\s+)?777\b', "chmod 777"),
+    (r'\bchown\s+(-R\s+)?\S+\s+[/~]', "chown on root or home"),
+    (r'\b>[\s]*/etc/(passwd|shadow|sudoers)', "overwriting critical system files"),
+    (r'\bcurl.*\|\s*(ba)?sh\b', "curl pipe to shell"),
+    (r'\bwget.*\|\s*(ba)?sh\b', "wget pipe to shell"),
+    (r'\b\./configure.*\|\s*(ba)?sh\b', "pipe install script to shell"),
+]
+
+ALLOWLIST = [
+    r'^\s*rm\s+-rf\s+/tmp/\w+',
+    r'^\s*rm\s+-rf\s+node_modules/?$',
+    r'^\s*rm\s+-rf\s+\.next/?$',
+    r'^\s*rm\s+-rf\s+dist/?$',
+    r'^\s*rm\s+-rf\s+\.turbo/?$',
+    r'^\s*rm\s+-rf\s+coverage/?$',
+]
+
+
+def is_dangerous(command):
+    """
+    Check if a command is dangerous.
+    Returns the block reason string, or None if safe.
+    """
+    for pattern in ALLOWLIST:
+        if re.search(pattern, command):
+            return None
+
+    for pattern, reason in BLOCK_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return reason
+
+    return None
+
+
+def main():
+    try:
+        input_data = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+    tool_name = input_data.get("tool_name", "")
+    if tool_name not in ("bash", "shell", "exec", "run"):
+        sys.exit(0)
+
+    tool_input = input_data.get("tool_input", {})
+    command = tool_input.get("command", tool_input.get("cmd", ""))
+    if not command:
+        sys.exit(0)
+
+    reason = is_dangerous(command)
+    if reason is None:
+        sys.exit(0)
+
+    cwd = input_data.get("cwd", os.getcwd())
+    log_blocked_command(command, cwd, reason)
+
+    response = {
+        "decision": "block",
+        "reason": reason,
+        "message": (
+            f"❌ Command Blocked by Policy.\n"
+            f"Command: {command}\n"
+            f"CWD: {cwd}\n"
+            f"Reason: {reason}\n"
+            f"Logged to: {LOG_FILE}"
+        )
+    }
+    print(json.dumps(response))
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
