@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""
+Claude Code Pre-Tool-Use Hook: Blocks Destructive Bash Commands
+
+Installed to ~/.claude/hooks/pre-tool-use, this hook intercepts dangerous bash
+commands before they are executed and blocks them with a clear explanation.
+
+Patterns blocked:
+  - rm -rf (recursive force delete)
+  - DROP TABLE (SQL destructive operation)
+  - git push --force / git push -f (force push)
+  - TRUNCATE (SQL destructive operation)
+  - DELETE FROM without WHERE clause (mass deletion)
+
+Usage:
+  Install: mkdir -p ~/.claude/hooks && cp pre-tool-use ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+# ── Configuration ──────────────────────────────────────────────────────────
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+DANGEROUS_PATTERNS = [
+    # rm -rf (recursive force delete)
+    (re.compile(r'\brm\s+(-[rf]{2,})\s+'), "rm -rf: Recursive force delete"),
+    # DROP TABLE
+    (re.compile(r'\bDROP\s+TABLE\b', re.IGNORECASE), "DROP TABLE: Destructive SQL operation"),
+    # git push --force / git push -f
+    (re.compile(r'\bgit\s+push\s+(--force|-f)\b'), "git push --force: Force push overwrites remote history"),
+    # TRUNCATE
+    (re.compile(r'\bTRUNCATE\b', re.IGNORECASE), "TRUNCATE: Destructive SQL operation"),
+    # DELETE FROM without WHERE clause (allow DELETE FROM ... WHERE)
+    (re.compile(r'\bDELETE\s+FROM\b(?!\s+\S+\s+WHERE\b)', re.IGNORECASE), "DELETE FROM without WHERE clause: Mass deletion"),
+]
+
+
+# ── Hook Implementation ────────────────────────────────────────────────────
+
+def get_project_path():
+    """Attempt to determine the project path from the current working directory."""
+    cwd = os.getcwd()
+    # If we're in a git repo, use the repo root for a nicer display
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=3, cwd=cwd
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return cwd
+
+
+def log_blocked(command, reason):
+    """Log a blocked command attempt to the log file."""
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    timestamp = datetime.now().isoformat()
+    project = get_project_path()
+    log_entry = {
+        "timestamp": timestamp,
+        "command": command,
+        "reason": reason,
+        "project": project,
+    }
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+
+def check_command(command):
+    """
+    Check a command against the dangerous patterns list.
+    Returns (blocked: bool, reason: str | None)
+    """
+    if not command or not command.strip():
+        return False, None
+
+    for pattern, description in DANGEROUS_PATTERNS:
+        if pattern.search(command):
+            return True, description
+
+    return False, None
+
+
+def block_response(command, reason):
+    """Generate the blocked response for Claude."""
+    return {
+        "action": "block",
+        "result": {
+            "status": "blocked",
+            "message": (
+                f"⚠️  Command Blocked: {reason}\n\n"
+                f"The following command was prevented from executing:\n\n"
+                f"```\n{command}\n```\n\n"
+                f"**Why?** {reason}\n\n"
+                f"**What to do instead:**\n"
+                f"- If you need to delete files, use `rm` without `-rf` (target specific files)\n"
+                f"- For database operations, add a WHERE clause or use a safe migration script\n"
+                f"- Use `git push` without `--force` (or coordinate with your team)\n\n"
+                f"All blocked attempts are logged to `~/.claude/hooks/blocked.log`"
+            ),
+        },
+    }
+
+
+def allow_response():
+    """Generate the allow response for Claude."""
+    return {
+        "action": "allow",
+        "result": {
+            "status": "allowed",
+        },
+    }
+
+
+# ── Main Entry Point ───────────────────────────────────────────────────────
+
+def main():
+    """
+    Claude Code calls hooks with a JSON payload on stdin:
+    {
+      "tool_use": {
+        "name": "bash",
+        "input": {
+          "command": "..."
+        }
+      },
+      "config": {
+        ...
+      }
+    }
+
+    The hook must return a JSON response on stdout:
+    {"action": "allow"} or {"action": "block", "result": {...}}
+    """
+    try:
+        raw_input = sys.stdin.read()
+        if not raw_input.strip():
+            print(json.dumps(allow_response()))
+            return
+
+        payload = json.loads(raw_input)
+
+        # Extract the bash command from the tool_use input
+        tool_use = payload.get("tool_use", {})
+        if tool_use.get("name") != "bash":
+            print(json.dumps(allow_response()))
+            return
+
+        command = tool_use.get("input", {}).get("command", "")
+        if not command:
+            print(json.dumps(allow_response()))
+            return
+
+        # Check the command against dangerous patterns
+        blocked, reason = check_command(command)
+        if blocked:
+            log_blocked(command, reason)
+            print(json.dumps(block_response(command, reason)))
+        else:
+            print(json.dumps(allow_response()))
+
+    except json.JSONDecodeError:
+        print(json.dumps(allow_response()))
+    except Exception as e:
+        # Never block on hook errors — fail open
+        print(json.dumps(allow_response()))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,53 +1,60 @@
-# Claude Builders Bounty 🤖
+# ⚠️ Pre-Tool-Use Hook: Destructive Command Guard
 
-> A community bounty board for Claude Code builders.
+A [Claude Code](https://docs.anthropic.com/claude-code) `pre-tool-use` hook that intercepts dangerous bash commands before they execute.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation
 
----
+```bash
+mkdir -p ~/.claude/hooks && curl -o ~/.claude/hooks/pre-tool-use https://raw.githubusercontent.com/extremeWu/claude-builders-bounty/main/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+```
 
-## How it works
+**That's it.** Claude loads the hook automatically on the next `/thinking` or tool use.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## What It Blocks
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+| Pattern | Reason |
+|---------|--------|
+| `rm -rf` | Recursive force delete (irreversible) |
+| `DROP TABLE` | Destructive SQL operation |
+| `git push --force` / `git push -f` | Force push rewrites remote history |
+| `TRUNCATE` | Destructive SQL operation |
+| `DELETE FROM` (without `WHERE`) | Mass deletion of all rows |
 
----
+## What It Logs
 
-## Active Bounties
+All blocked attempts are logged to `~/.claude/hooks/blocked.log` in JSON format:
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```json
+{"timestamp": "2026-05-13T16:45:00", "command": "rm -rf /project/data", "reason": "rm -rf: Recursive force delete", "project": "/home/user/my-project"}
+```
 
----
+## How It Works
 
-## Rules
+1. Claude calls the hook with a JSON payload on stdin before executing each `bash` tool use
+2. The hook checks the command against the dangerous patterns list
+3. If matched → blocks execution, logs the attempt, returns a clear explanation
+4. If safe → allows execution immediately
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+The hook **fails open** — if anything goes wrong (JSON parse error, etc.), the command is allowed.
 
----
+## Uninstall
 
-## Community
+```bash
+rm ~/.claude/hooks/pre-tool-use
+```
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Development
 
----
+To test locally:
 
-*Started by the Claude builder community · March 2026 · MIT License*
+```bash
+# Test a blocked command
+echo '{"tool_use":{"name":"bash","input":{"command":"rm -rf /tmp/test"}}}' | python3 pre-tool-use
+
+# Test an allowed command
+echo '{"tool_use":{"name":"bash","input":{"command":"ls -la"}}}' | python3 pre-tool-use
+```
+
+## License
+
+MIT
