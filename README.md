@@ -1,53 +1,72 @@
-# Claude Builders Bounty 🤖
+# 📋 Changelog Generator
 
-> A community bounty board for Claude Code builders.
+Automatically generates a structured `CHANGELOG.md` from your project's git history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
 
----
+```bash
+# 1. Copy the script to your project
+cp changelog.sh /path/to/your/project/
 
-## How it works
+# 2. Generate your changelog
+cd /path/to/your/project && python3 changelog.sh
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+**Done.** Open `CHANGELOG.md` to see the results.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Usage
 
----
+```bash
+# Generate changelog since the last git tag (auto-detected)
+python3 changelog.sh
 
-## Active Bounties
+# Generate changelog from a specific tag
+python3 changelog.sh --from v1.0.0
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# Output to a custom file
+python3 changelog.sh --output HISTORY.md
 
----
+# Print to stdout
+python3 changelog.sh --stdout
+```
 
-## Rules
+## Features
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+- **Auto-categorization** — Commits are sorted into: `Added` / `Fixed` / `Changed` / `Removed` / `Documentation` / `Testing` / `CI/CD`
+- **Conventional commit aware** — Recognizes `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `ci:` prefixes
+- **Emoji support** — Also categorizes by leading emoji (✨ → Added, 🐛 → Fixed, etc.)
+- **Link to commits** — Each entry links to the commit on GitHub
+- **Auto-version** — Uses the last git tag as the version number
 
----
+## Requirements
 
-## Community
+- Python 3.7+
+- Git (any version)
+- Works on macOS, Linux, and WSL
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Example Output
 
----
+```
+# Changelog
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## [v1.0.0] — 2026-05-13
+
+### 🚀 Added
+- Implement cross-session memory retrieval (#42) (abc1234)
+- Add user authentication module (def5678)
+
+### 🐛 Fixed
+- Fix null pointer in session handler (ghi9012)
+- Resolve memory leak in long-running graphs (jkl3456)
+
+### 🔄 Changed
+- Refactor API client to use async/await (mno7890)
+- Update dependencies to latest versions (pqr1234)
+
+### 🗑️ Removed
+- Drop deprecated v1 API endpoints (stu5678)
+```
+
+## License
+
+MIT
