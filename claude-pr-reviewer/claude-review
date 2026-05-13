@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request and print structured Markdown.
+
+The CLI prefers Claude Code when the `claude` executable is available. It sends
+Claude the PR diff and asks for the exact review structure required by the
+bounty. For CI, demos, and machines without Claude Code, pass `--no-claude` to
+use the deterministic local reviewer.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import shutil
+import subprocess
+import sys
+import textwrap
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+
+PR_RE = re.compile(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)")
+
+
+@dataclass(frozen=True)
+class PullRequest:
+    owner: str
+    repo: str
+    number: str
+    url: str
+
+    @property
+    def diff_url(self) -> str:
+        return f"https://github.com/{self.owner}/{self.repo}/pull/{self.number}.diff"
+
+
+@dataclass
+class DiffStats:
+    files_changed: int
+    additions: int
+    deletions: int
+    has_tests: bool
+    has_docs: bool
+    has_lockfile: bool
+    has_migration: bool
+    has_ci: bool
+    risky_files: list[str]
+
+
+def parse_pr_url(url: str) -> PullRequest:
+    match = PR_RE.fullmatch(url.strip())
+    if not match:
+        raise ValueError("Expected PR URL like https://github.com/owner/repo/pull/123")
+    owner, repo, number = match.groups()
+    return PullRequest(owner=owner, repo=repo, number=number, url=url.strip())
+
+
+def fetch_diff(pr: PullRequest) -> str:
+    request = urllib.request.Request(pr.diff_url, headers={"User-Agent": "claude-review-cli"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"Could not fetch PR diff: HTTP {exc.code}") from exc
+
+
+def changed_files(diff: str) -> list[str]:
+    files: list[str] = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                path = parts[3]
+                files.append(path[2:] if path.startswith("b/") else path)
+    return files
+
+
+def diff_stats(diff: str) -> DiffStats:
+    files = changed_files(diff)
+    additions = sum(1 for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    deletions = sum(1 for line in diff.splitlines() if line.startswith("-") and not line.startswith("---"))
+    lower_files = [path.lower() for path in files]
+    risky = [
+        path
+        for path in files
+        if any(marker in path.lower() for marker in ("auth", "payment", "billing", "security", "migration", "db", "database", "workflow"))
+    ]
+    return DiffStats(
+        files_changed=len(files),
+        additions=additions,
+        deletions=deletions,
+        has_tests=any("test" in path or "spec" in path for path in lower_files),
+        has_docs=any(path.endswith((".md", ".mdx", ".rst")) or "docs/" in path for path in lower_files),
+        has_lockfile=any(path.endswith(("lock", "lockb")) or path in {"package-lock.json", "pnpm-lock.yaml", "yarn.lock"} for path in lower_files),
+        has_migration=any("migration" in path or "migrations/" in path for path in lower_files),
+        has_ci=any(path.startswith(".github/workflows/") for path in lower_files),
+        risky_files=risky,
+    )
+
+
+def heuristic_review(pr: PullRequest, diff: str) -> str:
+    stats = diff_stats(diff)
+    files = changed_files(diff)
+    preview_files = ", ".join(files[:5]) if files else "no file list detected"
+
+    risks: list[str] = []
+    suggestions: list[str] = []
+
+    if not stats.has_tests:
+        risks.append("No test files were changed, so regressions may not be covered.")
+        suggestions.append("Add or update focused tests for the changed behavior before merging.")
+    if stats.risky_files:
+        risks.append("Sensitive areas changed: " + ", ".join(stats.risky_files[:5]) + ".")
+        suggestions.append("Manually verify authorization, data integrity, and rollback behavior for sensitive files.")
+    if stats.has_lockfile:
+        risks.append("Dependency lockfile changed; supply-chain or version drift should be reviewed.")
+        suggestions.append("Confirm dependency changes are intentional and run the full install/build pipeline.")
+    if stats.has_migration:
+        risks.append("Database migration changes can be hard to reverse once deployed.")
+        suggestions.append("Document migration rollback expectations and test against a copy of production-like data.")
+    if stats.additions + stats.deletions > 500:
+        risks.append("Large diff size increases review complexity and hidden regression risk.")
+        suggestions.append("Consider splitting unrelated changes or adding a reviewer checklist for high-risk areas.")
+    if not risks:
+        risks.append("No obvious high-risk patterns were detected from the diff metadata.")
+    if stats.has_docs:
+        suggestions.append("Check that documentation examples match the final behavior and command names.")
+    if not suggestions:
+        suggestions.append("Run the project's normal lint, typecheck, test, and build commands before merge.")
+
+    confidence = "High"
+    if stats.additions + stats.deletions > 500 or stats.risky_files:
+        confidence = "Medium"
+    if not diff.strip():
+        confidence = "Low"
+
+    return f"""## Summary of changes
+
+This PR changes {stats.files_changed} file(s) with approximately {stats.additions} additions and {stats.deletions} deletions. The visible diff touches {preview_files}, so the review focus should be on the behavior represented by those files and whether the validation coverage matches the change size.
+
+## Identified risks
+
+{chr(10).join(f'- {risk}' for risk in risks)}
+
+## Improvement suggestions
+
+{chr(10).join(f'- {suggestion}' for suggestion in suggestions)}
+
+## Confidence score
+
+{confidence}
+"""
+
+
+def claude_review(pr: PullRequest, diff: str) -> str:
+    prompt = textwrap.dedent(
+        f"""
+        Review this GitHub PR diff and return only structured Markdown with these sections:
+        - Summary of changes (2-3 sentences)
+        - Identified risks (list)
+        - Improvement suggestions (list)
+        - Confidence score: Low / Medium / High
+
+        PR: {pr.url}
+
+        Diff:
+        ```diff
+        {diff[:120000]}
+        ```
+        """
+    ).strip()
+    result = subprocess.run(
+        ["claude", "-p", prompt, "--max-turns", "1"],
+        text=True,
+        capture_output=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "Claude Code review failed")
+    return result.stdout.strip() + "\n"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Review a GitHub PR and print structured Markdown.")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
+    parser.add_argument("--no-claude", action="store_true", help="Use deterministic local reviewer instead of Claude Code")
+    args = parser.parse_args()
+
+    try:
+        pr = parse_pr_url(args.pr)
+        diff = fetch_diff(pr)
+        if not args.no_claude and shutil.which("claude"):
+            review = claude_review(pr, diff)
+        else:
+            review = heuristic_review(pr, diff)
+        print(review, end="")
+        return 0
+    except Exception as exc:  # pragma: no cover - CLI guard
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
