@@ -1,4 +1,4 @@
-# Claude Builders Bounty 🤖
+﻿# Claude Builders Bounty 🤖
 
 > A community bounty board for Claude Code builders.
 
@@ -32,6 +32,18 @@ You're in the right place.
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
+---
+
+## Destructive Command Hook
+
+This repo includes a Claude Code `PreToolUse` hook that blocks destructive Bash commands before they run. It blocks `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` statements without a `WHERE` clause, then logs each blocked attempt to `~/.claude/hooks/blocked.log`.
+
+Install it in 2 commands:
+
+```bash
+mkdir -p ~/.claude/hooks && cp .claude/hooks/block-destructive-commands.py ~/.claude/hooks/
+cp .claude/settings.example.json ~/.claude/settings.json
+```
 ---
 
 ## Rules
