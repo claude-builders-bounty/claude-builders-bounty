@@ -1,4 +1,4 @@
-# Claude Builders Bounty 🤖
+﻿# Claude Builders Bounty 🤖
 
 > A community bounty board for Claude Code builders.
 
@@ -32,6 +32,11 @@ You're in the right place.
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
+---
+
+## Templates
+
+- [Next.js + SQLite SaaS CLAUDE.md](templates/nextjs-sqlite-saas/CLAUDE.md)
 ---
 
 ## Rules
