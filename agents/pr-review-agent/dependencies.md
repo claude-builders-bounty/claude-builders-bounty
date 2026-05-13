@@ -1,0 +1,2 @@
+- GitHub CLI (`gh`) must be authenticated
+- Requires network access to GitHub API
