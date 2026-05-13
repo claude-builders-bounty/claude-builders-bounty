@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+# flake8: noqa: E501
+"""Generate a structured Markdown review from a GitHub pull request diff."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+from collections import Counter
+from dataclasses import dataclass
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+
+PR_PATTERN = re.compile(
+    r"^https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)/?$"
+)
+
+
+@dataclass
+class DiffStats:
+    files: list[str]
+    additions: int
+    deletions: int
+    hunks: int
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="claude-review",
+        description="Generate a structured Markdown PR review from a GitHub PR diff.",
+    )
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--output", help="Optional file path. Defaults to stdout.")
+    return parser.parse_args()
+
+
+def pr_diff_url(pr_url: str) -> str:
+    match = PR_PATTERN.match(pr_url.strip())
+    if not match:
+        raise ValueError("expected a URL like https://github.com/owner/repo/pull/123")
+    return (
+        "https://github.com/"
+        f"{match.group('owner')}/{match.group('repo')}/pull/{match.group('number')}.diff"
+    )
+
+
+def fetch_diff(pr_url: str) -> str:
+    headers = {
+        "Accept": "application/vnd.github.diff",
+        "User-Agent": "claude-review",
+    }
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(pr_diff_url(pr_url), headers=headers)
+    try:
+        with urlopen(request, timeout=20) as response:  # nosec B310
+            return response.read().decode("utf-8", errors="replace")
+    except HTTPError as error:
+        raise RuntimeError(f"GitHub returned HTTP {error.code}") from error
+    except URLError as error:
+        raise RuntimeError(f"could not fetch PR diff: {error.reason}") from error
+
+
+def analyze_diff(diff: str) -> DiffStats:
+    files: list[str] = []
+    additions = 0
+    deletions = 0
+    hunks = 0
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split(" b/", 1)
+            if len(parts) == 2:
+                files.append(parts[1])
+        elif line.startswith("@@"):
+            hunks += 1
+        elif line.startswith("+") and not line.startswith("+++"):
+            additions += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            deletions += 1
+
+    return DiffStats(files=files, additions=additions, deletions=deletions, hunks=hunks)
+
+
+def file_groups(files: list[str]) -> Counter[str]:
+    groups: Counter[str] = Counter()
+    for file_path in files:
+        suffix = os.path.splitext(file_path)[1].lower() or "[no extension]"
+        groups[suffix] += 1
+    return groups
+
+
+def has_any(files: list[str], keywords: tuple[str, ...]) -> bool:
+    lowered = [file_path.lower() for file_path in files]
+    return any(
+        any(keyword in file_path for keyword in keywords) for file_path in lowered
+    )
+
+
+def is_docs_only(files: list[str]) -> bool:
+    doc_extensions = {".md", ".mdc", ".txt", ".rst", ".adoc"}
+    return bool(files) and all(
+        os.path.splitext(file_path)[1].lower() in doc_extensions for file_path in files
+    )
+
+
+def build_risks(stats: DiffStats) -> list[str]:
+    risks: list[str] = []
+    total_changed = stats.additions + stats.deletions
+    files = stats.files
+    docs_only = is_docs_only(files)
+
+    if not files:
+        return ["The diff could not be parsed into changed files."]
+    if total_changed > 800:
+        risks.append(
+            "Large diff size may hide regressions and deserves careful review."
+        )
+    if not docs_only and has_any(
+        files, ("auth", "login", "token", "secret", "credential")
+    ):
+        risks.append("Authentication or credential-related files changed.")
+    if not docs_only and has_any(files, ("migration", "schema", "database", "prisma")):
+        risks.append("Database or schema changes may require migration verification.")
+    if not docs_only and has_any(
+        files, ("package-lock", "pnpm-lock", "yarn.lock", "requirements")
+    ):
+        risks.append(
+            "Dependency lockfiles changed and may affect install reproducibility."
+        )
+    if not docs_only and not has_any(files, ("test", "spec", "__tests__")):
+        risks.append("No obvious test files changed.")
+    if not has_any(files, ("readme", "docs", ".md")):
+        risks.append("No obvious documentation files changed.")
+
+    return risks or ["No major structural risks detected from the diff metadata."]
+
+
+def build_suggestions(stats: DiffStats) -> list[str]:
+    suggestions: list[str] = []
+    files = stats.files
+    docs_only = is_docs_only(files)
+
+    if not docs_only and not has_any(files, ("test", "spec", "__tests__")):
+        suggestions.append("Add or update focused tests for the changed behavior.")
+    if not has_any(files, ("readme", "docs", ".md")):
+        suggestions.append(
+            "Add a short usage or migration note if behavior is user-facing."
+        )
+    if stats.additions + stats.deletions > 800:
+        suggestions.append(
+            "Consider splitting follow-up cleanup from functional changes."
+        )
+    if not docs_only and has_any(files, ("api", "route", "controller", "handler")):
+        suggestions.append(
+            "Verify error responses, auth boundaries, and request validation."
+        )
+    if not docs_only and has_any(files, ("ui", "component", ".tsx", ".jsx")):
+        suggestions.append(
+            "Check loading, empty, disabled, and error UI states manually."
+        )
+
+    return suggestions or [
+        "Proceed with normal reviewer attention; the diff appears focused."
+    ]
+
+
+def confidence(stats: DiffStats) -> str:
+    total_changed = stats.additions + stats.deletions
+    if not stats.files or total_changed > 1000:
+        return "Low"
+    if total_changed > 400 or len(stats.files) > 12:
+        return "Medium"
+    return "High"
+
+
+def render_review(pr_url: str, stats: DiffStats) -> str:
+    groups = file_groups(stats.files)
+    top_groups = ", ".join(
+        f"{extension}: {count}" for extension, count in groups.most_common(4)
+    )
+    summary = (
+        f"This PR changes {len(stats.files)} file(s) with {stats.additions} additions "
+        f"and {stats.deletions} deletions across {stats.hunks} diff hunk(s). "
+        f"The main file groups are {top_groups or 'not available'}."
+    )
+    if stats.files:
+        summary += f" The most prominent changed path is `{stats.files[0]}`."
+
+    lines = [
+        "## PR Review",
+        "",
+        f"Source: {pr_url}",
+        "",
+        "### Summary",
+        "",
+        summary,
+        "",
+        "### Identified Risks",
+        "",
+    ]
+    lines.extend(f"- {risk}" for risk in build_risks(stats))
+    lines.extend(["", "### Improvement Suggestions", ""])
+    lines.extend(f"- {suggestion}" for suggestion in build_suggestions(stats))
+    lines.extend(["", "### Confidence", "", confidence(stats), ""])
+    return "\n".join(lines)
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        diff = fetch_diff(args.pr)
+        review = render_review(args.pr, analyze_diff(diff))
+    except (RuntimeError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as handle:
+            handle.write(review)
+    else:
+        print(review)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
