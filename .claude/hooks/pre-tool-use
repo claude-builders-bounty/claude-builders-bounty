@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+import json
+import os
+import re
+from datetime import datetime, timezone
+import sys
+
+
+def should_block(command: str) -> str | None:
+    lowered = command.lower()
+    if re.search(r"\brm\s+(-\S+\s+)*-?rf\b", lowered):
+        return "rm -rf"
+    if "drop table" in lowered:
+        return "DROP TABLE"
+    if re.search(r"\bgit\s+push\s+[^\\n]*--force", lowered):
+        return "git push --force"
+    if re.search(r"\btruncate\b", lowered):
+        return "TRUNCATE"
+    if re.search(r"\bdelete\s+from\b(?![^\n]*\bwhere\b)", lowered):
+        return "DELETE FROM (no WHERE clause)"
+    return None
+
+
+def main() -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        return 0
+
+    command = (
+        (payload.get("tool_input", {}) or {}).get("command")
+        if isinstance(payload, dict)
+        else ""
+    )
+
+    if not isinstance(command, str):
+        return 0
+
+    reason = should_block(command)
+    if not reason:
+        return 0
+
+    project_path = (payload.get("cwd") if isinstance(payload, dict) else "") or os.getcwd()
+    log_path = os.path.expanduser("~/.claude/hooks/blocked.log")
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    with open(log_path, "a", encoding="utf-8") as log_file:
+        log_file.write(
+            f"{timestamp} | project={project_path} | command={command}\n"
+        )
+
+    print(
+        "Blocked for safety: destructive command blocked by pre-tool-use hook "
+        f"({reason}).",
+        file=sys.stderr,
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
