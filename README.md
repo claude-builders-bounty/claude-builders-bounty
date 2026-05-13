@@ -51,3 +51,86 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+---
+
+## Bounty #3: Claude Code destructive command guard
+
+This repository now includes a Claude Code `PreToolUse` hook that blocks destructive Bash commands before they run.
+
+### What it blocks
+
+- `rm -rf`
+- `git push --force` and `git push -f`
+- `DROP TABLE`
+- `TRUNCATE`
+- `DELETE FROM` without a `WHERE` clause
+
+When a command is blocked, the hook exits with code `2`, prints a clear explanation, and appends an audit entry to `~/.claude/hooks/blocked.log`.
+
+### Install in 2 commands
+
+From this repository:
+
+```bash
+mkdir -p ~/.claude/hooks && cp claude_destructive_command_hook.py ~/.claude/hooks/destructive-command-guard.py
+python3 - <<'PYSETTINGS'
+import json
+from pathlib import Path
+settings = Path.home() / '.claude' / 'settings.json'
+settings.parent.mkdir(parents=True, exist_ok=True)
+data = json.loads(settings.read_text()) if settings.exists() else {}
+hooks = data.setdefault('hooks', {})
+pre = hooks.setdefault('PreToolUse', [])
+entry = {
+    'matcher': 'Bash',
+    'hooks': [{'type': 'command', 'command': 'python3 ~/.claude/hooks/destructive-command-guard.py'}],
+}
+if entry not in pre:
+    pre.append(entry)
+settings.write_text(json.dumps(data, indent=2) + '\n')
+PYSETTINGS
+```
+
+### Manual configuration
+
+Add this to `~/.claude/settings.json` or a project `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/destructive-command-guard.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Run tests
+
+```bash
+python3 -m unittest tests/test_hook.py -v
+```
+
+Expected result:
+
+```text
+Ran 7 tests
+OK
+```
+
+### Behavior notes
+
+- Normal Bash commands pass through silently with exit code `0`.
+- Non-Bash tools are ignored.
+- `DELETE FROM ... WHERE ...` is allowed.
+- SQL matching is intentionally conservative and string-based; it is a safety guard, not a SQL parser.
