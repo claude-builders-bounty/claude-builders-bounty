@@ -34,6 +34,21 @@ You're in the right place.
 
 ---
 
+## Review a Pull Request
+
+1. Run `python claude-review --pr https://github.com/owner/repo/pull/123`.
+2. Review the structured Markdown output.
+3. Optionally save it with `--output review.md`.
+
+The reviewer fetches the PR diff, summarizes the change size, flags risk areas, suggests follow-up checks, and emits a confidence score.
+
+Sample outputs:
+
+- [FinMind weekly digest review](./samples/review-finmind-weekly-digest.md)
+- [Echo Cursor rules review](./samples/review-echo-cursor-rules.md)
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
