@@ -1,0 +1,316 @@
+{
+  "name": "Weekly GitHub Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cron",
+              "minutes": [
+                0
+              ],
+              "hours": [
+                17
+              ],
+              "dayOfWeek": [
+                5
+              ]
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/commits?since={{ $vars.week_start }}&until={{ $vars.week_end }}&per_page=100",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, -200],
+      "notes": "Fetches commits from GitHub API for the past week"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/issues?state=closed&since={{ $vars.week_start }}&until={{ $vars.week_end }}&per_page=100",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0],
+      "notes": "Fetches closed issues from GitHub API"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/pulls?state=closed&since={{ $vars.week_start }}&sort=updated&direction=desc&per_page=100",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 200],
+      "notes": "Fetches merged PRs from GitHub API"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate data for Claude\nconst commits = $input.all()[1].json;\nconst issues = $input.all()[2].json;\nconst prs = $input.all()[3].json;\n\nconst mergedPRs = prs.filter(pr => pr.merged_at !== null);\n\nconst weekStart = new Date();\nweekStart.setDate(weekStart.getDate() - 7);\nconst weekEnd = new Date();\n\nconst commitList = commits.map(c => ({ sha: c.sha.slice(0,7), message: c.commit.message.split('\\n')[0], author: c.commit.author.name, date: c.commit.author.date }));\nconst issueList = issues.map(i => ({ number: i.number, title: i.title, closed_by: i.closed_by?.login || 'unknown', labels: i.labels.map(l => l.name) }));\nconst prList = mergedPRs.map(pr => ({ number: pr.number, title: pr.title, merged_by: pr.merged_by?.login || 'unknown', additions: pr.additions || 0, deletions: pr.deletions || 0 }));\n\nconst data = {\n  repo: $env.GITHUB_REPO,\n  week_start: weekStart.toISOString().split('T')[0],\n  week_end: weekEnd.toISOString().split('T')[0],\n  commits_count: commitList.length,\n  commits: commitList.slice(0, 10),\n  issues_count: issueList.length,\n  issues: issueList.slice(0, 10),\n  prs_count: prList.length,\n  prs: prList.slice(0, 10)\n};\n\nreturn [{ json: data }];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1024
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt_template }}\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-api-call",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 0],
+      "notes": "Generates narrative summary using Claude API"
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $input.first().json.content[0].text;\nconst data = $('Aggregate Data').first().json;\n\n// Build prompt based on language\nconst lang = $env.LANGUAGE || 'EN';\n\nlet prompt = '';\nif (lang === 'FR') {\n  prompt = `Rédige un résumé narratif en français de l'activité du dépôt GitHub « ${data.repo} » pour la semaine du ${data.week_start} au ${data.week_end}.\n\nActivité de la semaine :\n- ${data.commits_count} commits, dont : ${data.commits.map(c => `\\n  • ${c.sha} — ${c.message} (${c.author})`).join('')}\n- ${data.issues_count} issues closes, dont : ${data.issues.map(i => `\\n  • #${i.number} — ${i.title} (fermé par @${i.closed_by})`).join('')}\n- ${data.prs_count} PRs fusionnées, dont : ${data.prs.map(pr => `\\n  • #${pr.number} — ${pr.title} (fusionné par @${pr.merged_by}, +${pr.additions} -${pr.deletions})`).join('')}\n\nLe résumé doit être clair, structuré, et inclure les points clés de la semaine.`;\n} else {\n  prompt = `Write a clear, structured narrative summary in English of the GitHub repository « ${data.repo} » activity for the week of ${data.week_start} to ${data.week_end}.\n\nWeek's activity:\n- ${data.commits_count} commits, including: ${data.commits.map(c => `\\n  • ${c.sha} — ${c.message} (${c.author})`).join('')}\n- ${data.issues_count} closed issues, including: ${data.issues.map(i => `\\n  • #${i.number} — ${i.title} (closed by @${i.closed_by})`).join('')}\n- ${data.prs_count} merged PRs, including: ${data.prs.map(pr => `\\n  • #${pr.number} — ${pr.title} (merged by @${pr.merged_by}, +${pr.additions} -${pr.deletions})`).join('')}\n\nThe summary should be clear, structured, and highlight key achievements of the week.`;\n}\n\nreturn [{ json: { repo: data.repo, week_start: data.week_start, week_end: data.week_end, summary: '', lang } }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 0],
+      "notes": "Constructs the prompt for Claude based on aggregated data and language setting"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1024
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt_text }}\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 0],
+      "notes": "Sends prompt to Claude API to generate narrative summary"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DELIVERY_WEBHOOK_URL }}",
+        "method": "POST",
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "repo",
+              "value": "={{ $json.repo }}"
+            },
+            {
+              "name": "week_start",
+              "value": "={{ $json.week_start }}"
+            },
+            {
+              "name": "week_end",
+              "value": "={{ $json.week_end }}"
+            },
+            {
+              "name": "summary",
+              "value": "={{ $json.summary }}"
+            },
+            {
+              "name": "lang",
+              "value": "={{ $json.lang }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 0],
+      "notes": "Delivers summary to Discord webhook or email"
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": {
+      "trigger": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "output": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "output": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "output": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "output": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "output": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "output": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-05-13T00:15:00.000Z",
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "templateId": "weekly-github-summary"
+  }
+}
