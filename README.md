@@ -51,3 +51,67 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Bounty #4: PR Reviewer Agent
+
+This repository now includes a Claude Code sub-agent and a zero-dependency CLI
+for reviewing GitHub pull request diffs and producing structured Markdown
+review comments.
+
+### Install
+
+```bash
+npm install
+npm link
+```
+
+### CLI Usage
+
+Review a public GitHub PR:
+
+```bash
+claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+Review a local diff:
+
+```bash
+claude-review --diff-file ./change.diff
+```
+
+Write the Markdown review to a file:
+
+```bash
+claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+```
+
+### Claude Code Agent
+
+The Claude Code sub-agent lives at:
+
+```text
+.claude/agents/pr-reviewer.md
+```
+
+Use it from Claude Code when you want an agent to fetch or inspect a PR diff
+and return a concise review with:
+
+- Summary of changes
+- Identified risks
+- Improvement suggestions
+- Confidence score
+
+### Verification
+
+```bash
+npm run check
+```
+
+### Sample Outputs
+
+Two real public PR review outputs are included:
+
+- `examples/reviews/octocat-hello-world-6.md`
+- `examples/reviews/uwestjs-127.md`
