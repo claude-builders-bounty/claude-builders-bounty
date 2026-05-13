@@ -1,0 +1,136 @@
+{
+  "name": "Weekly GitHub Digest",
+  "nodes": [
+    {
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 168 }]
+        }
+      }
+    },
+    {
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 200],
+      "parameters": {
+        "resource": "repository",
+        "operation": "get",
+        "repository": "={{ $json.owner }}/{{ $json.repo }}",
+        "filters": { "since": "={{ $json.since }}" }
+      }
+    },
+    {
+      "name": "GitHub Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 400],
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "repository": "={{ $json.owner }}/{{ $json.repo }}",
+        "returnAll": true,
+        "filters": { "state": "closed", "since": "={{ $json.since }}" }
+      }
+    },
+    {
+      "name": "GitHub PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 600],
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "repository": "={{ $json.owner }}/{{ $json.repo }}",
+        "returnAll": true,
+        "filters": { "state": "closed" }
+      }
+    },
+    {
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [650, 400],
+      "parameters": { "mode": "combine", "combinationMode": "multiplex" }
+    },
+    {
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [850, 400],
+      "parameters": {
+        "values": {
+          "string": [{
+            "name": "prompt",
+            "value": "={{ 'Weekly GitHub activity summary for ' + $json.owner + '/' + $json.repo + '. Write a friendly narrative in ' + ($json.language || 'English') + '. Max 300 words.' }}"
+          }]
+        }
+      }
+    },
+    {
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $credentials.claudeApiKey }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "claude-sonnet-4-20250514" },
+            { "name": "max_tokens", "value": 1024 },
+            { "name": "messages", "value": "[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Slack Webhook",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "={{ $json.channel || '#dev-digest' }}",
+        "text": "={{ 'Weekly GitHub Digest\\n\\n' + $json.content[0].text }}"
+      }
+    },
+    {
+      "name": "Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1250, 600],
+      "parameters": {
+        "fromEmail": "digest@yourdomain.com",
+        "toEmail": "={{ $json.email }}",
+        "subject": "Weekly GitHub Digest - {{ $json.owner }}/{{ $json.repo }}",
+        "text": "={{ $json.content[0].text }}"
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron": { "main": [[{ "node": "GitHub Commits", "type": "main", "index": 0 }]] },
+    "GitHub Commits": { "main": [[{ "node": "Merge Data", "type": "main", "index": 0 }]] },
+    "GitHub Issues": { "main": [[{ "node": "Merge Data", "type": "main", "index": 0 }]] },
+    "GitHub PRs": { "main": [[{ "node": "Merge Data", "type": "main", "index": 0 }]] },
+    "Merge Data": { "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]] },
+    "Build Prompt": { "main": [[{ "node": "Claude API", "type": "main", "index": 0 }]] },
+    "Claude API": { "main": [[{ "node": "Slack Webhook", "type": "main", "index": 0 }, { "node": "Email", "type": "main", "index": 0 }]] }
+  }
+}
