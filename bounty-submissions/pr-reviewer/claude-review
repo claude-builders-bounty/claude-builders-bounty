@@ -1,0 +1,442 @@
+#!/usr/bin/env python3
+"""
+claude-review — AI-powered PR review agent
+for claude-builders-bounty · Bounty $150
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --diff diff.patch
+  claude-review --repo owner/repo --pr 123
+  echo "$(git diff main)" | claude-review --stdin
+
+Outputs a structured Markdown review to stdout.
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from typing import Optional
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.parse import urlparse
+
+
+# ─── CLI ──────────────────────────────────────────────────
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="AI-powered PR review agent (Claude Code sub-agent)"
+    )
+    parser.add_argument(
+        "--pr", type=str, metavar="URL",
+        help="GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)"
+    )
+    parser.add_argument(
+        "--repo", type=str, metavar="OWNER/REPO",
+        help="GitHub repo in owner/repo format"
+    )
+    parser.add_argument(
+        "--diff", type=str, metavar="FILE",
+        help="Path to a diff/patch file to review"
+    )
+    parser.add_argument(
+        "--stdin", action="store_true",
+        help="Read diff from stdin"
+    )
+    parser.add_argument(
+        "--format", type=str, choices=["markdown", "json", "concise"], default="markdown",
+        help="Output format (default: markdown)"
+    )
+    parser.add_argument(
+        "--no-ai", action="store_true",
+        help="Skip AI analysis — only static checks"
+    )
+    parser.add_argument(
+        "--token", type=str, metavar="TOKEN",
+        help="GitHub token (or set GITHUB_TOKEN env var)"
+    )
+    return parser.parse_args()
+
+
+# ─── Diff Fetching ────────────────────────────────────────
+
+def fetch_pr_diff(pr_url: str, token: Optional[str] = None) -> str:
+    """Fetch diff from a GitHub pull request via API."""
+    parsed = urlparse(pr_url)
+    path_parts = parsed.path.strip("/").split("/")
+    if len(path_parts) < 4 or path_parts[2] != "pull":
+        raise ValueError(f"Invalid PR URL: {pr_url}")
+
+    owner, repo, _, pr_number = path_parts[:4]
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    headers = {
+        "User-Agent": "claude-review/1.0 ",
+        "Accept": "application/vnd.github.v3.diff",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    req = Request(api_url, headers=headers)
+    try:
+        with urlopen(req, timeout=30) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except HTTPError as e:
+        raise RuntimeError(f"GitHub API error: {e.code} {e.reason}")
+
+
+def fetch_pr_info(pr_url: str, token: Optional[str] = None) -> dict:
+    """Fetch PR metadata (title, description, files changed)."""
+    parsed = urlparse(pr_url)
+    path_parts = parsed.path.strip("/").split("/")
+    owner, repo, _, pr_number = path_parts[:4]
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+
+    headers = {
+        "User-Agent": "claude-review/1.0 ",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    req = Request(api_url, headers=headers)
+    try:
+        with urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+            return {
+                "title": data.get("title", ""),
+                "body": data.get("body", ""),
+                "files_changed": data.get("changed_files", 0),
+                "additions": data.get("additions", 0),
+                "deletions": data.get("deletions", 0),
+                "author": data.get("user", {}).get("login", ""),
+                "base": data.get("base", {}).get("ref", ""),
+                "head": data.get("head", {}).get("ref", ""),
+            }
+    except HTTPError as e:
+        return {"error": f"HTTP {e.code}"}
+
+
+# ─── Static Analysis ──────────────────────────────────────
+
+def analyze_diff(diff_text: str) -> dict:
+    """Perform static analysis on a diff."""
+    lines = diff_text.split("\n")
+
+    stats = {
+        "files": [],
+        "total_additions": 0,
+        "total_deletions": 0,
+        "secrets": [],
+        "console_logs": [],
+        "todos": [],
+        "large_files": [],
+        "test_files": [],
+        "migrations": False,
+    }
+
+    current_file = None
+    file_additions = 0
+    file_deletions = 0
+
+    SECRET_PATTERNS = [
+        (r'(?:api_key|apikey|secret|password|token|auth)\s*[:=]\s*["\'][A-Za-z0-9_\-+=/]{20,}["\']', "Hardcoded secret"),
+        (r'sk-[A-Za-z0-9]{20,}', "OpenAI API key"),
+        (r'ghp_[A-Za-z0-9]{36}', "GitHub personal access token"),
+        (r'AKIA[0-9A-Z]{16}', "AWS Access Key"),
+        (r'-----BEGIN (RSA|EC|DSA|OPENSSH) PRIVATE KEY-----', "Private key"),
+    ]
+
+    for line in lines:
+        # Track file changes
+        if line.startswith("diff --git"):
+            if current_file:
+                stats["files"].append({
+                    "path": current_file,
+                    "additions": file_additions,
+                    "deletions": file_deletions,
+                })
+            current_file = line.split(" b/")[-1] if " b/" in line else "unknown"
+            file_additions = 0
+            file_deletions = 0
+
+        elif line.startswith("+") and not line.startswith("+++"):
+            stats["total_additions"] += 1
+            file_additions += 1
+
+            content = line[1:]
+            # Check for secrets
+            for pattern, desc in SECRET_PATTERNS:
+                if re.search(pattern, content, re.IGNORECASE):
+                    stats["secrets"].append({
+                        "file": current_file,
+                        "type": desc,
+                        "line": content.strip()[:100],
+                    })
+
+            # Check for console.log
+            if re.search(r'\bconsole\.(log|warn|error|debug)\s*\(', content):
+                stats["console_logs"].append({
+                    "file": current_file,
+                    "line": content.strip()[:120],
+                })
+
+            # Check for TODO/FIXME/HACK
+            if re.search(r'\b(TODO|FIXME|HACK|XXX)\b', content):
+                stats["todos"].append({
+                    "file": current_file,
+                    "line": content.strip()[:120],
+                })
+
+        elif line.startswith("-") and not line.startswith("---"):
+            stats["total_deletions"] += 1
+            file_deletions += 1
+
+    # Add last file
+    if current_file:
+        stats["files"].append({
+            "path": current_file,
+            "additions": file_additions,
+            "deletions": file_deletions,
+        })
+
+    # Identify test files and large changes
+    for f in stats["files"]:
+        if "test" in f["path"] or f["path"].endswith(".test.") or f["path"].endswith(".spec."):
+            stats["test_files"].append(f["path"])
+        if f["additions"] + f["deletions"] > 500:
+            stats["large_files"].append(f["path"])
+
+    # Check for migrations
+    for f in stats["files"]:
+        if "migration" in f["path"].lower() or "migrate" in f["path"].lower():
+            stats["migrations"] = True
+
+    return stats
+
+
+# ─── AI Review (Claude Code path) ─────────────────────────
+
+def generate_review_prompt(diff_text: str, pr_info: Optional[dict] = None) -> str:
+    """Generate a review prompt for Claude Code."""
+    pr_context = ""
+    if pr_info:
+        pr_context = f"""
+## PR Context
+- **Title**: {pr_info.get('title', 'N/A')}
+- **Author**: {pr_info.get('author', 'N/A')}
+- **Description**: {pr_info.get('body', 'N/A')[:500]}
+- **Files Changed**: {pr_info.get('files_changed', '?')}
+- **+{pr_info.get('additions', 0)} -{pr_info.get('deletions', 0)}
+"""
+
+    return f"""You are a senior code reviewer. Review the following PR diff with these criteria:
+
+**Review Checklist:**
+1. 🔒 Security: SQL injection, XSS, auth bypass, exposed secrets
+2. 🐛 Correctness: Logic errors, edge cases, null handling
+3. ⚡ Performance: N+1 queries, unnecessary re-renders, memory leaks
+4. 🏗️ Architecture: SOLID principles, coupling, separation of concerns
+5. 📝 Code Quality: Naming, DRY, comments, error handling
+6. ✅ Tests: Test coverage, meaningful assertions
+7. 🚨 Breaking Changes: API surface changes, DB migrations
+
+{pr_context}
+
+## PR Diff
+```diff
+{diff_text[:8000]}
+```
+
+Respond with structured Markdown:
+
+### Summary
+Brief overall assessment (1-3 sentences)
+
+### Issues Found
+| Severity | Category | File | Issue | Suggestion |
+|----------|----------|------|-------|------------|
+
+### Suggestions
+Actionable improvements with code examples
+
+### Approval
+- ✅ Approve (if no blockers)
+- 💬 Comment (minor issues)
+- ❌ Request Changes (blockers found)
+
+---
+_Reviewed by claude-review _
+"""
+
+
+# ─── Output Formatting ────────────────────────────────────
+
+def format_markdown(stats: dict, ai_review: str, pr_info: Optional[dict] = None) -> str:
+    """Format review output as Markdown."""
+    lines = []
+
+    # Header
+    if pr_info and "error" not in pr_info:
+        lines.append(f"# PR Review: {pr_info.get('title', 'Untitled')}")
+        lines.append("")
+        lines.append(f"**Author**: @{pr_info.get('author', 'unknown')} | "
+                     f"{pr_info.get('base', '?')} ← {pr_info.get('head', '?')}")
+        lines.append(f"**Stats**: {pr_info.get('files_changed', 0)} files, "
+                     f"+{pr_info.get('additions', 0)} -{pr_info.get('deletions', 0)}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    else:
+        lines.append("# Code Review")
+        lines.append("")
+
+    # Static Analysis Summary
+    lines.append("## 📊 Static Analysis")
+    lines.append("")
+
+    lines.append(f"| Metric | Value |")
+    lines.append(f"|--------|-------|")
+    lines.append(f"| Files changed | {len(stats['files'])} |")
+    lines.append(f"| +{stats['total_additions']} / -{stats['total_deletions']} | "
+                 f"{stats['total_additions']} additions, {stats['total_deletions']} deletions |")
+    lines.append(f"| Test files | {len(stats['test_files'])} |")
+    lines.append(f"| Large files (>500 lines) | {len(stats['large_files'])} |")
+    lines.append(f"| Database migrations | {'⚠️ Yes' if stats['migrations'] else '✅ No'} |")
+    lines.append("")
+
+    # Files changed
+    if stats["files"]:
+        lines.append("### Files Changed")
+        lines.append("")
+        lines.append("| File | +Additions | -Deletions |")
+        lines.append("|------|-----------|------------|")
+        for f in stats["files"]:
+            lines.append(f"| `{f['path']}` | +{f['additions']} | -{f['deletions']} |")
+        lines.append("")
+
+    # Secrets detection
+    if stats["secrets"]:
+        lines.append("### 🚨 Secrets Detected")
+        lines.append("")
+        for s in stats["secrets"]:
+            lines.append(f"- **{s['type']}** in `{s['file']}`: `...{s['line'][-40:]}`")
+        lines.append("")
+
+    # Console logs
+    if stats["console_logs"]:
+        lines.append("### 📝 Console Logs (may be debugging leftovers)")
+        lines.append("")
+        for c in stats["console_logs"]:
+            lines.append(f"- `{c['file']}`: `{c['line'][:80]}`")
+        lines.append("")
+
+    # TODOs
+    if stats["todos"]:
+        lines.append("### 📋 TODOs / FIXMEs")
+        lines.append("")
+        for t in stats["todos"]:
+            lines.append(f"- `{t['file']}`: `{t['line'][:80]}`")
+        lines.append("")
+
+    # AI Review
+    if ai_review:
+        lines.append("---")
+        lines.append("")
+        lines.append("## 🤖 AI Review")
+        lines.append("")
+        lines.append(ai_review)
+        lines.append("")
+
+    # Footer
+    lines.append("---")
+    lines.append("")
+    lines.append("_Generated by [claude-review](https://github.com/claude-builders-bounty) — _")
+
+    return "\n".join(lines)
+
+
+def format_json(stats: dict, ai_review: str, pr_info: Optional[dict] = None) -> str:
+    """Format review output as JSON."""
+    return json.dumps({
+        "pr_info": pr_info,
+        "static_analysis": stats,
+        "ai_review": ai_review,
+        "generator": "claude-review — ",
+    }, indent=2)
+
+
+def format_concise(stats: dict, pr_info: Optional[dict] = None) -> str:
+    """Concise output for CI/pipelines."""
+    issues = len(stats["secrets"]) + len(stats["console_logs"])
+    status = "❌ BLOCKED" if stats["secrets"] else "✅ OK"
+    return (
+        f"[{status}] {len(stats['files'])} files, "
+        f"+{stats['total_additions']} -{stats['total_deletions']}, "
+        f"{issues} issues found"
+    )
+
+
+# ─── Main ─────────────────────────────────────────────────
+
+def main():
+    args = parse_args()
+    token = args.token or os.environ.get("GITHUB_TOKEN")
+    diff_text = ""
+    pr_info = None
+
+    # Get diff
+    if args.pr:
+        print(f"🔍 Fetching PR diff from {args.pr}...", file=sys.stderr)
+        pr_info = fetch_pr_info(args.pr, token)
+        diff_text = fetch_pr_diff(args.pr, token)
+    elif args.diff:
+        with open(args.diff) as f:
+            diff_text = f.read()
+    elif args.stdin:
+        diff_text = sys.stdin.read()
+    else:
+        print("Error: No diff source provided. Use --pr, --diff, or --stdin.", file=sys.stderr)
+        sys.exit(1)
+
+    if not diff_text.strip():
+        print("Error: Empty diff received.", file=sys.stderr)
+        sys.exit(1)
+
+    # Static analysis
+    stats = analyze_diff(diff_text)
+
+    # AI review (if not disabled)
+    ai_review = ""
+    if not args.no_ai:
+        review_prompt = generate_review_prompt(diff_text, pr_info)
+        # Try to use Claude Code if available
+        try:
+            result = subprocess.run(
+                ["claude", "-p", review_prompt],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                input=review_prompt
+            )
+            if result.returncode == 0:
+                ai_review = result.stdout.strip()
+            else:
+                ai_review = "_AI review unavailable (Claude Code not configured)_"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            ai_review = f"```\n{review_prompt[:500]}...\n```\n\n> 💡 Run with Claude Code installed for AI-powered review"
+
+    # Output
+    if args.format == "json":
+        print(format_json(stats, ai_review, pr_info))
+    elif args.format == "concise":
+        print(format_concise(stats, pr_info))
+    else:
+        print(format_markdown(stats, ai_review, pr_info))
+
+
+if __name__ == "__main__":
+    main()
