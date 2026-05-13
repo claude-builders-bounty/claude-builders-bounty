@@ -50,4 +50,26 @@ You're in the right place.
 
 ---
 
+## Included Builder Skills
+
+### Generate a changelog from git history
+
+This repository includes a small Claude Code skill and bash utility for generating structured release notes from commit history:
+
+```bash
+scripts/generate-changelog.sh
+```
+
+By default it writes `CHANGELOG.md` from the latest git tag to `HEAD`. If the repository has no tags, it uses all history. You can also choose the starting point or output path:
+
+```bash
+scripts/generate-changelog.sh --since v1.2.0 --output RELEASE_NOTES.md
+```
+
+The generated changelog groups conventional commits into `Added`, `Fixed`, `Changed`, `Removed`, and other changes. GitHub remotes are detected automatically so commit hashes and tag comparisons are linked in Markdown output.
+
+The Claude Code skill lives at [`skills/generate-changelog/SKILL.md`](skills/generate-changelog/SKILL.md).
+
+---
+
 *Started by the Claude builder community · March 2026 · MIT License*
