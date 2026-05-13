@@ -1,0 +1,175 @@
+name: "Claude PR Review"
+description: "AI-powered pull request review using Claude Code"
+author: "claude-builders-bounty"
+
+branding:
+  icon: "eye"
+  color: "orange"
+
+inputs:
+  anthropic_api_key:
+    description: "Anthropic API key (required if claude CLI is not available)"
+    required: false
+  github_token:
+    description: "GitHub token for API access (defaults to GITHUB_TOKEN)"
+    required: false
+    default: ${{ github.token }}
+  model:
+    description: "Claude model to use"
+    required: false
+    default: "claude-sonnet-4-20250514"
+  post_comment:
+    description: "Post review as a PR comment (true/false)"
+    required: false
+    default: "true"
+  fail_on_risks:
+    description: "Fail the workflow if risks are identified (true/false)"
+    required: false
+    default: "false"
+
+outputs:
+  review:
+    description: "The generated review in Markdown"
+    value: ${{ steps.review.outputs.review }}
+  confidence:
+    description: "Confidence score (Low/Medium/High)"
+    value: ${{ steps.review.outputs.confidence }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up environment
+      shell: bash
+      run: |
+        echo "::group::Setup"
+        echo "PR URL: ${{ github.event.pull_request.html_url }}"
+        echo "PR Number: ${{ github.event.pull_request.number }}"
+        echo "::endgroup::"
+
+    - name: Run Claude PR Review
+      id: review
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        GH_TOKEN: ${{ inputs.github_token }}
+        CLAUDE_MODEL: ${{ inputs.model }}
+      run: |
+        PR_URL="${{ github.event.pull_request.html_url }}"
+        PR_NUMBER="${{ github.event.pull_request.number }}"
+        REPO="${{ github.repository }}"
+
+        # Fetch PR diff
+        DIFF=$(gh pr diff "$PR_NUMBER" --repo "$REPO" 2>/dev/null || echo "")
+        if [[ -z "$DIFF" ]]; then
+          echo "::warning::Could not fetch PR diff"
+          exit 0
+        fi
+
+        # Truncate large diffs
+        DIFF_LINES=$(echo "$DIFF" | wc -l)
+        if [[ "$DIFF_LINES" -gt 3000 ]]; then
+          DIFF=$(echo "$DIFF" | head -n 3000)
+          DIFF="${DIFF}\n\n... [truncated at 3000 of ${DIFF_LINES} lines]"
+        fi
+
+        # Get PR metadata
+        TITLE="${{ github.event.pull_request.title }}"
+        AUTHOR="${{ github.event.pull_request.user.login }}"
+        ADDITIONS="${{ github.event.pull_request.additions }}"
+        DELETIONS="${{ github.event.pull_request.deletions }}"
+        CHANGED="${{ github.event.pull_request.changed_files }}"
+        BASE="${{ github.event.pull_request.base.ref }}"
+        HEAD="${{ github.event.pull_request.head.ref }}"
+
+        # Build prompt
+        PROMPT="You are a senior software engineer performing a thorough code review. Analyze this PR and produce a structured Markdown review.
+
+        ## PR Metadata
+        - **Title:** ${TITLE}
+        - **Author:** ${AUTHOR}
+        - **Branch:** ${HEAD} -> ${BASE}
+        - **Stats:** +${ADDITIONS} / -${DELETIONS} across ${CHANGED} files
+
+        ## PR Diff
+        \`\`\`diff
+        ${DIFF}
+        \`\`\`
+
+        Produce a review with these sections:
+        ### Summary (2-3 sentences)
+        ### Identified Risks (bulleted list)
+        ### Improvement Suggestions (bulleted list)
+        ### Confidence Score (Low/Medium/High with brief explanation)"
+
+        # Call Anthropic API
+        ESCAPED=$(python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" <<< "$PROMPT")
+
+        RESPONSE=$(curl -s \
+          https://api.anthropic.com/v1/messages \
+          -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+          -H "anthropic-version: 2023-06-01" \
+          -H "content-type: application/json" \
+          -d "{
+            \"model\": \"${CLAUDE_MODEL}\",
+            \"max_tokens\": 4096,
+            \"messages\": [{\"role\": \"user\", \"content\": ${ESCAPED}}]
+          }")
+
+        REVIEW=$(python3 -c "
+        import sys, json
+        data = json.loads(sys.stdin.read())
+        for block in data.get('content', []):
+            if block.get('type') == 'text':
+                print(block['text'])
+        " <<< "$RESPONSE")
+
+        if [[ -z "$REVIEW" ]]; then
+          echo "::error::Claude API returned empty review"
+          exit 1
+        fi
+
+        # Extract confidence score
+        CONFIDENCE=$(echo "$REVIEW" | grep -oP '(?<=\*\*)(Low|Medium|High)(?=\*\*)' | head -1 || echo "Unknown")
+
+        # Write outputs
+        {
+          echo "review<<REVIEW_EOF"
+          echo "$REVIEW"
+          echo "REVIEW_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "confidence=${CONFIDENCE}" >> "$GITHUB_OUTPUT"
+
+        # Save review to file for artifact upload
+        echo "$REVIEW" > review-output.md
+
+    - name: Post review comment
+      if: inputs.post_comment == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        REVIEW="${{ steps.review.outputs.review }}"
+        if [[ -n "$REVIEW" ]]; then
+          COMMENT="## Claude PR Review
+
+        $REVIEW
+
+        ---
+        *Reviewed by [Claude Code PR Review Agent](https://github.com/claude-builders-bounty/claude-builders-bounty/tree/main/agents/pr-review)*"
+
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "$COMMENT"
+        fi
+
+    - name: Check risks
+      if: inputs.fail_on_risks == 'true'
+      shell: bash
+      run: |
+        REVIEW="${{ steps.review.outputs.review }}"
+        if echo "$REVIEW" | grep -qi "no significant risks\|no major risks\|no risks identified"; then
+          echo "No risks flagged."
+        else
+          echo "::warning::Risks were identified in the review. Check the PR comment."
+        fi
