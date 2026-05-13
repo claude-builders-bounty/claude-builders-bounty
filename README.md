@@ -34,6 +34,14 @@ You're in the right place.
 
 ---
 
+## Claude PR Review Agent
+
+1. Run `python3 claude-review --pr https://github.com/owner/repo/pull/123`.
+2. Or run the Claude Code sub-agent in `.claude/agents/pr-reviewer.md` / enable `.github/workflows/claude-review.yml` to post a structured review comment on new PRs.
+3. Review the generated Summary, Risks, Suggestions, and Confidence score before acting on it.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling

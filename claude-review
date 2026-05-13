@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown review for a GitHub pull request."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+from dataclasses import dataclass
+from typing import Iterable
+
+
+COMMENT_MARKER = "<!-- claude-review-agent -->"
+
+
+@dataclass
+class FileChange:
+    filename: str
+    additions: int
+    deletions: int
+    status: str
+    patch: str = ""
+
+
+def run(cmd: list[str]) -> str:
+    return subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT).strip()
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    match = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:/.*)?$", url)
+    if not match:
+        raise SystemExit("Expected PR URL like https://github.com/owner/repo/pull/123")
+    owner, repo, number = match.groups()
+    return owner, repo, int(number)
+
+
+def github_request(url: str, *, method: str = "GET", data: bytes | None = None):
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "claude-review"}
+    token = os.getenv("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=30) as response:
+        if response.status == 204:
+            return None
+        return json.load(response)
+
+
+def github_json(url: str):
+    return github_request(url)
+
+
+def fetch_all_pages(url: str) -> list[dict]:
+    """Fetch paginated GitHub list responses until an incomplete final page."""
+    items: list[dict] = []
+    page = 1
+    separator = "&" if "?" in url else "?"
+    while True:
+        page_items = github_json(f"{url}{separator}per_page=100&page={page}")
+        if not isinstance(page_items, list):
+            raise SystemExit(f"Expected a GitHub list response from {url}")
+        items.extend(page_items)
+        if len(page_items) < 100:
+            return items
+        page += 1
+
+
+def fetch_pr(owner: str, repo: str, number: int) -> tuple[dict, list[FileChange]]:
+    base = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    pr = github_json(base)
+    files_raw = fetch_all_pages(base + "/files")
+    files = [
+        FileChange(
+            filename=item.get("filename", ""),
+            additions=int(item.get("additions", 0)),
+            deletions=int(item.get("deletions", 0)),
+            status=item.get("status", "modified"),
+            patch=item.get("patch", "") or "",
+        )
+        for item in files_raw
+    ]
+    return pr, files
+
+
+def summarize_files(files: Iterable[FileChange]) -> tuple[int, int, list[str]]:
+    additions = 0
+    deletions = 0
+    names: list[str] = []
+    for file in files:
+        additions += file.additions
+        deletions += file.deletions
+        names.append(file.filename)
+    return additions, deletions, names
+
+
+def infer_risks(files: list[FileChange], pr: dict) -> list[str]:
+    risks: list[str] = []
+    filenames = [f.filename.lower() for f in files]
+    patches = "\n".join(f.patch.lower() for f in files)
+
+    if any(name.endswith((".yml", ".yaml")) and ("workflow" in name or ".github" in name) for name in filenames):
+        risks.append("Workflow or CI changes can affect automation permissions and should be reviewed carefully.")
+    if any(word in patches for word in ("token", "secret", "password", "api_key")):
+        risks.append("Diff contains credential-related terms; verify no secrets or unsafe logging are introduced.")
+    if any(name.endswith(("package.json", "package-lock.json", "requirements.txt", "pyproject.toml")) for name in filenames):
+        risks.append("Dependency or packaging changes may alter install behavior; confirm lockfiles and compatibility.")
+    if any(name.endswith((".sh", ".bash")) for name in filenames):
+        risks.append("Shell script changes should be checked for quoting, error handling, and destructive commands.")
+    if not any("test" in name or "spec" in name for name in filenames):
+        risks.append("No test files were changed; behavior may rely on manual validation unless existing tests cover it.")
+    if pr.get("additions", 0) + pr.get("deletions", 0) > 500:
+        risks.append("Large diff size increases review risk; consider focused follow-up testing around touched areas.")
+    return risks or ["No major structural risk detected from file names and diff metadata."]
+
+
+def infer_suggestions(files: list[FileChange]) -> list[str]:
+    suggestions: list[str] = []
+    filenames = [f.filename.lower() for f in files]
+    if not any("readme" in name or "docs" in name for name in filenames):
+        suggestions.append("Add or update usage documentation if this PR changes user-facing behavior.")
+    if not any("test" in name or "spec" in name for name in filenames):
+        suggestions.append("Add a focused regression test or include manual test evidence in the PR description.")
+    if any(name.endswith((".py", ".js", ".ts", ".tsx")) for name in filenames):
+        suggestions.append("Run the project formatter/linter and include the command output in the PR checklist.")
+    if any(name.endswith((".sh", ".bash")) for name in filenames):
+        suggestions.append("Use `set -euo pipefail` and quote variable expansions in shell scripts where applicable.")
+    return suggestions or ["Keep the PR description updated with validation steps and any known limitations."]
+
+
+def confidence(files: list[FileChange], risks: list[str]) -> str:
+    total_delta = sum(f.additions + f.deletions for f in files)
+    if total_delta <= 200 and len(risks) <= 2:
+        return "High"
+    if total_delta <= 700:
+        return "Medium"
+    return "Low"
+
+
+def build_review(pr_url: str) -> str:
+    owner, repo, number = parse_pr_url(pr_url)
+    pr, files = fetch_pr(owner, repo, number)
+    additions, deletions, names = summarize_files(files)
+    risks = infer_risks(files, pr)
+    suggestions = infer_suggestions(files)
+    conf = confidence(files, risks)
+
+    changed_preview = ", ".join(names[:5]) + ("..." if len(names) > 5 else "")
+    title = pr.get("title", f"PR #{number}")
+    summary = (
+        f"This PR, **{title}**, changes {len(files)} file(s) with +{additions}/-{deletions}. "
+        f"The touched files include: {changed_preview or 'no file metadata available'}. "
+        "The notes below are generated from PR metadata and diff heuristics to support, not replace, maintainer review."
+    )
+
+    def bullets(items: list[str]) -> str:
+        return "\n".join(f"- {item}" for item in items)
+
+    return (
+        f"{COMMENT_MARKER}\n"
+        "## Claude PR Review\n\n"
+        "### Summary of changes\n"
+        f"{summary}\n\n"
+        "### Identified risks\n"
+        f"{bullets(risks)}\n\n"
+        "### Improvement suggestions\n"
+        f"{bullets(suggestions)}\n\n"
+        "### Confidence score\n"
+        f"**{conf}**\n"
+    )
+
+def post_pr_comment(owner: str, repo: str, number: int, body: str) -> None:
+    """Post or update the generated review comment on the pull request thread."""
+    token = os.getenv("GITHUB_TOKEN")
+    if not token:
+        raise SystemExit("GITHUB_TOKEN is required when using --post-comment")
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments"
+
+    comments = github_json(api_url)
+    if not isinstance(comments, list):
+        raise SystemExit("Expected a GitHub comments list response")
+
+    payload = json.dumps({"body": body}).encode("utf-8")
+    for comment in comments:
+        if COMMENT_MARKER in str(comment.get("body", "")) and comment.get("url"):
+            github_request(comment["url"], method="PATCH", data=payload)
+            return
+
+    github_request(api_url, method="POST", data=payload)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown PR review comment.")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
+    parser.add_argument("--output", help="Optional output file. Defaults to stdout.")
+    parser.add_argument(
+        "--post-comment",
+        action="store_true",
+        help="Post the generated review as a PR comment using GITHUB_TOKEN.",
+    )
+    args = parser.parse_args()
+    review = build_review(args.pr)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as handle:
+            handle.write(review)
+    else:
+        print(review, end="")
+    if args.post_comment:
+        owner, repo, number = parse_pr_url(args.pr)
+        post_pr_comment(owner, repo, number, review)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
