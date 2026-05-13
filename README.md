@@ -1,53 +1,100 @@
-# Claude Builders Bounty 🤖
+# Claude Code Pre-Tool-Use Hook: Destructive Command Blocker
 
-> A community bounty board for Claude Code builders.
+A security hook for Claude Code that intercepts and blocks dangerous bash commands before execution.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## 🚀 Installation (2 commands)
 
----
+```bash
+# 1. Download and make executable
+curl -sL https://gist.githubusercontent.com/yourusername/.../pre_tool_use_hook.sh -o ~/.claude/hooks/pre_tool_use_hook.sh && chmod +x ~/.claude/hooks/pre_tool_use_hook.sh
 
-## How it works
+# 2. Test it works
+echo '{"command": "rm -rf /tmp"}' | ~/.claude/hooks/pre_tool_use_hook.sh
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## 🧪 Quick Test
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+# Should be blocked:
+echo '{"command": "rm -rf /tmp"}' | ~/.claude/hooks/pre_tool_use_hook.sh
 
----
+# Should be allowed:
+echo '{"command": "ls -la"}' | ~/.claude/hooks/pre_tool_use_hook.sh
+```
 
-## Active Bounties
+## 🔍 Blocked Patterns
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+| Command Pattern | Severity | Reason |
+|----------------|----------|--------|
+| `rm -rf` | HIGH | Recursively deletes files without confirmation |
+| `DROP TABLE/DATABASE/SCHEMA` | HIGH | Permanently deletes database objects |
+| `TRUNCATE` | HIGH | Deletes all data without logging |
+| `git push --force` | MEDIUM | Overwrites remote history, may lose commits |
+| `DELETE FROM ...` without WHERE | HIGH | Deletes all rows from table |
+| `sudo rm -rf /` | CRITICAL | Destroys entire system |
+| Fork bomb `:(){ :|: &};:` | CRITICAL | Crashes system via infinite processes |
+| `sudo mkfs` | HIGH | Erases all data on partition |
+| `dd if=` | MEDIUM | Can overwrite disk contents |
 
----
+## 📁 Logging
 
-## Rules
+All blocked attempts are logged to `~/.claude/hooks/blocked.log` with:
+- Timestamp
+- Command attempted
+- Project directory
+- Block reason
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## ℹ️ Usage
 
----
+The hook integrates with Claude Code's hook system via stdin JSON. It can also be called with command-line arguments for testing.
 
-## Community
+### Input Format (stdin)
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+```json
+{
+  "command": "rm -rf /tmp/test",
+  "cwd": "/path/to/project"
+}
+```
 
----
+### Output Format
 
-*Started by the Claude builder community · March 2026 · MIT License*
+```
+ALLOW: Command allowed: No destructive patterns detected.
+```
+
+or
+
+```
+DENY: BLOCKED: Recursive delete (rm -rf) detected.
+Suggestion: Use 'trash' command or move files to temp directory first
+```
+
+## ⚙️ Claude Code Integration
+
+Add to your `~/.claude/hooks.toml`:
+
+```toml
+[[hooks]]
+name = "destructive-command-blocker"
+description = "Blocks destructive bash commands before execution"
+matcher = "Command"  
+category = "pre-tool-use"
+command = ["python3", "~/.claude/hooks/pre_tool_use_hook.sh"]
+```
+
+## 🐛 Testing
+
+Run the test suite:
+
+```bash
+# Should be blocked:
+~/.claude/hooks/pre_tool_use_hook.sh '{"command": "rm -rf /test"}'
+
+# Should be allowed:
+~/.claude/hooks/pre_tool_use_hook.sh '{"command": "ls -la"}'
+```
+
+## 📄 License
+
+MIT
