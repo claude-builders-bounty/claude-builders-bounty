@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. Run `bash changelog.sh` inside any git repository.
+2. Review the generated `CHANGELOG.md`.
+3. Optionally pass a custom output path: `bash changelog.sh RELEASE_NOTES.md`.
+
+The script reads commits since the latest git tag, or the full repository history when no tag exists. It groups commits into `Added`, `Fixed`, `Changed`, and `Removed` sections.
+
+See [SAMPLE_CHANGELOG.md](./SAMPLE_CHANGELOG.md) for output generated from this repository.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
