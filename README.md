@@ -2,6 +2,46 @@
 
 > A community bounty board for Claude Code builders.
 
+## Generate a changelog
+
+This repository includes a small Bash tool for generating a structured
+`CHANGELOG.md` from git history.
+
+1. Run `bash changelog.sh` or `python generate_changelog.py` from any git repository.
+2. Review the generated `CHANGELOG.md`.
+3. Commit the changelog when it looks right.
+
+The script finds the latest git tag and reads commits after that tag. If the
+repository has no tags, it uses the full commit history. Commits are grouped
+into `Added`, `Fixed`, `Changed`, and `Removed` using common Conventional Commit
+prefixes and simple keyword matching.
+
+Example output:
+
+```md
+# Changelog
+
+## 2026-05-13
+
+Generated for `example-project` since v1.2.0.
+
+### Added
+
+- feat: add export command (`abc1234`)
+
+### Fixed
+
+- fix: handle missing config file (`def5678`)
+
+### Changed
+
+- docs: update setup guide (`999aaaa`)
+
+### Removed
+
+_No entries._
+```
+
 Building with Claude Code? Have tasks to delegate?
 Want to get paid for contributing to AI projects?
 You're in the right place.
