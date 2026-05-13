@@ -1,0 +1,88 @@
+name: PR Review Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    # Run on PR open/sync, or when someone comments /review on a PR
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' && 
+       github.event.issue.pull_request != null &&
+       startsWith(github.event.comment.body, '/review'))
+    
+    permissions:
+      pull-requests: write
+      contents: read
+    
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR diff
+        id: diff
+        run: |
+          PR_URL="${{ github.event.pull_request.html_url || format('https://github.com/{0}/{1}/pull/{2}', github.repository.owner.login, github.event.repository.name, github.event.issue.number) }}"
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          
+          # Fetch PR data
+          PR_DATA=$(gh pr view "$PR_URL" --json title,body,author,additions,deletions,changedFiles)
+          PR_DIFF=$(gh pr diff "$PR_URL")
+          
+          # Save to files for review step
+          echo "$PR_DATA" > /tmp/pr_data.json
+          echo "$PR_DIFF" > /tmp/pr_diff.patch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: AI Review
+        id: review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are a senior code reviewer. Review the pull request and post a structured comment.
+            
+            PR Info: ${{ steps.diff.outputs.pr_url }}
+            
+            Read the PR diff from /tmp/pr_diff.patch and PR metadata from /tmp/pr_data.json.
+            
+            Then post a comment on the PR with this EXACT structure:
+            
+            ## 🤖 AI Code Review
+            
+            ### Summary
+            (2-3 sentences)
+            
+            ### Identified Risks
+            (Bullets with 🔴 Critical / 🟡 Warning / 🔵 Info)
+            
+            ### Improvement Suggestions
+            (Numbered, actionable items)
+            
+            ### Confidence Score
+            Low / Medium / High — with justification
+
+      - name: Post review comment (fallback)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const diff = require('fs').readFileSync('/tmp/pr_diff.patch', 'utf8');
+            const data = JSON.parse(require('fs').readFileSync('/tmp/pr_data.json', 'utf8'));
+            
+            const stats = `+${data.additions}/-${data.deletions} across ${data.changedFiles} files`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🤖 AI Code Review\n\n### Summary\nPR "${data.title}" by @${data.author.login} (${stats}).\n\n> ⚠️ Full AI review failed. Manual review recommended.\n\n### Confidence Score\nLow — Fallback mode`
+            });
