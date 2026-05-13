@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Claude-powered PR review helper.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+
+The tool fetches the PR diff, builds a focused review prompt, and asks Claude Code
+(`claude -p`) for a structured Markdown review. If Claude Code is not installed,
+it emits a conservative heuristic review in the same format so CI and examples are
+still reproducible.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+from dataclasses import dataclass
+from typing import Iterable
+
+
+@dataclass(frozen=True)
+class PullRequestRef:
+    owner: str
+    repo: str
+    number: int
+
+
+PR_RE = re.compile(r"https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)")
+
+
+def parse_pr_url(url: str) -> PullRequestRef:
+    match = PR_RE.fullmatch(url.strip().rstrip('/'))
+    if not match:
+        raise SystemExit('Expected PR URL like https://github.com/owner/repo/pull/123')
+    return PullRequestRef(match.group('owner'), match.group('repo'), int(match.group('number')))
+
+
+def github_get(url: str, accept: str = 'application/vnd.github+json') -> bytes:
+    headers = {'User-Agent': 'claude-review-agent', 'Accept': accept}
+    token = os.environ.get('GITHUB_TOKEN')
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=60) as response:
+        return response.read()
+
+
+def fetch_pr_metadata(ref: PullRequestRef) -> dict:
+    raw = github_get(f'https://api.github.com/repos/{ref.owner}/{ref.repo}/pulls/{ref.number}')
+    return json.loads(raw.decode('utf-8'))
+
+
+def fetch_pr_diff(ref: PullRequestRef) -> str:
+    raw = github_get(
+        f'https://api.github.com/repos/{ref.owner}/{ref.repo}/pulls/{ref.number}',
+        accept='application/vnd.github.diff',
+    )
+    return raw.decode('utf-8', errors='replace')
+
+
+def changed_files(diff: str) -> list[str]:
+    files: list[str] = []
+    for line in diff.splitlines():
+        if line.startswith('diff --git '):
+            parts = line.split(' ')
+            if len(parts) >= 4:
+                files.append(parts[3][2:])
+    return files
+
+
+def diff_stats(diff: str) -> tuple[int, int]:
+    added = removed = 0
+    for line in diff.splitlines():
+        if line.startswith('+++') or line.startswith('---'):
+            continue
+        if line.startswith('+'):
+            added += 1
+        elif line.startswith('-'):
+            removed += 1
+    return added, removed
+
+
+def risk_hints(files: Iterable[str], diff: str) -> list[str]:
+    joined = '\n'.join(files).lower() + '\n' + diff.lower()
+    hints: list[str] = []
+    if any(x in joined for x in ['auth', 'session', 'token', 'password', 'permission']):
+        hints.append('Authentication or authorization paths changed; verify access-control regression coverage.')
+    if any(x in joined for x in ['migration', 'schema', 'sql', 'database', 'db/']):
+        hints.append('Database-related files changed; verify migrations, rollback notes, and data compatibility.')
+    if any(x in joined for x in ['workflow', '.github/', 'deploy', 'docker']):
+        hints.append('Automation or deployment files changed; verify secret handling and branch/event triggers.')
+    if any(x in joined for x in ['package.json', 'pnpm-lock', 'requirements.txt', 'pyproject.toml']):
+        hints.append('Dependencies changed; check lockfile integrity and supply-chain risk.')
+    if not hints:
+        hints.append('No obvious high-risk area detected from filenames; review behavior and tests against the PR goal.')
+    return hints
+
+
+def build_prompt(pr_url: str, metadata: dict, diff: str) -> str:
+    title = metadata.get('title', '')
+    body = metadata.get('body') or ''
+    files = changed_files(diff)
+    added, removed = diff_stats(diff)
+    truncated_diff = diff[:50000]
+    return f"""You are a senior code reviewer. Review this pull request and return ONLY structured Markdown with these sections:
+
+## Summary
+2-3 sentences.
+
+## Identified risks
+- Bullet list.
+
+## Improvement suggestions
+- Bullet list.
+
+## Confidence
+Low / Medium / High, with one short reason.
+
+PR: {pr_url}
+Title: {title}
+Stats: +{added}/-{removed}; files: {', '.join(files[:40])}
+Body:\n{body[:4000]}
+
+Diff:\n```diff
+{truncated_diff}
+```
+"""
+
+
+def run_claude(prompt: str) -> str | None:
+    for cmd in (['claude', '-p', prompt], ['claude-code', '-p', prompt]):
+        try:
+            proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    return None
+
+
+def heuristic_review(pr_url: str, metadata: dict, diff: str) -> str:
+    files = changed_files(diff)
+    added, removed = diff_stats(diff)
+    risks = risk_hints(files, diff)
+    title = metadata.get('title') or pr_url
+    suggestions = [
+        'Confirm the PR includes a focused regression test or reproducible validation log for the changed behavior.',
+        'Keep the PR scope limited to the stated problem; move unrelated refactors to a separate follow-up.',
+        'Document any manual setup, migration, or environment variable required to verify the change.',
+    ]
+    confidence = 'Medium' if files and added + removed < 800 else 'Low'
+    return '\n'.join([
+        '## Summary',
+        f'This PR, "{title}", changes {len(files)} file(s) with +{added}/-{removed} lines. The review focuses on changed-file risk, validation evidence, and whether the implementation appears scoped to the stated goal.',
+        '',
+        '## Identified risks',
+        *[f'- {risk}' for risk in risks],
+        '',
+        '## Improvement suggestions',
+        *[f'- {suggestion}' for suggestion in suggestions],
+        '',
+        '## Confidence',
+        f'{confidence} — generated from the public PR diff; run with Claude Code installed for deeper semantic analysis.',
+    ])
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description='Review a GitHub PR and print a structured Markdown comment.')
+    parser.add_argument('--pr', required=True, help='GitHub PR URL, e.g. https://github.com/owner/repo/pull/123')
+    args = parser.parse_args()
+
+    ref = parse_pr_url(args.pr)
+    metadata = fetch_pr_metadata(ref)
+    diff = fetch_pr_diff(ref)
+    prompt = build_prompt(args.pr, metadata, diff)
+    review = run_claude(prompt) or heuristic_review(args.pr, metadata, diff)
+    print(review.strip())
+
+
+if __name__ == '__main__':
+    main()
