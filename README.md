@@ -19,6 +19,27 @@ Claim a GitHub issue → build the tool → open a PR → get paid automatically
 | [#5](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/5) | **n8n + Claude Code weekly dev summary** — automated workflow that generates and sends a weekly digest | $200 | 🟢 Open |
 
 **Total pool: $575** — more bounties coming as these get claimed.
+## Deliverable for Issue #1
+
+### Files
+- `changelog.sh` (executable Bash script)
+- `.claude/commands/generate-changelog` (optional Claude Code command shim)
+- `docs/changelog-sample.md` (sample output)
+
+### Setup and usage (3 steps)
+```bash
+chmod +x changelog.sh
+./changelog.sh
+cat CHANGELOG.md
+```
+
+If you use Claude Code, you can also run:
+```bash
+/generate-changelog
+```
+
+This generates a `CHANGELOG.md` file using commits since the latest tag, grouped into
+`Added`, `Fixed`, `Changed`, and `Removed`.
 
 ---
 
