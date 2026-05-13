@@ -43,6 +43,43 @@ You're in the right place.
 
 ---
 
+## Destructive Bash Guard
+
+This repository includes a Claude Code `PreToolUse` hook for bounty
+[#3](../../issues/3). It blocks high-risk Bash commands before they run:
+
+- `rm -rf`
+- `DROP TABLE`
+- `git push --force` and `git push -f`
+- `TRUNCATE`
+- `DELETE FROM` statements that do not include `WHERE`
+
+Blocked attempts are appended to `~/.claude/hooks/blocked.log` as JSON lines
+with a timestamp, command, reason, and project path. Safe Bash commands continue
+without prompts or output.
+
+Install in one command:
+
+```bash
+python3 hooks/install_destructive_bash_guard.py
+```
+
+Test manually:
+
+```bash
+echo '{"tool_name":"Bash","cwd":"/tmp/demo","tool_input":{"command":"rm -rf build"}}' | python3 hooks/destructive_bash_guard.py
+```
+
+Run the unit tests:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+The Claude Code hook format is shown in `.claude/settings.example.json`.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
