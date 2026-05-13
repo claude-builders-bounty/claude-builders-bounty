@@ -34,6 +34,15 @@ You're in the right place.
 
 ---
 
+## Bounty Solution: #1 Generate Changelog
+
+- Use `/generate-changelog` in Claude Code when this repository is available as a command source.
+- Run `bash changelog.sh` from any git repository root to generate `CHANGELOG.md`.
+- See [`generate-changelog/README.md`](generate-changelog/README.md) for setup in 3 steps.
+- See [`generate-changelog/sample-output.md`](generate-changelog/sample-output.md) for a real GitHub repo test.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
