@@ -1,0 +1,246 @@
+{
+  "name": "Weekly Dev Summary — GitHub + Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeklyConfig": {
+                "day": 5,
+                "hour": 17,
+                "minute": 0
+              }
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build date range: last 7 days\nconst now = new Date();\nconst since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn [\n  {\n    json: {\n      since: since.toISOString(),\n      until: now.toISOString(),\n      repo: $vars.GITHUB_REPO || 'owner/repo',\n      language: $vars.SUMMARY_LANGUAGE || 'EN'\n    }\n  }\n];"
+      },
+      "id": "build-date-range",
+      "name": "Build Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "requestMethod": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{ $json.since }}" },
+            { "name": "until", "value": "={{ $json.until }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 180],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "requestMethod": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Build Date Range').item.json.repo }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "since", "value": "={{ $('Build Date Range').item.json.since }}" },
+            { "name": "per_page", "value": "50" }
+          ]
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "requestMethod": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Build Date Range').item.json.repo }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "sort", "value": "updated" },
+            { "name": "direction", "value": "desc" },
+            { "name": "per_page", "value": "50" }
+          ]
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 420],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const since = new Date($('Build Date Range').item.json.since);\nconst until = new Date($('Build Date Range').item.json.until);\nconst language = $('Build Date Range').item.json.language || 'EN';\nconst repo = $('Build Date Range').item.json.repo;\n\n// Process commits\nconst allCommits = $('Fetch Commits').all();\nconst commits = allCommits[0].json;\nconst commitSummaries = Array.isArray(commits)\n  ? commits.slice(0, 20).map(c => `- ${c.commit?.message?.split('\\n')[0] || ''} (@${c.author?.login || 'unknown'})`).join('\\n')\n  : 'No commits found.';\n\n// Process closed issues (not PRs)\nconst allIssues = $('Fetch Closed Issues').all();\nconst issues = Array.isArray(allIssues[0].json) ? allIssues[0].json.filter(i => !i.pull_request) : [];\nconst issueSummaries = issues.slice(0, 15).map(i => `- #${i.number}: ${i.title} (closed by @${i.closed_by?.login || 'unknown'})`).join('\\n') || 'None.';\n\n// Process merged PRs\nconst allPRs = $('Fetch Merged PRs').all();\nconst prs = Array.isArray(allPRs[0].json) ? allPRs[0].json.filter(p => p.merged_at && new Date(p.merged_at) >= since) : [];\nconst prSummaries = prs.slice(0, 15).map(p => `- #${p.number}: ${p.title} (merged by @${p.merged_by?.login || 'unknown'})`).join('\\n') || 'None.';\n\nconst langInstruction = language === 'FR'\n  ? 'Réponds en français.'\n  : 'Reply in English.';\n\nconst prompt = `You are a tech lead summarizing the past week of development on the GitHub repo: ${repo}.\n\nDate range: ${since.toDateString()} – ${until.toDateString()}\n\n## Commits this week (up to 20):\n${commitSummaries}\n\n## Closed Issues:\n${issueSummaries}\n\n## Merged Pull Requests:\n${prSummaries}\n\nWrite a warm, readable narrative summary (3–5 paragraphs) suitable for sharing in a team Slack/email. Highlight the most impactful work, any recurring themes, and shout out contributors. ${langInstruction}`;\n\nreturn [{ json: { prompt, repo, since: since.toDateString(), until: until.toDateString(), commitCount: Array.isArray(commits) ? commits.length : 0, prCount: prs.length, issueCount: issues.length } }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $vars.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}"
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $json;\nconst summary = claudeResponse.content?.[0]?.text || 'No summary generated.';\nconst meta = $('Build Claude Prompt').item.json;\n\nconst subject = `📊 Weekly Dev Summary — ${meta.repo} (${meta.since} – ${meta.until})`;\nconst body = `${summary}\\n\\n---\\n📌 Stats this week: ${meta.commitCount} commits · ${meta.prCount} merged PRs · ${meta.issueCount} issues closed`;\n\nreturn [{ json: { subject, body, summary, ...meta } }];"
+      },
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": {{ JSON.stringify($json.subject) }},\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": { \"type\": \"plain_text\", \"text\": {{ JSON.stringify($json.subject) }} }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": { \"type\": \"mrkdwn\", \"text\": {{ JSON.stringify($json.summary) }} }\n    },\n    {\n      \"type\": \"context\",\n      \"elements\": [{ \"type\": \"mrkdwn\", \"text\": {{ JSON.stringify('📌 ' + $json.commitCount + ' commits · ' + $json.prCount + ' merged PRs · ' + $json.issueCount + ' issues closed') }} }]\n    }\n  ]\n}"
+      },
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 180]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $vars.EMAIL_FROM }}",
+        "toEmail": "={{ $vars.EMAIL_TO }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "text": "={{ $json.body }}"
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1560, 420],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-creds",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Friday 5pm": {
+      "main": [[{ "node": "Build Date Range", "type": "main", "index": 0 }]]
+    },
+    "Build Date Range": {
+      "main": [
+        [
+          { "node": "Fetch Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Claude Prompt": {
+      "main": [[{ "node": "Call Claude API", "type": "main", "index": 0 }]]
+    },
+    "Call Claude API": {
+      "main": [[{ "node": "Format Output", "type": "main", "index": 0 }]]
+    },
+    "Format Output": {
+      "main": [
+        [
+          { "node": "Send to Slack", "type": "main", "index": 0 },
+          { "node": "Send Email", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "instanceId": "weekly-dev-summary-v1"
+  },
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-05-14T00:00:00.000Z",
+  "versionId": "1"
+}
