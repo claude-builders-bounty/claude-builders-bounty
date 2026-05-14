@@ -51,3 +51,34 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Dangerous Bash Command Guard
+
+This repository includes a Claude Code `PreToolUse` hook that blocks destructive
+Bash commands before they run. It is designed for `~/.claude/hooks/` and logs
+every blocked attempt to `~/.claude/hooks/blocked.log`.
+
+The hook denies:
+
+- `rm` commands that combine recursive and force flags
+- `DROP TABLE`
+- `TRUNCATE`
+- `DELETE FROM` statements without a `WHERE` clause
+- `git push` with `--force`, `--force-with-lease`, or `-f`
+
+Install in one command:
+
+```bash
+python3 install.py
+```
+
+Verify it:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+Claude Code receives a clear denial reason when a command is blocked. Normal
+Bash commands and non-Bash tools pass through without extra output.
