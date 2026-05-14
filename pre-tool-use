@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""pre-tool-use hook — blocks destructive bash commands for Claude Code."""
+import os, re, sys, json
+from datetime import datetime
+from pathlib import Path
+
+LOG = Path.home() / ".claude" / "hooks" / "blocked.log"
+LOG.parent.mkdir(parents=True, exist_ok=True)
+
+PATTERNS = [
+    (r'\brm\s+-rf\b', "Recursive force delete"),
+    (r'\brm\s+-r\b', "Recursive delete"),
+    (r'\bDROP\s+(TABLE|DATABASE)\b', "DROP statement"),
+    (r'\bTRUNCATE\b', "TRUNCATE"),
+    (r'\bDELETE\s+FROM\b(?!\s+\w+\s+WHERE)', "DELETE without WHERE"),
+    (r'\bgit\s+push\s+--force\b', "Force push"),
+    (r'\bgit\s+push\s+-f\b', "Force push"),
+    (r'\bgit\s+reset\s+--hard\b', "Hard reset"),
+    (r'\bgit\s+filter-branch\b', "History rewrite"),
+    (r'\bcurl\s+\S+\s*\|\s*(bash|sh)\b', "Piped remote execution"),
+    (r'\bwget\s+\S+\s*\|\s*(bash|sh)\b', "Piped remote execution"),
+    (r':\(\)\{\s*:\s*\|\s*:\s*&\s*\};:', "Fork bomb"),
+]
+
+def check(cmd):
+    for pat, desc in PATTERNS:
+        if re.search(pat, cmd, re.IGNORECASE): return pat, desc
+    return None, None
+
+try:
+    spec = json.loads(sys.stdin.read())
+    cmd = spec.get("command","") if isinstance(spec,dict) else str(spec)
+except: sys.exit(0)
+
+pat, desc = check(cmd)
+if not pat: sys.exit(0)
+
+with open(LOG,"a") as f:
+    f.write(json.dumps({"ts":datetime.utcnow().isoformat(),"cmd":cmd[:200],"reason":desc,"cwd":os.getcwd()})+"\n")
+
+msg = f"\n{'='*55}\n  BLOCKED: {desc}\n  Command: {cmd[:80]}\n{'='*55}\n  This action was blocked. Execute manually if needed.\n{'='*55}\n"
+print(msg, flush=True)
+sys.exit(1)
