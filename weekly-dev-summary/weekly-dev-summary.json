@@ -1,0 +1,388 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "id": "schedule-trigger",
+      "name": "⏰ Weekly Schedule (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "config-vars",
+      "name": "⚙️ Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [450, 100],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repo",
+              "value": "owner/repo-name"
+            },
+            {
+              "name": "language",
+              "value": "EN"
+            },
+            {
+              "name": "webhookUrl",
+              "value": "https://hooks.slack.com/services/xxx"
+            },
+            {
+              "name": "llmApiUrl",
+              "value": "https://api.openai.com/v1/chat/completions"
+            },
+            {
+              "name": "llmModel",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "githubToken",
+              "value": ""
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "📥 GitHub — Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 200],
+      "parameters": {
+        "url": "={{ $json['repo'] }}/commits?since={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}&per_page=100",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json['githubToken'] }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "sendBody": false,
+        "method": "GET",
+        "authentication": "none",
+        "baseURL": "https://api.github.com/repos"
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "📥 GitHub — Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 400],
+      "parameters": {
+        "url": "={{ $json['repo'] }}/issues?state=closed&since={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}&per_page=100&filter=all",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json['githubToken'] }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "sendBody": false,
+        "method": "GET",
+        "authentication": "none",
+        "baseURL": "https://api.github.com/repos"
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "📥 GitHub — Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 600],
+      "parameters": {
+        "url": "={{ $json['repo'] }}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json['githubToken'] }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "sendBody": false,
+        "method": "GET",
+        "authentication": "none",
+        "baseURL": "https://api.github.com/repos"
+      }
+    },
+    {
+      "id": "merge-data",
+      "name": "🔀 Merge All Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [850, 400],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "build-prompt",
+      "name": "🧠 Build Summary Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400],
+      "parameters": {
+        "language": "javaScript",
+        "code": "// Build a structured prompt for the LLM\n\nconst commits = $input.all()[0]?.json?.commits || [];\nconst issues = $input.all()[1]?.json?.issues || [];\nconst prs = $input.all()[2]?.json?.prs || [];\nconst config = $input.all()[3]?.json || {};\n\nconst repo = config.repo || 'unknown/repo';\nconst lang = (config.language || 'EN').toUpperCase();\n\nconst weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\nconst weekAgo = weekStart.toISOString().split('T')[0];\n\n// Filter merged PRs (those with merged_at)\nconst mergedPRs = (prs || []).filter(p => p.merged_at && new Date(p.merged_at) > weekStart);\n\n// Filter closed issues (exclude PRs)\nconst closedIssues = (issues || []).filter(i => !i.pull_request && new Date(i.closed_at) > weekStart);\n\n// Count contributors\nconst contributors = new Set();\n(commits || []).forEach(c => contributors.add(c.commit?.author?.name || c.author?.login));\n(mergedPRs || []).forEach(p => contributors.add(p.user?.login));\n\nconst summary = {\n  repo,\n  week: weekAgo,\n  stats: {\n    commits: (commits || []).length,\n    closedIssues: closedIssues.length,\n    mergedPRs: mergedPRs.length,\n    contributors: contributors.size\n  },\n  topCommits: (commits || []).slice(0, 15).map(c => ({\n    message: c.commit?.message?.split('\\n')[0],\n    author: c.commit?.author?.name || c.author?.login,\n    date: c.commit?.author?.date?.split('T')[0]\n  })),\n  closedIssues: closedIssues.slice(0, 10).map(i => ({\n    title: i.title,\n    number: i.number,\n    author: i.user?.login\n  })),\n  mergedPRs: mergedPRs.slice(0, 10).map(p => ({\n    title: p.title,\n    number: p.number,\n    author: p.user?.login\n  }))\n};\n\nlet prompt;\nif (lang === 'FR') {\n  prompt = `Résumé hebdomadaire du développement — ${repo} (semaine du ${weekAgo})\\n\\n### Statistiques\\n- Commits: ${summary.stats.commits}\\n- Issues fermées: ${summary.stats.closedIssues}\\n- PRs fusionnées: ${summary.stats.mergedPRs}\\n- Contributeurs: ${summary.stats.contributors}\\n\\n### Commits récents\\n${summary.topCommits.map(c => `- ${c.message} (${c.author}, ${c.date})`).join('\\n')}\\n\\n### Issues fermées\\n${summary.closedIssues.map(i => `- #${i.number}: ${i.title} (${i.author})`).join('\\n') || 'Aucune'}\\n\\n### PRs fusionnées\\n${summary.mergedPRs.map(p => `- #${p.number}: ${p.title} (${p.author})`).join('\\n') || 'Aucune'}\\n\\nGénère un résumé narratif en français (3-5 paragraphes) mettant en évidence les changements importants, les tendances et les points d'attention.`;\n} else {\n  prompt = `Weekly Development Summary — ${repo} (week of ${weekAgo})\\n\\n### Stats\\n- Commits: ${summary.stats.commits}\\n- Closed Issues: ${summary.stats.closedIssues}\\n- Merged PRs: ${summary.stats.mergedPRs}\\n- Contributors: ${summary.stats.contributors}\\n\\n### Recent Commits\\n${summary.topCommits.map(c => `- ${c.message} (${c.author}, ${c.date})`).join('\\n')}\\n\\n### Closed Issues\\n${summary.closedIssues.map(i => `- #${i.number}: ${i.title} (${i.author})`).join('\\n') || 'None'}\\n\\n### Merged PRs\\n${summary.mergedPRs.map(p => `- #${p.number}: ${p.title} (${p.author})`).join('\\n') || 'None'}\\n\\nGenerate a narrative summary in English (3-5 paragraphs) highlighting key changes, trends, and areas needing attention.`;\n}\n\nreturn [{ prompt, repo, language: lang, webhookUrl: config.webhookUrl }];"
+      }
+    },
+    {
+      "id": "call-llm",
+      "name": "🤖 Call LLM API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 400],
+      "parameters": {
+        "url": "={{ $json['llmApiUrl'] }}",
+        "options": {
+          "timeout": 60000
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "={{ $json['llmModel'] }}"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"system\", \"content\": \"You are a technical writer creating a weekly development summary. Be concise, insightful, and highlight meaningful changes.\"}, {\"role\": \"user\", \"content\": \"{{ $json['prompt'] }}\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": "4000"
+            },
+            {
+              "name": "temperature",
+              "value": "0.5"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json['llmApiKey'] }}"
+            }
+          ]
+        },
+        "sendBody": false,
+        "method": "POST",
+        "authentication": "none"
+      }
+    },
+    {
+      "id": "format-output",
+      "name": "📝 Format Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 400],
+      "parameters": {
+        "language": "javaScript",
+        "code": "// Extract the LLM response\nconst response = $input.first().json;\n\nlet narrative = '';\ntry {\n  narrative = response.choices?.[0]?.message?.content || response.content || JSON.stringify(response);\n} catch(e) {\n  narrative = 'Failed to parse LLM response: ' + e.message;\n}\n\nconst repo = $input.first().json.repo || 'unknown/repo';\nconst weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];\n\nconst message = `📊 *Weekly Dev Summary — ${repo}*\\n📅 Week of ${weekAgo}\\n\\n${narrative}\\n\\n---\\n_Generated by n8n Weekly Dev Summary workflow_`;\n\nreturn [{ message, repo, weekAgo }];"
+      }
+    },
+    {
+      "id": "deliver-webhook",
+      "name": "📬 Deliver via Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 400],
+      "parameters": {
+        "url": "={{ $json['webhookUrl'] }}",
+        "options": {
+          "timeout": 15000
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json['message'] }}"
+            }
+          ]
+        },
+        "sendHeaders": false,
+        "method": "POST",
+        "authentication": "none",
+        "contentType": "application/json"
+      }
+    }
+  ],
+  "connections": {
+    "schedule-trigger": {
+      "main": [
+        [
+          {
+            "node": "config-vars",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "config-vars": {
+      "main": [
+        [
+          {
+            "node": "github-commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "github-issues",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "github-prs",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "github-commits": {
+      "main": [
+        [
+          {
+            "node": "merge-data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "github-issues": {
+      "main": [
+        [
+          {
+            "node": "merge-data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "github-prs": {
+      "main": [
+        [
+          {
+            "node": "merge-data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "merge-data": {
+      "main": [
+        [
+          {
+            "node": "build-prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build-prompt": {
+      "main": [
+        [
+          {
+            "node": "call-llm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call-llm": {
+      "main": [
+        [
+          {
+            "node": "format-output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "format-output": {
+      "main": [
+        [
+          {
+            "node": "deliver-webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "active": false,
+  "settings": {
+    "timezone": "UTC",
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "bounty"
+    },
+    {
+      "name": "weekly"
+    },
+    {
+      "name": "github"
+    }
+  ]
+}
