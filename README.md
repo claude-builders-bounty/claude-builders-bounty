@@ -34,6 +34,17 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. Run `bash changelog.sh` from any git repository.
+2. Review the generated `CHANGELOG.md`.
+3. Commit the changelog when it looks right.
+
+Use `/generate-changelog` in Claude Code to run the same workflow through the included `SKILL.md`.
+See [sample-output.md](sample-output.md) for an example generated from this repository.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
