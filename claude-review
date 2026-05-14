@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request and print a structured Markdown report."""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import json
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+
+
+PR_RE = re.compile(r"^/([^/]+)/([^/]+)/pull/(\d+)$")
+PATCH_FILE_RE = re.compile(r"^\+\+\+ b/(.+)$", re.MULTILINE)
+ADDED_LINE_RE = re.compile(r"^\+(?!\+\+)(.*)$", re.MULTILINE)
+REMOVED_LINE_RE = re.compile(r"^-(?!--)(.*)$", re.MULTILINE)
+
+
+@dataclass(frozen=True)
+class PullRequest:
+    owner: str
+    repo: str
+    number: str
+    url: str
+
+
+@dataclass(frozen=True)
+class ReviewContext:
+    pr: PullRequest
+    title: str
+    author: str
+    changed_files: list[str]
+    additions: int
+    deletions: int
+    patch: str
+
+
+def parse_pr_url(value: str) -> PullRequest:
+    parsed = urlparse(value)
+    match = PR_RE.match(parsed.path)
+    if parsed.netloc != "github.com" or not match:
+        raise SystemExit("Expected a GitHub pull request URL like https://github.com/owner/repo/pull/123")
+    owner, repo, number = match.groups()
+    return PullRequest(owner=owner, repo=repo, number=number, url=value)
+
+
+def find_gh() -> str | None:
+    configured = os.environ.get("GH_BIN")
+    if configured:
+        return configured
+    return shutil.which("gh")
+
+
+def run_gh(args: list[str]) -> str:
+    gh_bin = find_gh()
+    if not gh_bin:
+        raise FileNotFoundError("gh")
+    completed = subprocess.run([gh_bin, *args], check=True, text=True, capture_output=True)
+    return completed.stdout
+
+
+def http_get(url: str, token: str | None = None, accept: str = "application/vnd.github+json") -> str:
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-review-agent",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(url, headers=headers)
+    with urlopen(request, timeout=30) as response:
+        return response.read().decode("utf-8")
+
+
+def http_post(url: str, payload: dict[str, str], token: str | None = None) -> str:
+    if not token:
+        raise SystemExit("Posting a review via HTTP fallback requires GITHUB_TOKEN.")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "User-Agent": "claude-review-agent",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    request = Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+    with urlopen(request, timeout=30) as response:
+        return response.read().decode("utf-8")
+
+
+def fetch_with_gh(pr: PullRequest) -> ReviewContext:
+    repo = f"{pr.owner}/{pr.repo}"
+    raw = run_gh([
+        "pr",
+        "view",
+        pr.number,
+        "--repo",
+        repo,
+        "--json",
+        "title,author,files,additions,deletions",
+    ])
+    data = json.loads(raw)
+    patch = run_gh(["pr", "diff", pr.number, "--repo", repo, "--patch"])
+    files = [item["path"] for item in data.get("files", [])]
+    return ReviewContext(
+        pr=pr,
+        title=data.get("title") or f"PR #{pr.number}",
+        author=(data.get("author") or {}).get("login", "unknown"),
+        changed_files=files,
+        additions=int(data.get("additions") or 0),
+        deletions=int(data.get("deletions") or 0),
+        patch=patch,
+    )
+
+
+def fetch_with_http(pr: PullRequest) -> ReviewContext:
+    token = os.environ.get("GITHUB_TOKEN")
+    api_base = f"https://api.github.com/repos/{pr.owner}/{pr.repo}/pulls/{pr.number}"
+    data = json.loads(http_get(api_base, token))
+    patch = http_get(data["patch_url"], token, "application/vnd.github.patch")
+    files_data = json.loads(http_get(f"{api_base}/files?per_page=100", token))
+    files = [item["filename"] for item in files_data]
+    return ReviewContext(
+        pr=pr,
+        title=data.get("title") or f"PR #{pr.number}",
+        author=(data.get("user") or {}).get("login", "unknown"),
+        changed_files=files,
+        additions=int(data.get("additions") or 0),
+        deletions=int(data.get("deletions") or 0),
+        patch=patch,
+    )
+
+
+def fetch_context(pr: PullRequest) -> ReviewContext:
+    try:
+        return fetch_with_gh(pr)
+    except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError):
+        try:
+            return fetch_with_http(pr)
+        except (HTTPError, URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"Unable to fetch pull request data: {exc}") from exc
+
+
+def format_comment_body(review: str) -> str:
+    return f"## Claude Review Agent\n\n{review.strip()}\n"
+
+
+def post_comment_with_gh(pr: PullRequest, body: str) -> None:
+    run_gh(["pr", "comment", pr.number, "--repo", f"{pr.owner}/{pr.repo}", "--body", body])
+
+
+def post_comment_with_http(pr: PullRequest, body: str) -> None:
+    token = os.environ.get("GITHUB_TOKEN")
+    url = f"https://api.github.com/repos/{pr.owner}/{pr.repo}/issues/{pr.number}/comments"
+    http_post(url, {"body": body}, token)
+
+
+def post_review_comment(pr: PullRequest, review: str) -> None:
+    body = format_comment_body(review)
+    try:
+        post_comment_with_gh(pr, body)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        try:
+            post_comment_with_http(pr, body)
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"Unable to post review comment: {exc}") from exc
+
+
+def risk_for_file(path: str) -> list[str]:
+    lower = path.lower()
+    risks: list[str] = []
+    if any(part in lower for part in ("auth", "login", "permission", "rbac", "token", "secret")):
+        risks.append(f"`{path}` touches authentication or authorization-sensitive code.")
+    if any(part in lower for part in ("migration", "schema", "database", "sql", "prisma")):
+        risks.append(f"`{path}` may affect persisted data or schema behavior.")
+    if any(part in lower for part in ("workflow", ".github/", "ci", "deploy")):
+        risks.append(f"`{path}` changes automation or deployment behavior.")
+    if lower.endswith((".md", ".mdx", ".rst")):
+        risks.append(f"`{path}` is documentation-only unless paired with implementation changes.")
+    return risks
+
+
+def patch_risks(patch: str, changed_files: list[str]) -> list[str]:
+    risks: list[str] = []
+    added = "\n".join(ADDED_LINE_RE.findall(patch)).lower()
+    removed = "\n".join(REMOVED_LINE_RE.findall(patch)).lower()
+    if any(term in added for term in ("eval(", "exec(", "shell=true", "child_process", "subprocess")):
+        risks.append("New command execution or dynamic evaluation appears in the diff.")
+    if any(term in added for term in ("todo", "fixme", "hack")):
+        risks.append("The diff introduces TODO/FIXME/HACK markers that may indicate unfinished work.")
+    has_test_file = any(re.search(r"(^|/)(test|tests|__tests__|spec)\b|\.(test|spec)\.", path) for path in changed_files)
+    if not has_test_file and "test" not in added and "spec" not in added and "tests/" not in patch:
+        risks.append("No obvious test additions were detected in the patch.")
+    if any(term in removed for term in ("test(", "it(", "describe(", "assert", "expect(")):
+        risks.append("The patch removes test/assertion code; confirm coverage did not regress.")
+    return risks
+
+
+def suggestions(context: ReviewContext, risks: list[str]) -> list[str]:
+    output: list[str] = []
+    files = context.changed_files
+    has_tests = any(re.search(r"(^|/)(test|tests|__tests__|spec)\b|\\.(test|spec)\\.", path) for path in files)
+    material_risks = [risk for risk in risks if not risk.startswith("No obvious structural risks")]
+    if not has_tests:
+        output.append("Add or update focused tests that cover the changed behavior.")
+    if context.additions + context.deletions > 600:
+        output.append("Consider splitting the change or adding a short design note because the diff is large.")
+    if material_risks:
+        output.append("Call out the highest-risk behavior in the PR description with exact verification steps.")
+    if any(path.lower().endswith((".md", ".mdx")) for path in files):
+        output.append("Preview the rendered documentation to catch broken links, formatting, and headings.")
+    if not output:
+        output.append("Keep the PR description concise and include the exact validation commands used.")
+    return output
+
+
+def confidence(context: ReviewContext, risks: list[str]) -> str:
+    file_count = len(context.changed_files)
+    diff_size = context.additions + context.deletions
+    material_risks = [risk for risk in risks if not risk.startswith("No obvious structural risks")]
+    if diff_size > 800 or len(material_risks) >= 4 or file_count > 20:
+        return "Low"
+    if diff_size > 250 or material_risks or file_count > 8:
+        return "Medium"
+    return "High"
+
+
+def summarize(context: ReviewContext) -> str:
+    files = ", ".join(f"`{path}`" for path in context.changed_files[:5])
+    if len(context.changed_files) > 5:
+        files += f", and {len(context.changed_files) - 5} more"
+    if not files:
+        files = "no files reported by GitHub"
+    return (
+        f"This PR changes {len(context.changed_files)} file(s), with "
+        f"{context.additions} additions and {context.deletions} deletions. "
+        f"The main touched paths are {files}."
+    )
+
+
+def build_review(context: ReviewContext) -> str:
+    risks = []
+    for path in context.changed_files:
+        risks.extend(risk_for_file(path))
+    risks.extend(patch_risks(context.patch, context.changed_files))
+    deduped_risks = list(dict.fromkeys(risks)) or ["No obvious structural risks were detected from the diff metadata."]
+    improvement_suggestions = suggestions(context, deduped_risks)
+    confidence_score = confidence(context, deduped_risks)
+    return "\n".join([
+        "## Summary",
+        summarize(context),
+        f"The change is submitted by `@{context.author}` in `{context.pr.owner}/{context.pr.repo}` PR #{context.pr.number}: {context.title}.",
+        "",
+        "## Risks",
+        *[f"- {risk}" for risk in deduped_risks],
+        "",
+        "## Suggestions",
+        *[f"- {item}" for item in improvement_suggestions],
+        "",
+        f"## Confidence: {confidence_score}",
+    ])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Review a GitHub pull request and print structured Markdown.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    parser.add_argument("--output", help="Optional file path for the Markdown review")
+    parser.add_argument("--post-comment", action="store_true", help="Post the structured review as a PR comment")
+    args = parser.parse_args()
+
+    pr = parse_pr_url(args.pr)
+    context = fetch_context(pr)
+    review = build_review(context)
+    if args.output:
+        Path(args.output).write_text(review + "\n", encoding="utf-8")
+    print(review)
+    if args.post_comment:
+        post_review_comment(pr, review)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
