@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""
+claude-review — PR Review Agent for Claude Code
+
+Usage:
+    chmod +x claude-review
+    ./claude-review --pr https://github.com/owner/repo/pull/123
+    ./claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+
+GitHub token is read from GITHUB_TOKEN env var or provided via --token.
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from collections import Counter
+from datetime import datetime
+
+
+def parse_pr_url(url):
+    """Parse a GitHub PR URL into owner/repo/pull_number."""
+    pattern = r'github\.com/([^/]+)/([^/]+)/pull/(\d+)'
+    match = re.search(pattern, url)
+    if not match:
+        raise ValueError(f"Invalid GitHub PR URL: {url}")
+    return match.group(1), match.group(2), int(match.group(3))
+
+
+def github_api(path, token):
+    """Make a GitHub API request."""
+    url = f"https://api.github.com{path}"
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"token {token}")
+    req.add_header("Accept", "application/vnd.github.v3+json")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        print(f"GitHub API error ({e.code}): {e.read().decode()}", file=sys.stderr)
+        sys.exit(1)
+
+
+def fetch_pr_diff(owner, repo, pr_number, token):
+    """Fetch the unified diff for a PR."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"token {token}")
+    req.add_header("Accept", "application/vnd.github.v3.diff")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return resp.read().decode()
+    except urllib.error.HTTPError as e:
+        print(f"Error fetching diff ({e.code}): {e.read().decode()}", file=sys.stderr)
+        sys.exit(1)
+
+
+def analyze_diff(diff_text, pr_data, files_data):
+    """Analyze the PR diff and produce structured review data."""
+    lines = diff_text.split("\n") if diff_text else []
+
+    # Count changes
+    files_changed = len(files_data)
+    additions = pr_data.get("additions", 0)
+    deletions = pr_data.get("deletions", 0)
+    total_changes = additions + deletions
+
+    # File type breakdown
+    extensions = []
+    for f in files_data:
+        name = f.get("filename", "")
+        ext = os.path.splitext(name)[1] or "(no ext)"
+        extensions.append(ext)
+    file_types = Counter(extensions)
+
+    # Parse diff hunks for details
+    current_file = ""
+    large_hunks = []
+    risky_patterns = []
+
+    for i, line in enumerate(lines):
+        if line.startswith("+++ b/"):
+            current_file = line[6:]
+        elif line.startswith("@@"):
+            added = deleted = 0
+            j = i + 1
+            while j < len(lines) and not lines[j].startswith("@@") and not lines[j].startswith("diff --git"):
+                if lines[j].startswith("+"):
+                    added += 1
+                elif lines[j].startswith("-"):
+                    deleted += 1
+                j += 1
+            if added > 20 or deleted > 20:
+                large_hunks.append(f"{current_file}: +{added}/-{deleted} lines")
+
+    for i, line in enumerate(lines):
+        if "TODO" in line or "FIXME" in line or "HACK" in line:
+            if current_file and "Contains TODO" not in [r for r in risky_patterns]:
+                risky_patterns.append(f"Contains TODO/FIXME/HACK in {current_file}")
+                break
+        if re.search(r'password|secret|api.?key|token|credential', line, re.IGNORECASE):
+            risky_patterns.append(f"Possible secret/credential hardcoded in {current_file}")
+            break
+
+    # Analyze files for suggestions
+    suggestions = []
+    for f in files_data:
+        filename = f.get("filename", "")
+        status = f.get("status", "modified")
+        if status == "added":
+            test_file_candidates = [
+                filename.replace(".py", "_test.py"),
+                filename.replace(".js", ".test.js"),
+                filename.replace(".ts", ".test.ts"),
+                filename.replace(".go", "_test.go"),
+            ]
+            is_test = any("test" in fname for fname in [filename])
+            if not is_test and filename != ".gitignore":
+                suggestions.append(f"Consider adding tests for new file `{filename}`")
+        if (f.get("additions", 0) + f.get("deletions", 0)) > 200:
+            suggestions.append(f"Large modification in `{filename}` ({f.get('additions',0)}+/{f.get('deletions',0)}-). Consider splitting into smaller PRs.")
+
+    # Risk assessment
+    risks = []
+    if total_changes > 500:
+        risks.append(f"Large PR ({total_changes} changes) - higher risk of regressions")
+    if files_changed > 10:
+        risks.append(f"Many files changed ({files_changed}) - review each carefully")
+    if large_hunks:
+        risks.append(f"Large hunks detected: {large_hunks[:3]}")
+    deps_changed = [f.get("filename","") for f in files_data if f.get("filename","") in ["package.json", "requirements.txt", "go.mod", "Cargo.toml", "Gemfile", "Pipfile"]]
+    if deps_changed:
+        risks.append(f"Dependency file(s) changed ({', '.join(deps_changed)}) - verify versions are secure")
+
+    # Summary
+    summary_parts = []
+    summary_parts.append(f"This PR modifies {files_changed} file(s) with {additions} additions and {deletions} deletions.")
+    if file_types:
+        type_str = ", ".join(f"{ext} ({count})" for ext, count in file_types.most_common(3))
+        summary_parts.append(f"File types involved: {type_str}.")
+    if pr_data.get("title"):
+        summary_parts.append(f"Title: \"{pr_data['title']}\".")
+    if pr_data.get("body", "").strip():
+        body_preview = pr_data["body"].strip()[:200]
+        summary_parts.append(f"Description: {body_preview}")
+
+    # Confidence score
+    confidence = "High"
+    if total_changes > 1000:
+        confidence = "Low"
+    elif total_changes > 300 or files_changed > 15:
+        confidence = "Medium"
+
+    return {
+        "summary": " ".join(summary_parts),
+        "risks": risks if risks else ["No significant risks identified"],
+        "suggestions": suggestions[:5] if suggestions else ["No specific suggestions - changes look clean"],
+        "stats": {
+            "files_changed": files_changed,
+            "additions": additions,
+            "deletions": deletions,
+            "total_changes": total_changes,
+            "file_types": dict(file_types.most_common(5)),
+            "large_hunks": large_hunks[:3],
+        },
+        "confidence": confidence,
+    }
+
+
+def format_markdown(owner, repo, pr_number, analysis, author):
+    """Format the review as structured markdown."""
+    lines = []
+    lines.append(f"## PR Review: {owner}/{repo}#{pr_number}")
+    lines.append("")
+    lines.append(f"**Author:** {author}  ")
+    lines.append(f"**Review generated:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  ")
+    lines.append(f"**Confidence:** {analysis['confidence']}  ")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("### Summary of Changes")
+    lines.append("")
+    lines.append(analysis["summary"])
+    lines.append("")
+    lines.append("### Changes Overview")
+    lines.append("")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
+    lines.append(f"| Files Changed | {analysis['stats']['files_changed']} |")
+    lines.append(f"| Additions | +{analysis['stats']['additions']} |")
+    lines.append(f"| Deletions | -{analysis['stats']['deletions']} |")
+    lines.append(f"| Total Changes | {analysis['stats']['total_changes']} |")
+    lines.append("")
+    if analysis["stats"]["file_types"]:
+        lines.append("**File Types:**")
+        for ext, count in sorted(analysis["stats"]["file_types"].items(), key=lambda x: -x[1]):
+            lines.append(f"- `{ext}`: {count} file(s)")
+        lines.append("")
+    lines.append("### Identified Risks")
+    lines.append("")
+    if analysis["risks"]:
+        for risk in analysis["risks"]:
+            lines.append(f"- {risk}")
+    else:
+        lines.append("No risks identified.")
+    lines.append("")
+    lines.append("### Improvement Suggestions")
+    lines.append("")
+    if analysis["suggestions"]:
+        for sug in analysis["suggestions"]:
+            lines.append(f"- {sug}")
+    else:
+        lines.append("No suggestions.")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("_Review generated by claude-review agent_")
+    return "\n".join(lines)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Review Agent")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
+    parser.add_argument("--token", help="GitHub token (default: GITHUB_TOKEN env var)")
+    args = parser.parse_args()
+
+    token = args.token or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        print("Error: GitHub token required. Set GITHUB_TOKEN env var or use --token.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        owner, repo, pr_number = parse_pr_url(args.pr)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Fetching PR {owner}/{repo}#{pr_number}...", file=sys.stderr)
+
+    pr_data = github_api(f"/repos/{owner}/{repo}/pulls/{pr_number}", token)
+    files_data = github_api(f"/repos/{owner}/{repo}/pulls/{pr_number}/files", token)
+    diff_text = fetch_pr_diff(owner, repo, pr_number, token)
+
+    print(f"Analyzing {pr_data.get('additions',0)} additions, {pr_data.get('deletions',0)} deletions...", file=sys.stderr)
+
+    author = pr_data.get("user", {}).get("login", "unknown")
+    analysis = analyze_diff(diff_text, pr_data, files_data)
+    review = format_markdown(owner, repo, pr_number, analysis, author)
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(review)
+        print(f"Review written to {args.output}", file=sys.stderr)
+    else:
+        print(review)
+
+
+if __name__ == "__main__":
+    main()
