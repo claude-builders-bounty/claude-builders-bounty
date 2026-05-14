@@ -2,7 +2,8 @@
 
 `changelog.sh` creates a structured `CHANGELOG.md` from the current repository's
 git history. It reads commits since the latest git tag when one exists; otherwise
-it uses the full non-merge history.
+it uses the full non-merge history. The same workflow is exposed as a Claude
+Code skill in `SKILL.md`.
 
 ## Setup
 
@@ -29,4 +30,10 @@ Pass a custom output file as the first argument:
 
 ```bash
 bash tools/generate-changelog/changelog.sh /tmp/CHANGELOG.preview.md
+```
+
+## Verification
+
+```bash
+bash tools/generate-changelog/test-changelog.sh
 ```
