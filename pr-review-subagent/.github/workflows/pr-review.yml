@@ -1,0 +1,55 @@
+name: Claude Code PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --quiet --upgrade pip
+          # claude-review uses only stdlib
+      
+      - name: Run PR review
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL || 'deepseek/deepseek-chat' }}
+        run: |
+          python3 claude-review/claude-review.py \
+            --pr "https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}" \
+            --output review-output.md
+      
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('review-output.md', 'utf8');
+            
+            // Truncate if too long for a comment
+            const body = review.length > 65000 
+              ? review.substring(0, 65000) + '\n\n*...review truncated*'
+              : review;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });

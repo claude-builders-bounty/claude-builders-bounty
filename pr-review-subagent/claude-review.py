@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""
+claude-review — Claude Code PR Review Sub-agent
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --diff /path/to/diff.patch
+
+Uses curl for all network calls (workaround for system SSL bug).
+Requires:
+  - GITHUB_TOKEN env var (for private repos / higher rate limits)
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+
+
+def curl(url, headers=None, data=None, method=None):
+    """Run curl with optional headers, data, and method. Returns stdout string."""
+    cmd = ["curl", "-s", "--connect-timeout", "10", "--max-time", "90"]
+    if headers:
+        for k, v in headers.items():
+            cmd.extend(["-H", f"{k}: {v}"])
+    if method:
+        cmd.extend(["-X", method])
+    if data is not None:
+        cmd.extend(["-d", data])
+    cmd.append(url)
+
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        return {"error": r.stderr.strip(), "stdout": r.stdout, "stderr": r.stderr}
+    return {"stdout": r.stdout, "stderr": r.stderr, "error": None}
+
+
+def fetch_pr_diff(pr_url):
+    """Fetch the unified diff from a GitHub PR URL using curl."""
+    m = re.match(r'https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)', pr_url)
+    if not m:
+        print(f"Error: Invalid PR URL: {pr_url}", file=sys.stderr)
+        print("Expected: https://github.com/owner/repo/pull/123", file=sys.stderr)
+        sys.exit(1)
+
+    owner, repo, pr_num = m.group(1), m.group(2), m.group(3)
+
+    # Fetch diff
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}"
+    headers = {"Accept": "application/vnd.github.v3.diff"}
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    result = curl(api_url, headers=headers)
+    if result["error"]:
+        print(f"Error fetching PR diff: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+    diff = result["stdout"]
+
+    # Fetch metadata
+    headers_meta = {"Accept": "application/vnd.github.v3+json"}
+    if token:
+        headers_meta["Authorization"] = f"Bearer {token}"
+    meta_result = curl(api_url, headers=headers_meta)
+    title = ""
+    body = ""
+    if not meta_result["error"]:
+        try:
+            data = json.loads(meta_result["stdout"])
+            title = data.get("title", "")
+            body = data.get("body", "")
+        except json.JSONDecodeError:
+            pass
+
+    return owner, repo, pr_num, diff, title, body
+
+
+def build_review_prompt(title, body, diff):
+    """Build the LLM prompt for PR review."""
+    if len(diff) > 24000:
+        diff = diff[:24000] + "\n\n... [diff truncated]"
+
+    return f"""You are a senior code reviewer. Analyze this GitHub PR and produce a structured review.
+
+PR Title: {title}
+PR Description: {body or "N/A"}
+
+## Diff:
+```diff
+{diff}
+```
+
+## Instructions
+Analyze the diff and produce a structured Markdown review with:
+
+1. **Summary** — 2-3 sentences explaining what this PR does
+2. **Identified Risks** — numbered list of potential issues (bugs, regressions, edge cases, security concerns)
+3. **Improvement Suggestions** — numbered list of actionable suggestions (code quality, performance, readability)
+4. **Confidence Score** — Low / Medium / High, based on how confident you are in your analysis
+
+Be honest and constructive. If the PR looks clean, say so. Focus on meaningful issues, not nitpicks."""
+
+
+def call_llm(prompt):
+    """Call the LLM through a compatible API endpoint."""
+    url = os.environ.get("LLM_API_URL", "http://localhost:8642/v1/chat/completions")
+    model = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
+    api_key = os.environ.get("LLM_API_KEY", "")
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a meticulous senior engineer reviewing a pull request. "
+                           "Be thorough but fair. Output only the review in the requested format."
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 4000,
+    })
+
+    result = curl(url, headers=headers, data=payload, method="POST")
+    if result["error"]:
+        return f"**Error:** API call failed: {result['error']}"
+
+    try:
+        data = json.loads(result["stdout"])
+        return data["choices"][0]["message"]["content"]
+    except (json.JSONDecodeError, KeyError, IndexError) as e:
+        return f"**Error:** Failed to parse API response: {e}\n```\n{result['stdout'][:2000]}\n```"
+
+
+def format_review(owner, repo, pr_num, title, review_text):
+    """Format the final review output."""
+    pr_url = f"https://github.com/{owner}/{repo}/pull/{pr_num}"
+    return f"""# PR Review: [{owner}/{repo}#{pr_num}]({pr_url})
+
+**Title:** {title}
+
+---
+
+{review_text}
+
+---
+
+*Generated by claude-review sub-agent*
+"""
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Review Sub-agent")
+    parser.add_argument("--pr", help="GitHub PR URL")
+    parser.add_argument("--diff", help="Path to local diff/patch file")
+    parser.add_argument("--output", "-o", help="Write output to file")
+    args = parser.parse_args()
+
+    if not args.pr and not args.diff:
+        print("Error: Provide --pr or --diff", file=sys.stderr)
+        sys.exit(1)
+
+    if args.pr:
+        owner, repo, pr_num, diff, title, body = fetch_pr_diff(args.pr)
+    else:
+        with open(args.diff) as f:
+            diff = f.read()
+        owner, repo, pr_num = "local", "repo", "0"
+        title, body = "Local diff review", ""
+
+    if not diff.strip():
+        print("Error: Empty diff", file=sys.stderr)
+        sys.exit(1)
+
+    prompt = build_review_prompt(title, body, diff)
+    review = call_llm(prompt)
+    output = format_review(owner, repo, pr_num, title, review)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(output)
+        print(f"Review written to {args.output}")
+    else:
+        print(output)
+
+
+if __name__ == "__main__":
+    main()
