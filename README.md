@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Submissions
+
+- [Destructive Bash Guard Hook](hooks/README.md): Claude Code `PreToolUse` hook that blocks destructive Bash commands and logs blocked attempts.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
