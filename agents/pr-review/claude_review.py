@@ -7,6 +7,7 @@ Usage:
     claude-review --pr https://github.com/owner/repo/pull/123
     claude-review --pr https://github.com/owner/repo/pull/123 --post-comment
     claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+    claude-review --pr https://github.com/owner/repo/pull/123 --post-comment --inline
 """
 
 import argparse
@@ -64,7 +65,7 @@ def parse_pr_url(url: str) -> tuple[str, str, int]:
 
 def github_request(path: str, accept: str = "application/vnd.github+json") -> dict | list | str:
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or _get_gh_token()
-    url = f"https://api.github.com{path}"
+    url = f"https://api.github.com{path}" if path.startswith("/") else path
     req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {token}",
         "Accept": accept,
@@ -72,13 +73,29 @@ def github_request(path: str, accept: str = "application/vnd.github+json") -> di
         "User-Agent": "claude-review/1.0",
     })
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             body = resp.read().decode()
             if accept == "application/vnd.github.diff":
                 return body
             return json.loads(body)
     except urllib.error.HTTPError as e:
         sys.exit(f"GitHub API error {e.code}: {e.read().decode()[:400]}")
+
+
+def github_request_post(url: str, data: bytes, method: str = "POST") -> dict:
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or _get_gh_token()
+    req = urllib.request.Request(url, data=data, method=method, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "claude-review/1.0",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        sys.exit(f"GitHub API error {e.code} {method} {url}: {e.read().decode()[:200]}")
 
 
 def _get_gh_token() -> str:
@@ -106,26 +123,75 @@ def fetch_pr_diff(owner: str, repo: str, number: int) -> str:
 
 
 def fetch_pr_files(owner: str, repo: str, number: int) -> list:
-    return github_request(f"/repos/{owner}/{repo}/pulls/{number}/files")
+    files = []
+    page = 1
+    while True:
+        url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}/files?per_page=100&page={page}"
+        result = github_request(url)
+        if not result:
+            break
+        files.extend(result)
+        if len(result) < 100:
+            break
+        page += 1
+    return files
 
 
 def post_pr_comment(owner: str, repo: str, number: int, body: str) -> None:
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or _get_gh_token()
-    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments"
-    data = json.dumps({"body": body}).encode()
-    req = urllib.request.Request(url, data=data, method="POST", headers={
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "Content-Type": "application/json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "claude-review/1.0",
-    })
-    try:
-        with urllib.request.urlopen(req) as resp:
-            result = json.loads(resp.read())
-            print(f"✅ Comment posted: {result['html_url']}", file=sys.stderr)
-    except urllib.error.HTTPError as e:
-        sys.exit(f"Failed to post comment: {e.code} {e.read().decode()[:200]}")
+    """Post or update a PR comment. Uses a marker to avoid duplicate comments."""
+    marker = "<!-- pr-review-agent -->"
+    marked_body = f"{marker}\n{body}"
+
+    # Check for existing comment with our marker
+    comments_url = f"https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments"
+    existing_comments = github_request(comments_url)
+    existing_id = None
+    if isinstance(existing_comments, list):
+        for comment in existing_comments:
+            if isinstance(comment.get("body"), str) and comment["body"].startswith(marker):
+                existing_id = comment["id"]
+                break
+
+    if existing_id:
+        # Update existing comment
+        patch_url = f"https://api.github.com/repos/{owner}/{repo}/issues/comments/{existing_id}"
+        result = github_request_post(patch_url, json.dumps({"body": marked_body}).encode(), method="PATCH")
+        print(f"✅ Comment updated: {result['html_url']}", file=sys.stderr)
+    else:
+        # Create new comment
+        result = github_request_post(comments_url, json.dumps({"body": marked_body}).encode(), method="POST")
+        print(f"✅ Comment posted: {result['html_url']}", file=sys.stderr)
+
+
+def post_inline_review(owner: str, repo: str, pr_number: int, head_sha: str, findings: list, body: str) -> None:
+    """Post an inline GitHub PR review with per-file comments where position data is available."""
+    comments = []
+    for f in findings:
+        if f.file and f.line:
+            comments.append({
+                "path": f.file,
+                "position": f.line,
+                "body": f"**[{f.severity}] {f.category}**: {f.description}\n\n💡 {f.suggestion}",
+            })
+
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
+    if comments:
+        payload = {
+            "commit_id": head_sha,
+            "body": body,
+            "event": "COMMENT",
+            "comments": comments,
+        }
+    else:
+        # Fallback: single review comment without inline positions
+        payload = {
+            "commit_id": head_sha,
+            "body": body,
+            "event": "COMMENT",
+        }
+
+    result = github_request_post(url, json.dumps(payload).encode(), method="POST")
+    print(f"✅ Inline review posted: {result.get('html_url', '(no url)')}", file=sys.stderr)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -296,14 +362,13 @@ def build_summary(meta: dict, files: list, findings: list[Finding]) -> tuple[str
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Claude API integration (optional — falls back to static analysis)
+# Claude API / CLI integration (optional — falls back to static analysis)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def call_claude(diff: str, meta: dict) -> Optional[dict]:
+def call_claude_api(diff: str, meta: dict) -> Optional[dict]:
     """
-    If ANTHROPIC_API_KEY is set, ask Claude to produce a structured JSON review
-    that augments the static analysis.  Returns None on any failure so the
-    caller can fall back gracefully.
+    If ANTHROPIC_API_KEY is set, ask Claude API to produce a structured JSON review.
+    Returns None on any failure so the caller can fall back gracefully.
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -355,6 +420,55 @@ Respond with ONLY a JSON object matching this schema (no markdown fences):
     except Exception as exc:
         print(f"⚠️  Claude API call failed ({exc}); using static analysis only.", file=sys.stderr)
         return None
+
+
+def call_claude_code_cli(diff_content: str, pr_url: str) -> Optional[dict]:
+    """
+    Try to use the Claude Code CLI ('claude' command) for the review.
+    Falls back to call_claude_api() if the CLI is not available.
+    Returns a dict with review data, or None on failure.
+    """
+    prompt = f"Review this PR diff for issues:\n\n{diff_content[:8000]}"
+    try:
+        result = subprocess.run(
+            ["claude", "--print", prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Try to parse structured JSON from the output
+            text = result.stdout.strip()
+            # Look for a JSON block in the output
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if json_match:
+                try:
+                    return json.loads(json_match.group(0))
+                except json.JSONDecodeError:
+                    pass
+            # Return as a plain summary if not JSON
+            return {"summary": text[:1000], "risks": [], "suggestions": [], "confidence": "Medium"}
+    except FileNotFoundError:
+        print("ℹ️  Claude CLI not found; falling back to API.", file=sys.stderr)
+    except subprocess.TimeoutExpired:
+        print("⚠️  Claude CLI timed out; falling back to API.", file=sys.stderr)
+    except Exception as exc:
+        print(f"⚠️  Claude CLI error ({exc}); falling back to API.", file=sys.stderr)
+
+    # Fallback: use the API (needs meta, but we only have diff here — pass minimal meta)
+    return None
+
+
+def call_claude(diff: str, meta: dict) -> Optional[dict]:
+    """
+    Try Claude Code CLI first, then fall back to direct API call.
+    Returns None on all failures so callers can use static analysis only.
+    """
+    cli_result = call_claude_code_cli(diff, meta.get("html_url", ""))
+    if cli_result is not None:
+        print("✨ Claude CLI enrichment applied.", file=sys.stderr)
+        return cli_result
+    return call_claude_api(diff, meta)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -436,7 +550,7 @@ def review_pr(pr_url: str) -> tuple[ReviewResult, str]:
     summary, risks, suggestions = build_summary(meta, files, findings)
     confidence = compute_confidence(meta, findings)
 
-    # Optional: augment with Claude
+    # Optional: augment with Claude (CLI first, then API)
     claude_result = call_claude(diff, meta)
     if claude_result:
         summary = claude_result.get("summary", summary)
@@ -445,7 +559,6 @@ def review_pr(pr_url: str) -> tuple[ReviewResult, str]:
         if claude_result.get("suggestions"):
             suggestions = claude_result["suggestions"]
         confidence = claude_result.get("confidence", confidence)
-        print("✨ Claude API enrichment applied.", file=sys.stderr)
 
     result = ReviewResult(
         pr_url=pr_url,
@@ -470,6 +583,7 @@ def main() -> None:
     )
     parser.add_argument("--pr", required=True, help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
     parser.add_argument("--post-comment", action="store_true", help="Post the review as a GitHub PR comment")
+    parser.add_argument("--inline", action="store_true", help="Post inline review comments on the PR diff (requires --post-comment)")
     parser.add_argument("--output", metavar="FILE", help="Write Markdown review to FILE instead of stdout")
     parser.add_argument("--json", action="store_true", help="Output raw JSON instead of Markdown")
     args = parser.parse_args()
@@ -489,7 +603,15 @@ def main() -> None:
 
     if args.post_comment:
         owner, repo, number = parse_pr_url(args.pr)
-        post_pr_comment(owner, repo, number, markdown)
+        if args.inline:
+            meta = result  # head sha needed
+            # Fetch meta again for head SHA
+            import urllib.parse
+            raw_meta = fetch_pr_meta(owner, repo, number)
+            head_sha = raw_meta.get("head", {}).get("sha", "")
+            post_inline_review(owner, repo, number, head_sha, result.findings, markdown)
+        else:
+            post_pr_comment(owner, repo, number, markdown)
 
 
 if __name__ == "__main__":
