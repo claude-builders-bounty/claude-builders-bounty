@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+"""Review a GitHub PR diff and print a structured Markdown review."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from urllib.parse import urlparse
+
+
+@dataclass(frozen=True)
+class PullRequest:
+    owner: str
+    repo: str
+    number: str
+    url: str
+
+
+def parse_pr_url(value: str) -> PullRequest:
+    parsed = urlparse(value)
+    parts = [part for part in parsed.path.split("/") if part]
+    if parsed.netloc != "github.com" or len(parts) < 4 or parts[2] != "pull":
+        raise ValueError("Expected a GitHub PR URL like https://github.com/owner/repo/pull/123")
+    return PullRequest(owner=parts[0], repo=parts[1], number=parts[3], url=value)
+
+
+def run(command: list[str]) -> str:
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"Missing command: {command[0]}") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = exc.stderr.strip() or exc.stdout.strip()
+        raise RuntimeError(f"Command failed: {' '.join(command)}\n{detail}") from exc
+    return completed.stdout
+
+
+def get_pr_metadata(pr: PullRequest) -> dict[str, str]:
+    raw = run(
+        [
+            "gh",
+            "pr",
+            "view",
+            pr.number,
+            "--repo",
+            f"{pr.owner}/{pr.repo}",
+            "--json",
+            "title,author,baseRefName,headRefName,additions,deletions,changedFiles",
+        ]
+    )
+    return json.loads(raw)
+
+
+def get_pr_diff(pr: PullRequest) -> str:
+    return run(["gh", "pr", "diff", pr.number, "--repo", f"{pr.owner}/{pr.repo}"])
+
+
+def changed_paths(diff: str) -> list[str]:
+    paths = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            match = re.search(r" b/(.+)$", line)
+            if match:
+                paths.append(match.group(1))
+    return paths
+
+
+def classify_risks(paths: list[str], diff: str) -> list[str]:
+    risks: list[str] = []
+    lower_diff = diff.lower()
+    joined_paths = "\n".join(paths).lower()
+
+    if any(part in joined_paths for part in ["migration", "schema", "db/"]):
+        risks.append("Database behavior changes need migration and rollback review.")
+    if any(part in joined_paths for part in [".github/workflows", "dockerfile", "deploy", "ci"]):
+        risks.append("Build or deployment behavior may change; CI coverage should be checked.")
+    if any(part in joined_paths for part in ["auth", "session", "permission", "billing", "payment"]):
+        risks.append("Auth, permission, or billing-adjacent code needs extra edge-case testing.")
+    if any(token in lower_diff for token in ["todo", "fixme", "console.log", "print("]):
+        risks.append("Debug or placeholder text appears in the diff and should be confirmed intentional.")
+    if len(paths) > 12:
+        risks.append("The PR spans many files, so regression risk is higher than a narrow change.")
+
+    return risks or ["No high-risk area is obvious from filenames and diff markers alone."]
+
+
+def classify_suggestions(paths: list[str], diff: str) -> list[str]:
+    suggestions: list[str] = []
+    lower_diff = diff.lower()
+
+    if "test" not in "\n".join(paths).lower():
+        suggestions.append("Add or reference a focused test for the main changed behavior.")
+    if "readme" not in "\n".join(paths).lower() and any(path.endswith((".sh", ".py", ".ts", ".js")) for path in paths):
+        suggestions.append("Document setup or usage if this introduces a new command or workflow.")
+    if len(diff) > 30000:
+        suggestions.append("Consider splitting follow-up cleanup from the core behavior change.")
+    if "error" in lower_diff or "except" in lower_diff or "catch" in lower_diff:
+        suggestions.append("Check that failure paths return actionable messages, not only raw exceptions.")
+
+    return suggestions or ["Keep the PR scoped and include the commands used to validate it."]
+
+
+def confidence_for(paths: list[str], diff: str, used_claude: bool) -> str:
+    if used_claude and len(diff) < 80000:
+        return "High"
+    if len(paths) <= 6 and len(diff) < 30000:
+        return "Medium"
+    return "Low"
+
+
+def prompt_for(metadata: dict[str, str], diff: str) -> str:
+    return f"""You are reviewing a pull request. Return only Markdown with exactly these sections:
+
+## Summary
+2-3 sentences.
+
+## Identified Risks
+- Bullet list.
+
+## Improvement Suggestions
+- Bullet list.
+
+## Confidence
+Low, Medium, or High.
+
+PR metadata:
+{json.dumps(metadata, indent=2)}
+
+Diff:
+```diff
+{diff}
+```
+"""
+
+
+def review_with_claude(prompt: str) -> tuple[bool, str]:
+    claude = shutil.which("claude")
+    if not claude:
+        return False, ""
+    completed = subprocess.run(
+        [claude, "-p", prompt],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode != 0 or not completed.stdout.strip():
+        return False, ""
+    return True, completed.stdout.strip()
+
+
+def fallback_review(pr: PullRequest, metadata: dict[str, str], diff: str) -> str:
+    paths = changed_paths(diff)
+    risks = classify_risks(paths, diff)
+    suggestions = classify_suggestions(paths, diff)
+    confidence = confidence_for(paths, diff, used_claude=False)
+    title = metadata.get("title", f"PR {pr.number}")
+    additions = metadata.get("additions", "?")
+    deletions = metadata.get("deletions", "?")
+    changed_files = metadata.get("changedFiles", len(paths))
+
+    risk_lines = "\n".join(f"- {risk}" for risk in risks)
+    suggestion_lines = "\n".join(f"- {suggestion}" for suggestion in suggestions)
+
+    return f"""## Summary
+This PR, `{title}`, changes {changed_files} file(s) with {additions} additions and {deletions} deletions. The review was generated from the public PR diff for {pr.url} and focuses on changed paths, diff markers, and visible implementation risk.
+
+## Identified Risks
+{risk_lines}
+
+## Improvement Suggestions
+{suggestion_lines}
+
+## Confidence
+{confidence}
+"""
+
+
+def validate_markdown(markdown: str) -> None:
+    required = ["## Summary", "## Identified Risks", "## Improvement Suggestions", "## Confidence"]
+    missing = [section for section in required if section not in markdown]
+    if missing:
+        raise RuntimeError(f"Review output missing required sections: {', '.join(missing)}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Review a GitHub pull request and print Markdown.")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL, for example https://github.com/owner/repo/pull/123")
+    parser.add_argument(
+        "--no-claude",
+        action="store_true",
+        help="Skip Claude Code even if the claude CLI is installed; useful for deterministic CI samples.",
+    )
+    args = parser.parse_args()
+
+    try:
+        pr = parse_pr_url(args.pr)
+        metadata = get_pr_metadata(pr)
+        diff = get_pr_diff(pr)
+        used_claude = False
+        markdown = ""
+
+        if not args.no_claude:
+            used_claude, markdown = review_with_claude(prompt_for(metadata, diff))
+
+        if not used_claude:
+            markdown = fallback_review(pr, metadata, diff)
+
+        validate_markdown(markdown)
+        print(markdown.strip())
+        return 0
+    except Exception as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
