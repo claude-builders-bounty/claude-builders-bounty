@@ -1,53 +1,56 @@
-# Claude Builders Bounty 🤖
+# Changelog Generator
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from git history since the last tag.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
 
----
+```bash
+# 1. Copy the script
+cp scripts/generate_changelog.py /usr/local/bin/generate-changelog
+chmod +x /usr/local/bin/generate-changelog
 
-## How it works
+# 2. Run in any repo
+generate-changelog
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+# 3. Done — CHANGELOG.md is ready
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Usage
 
----
+```
+python3 scripts/generate_changelog.py [--output FILE] [--prepend] [--repo-name NAME]
+```
 
-## Active Bounties
+| Flag | Description |
+|------|-------------|
+| `-o, --output` | Output file (default: `CHANGELOG.md`) |
+| `-p, --prepend` | Prepend to existing CHANGELOG instead of overwriting |
+| `-r, --repo-name` | Repository name (auto-detected) |
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## How It Works
 
----
+1. Finds the latest git tag via `git describe --tags`
+2. Collects all commits since that tag
+3. Auto-categorizes each commit into **Added** / **Fixed** / **Changed** / **Removed**
+4. Outputs a clean `CHANGELOG.md`
 
-## Rules
+## Example Output
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+```markdown
+# Changelog
 
----
+## [2026-05-14]
 
-## Community
+### Added
+- New user authentication flow (a1b2c3d)
+- Dark mode support (e4f5g6h)
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### Fixed
+- Race condition in database connection pool (i7j8k9l)
+- Incorrect timezone conversion (m0n1o2p)
 
----
+### Changed
+- Upgraded dependencies to latest versions (q3r4s5t)
 
-*Started by the Claude builder community · March 2026 · MIT License*
+> 5 commits since last tag.
+```
