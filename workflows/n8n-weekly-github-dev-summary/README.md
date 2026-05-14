@@ -50,4 +50,11 @@ The workflow export is valid JSON:
 jq empty workflows/n8n-weekly-github-dev-summary/workflow.json
 ```
 
+Run the bundled structural validator to check the main bounty criteria without
+calling any paid APIs:
+
+```bash
+node workflows/n8n-weekly-github-dev-summary/validate-workflow.mjs
+```
+
 End-to-end execution still requires reviewer-provided GitHub, Anthropic, and delivery credentials in n8n.
