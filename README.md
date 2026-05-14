@@ -32,6 +32,15 @@ You're in the right place.
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
+## Bounty #5 submission preview
+
+This branch includes an importable n8n workflow for issue #5:
+
+- `workflows/weekly-dev-summary-claude.json` — weekly GitHub activity summary workflow.
+- `README_N8N_WEEKLY_DEV_SUMMARY.md` — setup in five steps with environment variables.
+- `scripts/validate_workflow.py` — structural validator for the exported workflow.
+- `TEST_NOTES.md` — import/execution checklist and screenshot location.
+
 ---
 
 ## Rules
