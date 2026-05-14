@@ -32,6 +32,17 @@ You're in the right place.
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
+## Bounty #1 submission preview
+
+This branch includes a dependency-free changelog generator for issue #1:
+
+- `changelog.sh` — one-command Bash wrapper.
+- `tools/changelog_generator.py` — structured generator with category/scope/breaking-change parsing.
+- `SKILL.md` — Claude Code skill instructions.
+- `README_CHANGELOG_GENERATOR.md` — setup in three steps and sample output.
+- `examples/birdeye-sample-changelog.md` — sample generated from a real GitHub repository.
+- `tests/test_changelog_generator.py` — stdlib `unittest` coverage; no package install required.
+
 ---
 
 ## Rules
