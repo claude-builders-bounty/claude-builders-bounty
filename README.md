@@ -32,6 +32,14 @@ You're in the right place.
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
+## Bounty #3 submission preview
+
+This branch includes a defensive Claude Code `PreToolUse` guard for issue #3:
+
+- `hooks/pre_tool_use_guard.py` — dependency-free Python hook for Bash tool calls.
+- `README_PRE_TOOL_USE_GUARD.md` — installation in two commands and manual test instructions.
+- `tests/test_pre_tool_use_guard.py` — stdlib `unittest` coverage for required block/pass behavior and logging.
+
 ---
 
 ## Rules
