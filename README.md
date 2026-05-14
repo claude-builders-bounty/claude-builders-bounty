@@ -34,6 +34,49 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+Create a structured `CHANGELOG.md` from commits since the latest git tag:
+
+1. Run `bash changelog.sh` from the repository root.
+2. Review the generated `CHANGELOG.md`.
+3. Commit the changelog when it looks right.
+
+The script categorizes commit subjects into `Added`, `Fixed`, `Changed`, and `Removed`.
+It supports conventional commit scopes like `feat(auth): add OAuth login`, ignores merge
+commits, and falls back to all commits when no git tag exists. `SKILL.md` is included for
+Claude Code users who prefer a skill-based workflow.
+
+Sample output from the test repository:
+
+```markdown
+# Changelog
+
+Changes since `v1.0.0`.
+
+## Unreleased
+
+### Added
+
+- add OAuth login
+
+### Fixed
+
+- handle empty changelog
+
+### Changed
+
+- clarify setup instructions
+
+### Removed
+
+- remove deprecated API
+```
+
+Run the test with `bash tests/test_changelog.sh`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
