@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Submitted tools
+
+- PR reviewer agent: `tools/claude_review/README.md`
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
