@@ -1,0 +1,280 @@
+{
+  "name": "Weekly Dev Summary (Claude API)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "schedule-trigger",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repoUrl }}/commits",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{ $credentials.githubApi.token }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 200],
+      "parameters": {
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repoUrl }}/pulls?state=closed&sort=updated&direction=desc&per_page=20",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{ $credentials.githubApi.token }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      },
+      "id": "github-prs",
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 400],
+      "parameters": {
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repoUrl }}/issues?state=closed&since={{ $json.since }}&per_page=20",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{ $credentials.githubApi.token }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      },
+      "id": "github-issues",
+      "name": "Fetch Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 600],
+      "parameters": {
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      }
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format data for Claude API\nconst commits = $input.all()[0].json;\nconst prs = $input.all()[1].json;\nconst issues = $input.all()[2].json;\n\nconst since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];\nconst repoUrl = $json.repoUrl || 'https://api.github.com/repos/owner/repo';\nconst repoName = repoUrl.split('/').slice(-2).join('/');\n\nreturn {\n  messages: [\n    {\n      role: 'user',\n      content: `Generate a weekly development summary for the GitHub repository ${repoName} for the week starting ${since}.\n\n## Recent Commits\n${(commits || []).slice(0, 15).map(c => `- ${c.commit?.message?.split('\\n')[0] || 'N/A'} (${c.commit?.author?.name || 'unknown'})`).join('\\n')}\n\n## Recently Updated Pull Requests\n${(prs || []).slice(0, 10).map(pr => `- #${pr.number}: ${pr.title} [${pr.state}]`).join('\\n')}\n\n## Closed Issues\n${(issues || []).slice(0, 10).map(i => `- #${i.number}: ${i.title}`).join('\\n')}\n\n## Format Requirements\nGenerate a clean narrative summary with these sections:\n1. **Weekly Overview** - What was the main focus?\n2. **Key Changes** - Important commits and PRs\n3. **Issues Resolved** - What problems were fixed\n4. **Looking Ahead** - What's next?\n\nKeep it concise and readable. Use Markdown.`\n      }\n    }\n  ],\n  model: 'claude-3-haiku-20240307',\n  max_tokens: 2000\n};"
+      },
+      "id": "format-for-claude",
+      "name": "Format for Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "options": {
+          "headers": {
+            "x-api-key": "={{ $credentials.claudeApi.apiKey }}",
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+          }
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-3-haiku-20240307"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2000
+            },
+            {
+              "name": "messages",
+              "value": "={{ $json.messages }}"
+            }
+          ]
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst summary = response.content?.[0]?.text || JSON.stringify(response);\n\n// Also save to a markdown file\nconst fs = require('fs');\nconst date = new Date().toISOString().split('T')[0];\nconst filename = `weekly-summary-${date}.md`;\nfs.writeFileSync(filename, summary);\n\nreturn {\n  summary: summary,\n  file: filename,\n  date: date\n};"
+      },
+      "id": "process-response",
+      "name": "Process Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $credentials.slackWebhook.url }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.summary }}"
+            }
+          ]
+        }
+      },
+      "id": "slack-webhook",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch PRs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Format for Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for Claude": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Process Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Response": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Shanghai"
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "active": true
+}
