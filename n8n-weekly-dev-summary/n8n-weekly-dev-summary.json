@@ -1,0 +1,133 @@
+{
+  "name": "Weekly Dev Summary — n8n + Claude",
+  "nodes": [
+    {
+      "id": "schedule-trigger",
+      "name": "Schedule (Weekly)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fetch-github",
+      "name": "Fetch GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "parameters": {
+        "language": "javaScript",
+        "code": "// ============================================================\n// Fetch GitHub data: commits, closed issues, merged PRs\n// Edit the repoOwner and repoName below to configure\n// ============================================================\n\nconst repoOwner = $getWorkflowStaticData('global').owner || 'claude-builders-bounty';\nconst repoName = $getWorkflowStaticData('global').repo || 'claude-builders-bounty';\nconst githubToken = $getWorkflowStaticData('global').githubToken || '';\n\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst since = weekAgo.toISOString();\nconst until = now.toISOString();\n\nconst headers = {\n  'Accept': 'application/vnd.github.v3+json',\n  'User-Agent': 'n8n-weekly-summary'\n};\nif (githubToken) {\n  headers['Authorization'] = `token ${githubToken}`;\n}\n\nasync function fetchJSON(url) {\n  const response = await fetch(url, { headers });\n  if (!response.ok) {\n    throw new Error(`GitHub API error ${response.status}: ${await response.text()}`);\n  }\n  return response.json();\n}\n\n// Fetch all three in parallel\nconst baseUrl = `https://api.github.com/repos/${repoOwner}/${repoName}`;\n\nconst [commits, issues, pulls] = await Promise.all([\n  fetchJSON(`${baseUrl}/commits?since=${since}&until=${until}&per_page=15`),\n  fetchJSON(`${baseUrl}/issues?state=closed&since=${since}&per_page=15`),\n  fetchJSON(`${baseUrl}/pulls?state=closed&sort=updated&direction=desc&per_page=15`)\n]);\n\nreturn [{\n  json: {\n    repoOwner,\n    repoName,\n    since,\n    until,\n    commits: (commits || []).map(c => ({\n      sha: c.sha?.substring(0, 7) || '',\n      message: c.commit?.message?.split('\\n')[0] || '',\n      author: c.commit?.author?.name || c.author?.login || '',\n      date: c.commit?.author?.date || ''\n    })),\n    issues: (issues || [])\n      .filter(i => !i.pull_request)\n      .map(i => ({\n        number: i.number,\n        title: i.title,\n        state: i.state,\n        author: i.user?.login || '',\n        created_at: i.created_at,\n        closed_at: i.closed_at,\n        labels: (i.labels || []).map(l => l.name)\n      })),\n    pulls: (pulls || [])\n      .filter(p => p.merged_at)\n      .map(p => ({\n        number: p.number,\n        title: p.title,\n        author: p.user?.login || '',\n        merged_at: p.merged_at,\n        additions: p.additions,\n        deletions: p.deletions\n      }))\n  }\n}];"
+      }
+    },
+    {
+      "id": "format-claude",
+      "name": "Format for Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300],
+      "parameters": {
+        "language": "javaScript",
+        "code": "// Format all data into the Claude API message format\nconst items = [];\n\nfor (const item of $input.all()) {\n  const d = item.json;\n  const repo = `${d.repoOwner}/${d.repoName}`;\n  \n  // Build the prompt\n  const commitSection = (d.commits?.length > 0)\n    ? d.commits.map(c => `- \\`${c.sha}\\` ${c.message} (${c.author})`).join('\\n')\n    : 'No commits this week.';\n    \n  const issueSection = (d.issues?.length > 0)\n    ? d.issues.map(i => `- #${i.number}: ${i.title} (by ${i.author}, closed ${new Date(i.closed_at).toDateString()})`).join('\\n')\n    : 'No issues closed this week.';\n    \n  const prSection = (d.pulls?.length > 0)\n    ? d.pulls.map(p => `- #${p.number}: ${p.title} (by ${p.author}, +${p.additions}/-${p.deletions} lines)`).join('\\n')\n    : 'No PRs merged this week.';\n  \n  const period = `${new Date(d.since).toDateString()} — ${new Date(d.until).toDateString()}`;\n  \n  items.push({\n    json: {\n      model: 'claude-sonnet-4-20250514',\n      max_tokens: 2048,\n      messages: [\n        {\n          role: 'user',\n          content: `Generate a weekly development summary for the GitHub repository **${repo}**.\n\n## Period\n${period}\n\n## Commits (${d.commits?.length || 0})\n${commitSection}\n\n## Closed Issues (${d.issues?.length || 0})\n${issueSection}\n\n## Merged Pull Requests (${d.pulls?.length || 0})\n${prSection}\n\nPlease provide:\n1. A narrative summary (2-3 paragraphs) of the week's activity\n2. Key highlights and achievements\n3. Areas needing attention (if any)\n4. Overall project health assessment\n\nWrite in a professional, friendly tone.`\n        }\n      ]\n    }\n  });\n}\n\nreturn items;"
+      }
+    },
+    {
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $credentials.claudeApi.apiKey }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={{ { 'model': $json.model, 'max_tokens': $json.max_tokens, 'messages': $json.messages } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "parse-response",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "parameters": {
+        "language": "javaScript",
+        "code": "// Parse Claude API response\nconst items = [];\nfor (const item of $input.all()) {\n  const response = item.json;\n  const summaryText = response.content?.[0]?.text \n    || response.content?.toString() \n    || JSON.stringify(response);\n  \n  items.push({\n    json: {\n      summary: summaryText,\n      generated_at: new Date().toISOString(),\n      model: response.model || 'claude-sonnet-4-20250514',\n      input_tokens: response.usage?.input_tokens || 0,\n      output_tokens: response.usage?.output_tokens || 0\n    }\n  });\n}\nreturn items;"
+      }
+    },
+    {
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1500, 300],
+      "parameters": {
+        "channel": "={{ $workflow.channel || 'general' }}",
+        "text": "={{ '*Weekly Dev Summary*\\n\\n' + $json.summary + '\\n\\n_Generated at ' + $json.generated_at + '_' }}",
+        "otherOptions": {
+          "username": "Dev Summary Bot",
+          "icon_emoji": ":robot_face:"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule (Weekly)": {
+      "main": [
+        [{ "node": "Fetch GitHub Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch GitHub Data": {
+      "main": [
+        [{ "node": "Format for Claude", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format for Claude": {
+      "main": [
+        [{ "node": "Call Claude API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [{ "node": "Parse Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Response": {
+      "main": [
+        [{ "node": "Send to Slack", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "staticData": null,
+  "tags": [
+    { "name": "bounty" },
+    { "name": "github" },
+    { "name": "claude" },
+    { "name": "weekly" }
+  ]
+}
