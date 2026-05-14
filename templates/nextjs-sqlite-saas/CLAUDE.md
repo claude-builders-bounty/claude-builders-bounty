@@ -95,6 +95,25 @@ Expected `package.json` scripts:
 Reason: Claude should be able to verify changes locally without guessing the
 toolchain.
 
+## Greenfield Bootstrap Checklist
+
+For a new app, start from this shape:
+
+```bash
+pnpm create next-app@latest . --ts --tailwind --eslint --app --src-dir false
+pnpm add zod better-sqlite3 server-only
+pnpm add -D tsx vitest @playwright/test @types/better-sqlite3
+mkdir -p db/migrations db/queries lib/config lib/server components/ui components/domain tests/unit tests/e2e
+touch db/schema.sql db/migrate.ts db/seed.ts lib/config/env.ts
+```
+
+Then add the `package.json` scripts from this file and create the first
+migration before building feature routes.
+
+Reason: the first hour of a SaaS repo should establish repeatable folders,
+commands, config, and migrations. Waiting until after feature work makes the
+structure inconsistent and harder for Claude to follow.
+
 ## Environment Rules
 
 - Read environment variables only through `lib/config/env.ts`.
@@ -252,3 +271,29 @@ When blocked:
 
 Reason: the useful assistant is the one that preserves the product's shape while
 moving the requested feature to a verifiable state.
+
+## Smoke Test Prompt
+
+After pasting this file into a greenfield repo, ask Claude:
+
+```text
+Create a workspace settings page with a server action that updates the workspace
+name in SQLite. Include the migration, query helper, Zod validation, pending
+form state, and the narrowest tests you would run.
+```
+
+Expected behavior:
+
+- Claude should identify that this crosses UI, server action, query, and
+  migration boundaries.
+- Claude should create or reference `db/migrations/`, `db/queries/`,
+  `lib/config/env.ts`, and route-level App Router files without asking which
+  stack or folder structure to use.
+- Claude should keep SQLite access in server-only code and avoid Client
+  Component database calls.
+- Claude should propose `pnpm lint`, `pnpm typecheck`, unit tests for query
+  behavior, and a narrow Playwright flow if the page is user-facing.
+
+Reason: this prompt exercises the exact decisions the template is meant to
+settle: folder structure, mutation boundaries, migration rules, validation,
+component state, and verification.
