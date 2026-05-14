@@ -1,53 +1,49 @@
-# Claude Builders Bounty 🤖
+# Bash Guard — Claude Code Pre-Tool-Use Hook
 
-> A community bounty board for Claude Code builders.
+Blocks dangerous bash commands before Claude Code executes them.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
 
----
+```bash
+# 1. Install
+mkdir -p ~/.claude/hooks && cp scripts/bash-guard-hook.py ~/.claude/hooks/bash-guard
+chmod +x ~/.claude/hooks/bash-guard
 
-## How it works
+# 2. Configure Claude Code to use it
+echo '{"hooks": {"pre-tool-use": [{"tool": "bash", "command": "~/.claude/hooks/bash-guard"}]}}' >> ~/.claude/config.json
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Blocked Commands
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+| Pattern | Reason |
+|---------|--------|
+| `rm -rf` | Recursive force delete |
+| `DROP TABLE` | Irreversible database operation |
+| `TRUNCATE TABLE` | Removes all rows |
+| `DELETE FROM` without `WHERE` | Deletes all rows |
+| `git push --force` / `-f` | Overwrites remote history |
+| `chmod 777` | World-writable permissions |
+| `sudo rm -rf /` | System destruction |
+| Fork bombs, block device writes | Malicious patterns |
 
----
+## Logs
 
-## Active Bounties
+All blocked attempts are logged to `~/.claude/hooks/blocked.log`:
+```json
+{"timestamp": "2026-05-14T12:00:00Z", "command": "rm -rf /tmp/*", "cwd": "/home/user/project", "reason": "BLOCKED: rm -rf (recursive force delete)"}
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Override
 
----
+In an emergency, set the environment variable:
+```bash
+export CLAUDE_ALLOW_DANGEROUS=1
+```
 
-## Rules
+## Does NOT Interfere With
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+- Normal `rm` (single file)
+- `rm -r` without `-f`
+- `DELETE FROM ... WHERE id = 5`
+- Regular `git push`
+- Any non-bash tool calls
