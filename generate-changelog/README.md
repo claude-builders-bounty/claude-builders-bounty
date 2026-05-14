@@ -1,6 +1,6 @@
 # Generate Changelog
 
-`changelog.sh` builds a structured `CHANGELOG.md` from git commits since the latest tag. It works in any git repository and has no dependencies beyond Bash and Git.
+`changelog.sh` builds a structured `CHANGELOG.md` from git commits since the latest tag. It works in any git repository and has no dependencies beyond Bash and Git. This package also includes a native Claude Code `SKILL.md` and `/generate-changelog` command wrapper.
 
 ## Setup
 
