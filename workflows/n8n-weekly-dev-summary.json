@@ -1,0 +1,95 @@
+{
+  "name": "Weekly GitHub dev summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "7f4e0c97-2b34-41a0-9f78-4e2c6516417f",
+      "name": "Every Friday at 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -420,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const owner = $env.GITHUB_OWNER;\nconst repo = $env.GITHUB_REPO;\nconst language = ($env.SUMMARY_LANGUAGE || 'EN').toUpperCase();\nconst githubToken = $env.GITHUB_TOKEN;\nconst anthropicKey = $env.ANTHROPIC_API_KEY;\nconst discordWebhookUrl = $env.DISCORD_WEBHOOK_URL;\nconst httpRequest = this.helpers.httpRequest.bind(this.helpers);\n\nif (!owner || !repo || !anthropicKey || !discordWebhookUrl) {\n  throw new Error('Set GITHUB_OWNER, GITHUB_REPO, ANTHROPIC_API_KEY, and DISCORD_WEBHOOK_URL before running this workflow.');\n}\n\nconst end = new Date();\nconst start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst startIso = start.toISOString();\nconst endIso = end.toISOString();\nconst startDate = startIso.slice(0, 10);\nconst endDate = endIso.slice(0, 10);\n\nconst githubHeaders = {\n  Accept: 'application/vnd.github+json',\n  'User-Agent': 'n8n-claude-weekly-summary'\n};\nif (githubToken) githubHeaders.Authorization = `Bearer ${githubToken}`;\n\nasync function github(path, qs = {}) {\n  return await httpRequest({\n    method: 'GET',\n    uri: `https://api.github.com${path}`,\n    headers: githubHeaders,\n    qs,\n    json: true\n  });\n}\n\nconst commits = await github(`/repos/${owner}/${repo}/commits`, {\n  since: startIso,\n  until: endIso,\n  per_page: 100\n});\n\nconst closedIssues = await github('/search/issues', {\n  q: `repo:${owner}/${repo} is:issue is:closed closed:${startDate}..${endDate}`,\n  per_page: 100\n});\n\nconst mergedPrs = await github('/search/issues', {\n  q: `repo:${owner}/${repo} is:pr is:merged merged:${startDate}..${endDate}`,\n  per_page: 100\n});\n\nconst commitLines = commits.map((commit) => `- ${commit.commit.message.split('\\n')[0]} (${commit.sha.slice(0, 7)})`).join('\\n') || '- No commits found';\nconst issueLines = (closedIssues.items || []).map((issue) => `- #${issue.number} ${issue.title}`).join('\\n') || '- No closed issues found';\nconst prLines = (mergedPrs.items || []).map((pr) => `- #${pr.number} ${pr.title}`).join('\\n') || '- No merged PRs found';\n\nconst prompt = `Write a concise weekly engineering summary in ${language === 'FR' ? 'French' : 'English'} for ${owner}/${repo}.\\n\\nPeriod: ${startDate} to ${endDate}\\n\\nCommits:\\n${commitLines}\\n\\nClosed issues:\\n${issueLines}\\n\\nMerged PRs:\\n${prLines}\\n\\nMake it narrative, useful for a team update, and avoid hype.`;\n\nconst claude = await httpRequest({\n  method: 'POST',\n  uri: 'https://api.anthropic.com/v1/messages',\n  headers: {\n    'x-api-key': anthropicKey,\n    'anthropic-version': '2023-06-01',\n    'content-type': 'application/json'\n  },\n  body: {\n    model: 'claude-sonnet-4-20250514',\n    max_tokens: 1200,\n    messages: [\n      {\n        role: 'user',\n        content: prompt\n      }\n    ]\n  },\n  json: true\n});\n\nconst summary = claude.content?.[0]?.text || 'Claude returned no summary text.';\n\nreturn [\n  {\n    json: {\n      owner,\n      repo,\n      language,\n      startDate,\n      endDate,\n      commitCount: commits.length,\n      closedIssueCount: closedIssues.total_count || 0,\n      mergedPrCount: mergedPrs.total_count || 0,\n      summary,\n      discordWebhookUrl\n    }\n  }\n];"
+      },
+      "id": "f3bbff80-58f1-4538-b616-d909280e517b",
+      "name": "Build weekly summary with Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.discordWebhookUrl }}",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.summary }) }}",
+        "options": {}
+      },
+      "id": "5b2812ad-1ad5-42d8-8f37-d828cbb743ab",
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        120,
+        120
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every Friday at 5pm": {
+      "main": [
+        [
+          {
+            "node": "Build weekly summary with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build weekly summary with Claude": {
+      "main": [
+        [
+          {
+            "node": "Post to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "7d585f2f-2eb0-4ef7-a81a-21ac038cf694",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "weekly-github-dev-summary-with-claude",
+  "tags": []
+}
