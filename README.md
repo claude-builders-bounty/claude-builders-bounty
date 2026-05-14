@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Quick Start
+
+1. Run `bash changelog.sh` from any Git repository.
+2. Commit the generated `CHANGELOG.md`.
+3. Optional: run `bash tests/test-changelog.sh` to verify the generator with a tagged sample repo.
+
+## Sample Output
+
+See `samples/generate-changelog-output.md` for a real output example generated from this repository checkout.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
