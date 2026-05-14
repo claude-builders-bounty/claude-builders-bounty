@@ -32,6 +32,16 @@ You're in the right place.
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
+## Bounty #4 submission preview
+
+This branch includes a structured PR review agent for issue #4:
+
+- `bin/claude-review` — CLI entry point: `claude-review --pr https://github.com/owner/repo/pull/123`.
+- `bin/claude_review.py` — dependency-free diff fetcher/analyzer and Markdown renderer.
+- `.github/workflows/claude-review.yml` — optional GitHub Action that posts the review as a PR comment.
+- `examples/` — outputs from real GitHub PRs.
+- `tests/test_claude_review.py` — stdlib tests for parsing, risk detection, and required sections.
+
 ---
 
 ## Rules
