@@ -16,6 +16,9 @@ Claude Code with a strict review prompt. When Claude Code is not installed, the
 agent falls back to a deterministic local review based on changed paths and diff
 markers so the command still works in CI or a fresh machine.
 
+By default the command only prints Markdown. Add `--post-comment` when you want
+the validated Markdown posted to the PR through `gh pr comment`.
+
 ## Install
 
 ```bash
@@ -34,6 +37,12 @@ For deterministic sample generation without calling Claude Code:
 claude-review --no-claude --pr https://github.com/owner/repo/pull/123
 ```
 
+To post the generated review as a GitHub PR comment after validation:
+
+```bash
+claude-review --pr https://github.com/owner/repo/pull/123 --post-comment
+```
+
 ## Requirements
 
 - Python 3.10 or newer
@@ -50,11 +59,13 @@ claude-review --no-claude --pr https://github.com/owner/repo/pull/123
 5. Uses Claude Code when available, otherwise generates a deterministic local
    review.
 6. Verifies the required Markdown headings before printing.
+7. Posts the validated review only when `--post-comment` is provided.
 
 ## Notes
 
-- The command prints to stdout so it can be redirected into a review comment.
+- The command prints to stdout so it can be redirected, archived, or posted.
 - The command does not post comments by default. That keeps review generation
-  separate from externally visible GitHub actions.
+  separate from externally visible GitHub actions unless `--post-comment` is
+  explicit.
 - Large PRs may produce lower confidence because the diff can exceed the context
   that is reasonable for a single review pass.
