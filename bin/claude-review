@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown review from a GitHub PR diff."""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+import textwrap
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)/?$")
+
+
+@dataclass
+class FileChange:
+    path: str
+    additions: int = 0
+    deletions: int = 0
+    hunks: int = 0
+    added_lines: list[str] = field(default_factory=list)
+    deleted_lines: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Review:
+    files: list[FileChange]
+    risks: list[str]
+    suggestions: list[str]
+    confidence: str
+
+
+def fetch_pr_diff(pr_url: str) -> str:
+    match = PR_RE.match(pr_url)
+    if not match:
+        raise ValueError("Expected PR URL like https://github.com/owner/repo/pull/123")
+
+    diff_url = pr_url.rstrip("/") + ".diff"
+    request = urllib.request.Request(diff_url, headers={"User-Agent": "claude-review/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except Exception:
+        result = subprocess.run(
+            ["curl", "-fsSL", "-A", "claude-review/1.0", diff_url],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise
+        return result.stdout
+
+
+def parse_diff(diff: str) -> list[FileChange]:
+    files: list[FileChange] = []
+    current: FileChange | None = None
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split(" ")
+            path = parts[-1][2:] if len(parts) >= 4 and parts[-1].startswith("b/") else "unknown"
+            current = FileChange(path=path)
+            files.append(current)
+            continue
+
+        if current is None:
+            continue
+
+        if line.startswith("+++ b/"):
+            current.path = line[6:]
+        elif line.startswith("@@"):
+            current.hunks += 1
+        elif line.startswith("+") and not line.startswith("+++"):
+            current.additions += 1
+            current.added_lines.append(line[1:])
+        elif line.startswith("-") and not line.startswith("---"):
+            current.deletions += 1
+            current.deleted_lines.append(line[1:])
+
+    return files
+
+
+def _touches(paths: list[str], fragments: tuple[str, ...]) -> bool:
+    return any(any(fragment in path.lower() for fragment in fragments) for path in paths)
+
+
+def _added_contains(files: list[FileChange], pattern: str) -> bool:
+    regex = re.compile(pattern, re.IGNORECASE)
+    return any(regex.search(line) for change in files for line in change.added_lines)
+
+
+def analyze(files: list[FileChange]) -> Review:
+    paths = [change.path for change in files]
+    total_added = sum(change.additions for change in files)
+    total_deleted = sum(change.deletions for change in files)
+    risks: list[str] = []
+    suggestions: list[str] = []
+
+    if not files:
+        risks.append("No diff content was found, so the review cannot validate behavior.")
+        suggestions.append("Re-run the review with a PR URL or diff file that includes patch content.")
+        return Review(files, risks, suggestions, "Low")
+
+    if total_added + total_deleted > 800:
+        risks.append("Large diff size increases the chance of missed regressions.")
+        suggestions.append("Split unrelated changes or add a focused reviewer guide for the largest files.")
+
+    if _touches(paths, ("auth", "session", "permission", "policy", "token", "secret")):
+        risks.append("Authentication, authorization, or secret-handling paths changed.")
+        suggestions.append("Add negative permission tests and verify secrets are not logged or exposed.")
+
+    if _touches(paths, ("migration", "schema", ".sql", "db/")):
+        risks.append("Database or migration files changed and may affect persisted data.")
+        suggestions.append("Run migrations against a disposable database and document rollback behavior.")
+
+    if _touches(paths, ("package.json", "pnpm-lock", "package-lock", "yarn.lock")):
+        risks.append("Dependency or lockfile changes can alter build and runtime behavior.")
+        suggestions.append("Confirm the lockfile is intentional and run a clean install before merge.")
+
+    if _added_contains(files, r"\bTODO\b|\bFIXME\b"):
+        risks.append("New TODO/FIXME markers suggest unfinished behavior.")
+        suggestions.append("Resolve the marker or convert it into a tracked issue before merging.")
+
+    if _added_contains(files, r"console\.log|debugger"):
+        risks.append("Debug statements were added to the diff.")
+        suggestions.append("Remove debug output or replace it with structured logging where appropriate.")
+
+    if not _touches(paths, ("test", "spec", "__tests__", ".snap")):
+        risks.append("No test files changed, so the behavior may be under-verified.")
+        suggestions.append("Add or update tests for the highest-risk path touched by this PR.")
+
+    if not risks:
+        risks.append("No obvious high-risk patterns were detected from the diff alone.")
+
+    if not suggestions:
+        suggestions.append("Keep the PR focused and ensure the project test suite passes before merge.")
+
+    confidence = "High"
+    if total_added + total_deleted > 800 or len(risks) >= 4:
+        confidence = "Medium"
+    if not files or total_added + total_deleted > 2000:
+        confidence = "Low"
+
+    return Review(files, risks, suggestions, confidence)
+
+
+def render_markdown(review: Review) -> str:
+    file_count = len(review.files)
+    total_added = sum(change.additions for change in review.files)
+    total_deleted = sum(change.deletions for change in review.files)
+    notable = sorted(review.files, key=lambda change: change.additions + change.deletions, reverse=True)[:5]
+    notable_text = ", ".join(change.path for change in notable) if notable else "none"
+
+    lines = [
+        "## Summary",
+        "",
+        (
+            f"This PR changes {file_count} file(s), with {total_added} added line(s) "
+            f"and {total_deleted} removed line(s)."
+        ),
+        f"The largest touched area(s) are: {notable_text}.",
+        "",
+        "## Identified Risks",
+        "",
+    ]
+    lines.extend(f"- {risk}" for risk in review.risks)
+    lines.extend(["", "## Improvement Suggestions", ""])
+    lines.extend(f"- {suggestion}" for suggestion in review.suggestions)
+    lines.extend(["", "## Confidence", "", review.confidence, ""])
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Review a GitHub PR diff and print a structured Markdown comment."
+    )
+    parser.add_argument("--pr", help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
+    parser.add_argument("--diff-file", help="Read a unified diff from a local file instead of GitHub")
+    args = parser.parse_args(argv)
+
+    if not args.pr and not args.diff_file:
+        parser.error("one of --pr or --diff-file is required")
+
+    try:
+        if args.diff_file:
+            diff = Path(args.diff_file).read_text(encoding="utf-8")
+        else:
+            diff = fetch_pr_diff(args.pr)
+    except Exception as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 2
+
+    review = analyze(parse_diff(diff))
+    print(render_markdown(review))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

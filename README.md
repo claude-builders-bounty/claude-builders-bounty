@@ -51,3 +51,25 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## PR Review Agent
+
+This repository includes a deterministic Claude Code PR review helper. It reads
+a GitHub pull request diff and prints a structured Markdown review comment with
+summary, risks, suggestions, and confidence.
+
+Run it against a public GitHub PR:
+
+```bash
+bin/claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+Or run it against a saved diff:
+
+```bash
+bin/claude-review --diff-file path/to/pr.diff
+```
+
+The companion agent instructions live at `.claude/agents/pr-reviewer.md`.
