@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# ============================================================================
+# pre-tool-use — Claude Code hook that blocks destructive bash commands
+# Part of claude-builders-bounty issue #3 ($100 bounty)
+# ============================================================================
+
+set -euo pipefail
+
+LOG_FILE="$HOME/.claude/hooks/blocked.log"
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# ---------- JSON field reader ----------
+read_json() {
+    python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+keys = '$1'.split('.')
+val = data
+for k in keys:
+    if isinstance(val, dict):
+        val = val.get(k, '')
+    else:
+        val = ''
+        break
+print(val)
+"
+}
+
+# ---------- deny: block and log ----------
+deny() {
+    local reason="$1"
+    echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') | BLOCKED | $TOOL_NAME | $COMMAND | $(pwd)" >> "$LOG_FILE"
+    cat <<JSON
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "SECURITY: Command blocked by Empire Shield hook. Reason: $reason"
+  }
+}
+JSON
+    exit 0
+}
+
+# ---------- allow: let it pass ----------
+allow() {
+    cat <<JSON
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "allow"
+  }
+}
+JSON
+    exit 0
+}
+
+# ---------- main ----------
+INPUT=$(cat)
+
+TOOL_NAME=$(echo "$INPUT" | read_json "tool_name")
+COMMAND=$(echo "$INPUT" | read_json "tool_input.command")
+
+# Only intercept Bash tool calls
+if [ "$TOOL_NAME" != "Bash" ]; then
+    allow
+fi
+
+# Normalize command
+CMD_LOWER=$(echo "$COMMAND" | tr '[:upper:]' '[:lower:]')
+CMD_STRIPPED=$(echo "$CMD_LOWER" | sed 's/^[[:space:]]*//')
+
+# Pattern 1: rm -rf (recursive force remove)
+if echo "$CMD_STRIPPED" | grep -Eq '^rm[[:space:]]+(-rf|-(.[r])*(.[f])*f|-(.[f])*(.[r])*r)[[:space:]]'; then
+    deny "rm -rf is blocked. Use 'rm -r' with confirmation or move files to trash instead."
+fi
+
+# Pattern 2: DROP TABLE (database destruction)
+if echo "$CMD_STRIPPED" | grep -Eq '(^|[;&|])[[:space:]]*drop[[:space:]]+table'; then
+    deny "DROP TABLE is blocked. Use 'DROP TABLE IF EXISTS' only after backing up."
+fi
+
+# Pattern 3: git push --force (force push)
+if echo "$CMD_STRIPPED" | grep -Eq 'git[[:space:]].*push[[:space:]].*--force'; then
+    deny "git push --force is blocked. Use 'git push --force-with-lease' instead."
+fi
+
+# Pattern 4: TRUNCATE (table data wipe)
+if echo "$CMD_STRIPPED" | grep -Eq '(^|[;&|])[[:space:]]*truncate[[:space:]]'; then
+    deny "TRUNCATE is blocked. Use DELETE with a WHERE clause after backing up."
+fi
+
+# Pattern 5: DELETE FROM without WHERE clause
+if echo "$CMD_STRIPPED" | grep -Eq '(^|[;&|])[[:space:]]*delete[[:space:]]+from'; then
+    if ! echo "$CMD_STRIPPED" | grep -qi 'where[[:space:]]'; then
+        deny "DELETE FROM without WHERE clause is blocked. Add a WHERE clause."
+    fi
+fi
+
+# Pattern 6: rm -r (recursive remove without -f)
+if echo "$CMD_STRIPPED" | grep -Eq '^rm[[:space:]]+(-r|--recursive)[[:space:]]'; then
+    deny "rm -r blocked without confirmation. Use a safer deletion method."
+fi
+
+# Pattern 7: git reset --hard
+if echo "$CMD_STRIPPED" | grep -Eq 'git[[:space:]].*reset[[:space:]].*--hard'; then
+    deny "git reset --hard is blocked. Use 'git reset --soft' or 'git stash' instead."
+fi
+
+# Allow safe commands
+allow
