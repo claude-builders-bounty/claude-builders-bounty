@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Claude Code PR reviewer CLI.
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+
+The tool fetches the PR diff and metadata, then emits a structured Markdown
+review. If ANTHROPIC_API_KEY is set, it calls Claude; otherwise it falls back to
+a deterministic local reviewer so the CLI remains testable without secrets.
+"""
+from __future__ import annotations
+import argparse, json, os, re, sys, textwrap, urllib.request, urllib.error
+
+MODEL = os.environ.get("CLAUDE_REVIEW_MODEL", "claude-sonnet-4-20250514")
+
+
+def parse_pr_url(url: str):
+    m = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:[/#?].*)?$", url.strip())
+    if not m:
+        raise SystemExit("Expected PR URL like https://github.com/owner/repo/pull/123")
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def http_get(url: str, accept="application/vnd.github+json") -> str:
+    req = urllib.request.Request(url, headers={"User-Agent":"claude-review-bounty", "Accept": accept})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"GitHub request failed: {e.code} {e.reason} for {url}")
+
+
+def fetch_pr(owner: str, repo: str, num: int):
+    base = f"https://api.github.com/repos/{owner}/{repo}/pulls/{num}"
+    meta = json.loads(http_get(base))
+    diff = http_get(f"https://github.com/{owner}/{repo}/pull/{num}.diff", accept="application/vnd.github.v3.diff")
+    return meta, diff
+
+
+def diff_stats(diff: str):
+    files, additions, deletions = [], 0, 0
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                files.append(parts[3][2:])
+        elif line.startswith("+") and not line.startswith("+++"):
+            additions += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            deletions += 1
+    return files, additions, deletions
+
+
+def local_review(pr_url: str, meta: dict, diff: str) -> str:
+    files, additions, deletions = diff_stats(diff)
+    title = meta.get("title", "Untitled PR")
+    body = (meta.get("body") or "").strip().splitlines()[:3]
+    file_preview = ", ".join(files[:6]) + ("…" if len(files) > 6 else "")
+    risks = []
+    suggestions = []
+    lower = diff.lower()
+    if any(p in lower for p in ["auth", "token", "secret", "password", "permission"]):
+        risks.append("Security-sensitive paths or terms appear in the diff; verify secrets, auth checks, and permission boundaries manually.")
+    if any(p in lower for p in ["migration", "schema", "drop table", "delete from", "truncate"]):
+        risks.append("Database/schema-impacting changes may need rollback notes and migration tests.")
+    if additions + deletions > 400:
+        risks.append("Large diff size raises review risk; behavior may need targeted integration or regression tests.")
+    if any(f.endswith((".yml", ".yaml")) or "/workflows/" in f for f in files):
+        risks.append("CI/workflow changes can affect release or automation behavior; validate with a dry run where possible.")
+    if not risks:
+        risks.append("No obvious high-risk pattern is visible from the diff alone; remaining risk is hidden behavior not covered by tests.")
+    if not re.search(r"(test|spec|__tests__|\.test\.|\.spec\.)", "\n".join(files), re.I):
+        suggestions.append("Add or update tests that cover the changed behavior before merge.")
+    suggestions.append("Document any user-facing behavior or setup changes in the PR description or README.")
+    suggestions.append("Confirm backwards compatibility for callers/configuration touched by this change.")
+    confidence = "Medium" if len(files) <= 8 and additions + deletions <= 400 else "Low"
+    if len(files) <= 3 and additions + deletions <= 120:
+        confidence = "High"
+    body_hint = f" PR notes mention: {' '.join(body)}" if body else ""
+    return f"""## Summary
+This PR, **{title}**, changes {len(files)} file(s): {file_preview or 'no file list detected'}. The fetched diff contains approximately +{additions}/-{deletions} changed lines.{body_hint}
+
+## Identified risks
+""" + "\n".join(f"- {r}" for r in risks) + f"""
+
+## Improvement suggestions
+""" + "\n".join(f"- {s}" for s in suggestions) + f"""
+
+## Confidence
+{confidence} — based on diff size, touched files, and visible risk patterns from {pr_url}.
+"""
+
+
+def claude_review(pr_url: str, meta: dict, diff: str) -> str:
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        return local_review(pr_url, meta, diff)
+    prompt = f"""Review this GitHub PR and return Markdown with exactly these sections:
+## Summary, ## Identified risks, ## Improvement suggestions, ## Confidence.
+Summary must be 2-3 sentences. Confidence must be Low/Medium/High with a short reason.
+
+PR URL: {pr_url}
+Title: {meta.get('title')}
+Body: {(meta.get('body') or '')[:3000]}
+Diff:\n{diff[:120000]}
+"""
+    payload = json.dumps({
+        "model": MODEL,
+        "max_tokens": 1200,
+        "messages": [{"role":"user", "content": prompt}],
+    }).encode()
+    req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, headers={
+        "User-Agent":"claude-review-bounty", "Content-Type":"application/json",
+        "x-api-key": key, "anthropic-version":"2023-06-01"
+    })
+    with urllib.request.urlopen(req, timeout=60) as r:
+        data = json.loads(r.read())
+    return "\n".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Structured Markdown GitHub PR reviewer")
+    ap.add_argument("--pr", required=True, help="GitHub PR URL")
+    args = ap.parse_args()
+    owner, repo, num = parse_pr_url(args.pr)
+    meta, diff = fetch_pr(owner, repo, num)
+    print(claude_review(args.pr, meta, diff).strip())
+
+if __name__ == "__main__":
+    main()
