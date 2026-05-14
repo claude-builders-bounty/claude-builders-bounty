@@ -19,9 +19,9 @@ The script groups commit subjects into:
 - `Changed`
 - `Removed`
 
-It recognizes common prefixes such as `feat:`, `fix:`, `remove:`, `delete:`,
-and keyword-based commit subjects. Commit messages that do not match those
-patterns are placed under `Changed`.
+It recognizes common prefixes such as `feat:`, `feat(api):`, `fix:`,
+`remove:`, `delete:`, and keyword-based commit subjects. Commit messages that
+do not match those patterns are placed under `Changed`.
 
 ## Output Path
 

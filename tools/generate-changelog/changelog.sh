@@ -36,39 +36,31 @@ declare -a removed=()
 
 normalize_subject() {
   local subject="$1"
-  subject="${subject#feat: }"
-  subject="${subject#fix: }"
-  subject="${subject#chore: }"
-  subject="${subject#docs: }"
-  subject="${subject#refactor: }"
-  subject="${subject#remove: }"
-  subject="${subject#removed: }"
-  subject="${subject#delete: }"
-  subject="${subject#deleted: }"
-  subject="${subject#change: }"
-  subject="${subject#changed: }"
-  printf '%s' "$subject"
+  local prefix_re='^(feat|fix|chore|docs|refactor|remove|removed|delete|deleted|change|changed|add|added)(\([^)]+\))?!?:[[:space:]]*(.*)$'
+  shopt -s nocasematch
+  if [[ "$subject" =~ $prefix_re ]]; then
+    printf '%s' "${BASH_REMATCH[3]}"
+  else
+    printf '%s' "$subject"
+  fi
+  shopt -u nocasematch
 }
 
 while IFS= read -r subject; do
   [[ -z "$subject" ]] && continue
   lower="$(printf '%s' "$subject" | tr '[:upper:]' '[:lower:]')"
   clean="$(normalize_subject "$subject")"
+  conventional_re='(\([^)]+\))?!?:'
 
-  case "$lower" in
-    feat:*|add:*|added:*|*' add '*|*' adds '*|*' added '*)
-      added+=("$clean")
-      ;;
-    fix:*|fixed:*|bugfix:*|*' fix '*|*' fixes '*|*' fixed '*)
-      fixed+=("$clean")
-      ;;
-    remove:*|removed:*|delete:*|deleted:*|*' remove '*|*' removes '*|*' deleted '*)
-      removed+=("$clean")
-      ;;
-    *)
-      changed+=("$clean")
-      ;;
-  esac
+  if [[ "$lower" =~ ^(feat|add|added)$conventional_re ]] || [[ "$lower" =~ ^(add|adds|added)[[:space:]] ]] || [[ "$lower" == *" add "* || "$lower" == *" adds "* || "$lower" == *" added "* ]]; then
+    added+=("$clean")
+  elif [[ "$lower" =~ ^(fix|fixed|bugfix)$conventional_re ]] || [[ "$lower" =~ ^(fix|fixes|fixed)[[:space:]] ]] || [[ "$lower" == *" fix "* || "$lower" == *" fixes "* || "$lower" == *" fixed "* ]]; then
+    fixed+=("$clean")
+  elif [[ "$lower" =~ ^(remove|removed|delete|deleted)$conventional_re ]] || [[ "$lower" =~ ^(remove|removes|removed|delete|deletes|deleted)[[:space:]] ]] || [[ "$lower" == *" remove "* || "$lower" == *" removes "* || "$lower" == *" deleted "* ]]; then
+    removed+=("$clean")
+  else
+    changed+=("$clean")
+  fi
 done <<< "$commit_lines"
 
 write_section() {
