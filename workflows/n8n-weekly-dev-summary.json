@@ -1,0 +1,116 @@
+{
+  "name": "Weekly GitHub Activity Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8cf2bb8a-6f3f-41e9-9950-92a0f5f3d3b6",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "54cf9adf-4df5-45c8-9d1d-f019c77757e7",
+      "name": "Weekly Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -620,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repo = $env.GITHUB_REPO || 'anthropics/claude-code';\nconst language = ($env.SUMMARY_LANGUAGE || 'EN').toUpperCase();\nconst githubToken = $env.GITHUB_TOKEN;\nconst anthropicKey = $env.ANTHROPIC_API_KEY;\n\nif (!repo.includes('/')) {\n  throw new Error('GITHUB_REPO must use the owner/name format, for example anthropics/claude-code');\n}\nif (!anthropicKey) {\n  throw new Error('ANTHROPIC_API_KEY is required');\n}\n\nconst [owner, name] = repo.split('/');\nconst until = new Date();\nconst since = new Date(until);\nsince.setUTCDate(since.getUTCDate() - 7);\n\nconst githubHeaders = {\n  Accept: 'application/vnd.github+json',\n  'User-Agent': 'n8n-claude-weekly-summary'\n};\nif (githubToken) {\n  githubHeaders.Authorization = `Bearer ${githubToken}`;\n}\n\nasync function github(path) {\n  return await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com${path}`,\n    headers: githubHeaders,\n    json: true\n  });\n}\n\nconst encodedRepo = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;\nconst sinceIso = since.toISOString();\nconst untilIso = until.toISOString();\n\nconst [commits, closedIssues, closedPulls] = await Promise.all([\n  github.call(this, `/repos/${encodedRepo}/commits?since=${encodeURIComponent(sinceIso)}&until=${encodeURIComponent(untilIso)}&per_page=100`),\n  github.call(this, `/repos/${encodedRepo}/issues?state=closed&since=${encodeURIComponent(sinceIso)}&per_page=100`),\n  github.call(this, `/repos/${encodedRepo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`)\n]);\n\nconst inWindow = (value) => {\n  if (!value) return false;\n  const date = new Date(value);\n  return date >= since && date <= until;\n};\n\nconst normalizedCommits = commits.map((commit) => ({\n  sha: commit.sha?.slice(0, 7),\n  message: commit.commit?.message?.split('\\n')[0] || '',\n  author: commit.commit?.author?.name || commit.author?.login || 'unknown',\n  url: commit.html_url\n}));\n\nconst normalizedIssues = closedIssues\n  .filter((issue) => !issue.pull_request && inWindow(issue.closed_at))\n  .map((issue) => ({\n    number: issue.number,\n    title: issue.title,\n    author: issue.user?.login || 'unknown',\n    url: issue.html_url\n  }));\n\nconst normalizedPulls = closedPulls\n  .filter((pull) => inWindow(pull.merged_at))\n  .map((pull) => ({\n    number: pull.number,\n    title: pull.title,\n    author: pull.user?.login || 'unknown',\n    url: pull.html_url\n  }));\n\nconst summaryInput = {\n  repository: repo,\n  window: { since: sinceIso, until: untilIso },\n  totals: {\n    commits: normalizedCommits.length,\n    closedIssues: normalizedIssues.length,\n    mergedPullRequests: normalizedPulls.length\n  },\n  commits: normalizedCommits.slice(0, 40),\n  closedIssues: normalizedIssues.slice(0, 40),\n  mergedPullRequests: normalizedPulls.slice(0, 40)\n};\n\nconst prompt = `Write a concise weekly narrative engineering summary in ${language === 'FR' ? 'French' : 'English'} for this GitHub repository activity. Focus on what changed, why it matters, notable themes, and suggested next steps. Use Markdown with short sections.\\n\\n${JSON.stringify(summaryInput, null, 2)}`;\n\nconst claudeResponse = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.anthropic.com/v1/messages',\n  headers: {\n    'content-type': 'application/json',\n    'anthropic-version': '2023-06-01',\n    'x-api-key': anthropicKey\n  },\n  body: {\n    model: 'claude-sonnet-4-20250514',\n    max_tokens: 1400,\n    messages: [\n      {\n        role: 'user',\n        content: prompt\n      }\n    ]\n  },\n  json: true\n});\n\nconst summary = claudeResponse.content\n  ?.map((part) => part.type === 'text' ? part.text : '')\n  .join('\\n')\n  .trim();\n\nif (!summary) {\n  throw new Error('Claude returned an empty summary');\n}\n\nconst header = `Weekly GitHub summary for ${repo} (${sinceIso.slice(0, 10)} to ${untilIso.slice(0, 10)})`;\nconst discordContent = `**${header}**\\n\\n${summary}`.slice(0, 1900);\n\nreturn [\n  {\n    json: {\n      repo,\n      language,\n      since: sinceIso,\n      until: untilIso,\n      totals: summaryInput.totals,\n      summary,\n      discordPayload: {\n        content: discordContent\n      }\n    }\n  }\n];"
+      },
+      "id": "f2ca5051-fef3-47ce-b3fe-ff86f540a6c7",
+      "name": "Collect Activity and Ask Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.DISCORD_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.discordPayload}}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fd864087-c546-44c4-a991-3ca8020fdb96",
+      "name": "Send Discord Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        20
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Collect Activity and Ask Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Collect Activity and Ask Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Activity and Ask Claude": {
+      "main": [
+        [
+          {
+            "node": "Send Discord Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "7f3ed64b-3c5e-45d0-b2d2-d475f1996f87",
+  "triggerCount": 1,
+  "tags": []
+}
