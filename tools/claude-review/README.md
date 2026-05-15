@@ -24,6 +24,13 @@ The command prints:
 
 No paid API key is required for the default heuristic pass.
 
+## GitHub Action mode
+
+If you want the agent to post the structured review automatically, copy
+`tools/claude-review/examples/github-action.yml` into `.github/workflows/claude-review.yml`.
+
+The workflow runs on pull requests, generates the same Markdown review, and posts it back to the PR with `gh pr comment`. It uses the built-in `GITHUB_TOKEN`; no external paid API key is required.
+
 ## Review model
 
 The agent fetches PR metadata and the unified diff with `gh api`, classifies changed files and added lines, then emits a Markdown review that is predictable enough to use in automation.
