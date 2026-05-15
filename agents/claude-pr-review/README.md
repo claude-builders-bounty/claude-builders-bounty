@@ -53,3 +53,10 @@ jobs:
 
 - [sample-code-server-1309.md](samples/sample-code-server-1309.md)
 - [sample-waymark-1.md](samples/sample-waymark-1.md)
+
+## Verification
+
+```bash
+python3 -m unittest discover agents/claude-pr-review/tests
+python3 agents/claude-pr-review/claude_review.py --pr https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1309
+```
