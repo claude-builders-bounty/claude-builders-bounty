@@ -1,0 +1,256 @@
+{
+  "name": "Weekly Dev Summary — GitHub + Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$vars.GITHUB_API_URL || 'https://api.github.com'}}/repos/{{$vars.GITHUB_REPO}}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{DateTime.now().minus({weeks:1}).toISO()}}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-auth",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$vars.GITHUB_API_URL || 'https://api.github.com'}}/repos/{{$vars.GITHUB_REPO}}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "since", "value": "={{DateTime.now().minus({weeks:1}).toISO()}}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-auth",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$vars.GITHUB_API_URL || 'https://api.github.com'}}/repos/{{$vars.GITHUB_REPO}}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "sort", "value": "updated" },
+            { "name": "direction", "value": "desc" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 600],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-auth",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge and filter data from all 3 sources\nconst oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\n\n// Commits\nconst commits = ($input.first().json || []).filter(c => {\n  const date = new Date(c.commit?.author?.date || c.commit?.committer?.date);\n  return date >= oneWeekAgo;\n}).map(c => ({\n  message: c.commit.message.split('\\n')[0],\n  author: c.commit.author.name,\n  date: c.commit.author.date,\n  url: c.html_url\n}));\n\n// Closed issues (not PRs)\nconst issues = ($input.all()[1]?.json || []).filter(i => !i.pull_request && i.closed_at && new Date(i.closed_at) >= oneWeekAgo).map(i => ({\n  number: i.number,\n  title: i.title,\n  labels: (i.labels || []).map(l => l.name),\n  closed_at: i.closed_at\n}));\n\n// Merged PRs\nconst prs = ($input.all()[2]?.json || []).filter(p => p.merged_at && new Date(p.merged_at) >= oneWeekAgo).map(p => ({\n  number: p.number,\n  title: p.title,\n  author: p.user?.login,\n  merged_at: p.merged_at,\n  additions: p.additions,\n  deletions: p.deletions,\n  changed_files: p.changed_files\n}));\n\nreturn [{ json: { commits, issues, prs, week_start: oneWeekAgo.toISOString(), week_end: new Date().toISOString() } }];"
+      },
+      "id": "merge-data",
+      "name": "Merge & Filter Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{$vars.ANTHROPIC_API_KEY}}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"You are a tech lead writing a weekly dev summary for the team.\\n\\nRepo: {{ $vars.GITHUB_REPO }}\\nWeek: {{ $json.week_start.slice(0,10) }} to {{ $json.week_end.slice(0,10) }}\\n\\nData:\\n- {{ $json.commits.length }} commits\\n- {{ $json.issues.length }} issues closed\\n- {{ $json.prs.length }} PRs merged\\n\\nCommits:\\n{{ $json.commits.slice(0,30).map(c => '- ' + c.message + ' (' + c.author + ')').join('\\\\n') }}\\n\\nClosed Issues:\\n{{ $json.issues.slice(0,20).map(i => '- #' + i.number + ' ' + i.title).join('\\\\n') }}\\n\\nMerged PRs:\\n{{ $json.prs.slice(0,20).map(p => '- #' + p.number + ' ' + p.title + ' by @' + p.author + ' (+' + p.additions + '/-' + p.deletions + ')').join('\\\\n') }}\\n\\nWrite a concise, engaging weekly summary. Use headings, bullet points, and highlight key achievements. Keep it under 500 words.\\n\\nLanguage: {{ $vars.LANGUAGE || 'EN' }}\"\n  }]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $input.first().json;\nconst summary = claudeResponse.content?.[0]?.text || 'Failed to generate summary.';\nconst repo = $vars.GITHUB_REPO || 'unknown/repo';\nconst language = $vars.LANGUAGE || 'EN';\n\n// Format for Discord/Slack webhook\nconst title = language === 'FR'\n  ? `📊 Résumé Hebdomadaire — ${repo}`\n  : `📊 Weekly Dev Summary — ${repo}`;\n\nconst footer = language === 'FR'\n  ? '\\n\\n---\\n_Généré par Claude Code + n8n_'\n  : '\\n\\n---\\n_Generated by Claude Code + n8n_';\n\nreturn [{\n  json: {\n    title,\n    summary: summary + footer,\n    repo,\n    language\n  }\n}];"
+      },
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1160, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": {{ JSON.stringify($json.summary) }},\n  \"username\": \"Weekly Dev Summary\",\n  \"embeds\": [{\n    \"title\": {{ JSON.stringify($json.title) }},\n    \"description\": {{ JSON.stringify($json.summary.slice(0, 4000)) }},\n    \"color\": 5814783\n  }]\n}",
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": {{ JSON.stringify($json.title + '\\n\\n' + $json.summary) }}\n}",
+        "options": {}
+      },
+      "id": "slack-webhook",
+      "name": "Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 500]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Fri 5pm)": {
+      "main": [
+        [
+          { "node": "Fetch Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [{ "node": "Merge & Filter Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [{ "node": "Merge & Filter Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [{ "node": "Merge & Filter Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Merge & Filter Data": {
+      "main": [
+        [{ "node": "Claude Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [{ "node": "Format Output", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          { "node": "Discord Webhook", "type": "main", "index": 0 },
+          { "node": "Slack Webhook", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "github" },
+    { "name": "claude" },
+    { "name": "weekly-summary" }
+  ]
+}
