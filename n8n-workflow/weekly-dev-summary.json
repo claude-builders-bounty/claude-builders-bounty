@@ -1,0 +1,165 @@
+﻿{
+  "name": "Weekly GitHub Dev Summary — n8n + Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 0
+            },
+            {
+              "field": "minutes",
+              "minutesInterval": 0
+            },
+            {
+              "field": "days",
+              "hoursInterval": 0,
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ],
+          "triggerTimes": {
+            "item": [
+              { "mode": "everyX", "value": 1, "unit": "weeks", "hour": 17, "minute": 0 }
+            ]
+          }
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Schedule Trigger (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.repo}}/commits?since={{$json.since}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "splitIntoItems": true
+        }
+      },
+      "id": "fetch-commits",
+      "name": "GitHub: Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.repo}}/issues?state=closed&since={{$json.since}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "splitIntoItems": true
+        }
+      },
+      "id": "fetch-issues",
+      "name": "GitHub: Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 480]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.repo}}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "GitHub: Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 660]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "position": [650, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.first().json;\nconst issues = $input.all()[1]?.json || {};\nconst pulls = $input.all()[2]?.json || [];\nconst mergedPRs = pulls.filter(p => p.merged_at && new Date(p.merged_at) > new Date($json.since));\n\nreturn {\n  repo: $json.repo,\n  week: `${$json.since} to now`,\n  commitsCount: Array.isArray(commits) ? commits.length : 1,\n  closedIssues: Array.isArray(issues) ? issues.length : 0,\n  mergedPRs: mergedPRs.length,\n  commitMessages: (Array.isArray(commits) ? commits : [commits]).map(c => c.commit?.message?.split('\\n')[0] || '').slice(0, 50),\n  issueTitles: (Array.isArray(issues) ? issues : [issues]).map(i => i.title || '').slice(0, 20),\n  prTitles: mergedPRs.map(p => p.title || '').slice(0, 10)\n};"
+      },
+      "id": "aggregate-code",
+      "name": "Code: Aggregate Activity",
+      "type": "n8n-nodes-base.code",
+      "position": [850, 480]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}" },
+            { "name": "anthropic-version", "value": "2023-06-01" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "claude-sonnet-4-20250514" },
+            { "name": "max_tokens", "value": 1024 },
+            { "name": "messages", "value": "=[{\"role\":\"user\",\"content\":\"Summarize this weekly dev activity into a 3-paragraph narrative in {{$json.language||'EN'}}. Include: key themes from commits, notable closed issues, and merged PRs. Keep it professional.\\n\\nRepo: {{$json.repo}}\\nWeek: {{$json.week}}\\nCommits ({{$json.commitsCount}}): {{JSON.stringify($json.commitMessages)}}\\nClosed Issues ({{$json.closedIssues}}): {{JSON.stringify($json.issueTitles)}}\\nMerged PRs ({{$json.mergedPRs}}): {{JSON.stringify($json.prTitles)}}\"}]" }
+          ]
+        }
+      },
+      "id": "claude-summary",
+      "name": "Claude: Generate Narrative Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 480]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.webhook_url}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "content", "value": "# 📊 Weekly Dev Summary\\n\\n{{$json.summary}}"
+            }
+          ]
+        }
+      },
+      "id": "discord-deliver",
+      "name": "Discord: Deliver Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1250, 480]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (Friday 5pm)": {
+      "main": [
+        [{ "node": "GitHub: Fetch Commits", "type": "main", "index": 0 }],
+        [{ "node": "GitHub: Fetch Closed Issues", "type": "main", "index": 0 }],
+        [{ "node": "GitHub: Fetch Merged PRs", "type": "main", "index": 0 }]
+      ]
+    },
+    "GitHub: Fetch Commits": {
+      "main": [[{ "node": "Merge", "type": "main", "index": 0 }]]
+    },
+    "GitHub: Fetch Closed Issues": {
+      "main": [[{ "node": "Merge", "type": "main", "index": 1 }]]
+    },
+    "GitHub: Fetch Merged PRs": {
+      "main": [[{ "node": "Merge", "type": "main", "index": 2 }]]
+    },
+    "Merge": {
+      "main": [[{ "node": "Code: Aggregate Activity", "type": "main", "index": 0 }]]
+    },
+    "Code: Aggregate Activity": {
+      "main": [[{ "node": "Claude: Generate Narrative Summary", "type": "main", "index": 0 }]]
+    },
+    "Claude: Generate Narrative Summary": {
+      "main": [[{ "node": "Discord: Deliver Summary", "type": "main", "index": 0 }]]
+    }
+  }
+}
