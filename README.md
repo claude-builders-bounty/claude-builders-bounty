@@ -32,6 +32,16 @@ You're in the right place.
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
+## Generate Changelog Skill
+
+This repository includes a Claude Code skill and bash script for generating a structured `CHANGELOG.md` from git history.
+
+1. Run `bash changelog.sh` from any git repository.
+2. Optionally pass `--repo /path/to/repo`, `--output CHANGELOG.md`, or `--range v1.0.0..HEAD`.
+3. Review the generated `CHANGELOG.md` and commit it with your release.
+
+See [`skills/generate-changelog/SKILL.md`](skills/generate-changelog/SKILL.md) and [`examples/SAMPLE_CHANGELOG.md`](examples/SAMPLE_CHANGELOG.md).
+
 ---
 
 ## Rules
