@@ -1,53 +1,89 @@
-# Claude Builders Bounty 🤖
+# Claude Code PR Review Agent
 
-> A community bounty board for Claude Code builders.
+A Claude Code sub-agent that reviews GitHub PR diffs and returns structured Markdown review comments — confidence scores, risks, and improvement suggestions included.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## 💰 Bounty: $150 (Issue #4)
 
----
-
-## How it works
-
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Part of [claude-builders-bounty/claude-builders-bounty#4](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/4).
 
 ---
 
-## Active Bounties
+## 🚀 Installation
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```bash
+# Clone and install
+git clone https://github.com/rinopatrick/claude-builders-bounty.git
+cd claude-builders-bounty
 
----
+# Make executable
+chmod +x claude-review
+sudo cp claude-review /usr/local/bin/
+```
 
-## Rules
+## 🔑 Setup
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Set your Anthropic API key:
 
----
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
 
-## Community
+Or add to shell profile (`~/.bashrc`, `~/.zshrc`):
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
 
----
+## 💬 Usage
 
-*Started by the Claude builder community · March 2026 · MIT License*
+```bash
+# Review a PR
+claude-review --pr https://github.com/owner/repo/pull/123
+
+# Raw JSON output
+claude-review --pr https://github.com/owner/repo/pull/123 --json
+```
+
+**Output format:**
+```markdown
+## 🤖 Claude Code PR Review
+> 🔗 [PR URL](...)
+
+🟢 **Confidence:** `High`
+
+### 📋 Summary of Changes
+...
+
+### ⚠️ Identified Risks
+1. ...
+
+### 💡 Improvement Suggestions
+1. ...
+```
+
+## 📁 Files
+
+- `claude-review` — Main agent script (Python 3.10+)
+- `tests/sample_review_1189.md` — Sample review on [claude-builders-bounty#1189](https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1189)
+- `tests/sample_review_1364.md` — Sample review on [claude-builders-bounty#1364](https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1364)
+
+## ✅ Acceptance Criteria
+
+- [x] **CLI works:** `claude-review --pr <url>` prints structured Markdown review
+- [x] **JSON mode:** `--json` flag outputs parseable JSON
+- [x] **Structured output:** Summary, Risks, Suggestions, Confidence score
+- [x] **Tested on 2 real PRs:** sample outputs included
+- [x] **README with setup and usage:** this file
+
+## 🧪 Tested On
+
+| PR | Summary |
+|----|---------|
+| [#1189](https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1189) | Security hook for blocking destructive bash commands |
+| [#1364](https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1364) | Dangerous bash command guard hook (Python implementation) |
+
+Both sample reviews are in `tests/`.
+
+## 📄 License
+
+MIT
