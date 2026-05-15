@@ -1,213 +1,227 @@
-# Project Context — Next.js 15 App Router + SQLite SaaS
+# CLAUDE.md — Next.js 15 + SQLite SaaS
 
-## Stack
-- **Framework:** Next.js 15 (App Router, RSC)
-- **Runtime:** Node.js 20+
-- **Database:** SQLite via better-sqlite3 (local) / Turso (production)
-- **ORM:** Drizzle ORM
-- **Styling:** Tailwind CSS
-- **Auth:** NextAuth.js v5 with database sessions
+## Stack & Versions
 
----
+- **Node.js**: 20+ (LTS)
+- **Next.js**: 15.x (App Router)
+- **SQLite**: better-sqlite3 (sync) or @libsql/client (Turso)
+- **React**: 19.x
+- **TypeScript**: 5.x strict mode
 
 ## Project Structure
 
 ```
-├── src/
-│   ├── app/                    # Next.js App Router pages
-│   │   ├── (auth)/            # Auth routes (login, register, reset-password)
-│   │   ├── (dashboard)/       # Authenticated dashboard routes
-│   │   ├── api/               # API route handlers
-│   │   │   └── auth/          # NextAuth.js API routes
-│   │   └── layout.tsx         # Root layout
-│   ├── components/             # React components
-│   │   ├── ui/                # Primitive UI components (Button, Input, Card)
-│   │   └── [feature]/         # Feature-specific components
-│   ├── lib/
-│   │   ├── db/                # Database schema, migrations, client
-│   │   ├── auth/              # Auth configuration
-│   │   └── utils/             # Shared utilities
-│   └── types/                 # TypeScript type definitions
-├── drizzle/                   # Drizzle migration files
-├── scripts/                   # Utility scripts (seed, migrate)
-└── tests/                     # Test files (Vitest + Playwright)
+app/                    # Next.js App Router pages
+  (auth)/              # Auth-related routes (login, register)
+  (dashboard)/         # Protected dashboard routes
+  api/                  # API routes
+    webhooks/           # External webhook handlers
+components/
+  ui/                   # Base UI components (Button, Input, etc.)
+  forms/                # Form components with react-hook-form
+  features/             # Feature-specific components
+lib/
+  db/                   # Database client & schema
+    migrations/          # SQL migration files
+    schema.ts           # Drizzle schema definitions
+  auth/                 # Auth utilities (session, token)
+  api/                   # API client utilities
+hooks/                  # Custom React hooks
+types/                  # Shared TypeScript types
 ```
 
----
+## SQL / Migration Conventions
 
-## Naming Conventions
+### Migration Rules
+- **One table per migration** — keep migrations focused
+- **Use Drizzle ORM** — never raw SQL for schema changes
+- **Never alter existing columns** — only add nullable columns or new tables
+- **Always add `created_at` and `updated_at`** — use `INTEGER DEFAULT (unixepoch())` for SQLite
+- **Indexes on foreign keys** — always index `user_id`, `tenant_id` columns
 
-| Pattern | Convention | Example |
-|---------|-----------|---------|
-| Pages | kebab-case | `user-profile-settings.tsx` |
-| Components | PascalCase | `UserProfileCard.tsx` |
-| Server Actions | snake_case verb phrase | `update_user_profile.ts` |
-| API Routes | snake_case | `update-user.ts` |
-| Database tables | snake_case plural | `user_sessions` |
-| Database columns | snake_case | `created_at` |
-| CSS classes | Tailwind utility first | — |
-| Environment vars | SCREAMING_SNAKE | `DATABASE_URL` |
-
----
-
-## SQL / Migration Rules
-
-### Schema Declaration
-- All tables use `id` (TEXT, UUID) as primary key unless otherwise specified
-- All tables include `created_at` and `updated_at` timestamps
-- Use Drizzle schema syntax only — no raw SQL in schema files
-
+### Schema Patterns
 ```typescript
-// ✅ CORRECT
-export const users = pgTable('users', {
-  id: text('id').primaryKey().defaultRandom(),
+// ✅ CORRECT — define table schema
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(), // UUID
   email: text('email').notNull().unique(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
 });
 
-// ❌ WRONG — raw SQL in schema
-export const users = pgTable('users', {
-  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+// ❌ WRONG — don't use serial id on SQLite
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }), // Avoid
 });
 ```
-
-### Migrations
-- One migration per feature/fix
-- Never modify existing migration files
-- Always migrate forward — no down migrations in production
-- Test migrations on a local DB copy before committing
 
 ### Query Patterns
-- Use parameterized queries only — never string concatenation
-- Use transactions for multi-table writes
-- Keep queries close to the feature that uses them
+```typescript
+// ✅ CORRECT — prepared statements for repeated queries
+const getUserById = db.query.users.findFirst({
+  where: eq(users.id, sql.placeholder('id')),
+}).prepare('get_user_by_id');
 
----
+// ❌ WRONG — raw string interpolation
+const user = db.execute(`SELECT * FROM users WHERE id = '${id}'`);
+```
 
 ## Component Patterns
 
-### File Structure
-Each component gets its own directory:
-```
-components/UserProfileCard/
-├── UserProfileCard.tsx      # Main component
-├── UserProfileCard.test.tsx
-└── index.ts                 # Re-export
+### File Naming
+- **PascalCase** for components: `UserProfile.tsx`
+- **camelCase** for utilities: `formatCurrency.ts`
+- **kebab-case** for pages/routes: `app/(dashboard)/billing/page.tsx`
+
+### Component Structure
+```typescript
+// ✅ CORRECT — explicit props + co-located tests
+interface UserCardProps {
+  user: { id: string; email: string; name: string | null };
+  onSelect?: (id: string) => void;
+}
+
+export function UserCard({ user, onSelect }: UserCardProps) {
+  return (
+    <div onClick={() => onSelect?.(user.id)}>
+      {user.name ?? user.email}
+    </div>
+  );
+}
+
+// ❌ WRONG — prop drilling, implicit dependencies
+export function UserCard(props: any) {
+  const user = useUser(); // Hidden dependency
+  // ...
+}
 ```
 
 ### Server vs Client Components
-- Default to **Server Components**
-- Add `'use client'` only when needed: event handlers, useState, useEffect, browser APIs
-- Pass data to client components via props, not context
+- **Server Components by default** — use `'use client'` only when needed
+- **Keep client boundaries small** — isolate `'use client'` to form components
+- **Pass serializable data** — never pass functions/callbacks to Server Components
+
+## Patterns We Follow
 
 ### Error Handling
-- Wrap async Server Components in `try/catch`
-- Use `error.tsx` files in each route segment
-- Never swallow errors — always log + surface to user
+```typescript
+// ✅ CORRECT — predictable errors with result pattern
+type Result<T, E = Error> = { ok: true; data: T } | { ok: false; error: E };
 
----
+async function getUser(id: string): Promise<Result<User>> {
+  const user = await db.query.users.findFirst({ where: eq(users.id, id) });
+  if (!user) return { ok: false, error: new Error('User not found') };
+  return { ok: true, data: user };
+}
 
-## What We Don't Do (And Why)
+// ❌ WRONG — throwing in expected paths
+async function getUser(id: string) {
+  const user = await db.query.users.findFirst({ where: eq(users.id, id) });
+  if (!user) throw new Error('User not found'); // Expected = not error
+  return user;
+}
+```
 
-| Anti-pattern | Why Not | Instead |
-|-------------|---------|---------|
-| `any` types | Loses type safety | Define proper interfaces |
-| Inline styles | Hard to maintain | Tailwind utilities |
-| Mixed CSS-in-JS | Performance cost | Tailwind only |
-| Raw SQL strings | SQL injection risk | Drizzle ORM |
-| `console.log` | No log levels | Use `lib/logger.ts` |
-| Default exports | Barrel file conflicts | Named exports |
-| Non-deterministic DB ops | Race conditions | Use transactions |
-| `await` in useEffect | Memory leaks | Use SWR or React Query |
+### Environment Variables
+```bash
+# ✅ REQUIRED — always prefix with NEXT_PUBLIC_ for client-exposed vars
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 
----
+# ✅ PRIVATE — server-only vars (no prefix)
+DATABASE_URL=file:./data/app.db
+OPENAI_API_KEY=sk-...
+```
 
-## Development Commands
+## What We DON'T Do (And Why)
+
+### ❌ No Server Actions for mutations that need validation
+- Use API routes with explicit request/response for anything beyond simple CRUD
+- Server Actions bypass API layer middleware (rate limiting, auth checks)
+
+### ❌ No `any` types
+- Use `unknown` and narrow with type guards if schema is unknown
+- Exception: third-party API responses with explicit ignore comment
+
+### ❌ No class components
+- Use function components + hooks only
+- Exception: legacy migration refactoring (marked with `// legacy:` comment)
+
+### ❌ No direct `localStorage` / `sessionStorage` for auth tokens
+- Use `httpOnly` cookies only — XSS can access localStorage
+- Exception: non-sensitive UI state (theme, preferences)
+
+### ❌ No database migrations that delete columns
+- SQLite doesn't support `DROP COLUMN` efficiently until 3.35.0
+- Mark columns deprecated instead, remove in major version
+
+## Dev Commands
 
 ```bash
-# Setup
+# Install dependencies
 npm install
 
-# Local development
-npm run dev
-
-# Run migrations
+# Run database migrations
 npm run db:migrate
 
-# Create migration (after schema change)
-npm run db:generate
+# Start development server
+npm run dev
 
-# Push schema to local DB
-npm run db:push
+# Run type checking
+npm run typecheck
 
-# Seed database
-npm run db:seed
+# Run linting
+npm run lint
 
 # Run tests
 npm run test
-
-# Type check
-npm run typecheck
 ```
 
----
+## API Design
 
-## Architecture Decisions
+### Request/Response Pattern
+```typescript
+// ✅ CORRECT — consistent API envelope
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: { code: string; message: string };
+}
 
-### Authentication
-- Use NextAuth.js v5 with database session strategy
-- Sessions stored in SQLite `sessions` table
-- CSRF protection enabled by default
-
-### Data Fetching
-- Server Components fetch data directly (no client-side fetching for initial load)
-- Use `useQuery` (TanStack Query) only for client-side mutations and real-time updates
-- Never fetch in Server Component render — use `async`/`await`
-
-### API Design
-- Use Next.js Route Handlers (`app/api/`) for external API access
-- Use Server Actions (`actions/`) for form submissions and mutations
-- Return typed responses — no untyped JSON
-
----
-
-## Testing Strategy
-
-- **Unit:** Vitest for lib/utils functions
-- **Component:** React Testing Library
-- **E2E:** Playwright for critical user flows
-- Test file location: `tests/` mirrors `src/` structure
-
----
-
-## Git Conventions
-
-| Type | Format | Description |
-|------|--------|-------------|
-| feat | `feat: add user profile page` | New feature |
-| fix | `fix: resolve login redirect loop` | Bug fix |
-| refactor | `refactor: extract auth helper` | Code restructure |
-| docs | `docs: update README` | Documentation |
-| test | `test: add user registration flow` | Tests |
-| chore | `chore: update dependencies` | Maintenance |
-
-Commit message format: `<type>: <description>`
-
----
-
-## Environment Variables
-
-```env
-# Database
-DATABASE_URL=file:./local.db
-
-# Auth
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=<generate with: openssl rand -base64 32>
-
-# Optional
-TURSO_DATABASE_URL=
-TURSO_AUTH_TOKEN=
+// POST /api/users
+// Request: { email: string; name?: string }
+// Response: ApiResponse<{ id: string; email: string }>
 ```
 
-Never commit `.env` — use `.env.example` as template.
+### Status Codes
+- `200` — Success with data
+- `201` — Resource created
+- `400` — Validation error (include field-level errors)
+- `401` — Not authenticated
+- `403` — Authenticated but not authorized
+- `404` — Resource not found
+- `429` — Rate limited
+- `500` — Server error (never expose stack traces)
+
+## Testing Conventions
+
+```typescript
+// ✅ Unit test patterns
+describe('getUserById', () => {
+  it('returns user when found', async () => {
+    const result = await getUserById('user_123');
+    expect(result.ok).toBe(true);
+    expect(result.data?.email).toBe('test@example.com');
+  });
+
+  it('returns error when not found', async () => {
+    const result = await getUserById('nonexistent');
+    expect(result.ok).toBe(false);
+  });
+});
+
+// ❌ WRONG — tests that depend on external state
+it('works correctly', async () => {
+  const user = await fetchUserFromAPI(); // Flaky
+});
+```
