@@ -43,6 +43,18 @@ You're in the right place.
 
 ---
 
+## Included Builder Tool: Generate Changelog
+
+This repository includes a Claude Code skill and Bash script for bounty [#1](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/1).
+
+1. Copy `SKILL.md` and `changelog.sh` into a Git repository.
+2. Run `bash changelog.sh`.
+3. Review the generated `CHANGELOG.md` before committing it.
+
+The script fetches tags when possible, reads commits since the latest tag, groups them into `Added`, `Fixed`, `Changed`, and `Removed`, and writes a ready-to-edit changelog draft. See [examples/CHANGELOG.sample.md](examples/CHANGELOG.sample.md) for sample output.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
