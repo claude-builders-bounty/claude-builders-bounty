@@ -1,0 +1,332 @@
+{
+  "name": "GitHub Weekly Report via Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "node-trigger",
+      "name": "Weekly Trigger (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "v1",
+              "name": "OWNER",
+              "value": "claude-builders-bounty",
+              "type": "string"
+            },
+            {
+              "id": "v2",
+              "name": "REPO",
+              "value": "claude-builders-bounty",
+              "type": "string"
+            },
+            {
+              "id": "v3",
+              "name": "LANGUAGE",
+              "value": "English",
+              "type": "string"
+            },
+            {
+              "id": "v4",
+              "name": "WEBHOOK_URL",
+              "value": "https://YOUR-DISCORD-WEBHOOK-URL",
+              "type": "string"
+            },
+            {
+              "id": "v5",
+              "name": "CLAUDE_API_KEY",
+              "value": "sk-ant-xxxxxxxx",
+              "type": "string"
+            },
+            {
+              "id": "v6",
+              "name": "GITHUB_TOKEN",
+              "value": "ghp_xxxxxxxxxxxx",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "node-config",
+      "name": "Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.OWNER }}/{{ $json.REPO }}/commits?since={{ $now.minus({days:7}).toISO() }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "node-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        150
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-auth",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.OWNER }}/{{ $json.REPO }}/issues?state=closed&since={{ $now.minus({days:7}).toISO() }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "node-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-auth",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.OWNER }}/{{ $json.REPO }}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "node-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        450
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-auth",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $(\"Fetch Commits\").first().json;\nconst issues = $(\"Fetch Closed Issues\").first().json;\nconst prs = $(\"Fetch Merged PRs\").first().json;\nconst config = $(\"Config Variables\").first().json;\n\nconst sevenDaysAgo = new Date();\nsevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);\n\nconst commitList = (Array.isArray(commits) ? commits : []).map(c => ({\n  message: c.commit?.message?.split(\"\n\")[0] || \"no message\",\n  author: c.commit?.author?.name || \"unknown\",\n  date: c.commit?.author?.date || \"\"\n})).slice(0, 50);\n\nconst issueList = (Array.isArray(issues) ? issues : []).filter(i => !i.pull_request).map(i => ({\n  title: i.title,\n  number: i.number,\n  labels: (i.labels || []).map(l => l.name).join(\", \"),\n  closed_at: i.closed_at\n})).filter(i => new Date(i.closed_at) >= sevenDaysAgo);\n\nconst prList = (Array.isArray(prs) ? prs : []).filter(p => p.merged_at && new Date(p.merged_at) >= sevenDaysAgo).map(p => ({\n  title: p.title,\n  number: p.number,\n  author: p.user?.login || \"unknown\",\n  merged_at: p.merged_at\n}));\n\nreturn [{\n  json: {\n    owner: config.OWNER,\n    repo: config.REPO,\n    language: config.LANGUAGE,\n    webhook_url: config.WEBHOOK_URL,\n    claude_api_key: config.CLAUDE_API_KEY,\n    github_token: config.GITHUB_TOKEN,\n    commits: commitList,\n    issues: issueList,\n    prs: prList,\n    summary_date: new Date().toISOString().split(\"T\")[0]\n  }\n}];"
+      },
+      "id": "node-merge",
+      "name": "Merge & Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.claude_api_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a technical project manager. Generate a weekly development summary report in {{ $json.language }}.\n\nRepository: {{ $json.owner }}/{{ $json.repo }}\nReport Date: {{ $json.summary_date }}\n\nCommits this week ({{ $json.commits.length }} total):\n{{ JSON.stringify($json.commits.slice(0, 30)) }}\n\nClosed Issues this week ({{ $json.issues.length }} total):\n{{ JSON.stringify($json.issues) }}\n\nMerged PRs this week ({{ $json.prs.length }} total):\n{{ JSON.stringify($json.prs) }}\n\nGenerate a weekly report with:\n1. Overview: executive summary\n2. Key Commits: grouped by area\n3. Issues Resolved\n4. PRs Merged\n5. Highlights\n6. Next Week Suggestions\n\nFormat for Discord (bold, bullets). Keep concise.\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "node-claude",
+      "name": "Generate Report with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $(\"Generate Report with Claude\").first().json;\nconst config = $(\"Merge & Format Data\").first().json;\n\nlet reportText = \"\";\nif (response.content && Array.isArray(response.content)) {\n  reportText = response.content.map(block => block.text || \"\").join(\"\n\");\n} else if (typeof response === \"string\") {\n  reportText = response;\n} else {\n  reportText = JSON.stringify(response);\n}\n\nconst chunks = [];\nconst maxLen = 1900;\nif (reportText.length <= maxLen) {\n  chunks.push(reportText);\n} else {\n  let remaining = reportText;\n  while (remaining.length > 0) {\n    if (remaining.length <= maxLen) { chunks.push(remaining); break; }\n    let splitIdx = remaining.lastIndexOf(\"\n\", maxLen);\n    if (splitIdx === -1) splitIdx = maxLen;\n    chunks.push(remaining.substring(0, splitIdx));\n    remaining = remaining.substring(splitIdx).trimStart();\n  }\n}\n\nreturn chunks.map((chunk, i) => ({ json: { content: chunk, webhook_url: config.webhook_url } }));"
+      },
+      "id": "node-extract",
+      "name": "Extract & Split Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"content\": \"{{ $json.content }}\"\n}",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Send to Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1420,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge & Format Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Report with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Report with Claude": {
+      "main": [
+        [
+          {
+            "node": "Extract & Split Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Split Report": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": ""
+  }
+}
