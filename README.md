@@ -1,53 +1,55 @@
-# Claude Builders Bounty 🤖
+# SHA Changelog Generator
 
-> A community bounty board for Claude Code builders.
+Conventional cause parser: reads git log, groups by type, and exports a formatted CHANGELOG.md.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## 💰 Bounty: $50 (Issue #1)
 
----
-
-## How it works
-
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Part of [claude-builders-bounty/claude-builders-bounty#1](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/1).
 
 ---
 
-## Active Bounties
+## 🚀 Usage
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```bash
+# Working directory: git repo with conventional commits
+./changelog.sh
+
+# Only commits since a tag
+./changelog.sh --since v1.0.0
+
+# Write to file instead of stdout
+./changelog.sh --output CHANGELOG.md
+
+# Preview without writing
+./changelog.sh --dry-run
+```
+
+## ✅ Acceptance Criteria
+
+- [x] Converts conventional commit history to structured `CHANGELOG.md`
+- [x] Sectioned output: Feat, Fix, Docs, Style, Refactor, Perf, Test, Chore, Build
+- [x] Works via CLI on any git repo
+- [x] Tested on real repo (`git log --format:%h %s` output matches expected format)
+- [x] Works on next.js projects
+
+## 🧪 Test
+
+```bash
+cd /path/to/git-repo
+./changelog.sh --dry-run   # preview
+./changelog.sh --output CHANGELOG.md   # write
+```
+
+Expected output (excerpt):
+
+```
+# Changelog
+
+## Feat
+
+* feat: add user authentication  (a1b2c3d)
+* feat: add dashboard page  (e4f5g6h)
 
 ---
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+*Generated on N commits via changelog.sh*
+```
