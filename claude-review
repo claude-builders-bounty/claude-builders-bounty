@@ -1,0 +1,563 @@
+#!/usr/bin/env python3
+"""
+claude-review — PR review agent CLI.
+
+Analyses GitHub PR diffs and outputs structured Markdown review:
+summary, risks, suggestions, confidence score.
+
+Zero dependencies, Python 3.7+.
+Works on public repos without authentication (uses GITHUB_TOKEN env var for private repos).
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review -p 123 -r owner/repo
+"""
+
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+
+# ── GitHub API helpers ───────────────────────────────────────────────────────
+
+def get_headers():
+    """Return headers with auth if GITHUB_TOKEN is set."""
+    headers = {
+        "Accept": "application/vnd.github.v3.diff",
+        "User-Agent": "claude-review/1.0",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def parse_pr_url(url):
+    """Parse PR URL into (owner, repo, number)."""
+    m = re.match(r"(?:https?://)?(?:www\.)?github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    if not m:
+        raise ValueError(f"Invalid PR URL: {url}")
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def fetch_pr_diff(owner, repo, number):
+    """Fetch PR diff from GitHub API."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    req = urllib.request.Request(url, headers=get_headers())
+    with urllib.request.urlopen(req) as resp:
+        return resp.read().decode("utf-8")
+
+
+def fetch_pr_metadata(owner, repo, number):
+    """Fetch PR metadata (title, description, files, etc.)."""
+    # PR metadata
+    headers = get_headers()
+    headers["Accept"] = "application/vnd.github.v3+json"
+
+    # PR info
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req) as resp:
+        pr = json.loads(resp.read())
+
+    # PR files
+    files_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}/files?per_page=100"
+    req2 = urllib.request.Request(files_url, headers=headers)
+    with urllib.request.urlopen(req2) as resp2:
+        files = json.loads(resp2.read())
+
+    return pr, files
+
+
+# ── Diff parsing ─────────────────────────────────────────────────────────────
+
+def parse_diff(diff_text):
+    """Parse a unified diff into structured file changes."""
+    files = []
+    current_file = None
+    current_patch = []
+    current_stats = {"additions": 0, "deletions": 0}
+
+    for line in diff_text.split("\n"):
+        # File header
+        m = re.match(r"^diff --git a/(.+?) b/(.+)$", line)
+        if m:
+            if current_file:
+                current_file["patch"] = "\n".join(current_patch)
+                files.append(current_file)
+            current_file = {
+                "old_path": m.group(1),
+                "new_path": m.group(2),
+                "additions": 0,
+                "deletions": 0,
+                "patch": "",
+                "hunks": [],
+            }
+            current_patch = [line]
+            current_stats = {"additions": 0, "deletions": 0}
+            continue
+
+        # Hunk header
+        m = re.match(r"^@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@", line)
+        if m and current_file:
+            hunk = {
+                "old_start": int(m.group(1)),
+                "old_count": int(m.group(2)) if m.group(2) else 1,
+                "new_start": int(m.group(3)),
+                "new_count": int(m.group(4)) if m.group(4) else 1,
+                "lines": [],
+            }
+            current_file["hunks"].append(hunk)
+            current_patch.append(line)
+            continue
+
+        if current_file:
+            current_patch.append(line)
+            if current_file["hunks"]:
+                current_file["hunks"][-1]["lines"].append(line)
+                if line.startswith("+"):
+                    current_file["additions"] += 1
+                elif line.startswith("-"):
+                    current_file["deletions"] += 1
+
+    # Don't forget last file
+    if current_file:
+        current_file["patch"] = "\n".join(current_patch)
+        files.append(current_file)
+
+    return files
+
+
+# ── Analysis ─────────────────────────────────────────────────────────────────
+
+# Patterns for risky code changes
+RISK_PATTERNS = [
+    {
+        "id": "HARDCODED_SECRETS",
+        "name": "Hardcoded secrets or credentials",
+        "pattern": re.compile(
+            r'[+-].*(?:password|secret|api[_-]?key|token|auth|credential|private_key)'
+            r'\s*[:=]\s*["\'][^"\']+["\']',
+            re.IGNORECASE,
+        ),
+        "severity": "high",
+    },
+    {
+        "id": "TODO_DEBUG",
+        "name": "Leftover debug/TODO code",
+        "pattern": re.compile(r'[+-].*\b(?:console\.log|print\(|debugger|TODO|FIXME|HACK|XXX)\b'),
+        "severity": "medium",
+    },
+    {
+        "id": "SQL_INJECTION",
+        "name": "Potential SQL injection",
+        "pattern": re.compile(
+            r'[+-].*\b(?:execute|query|raw)\s*\(.*["\']\s*[+%]',
+            re.IGNORECASE,
+        ),
+        "severity": "high",
+    },
+    {
+        "id": "COMMENTED_CODE",
+        "name": "Commented-out code",
+        "pattern": re.compile(r'[+-]\s*#.*?(?:def |class |import |from |return |if |for )'),
+        "severity": "low",
+    },
+    {
+        "id": "LARGE_FILE",
+        "name": "Excessively large file change",
+        "pattern": None,  # Handled separately
+        "severity": "medium",
+    },
+    {
+        "id": "BINARY_FILE",
+        "name": "Binary file changes (hard to review)",
+        "pattern": None,  # Handled separately below
+        "severity": "low",
+        "extensions": [".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip",
+                       ".pyc", ".whl", ".tgz", ".tar.gz", ".ttf", ".woff", ".eot",
+                       ".mp3", ".mp4", ".mov", ".avi"],
+    },
+    {
+        "id": "DEPENDENCY_CHANGE",
+        "name": "Dependency/package changes",
+        "pattern": re.compile(r'diff --git a/(?:package\.json|requirements\.txt|Gemfile|Cargo\.toml|go\.mod) '),
+        "severity": "medium",
+    },
+]
+
+
+def find_added_lines(diff_text):
+    """Find all added (+) lines of code from diff."""
+    added = []
+    for line in diff_text.split("\n"):
+        if line.startswith("+") and not line.startswith("+++"):
+            added.append(line)
+    return added
+
+
+def find_deleted_lines(diff_text):
+    """Find all deleted (-) lines of code from diff."""
+    deleted = []
+    for line in diff_text.split("\n"):
+        if line.startswith("-") and not line.startswith("---"):
+            deleted.append(line)
+    return deleted
+
+
+def analyze_diff(diff_text, pr_info, pr_files):
+    """Analyze a PR diff and return structured review data."""
+    files = parse_diff(diff_text)
+    added_lines = find_added_lines(diff_text)
+    deleted_lines = find_deleted_lines(diff_text)
+
+    total_additions = sum(f["additions"] for f in files)
+    total_deletions = sum(f["deletions"] for f in files)
+    total_changes = total_additions + total_deletions
+
+    # ── Summary ──
+    summary = {
+        "title": pr_info.get("title", "Unknown PR"),
+        "author": pr_info.get("user", {}).get("login", "unknown"),
+        "description": (pr_info.get("body") or "").strip()[:500],
+        "base_branch": pr_info.get("base", {}).get("ref", ""),
+        "head_branch": pr_info.get("head", {}).get("ref", ""),
+        "files_changed": len(files),
+        "additions": total_additions,
+        "deletions": total_deletions,
+        "total_changes": total_changes,
+        "file_types": {},
+    }
+
+    # Count file types
+    for f in files:
+        ext = Path(f["new_path"]).suffix or "(no ext)"
+        summary["file_types"][ext] = summary["file_types"].get(ext, 0) + 1
+
+    # ── Risks ──
+    risks = []
+    combined_diff = "\n".join(
+        [line for f in files for line in f["patch"].split("\n")]
+    )
+
+    # Check each risk pattern
+    for pattern_def in RISK_PATTERNS:
+        if pattern_def["pattern"] is None:
+            continue
+        matches = pattern_def["pattern"].findall(combined_diff)
+        if matches:
+            # Find context (the actual line)
+            matched_lines = []
+            for line in combined_diff.split("\n"):
+                if pattern_def["pattern"].search(line):
+                    matched_lines.append(line.strip()[:120])
+                    if len(matched_lines) >= 3:
+                        break
+
+            risks.append({
+                "id": pattern_def["id"],
+                "name": pattern_def["name"],
+                "severity": pattern_def["severity"],
+                "count": len(matches),
+                "examples": matched_lines[:3],
+            })
+
+    # Check for large files
+    for f in files:
+        if f["additions"] + f["deletions"] > 200:
+            risks.append({
+                "id": "LARGE_FILE",
+                "name": f"Large change: {f['new_path']}",
+                "severity": "medium",
+                "count": 1,
+                "examples": [f"{f['new_path']}: +{f['additions']}/-{f['deletions']} lines"],
+            })
+
+    # Check for dependency changes
+    dep_files = [f for f in files if re.search(
+        r'(?:package\.json|requirements\.txt|Gemfile|Cargo\.toml|go\.mod|yarn\.lock|pnpm-lock)',
+        f["new_path"],
+    )]
+    if dep_files:
+        risks.append({
+            "id": "DEPENDENCY_CHANGE",
+            "name": "Dependency/package manifest changes",
+            "severity": "medium",
+            "count": len(dep_files),
+            "examples": [f["new_path"] for f in dep_files],
+        })
+
+    # Check for binary files
+    binary_exts = [".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip",
+                   ".pyc", ".whl", ".tgz", ".tar.gz", ".ttf", ".woff", ".eot",
+                   ".mp3", ".mp4", ".mov", ".avi"]
+    binary_files = [f for f in files if Path(f["new_path"]).suffix.lower() in binary_exts]
+    if binary_files:
+        risks.append({
+            "id": "BINARY_FILE",
+            "name": "Binary file changes (hard to review)",
+            "severity": "low",
+            "count": len(binary_files),
+            "examples": [f["new_path"] for f in binary_files[:3]],
+        })
+
+    # ── Suggestions ──
+    suggestions = []
+
+    # Suggestion: PR size
+    if total_changes > 500:
+        suggestions.append({
+            "area": "PR Scope",
+            "suggestion": "This PR is quite large (>500 lines). Consider splitting into smaller, focused PRs for easier review.",
+            "priority": "high",
+        })
+
+    # Suggestion: Missing description
+    if not pr_info.get("body") or len(pr_info["body"].strip()) < 20:
+        suggestions.append({
+            "area": "Documentation",
+            "suggestion": "PR description is minimal or missing. Adding context about why and how helps reviewers understand the change.",
+            "priority": "medium",
+        })
+
+    # Suggestion: File count
+    if len(files) > 15:
+        suggestions.append({
+            "area": "Scope",
+            "suggestion": f"PR touches {len(files)} files — verify all changes are related to the same feature/fix.",
+            "priority": "medium",
+        })
+
+    # Suggestion: Test files
+    has_test_changes = any(
+        "test" in f["new_path"].lower() or "spec" in f["new_path"].lower()
+        for f in files
+    )
+    has_code_changes = any(
+        not f["new_path"].startswith(".")
+        and not re.search(r"(test|spec|mock|fixture)", f["new_path"], re.IGNORECASE)
+        for f in files
+    )
+    if has_code_changes and not has_test_changes:
+        suggestions.append({
+            "area": "Testing",
+            "suggestion": "Code changes detected but no test files modified. Consider adding or updating tests.",
+            "priority": "medium",
+        })
+
+    # Suggestion: Binary files
+    binary_exts = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".pdf", ".zip", ".pyc"}
+    binary_files = [f for f in files if Path(f["new_path"]).suffix.lower() in binary_exts]
+    if binary_files:
+        suggestions.append({
+            "area": "Binary Assets",
+            "suggestion": f"PR includes {len(binary_files)} binary/file asset(s). Verify these are intentional and properly optimized.",
+            "priority": "low",
+        })
+
+    # ── Confidence Score ──
+    score = 100
+
+    # Deductions
+    if total_changes > 500:
+        score -= 10
+    elif total_changes > 200:
+        score -= 5
+
+    high_risks = sum(1 for r in risks if r["severity"] == "high")
+    med_risks = sum(1 for r in risks if r["severity"] == "medium")
+
+    score -= high_risks * 15
+    score -= med_risks * 5
+
+    if not pr_info.get("body") or len(pr_info["body"].strip()) < 20:
+        score -= 5
+
+    if has_code_changes and not has_test_changes:
+        score -= 5
+
+    score = max(score, 10)  # Minimum score
+
+    # Confidence level
+    if score >= 85:
+        level = "high"
+    elif score >= 60:
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "summary": summary,
+        "risks": risks,
+        "suggestions": suggestions,
+        "confidence": {"score": score, "level": level},
+    }
+
+
+# ── Output formatting ────────────────────────────────────────────────────────
+
+def format_review(data, pr_url):
+    """Format analysis results as structured Markdown."""
+    s = data["summary"]
+    lines = []
+
+    # Header
+    lines.append(f"# PR Review: {s['title']}")
+    lines.append(f"**PR:** [{pr_url}]({pr_url})")
+    lines.append(f"**Author:** @{s['author']}")
+    lines.append(f"**Branch:** `{s['head_branch']}` → `{s['base_branch']}`")
+    lines.append("")
+
+    # Summary section
+    lines.append("## 📋 Summary")
+    lines.append("")
+    lines.append(f"| Metric | Value |")
+    lines.append(f"|--------|-------|")
+    lines.append(f"| Files Changed | {s['files_changed']} |")
+    lines.append(f"| Additions | +{s['additions']} |")
+    lines.append(f"| Deletions | -{s['deletions']} |")
+    lines.append(f"| Total Changes | {s['total_changes']} |")
+    if s["file_types"]:
+        types_str = ", ".join(f"`{k}`: {v}" for k, v in
+                             sorted(s["file_types"].items(), key=lambda x: -x[1])[:5])
+        lines.append(f"| File Types | {types_str} |")
+    lines.append("")
+    if s["description"]:
+        lines.append(f"**Description:** {s['description'][:300]}")
+        lines.append("")
+
+    # Risks section
+    lines.append("## ⚠️ Risks & Concerns")
+    lines.append("")
+
+    if not data["risks"]:
+        lines.append("_No significant risks detected._")
+        lines.append("")
+    else:
+        lines.append(f"Found **{len(data['risks'])}** risk(s):")
+        lines.append("")
+
+        # Sort by severity
+        severity_order = {"high": 0, "medium": 1, "low": 2}
+        data["risks"].sort(key=lambda r: severity_order.get(r["severity"], 3))
+
+        for risk in data["risks"]:
+            severity_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+            icon = severity_icon.get(risk["severity"], "⚪")
+            lines.append(f"### {icon} {risk['name']}")
+            lines.append(f"- **Severity:** {risk['severity'].upper()}")
+            lines.append(f"- **Occurrences:** {risk['count']}")
+            if risk.get("examples"):
+                lines.append(f"- **Examples:**")
+                for ex in risk["examples"][:3]:
+                    lines.append(f"  ```")
+                    lines.append(f"  {ex}")
+                    lines.append(f"  ```")
+            lines.append("")
+
+    # Suggestions section
+    lines.append("## 💡 Suggestions")
+    lines.append("")
+
+    if not data["suggestions"]:
+        lines.append("_No suggestions at this time._")
+        lines.append("")
+    else:
+        for i, sug in enumerate(data["suggestions"], 1):
+            priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+            icon = priority_icon.get(sug["priority"], "⚪")
+            lines.append(f"### {i}. {icon} [{sug['priority'].upper()}] {sug['area']}")
+            lines.append(f"{sug['suggestion']}")
+            lines.append("")
+
+    # Confidence
+    lines.append("## 📊 Confidence Score")
+    lines.append("")
+    c = data["confidence"]
+    level_icon = {"high": "🟢", "medium": "🟡", "low": "🔴"}
+    icon = level_icon.get(c["level"], "⚪")
+    lines.append(f"**{c['score']}/100** — {icon} **{c['level'].upper()}** confidence")
+    lines.append("")
+    lines.append("> _Based on static analysis: PR size, risk patterns, test coverage, and documentation quality._")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+# ── CLI entry point ──────────────────────────────────────────────────────────
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Analyze a GitHub PR and generate a structured review.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review -p 123 -r owner/repo
+  claude-review --pr https://github.com/owner/repo/pull/123 -o review.md
+        """,
+    )
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--pr", "-u", help="Full GitHub PR URL")
+    group.add_argument("-p", "--pr-number", type=int, help="PR number")
+    parser.add_argument("-r", "--repo", help="Repository (owner/repo), required with -p")
+    parser.add_argument("-o", "--output", help="Output file path (prints to stdout if omitted)")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress progress messages")
+
+    args = parser.parse_args()
+
+    # Parse PR identifier
+    if args.pr:
+        owner, repo, number = parse_pr_url(args.pr)
+        pr_url = args.pr
+    else:
+        if not args.repo:
+            parser.error("--repo is required when using -p/--pr-number")
+        if "/" not in args.repo:
+            parser.error("--repo must be in format 'owner/repo'")
+        owner, repo = args.repo.split("/", 1)
+        number = args.pr_number
+        pr_url = f"https://github.com/{owner}/{repo}/pull/{number}"
+
+    if not args.quiet:
+        print(f"🔍 Fetching PR #{number} from {owner}/{repo}...", file=sys.stderr)
+
+    try:
+        pr_info, pr_files = fetch_pr_metadata(owner, repo, number)
+        diff_text = fetch_pr_diff(owner, repo, number)
+    except urllib.error.HTTPError as e:
+        print(f"Error fetching PR: HTTP {e.code}", file=sys.stderr)
+        if e.code == 404:
+            print("PR not found. Check the URL and repository name.", file=sys.stderr)
+        elif e.code == 403:
+            print("Rate limited. Set GITHUB_TOKEN for a higher limit.", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error fetching PR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not args.quiet:
+        print(f"📊 Analyzing {len(pr_files)} file(s)...", file=sys.stderr)
+
+    data = analyze_diff(diff_text, pr_info, pr_files)
+    output = format_review(data, pr_url)
+
+    if args.output:
+        out_path = Path(args.output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(output)
+        if not args.quiet:
+            print(f"✅ Review written to {out_path}", file=sys.stderr)
+    else:
+        print(output)
+
+
+if __name__ == "__main__":
+    main()

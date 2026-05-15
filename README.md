@@ -1,53 +1,92 @@
-# Claude Builders Bounty 🤖
+# claude-review — PR Review Sub-agent
 
-> A community bounty board for Claude Code builders.
+A CLI tool that analyzes GitHub PR diffs and produces structured Markdown reviews — **summary, risks, suggestions, and confidence score**.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+Built as a Claude Code sub-agent. Zero external dependencies, Python 3.7+.
 
----
+## Quick Start
+
+```bash
+# 1. Download
+curl -O https://raw.githubusercontent.com/laojinpassion/claude-builders-bounty/bounty-pr-review-agent/claude-review
+
+# 2. Make executable
+chmod +x claude-review
+
+# 3. Review any PR
+./claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+## Usage
+
+```bash
+# Review by URL
+claude-review --pr https://github.com/torvalds/linux/pull/123
+
+# Review by number + repo
+claude-review -p 123 -r owner/repo
+
+# Save output to file
+claude-review --pr https://github.com/owner/repo/pull/123 -o review.md
+
+# Quiet mode (no progress messages)
+claude-review --pr https://github.com/owner/repo/pull/123 -q
+```
+
+For higher API rate limits (private repos, or >60 requests/hour), set your GitHub token:
+
+```bash
+export GITHUB_TOKEN=ghp_xxx
+```
+
+## Output Structure
+
+Each review contains four sections:
+
+### 📋 Summary
+- PR title, author, branches
+- Files changed, additions/deletions, file types
+
+### ⚠️ Risks & Concerns
+Static analysis detects issues like:
+- **🔴 Hardcoded secrets** — passwords, API keys, tokens in code
+- **🔴 SQL injection** — string concatenation in SQL queries
+- **🟡 Debug code** — print(), console.log, debugger, TODO/FIXME
+- **🟡 Large changes** — files >200 lines changed
+- **🟡 Dependency updates** — package.json, requirements.txt, etc.
+- **🟢 Commented-out code** — dead code that should be removed
+
+### 💡 Suggestions
+Actionable recommendations:
+- PR scope warnings (>500 lines)
+- Missing descriptions
+- Missing test coverage
+- Binary asset verification
+
+### 📊 Confidence Score
+Aggregate quality score (10–100) based on:
+- PR size and scope
+- Risk severity and count
+- Documentation quality
+- Test coverage indicators
+
+## Tests
+
+Sample reviews are in `tests/`:
+- [`tests/review-1398.md`](tests/review-1398.md) — CHANGELOG generator PR
+- [`tests/review-1409.md`](tests/review-1409.md) — Destructive command guard PR
+
+## Requirements
+
+- Python 3.7+
+- No pip packages needed (stdlib only)
+- Network access to `api.github.com`
 
 ## How it works
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+1. Fetches PR metadata and unified diff via GitHub API
+2. Parses the diff into structured file changes and hunks
+3. Runs static analysis against curated risk patterns
+4. Generates structured Markdown review with color-coded severity
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+No AI API required — purely static analysis that runs locally and instantly.
