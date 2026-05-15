@@ -24,6 +24,12 @@ bash changelog.sh --include-merges
 
 The script groups commits into `Added`, `Fixed`, `Changed`, and `Removed` sections using common conventional-commit prefixes and plain-English commit verbs. Ambiguous commit subjects fall back to `Changed`.
 
+## Testing
+
+```bash
+bash generate-changelog/tests/changelog_test.sh
+```
+
 ## Notes
 
 - If the repository has tags, the script uses the latest tag as the start point.

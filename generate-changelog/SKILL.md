@@ -1,3 +1,8 @@
+---
+name: generate-changelog
+description: Generate a structured CHANGELOG.md from git history when the user asks for /generate-changelog, release notes, or changes since the latest git tag.
+---
+
 # Generate Changelog
 
 Use this skill when a user asks Claude Code to create or refresh a `CHANGELOG.md` from Git history.
