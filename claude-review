@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+#
+# claude-review — Review a GitHub PR and post a structured Markdown comment.
+#
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --pr owner/repo#123
+#   claude-review --pr 123  # when run from inside the repo
+#
+# Requirements: gh CLI (authenticated), jq
+#
+set -euo pipefail
+
+# ── parse args ──
+PR_ARG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr)
+      PR_ARG="$2"
+      shift 2
+      ;;
+    *)
+      echo "Usage: claude-review --pr <url|owner/repo#123|123>" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$PR_ARG" ]; then
+  echo "Error: --pr argument required" >&2
+  echo "Usage: claude-review --pr https://github.com/owner/repo/pull/123" >&2
+  exit 1
+fi
+
+# ── resolve PR reference to owner/repo and number ──
+if echo "$PR_ARG" | grep -qE '^https://github.com/'; then
+  # Full URL: https://github.com/owner/repo/pull/123
+  PR_OWNER="$(echo "$PR_ARG" | sed -E 's|https://github.com/([^/]+)/([^/]+)/pull/([0-9]+)|\1|')"
+  PR_REPO="$(echo "$PR_ARG" | sed -E 's|https://github.com/([^/]+)/([^/]+)/pull/([0-9]+)|\2|')"
+  PR_NUM="$(echo "$PR_ARG" | sed -E 's|https://github.com/([^/]+)/([^/]+)/pull/([0-9]+)|\3|')"
+elif echo "$PR_ARG" | grep -qE '^[^/]+/[^#]+#[0-9]+$'; then
+  # Shorthand: owner/repo#123
+  PR_OWNER="$(echo "$PR_ARG" | cut -d'/' -f1)"
+  PR_REPO="$(echo "$PR_ARG" | cut -d'#' -f1 | cut -d'/' -f2)"
+  PR_NUM="$(echo "$PR_ARG" | cut -d'#' -f2)"
+elif echo "$PR_ARG" | grep -qE '^[0-9]+$'; then
+  # Just a number — use current repo
+  PR_NUM="$PR_ARG"
+  PR_REPO="$(git remote get-url origin 2>/dev/null | sed -E 's|.*[:/]([^/]+/[^/.]+)(\.git)?|\1|')"
+  PR_OWNER="$(echo "$PR_REPO" | cut -d'/' -f1)"
+  PR_REPO="$(echo "$PR_REPO" | cut -d'/' -f2)"
+else
+  echo "Error: Cannot parse PR reference: $PR_ARG" >&2
+  exit 1
+fi
+
+FULL_REPO="${PR_OWNER}/${PR_REPO}"
+
+echo "Reviewing PR #${PR_NUM} on ${FULL_REPO}..."
+
+# ── fetch PR data ──
+PR_DATA="$(gh api "repos/${FULL_REPO}/pulls/${PR_NUM}" 2>&1)" || {
+  echo "Error: Failed to fetch PR #${PR_NUM}" >&2
+  exit 1
+}
+
+PR_TITLE="$(echo "$PR_DATA" | jq -r '.title')"
+PR_BODY="$(echo "$PR_DATA" | jq -r '.body // "No description"')"
+PR_AUTHOR="$(echo "$PR_DATA" | jq -r '.user.login')"
+PR_BASE="$(echo "$PR_DATA" | jq -r '.base.ref')"
+PR_HEAD="$(echo "$PR_DATA" | jq -r '.head.ref')"
+ADD="$(echo "$PR_DATA" | jq -r '.additions')"
+DEL="$(echo "$PR_DATA" | jq -r '.deletions')"
+CHANGED="$(echo "$PR_DATA" | jq -r '.changed_files')"
+
+echo "  Title: ${PR_TITLE}"
+echo "  Author: ${PR_AUTHOR}"
+echo "  Branch: ${PR_HEAD} -> ${PR_BASE}"
+echo "  Files changed: ${CHANGED} (+${ADD}/-${DEL})"
+
+# ── fetch diff ──
+DIFF="$(gh api "repos/${FULL_REPO}/pulls/${PR_NUM}" -H "Accept: application/vnd.github.v3.diff" 2>&1)" || {
+  echo "Error: Failed to fetch diff" >&2
+  exit 1
+}
+
+# ── fetch changed file names ──
+FILES_JSON="$(gh api "repos/${FULL_REPO}/pulls/${PR_NUM}/files" --paginate --jq '.[] | {filename, status, additions, deletions, changes}' 2>&1)"
+
+FILE_LIST="$(echo "$FILES_JSON" | jq -r '.filename' | sort)"
+
+# ── analyze the diff ──
+
+# Count risk indicators
+RISKS=""
+SUGGESTIONS=""
+
+# Check for large files
+LARGE_FILES="$(echo "$FILES_JSON" | jq -r 'select(.changes > 200) | .filename')"
+if [ -n "$LARGE_FILES" ]; then
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    RISKS="${RISKS}- **Large change**: \`${f}\` has a high number of changes — consider splitting into smaller PRs
+"
+  done <<< "$LARGE_FILES"
+fi
+
+# Check for potential security issues in diff
+if echo "$DIFF" | grep -qiE '(password|secret|api_key|token|private_key)\s*='; then
+  RISKS="${RISKS}- **Possible hardcoded secret**: diff contains what looks like a credential assignment
+"
+  SUGGESTIONS="${SUGGESTIONS}- Use environment variables or a secrets manager for credentials
+"
+fi
+
+# Check for TODO/FIXME
+TODO_COUNT="$(echo "$DIFF" | grep -cE '^\+.*(TODO|FIXME|HACK|XXX)' || true)"
+if [ "$TODO_COUNT" -gt 0 ]; then
+  SUGGESTIONS="${SUGGESTIONS}- ${TODO_COUNT} TODO/FIXME/HACK comment(s) found in new code — consider resolving before merge
+"
+fi
+
+# Check for console.log / print statements
+DEBUG_COUNT="$(echo "$DIFF" | grep -cE '^\+.*(console\.log|print\(|fmt\.Print|println!)' || true)"
+if [ "$DEBUG_COUNT" -gt 0 ]; then
+  SUGGESTIONS="${SUGGESTIONS}- ${DEBUG_COUNT} debug print statement(s) found — remove before merging to production
+"
+fi
+
+# Check for test files
+HAS_TESTS="$(echo "$FILE_LIST" | grep -cE '(test|spec|_test\.)' || true)"
+TOTAL_FILES="$(echo "$FILE_LIST" | wc -l)"
+if [ "$HAS_TESTS" -eq 0 ] && [ "$TOTAL_FILES" -gt 1 ]; then
+  SUGGESTIONS="${SUGGESTIONS}- No test files found in this PR — consider adding tests for the new behavior
+"
+fi
+
+# Determine file types
+FILE_TYPES="$(echo "$FILE_LIST" | sed -E 's/.*\.([a-zA-Z0-9]+)$/\1/' | sort -u | tr '\n' ', ' | sed 's/,$//')"
+
+# ── determine confidence ──
+CONFIDENCE="Medium"
+TOTAL_CHANGES=$((ADD + DEL))
+if [ "$TOTAL_CHANGES" -lt 50 ]; then
+  CONFIDENCE="High"
+elif [ "$TOTAL_CHANGES" -gt 500 ]; then
+  CONFIDENCE="Low"
+fi
+
+if [ "$HAS_TESTS" -gt 0 ]; then
+  CONFIDENCE="High"
+fi
+
+# Default risks if none found
+if [ -z "$RISKS" ]; then
+  RISKS="- No high-risk patterns detected in the diff
+"
+fi
+
+# Default suggestions if none found
+if [ -z "$SUGGESTIONS" ]; then
+  SUGGESTIONS="- Code looks clean — standard review recommended
+"
+fi
+
+# ── build summary ──
+SUMMARY="This PR by @${PR_AUTHOR} modifies ${CHANGED} file(s) across ${FILE_TYPES} (+${ADD}/-${DEL} lines), targeting the \`${PR_BASE}\` branch."
+if [ "$HAS_TESTS" -gt 0 ]; then
+  SUMMARY="${SUMMARY} Test coverage is included."
+else
+  SUMMARY="${SUMMARY} No test changes are included."
+fi
+
+# ── build the review comment ──
+REVIEW="## PR Review: ${PR_TITLE}
+
+### Summary
+
+${SUMMARY}
+
+### Changed files
+
+$(echo "$FILE_LIST" | while IFS= read -r f; do
+  echo "- \`${f}\`"
+done)
+
+### Identified risks
+
+${RISKS}
+### Improvement suggestions
+
+${SUGGESTIONS}
+### Confidence: ${CONFIDENCE}
+
+---
+
+*Generated by [claude-review](https://github.com/rebel117/claude-builders-bounty)*"
+
+# ── output the review ──
+echo ""
+echo "══════════════════════════════════════════════════"
+echo "$REVIEW"
+echo "══════════════════════════════════════════════════"
+
+# ── post as PR comment ──
+echo ""
+echo "Posting review comment to PR #${PR_NUM}..."
+
+COMMENT_BODY="$(echo "$REVIEW" | jq -Rs '.')"
+
+gh api -X POST "repos/${FULL_REPO}/issues/${PR_NUM}/comments" \
+  --field body="$(echo "$REVIEW")" 2>&1 | jq -r '.html_url // "Failed to post"' || echo "Failed to post comment (may need auth)"
+
+echo ""
+echo "Review complete!"
