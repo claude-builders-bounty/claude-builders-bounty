@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown PR review from a GitHub PR diff."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from collections import Counter
+from dataclasses import dataclass
+from typing import Iterable
+from urllib.parse import urlparse
+
+
+PR_RE = re.compile(r"^/([^/]+)/([^/]+)/pull/(\d+)")
+
+
+@dataclass(frozen=True)
+class PrRef:
+    owner: str
+    repo: str
+    number: str
+
+    @property
+    def slug(self) -> str:
+        return f"{self.owner}/{self.repo}"
+
+
+def run_gh(args: list[str]) -> str:
+    try:
+        return subprocess.check_output(["gh", *args], text=True, stderr=subprocess.PIPE)
+    except FileNotFoundError:
+        raise SystemExit("error: GitHub CLI `gh` is required and was not found in PATH")
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(exc.stderr.strip() or str(exc))
+
+
+def parse_pr_url(url: str) -> PrRef:
+    parsed = urlparse(url)
+    if parsed.netloc not in {"github.com", "www.github.com"}:
+        raise SystemExit("error: --pr must be a GitHub pull request URL")
+    match = PR_RE.match(parsed.path)
+    if not match:
+        raise SystemExit("error: --pr must look like https://github.com/owner/repo/pull/123")
+    return PrRef(*match.groups())
+
+
+def load_pr(ref: PrRef) -> tuple[dict, str]:
+    metadata_raw = run_gh(
+        [
+            "api",
+            f"repos/{ref.slug}/pulls/{ref.number}",
+            "--jq",
+            "{title,body,additions,deletions,changed_files,base:{ref:.base.ref},head:{ref:.head.ref},user:{login:.user.login}}",
+        ]
+    )
+    diff = run_gh(
+        [
+            "api",
+            f"repos/{ref.slug}/pulls/{ref.number}",
+            "-H",
+            "Accept: application/vnd.github.v3.diff",
+        ]
+    )
+    return json.loads(metadata_raw), diff
+
+
+def changed_files(diff: str) -> list[str]:
+    return re.findall(r"^\+\+\+ b/(.+)$", diff, flags=re.MULTILINE)
+
+
+def count_added_lines(diff: str) -> Counter[str]:
+    buckets: Counter[str] = Counter()
+    for line in diff.splitlines():
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        lower = line.lower()
+        if "todo" in lower or "fixme" in lower:
+            buckets["todo"] += 1
+        if "process.env" in lower or "secret" in lower or "token" in lower:
+            buckets["config"] += 1
+        if "sql" in lower or "migration" in lower or "schema" in lower:
+            buckets["data"] += 1
+        if "test" in lower or "spec" in lower:
+            buckets["test"] += 1
+        if "try:" in lower or "catch" in lower or "except" in lower:
+            buckets["errors"] += 1
+    return buckets
+
+
+def classify_files(files: Iterable[str]) -> Counter[str]:
+    buckets: Counter[str] = Counter()
+    for path in files:
+        lower = path.lower()
+        if lower.endswith((".md", ".mdx", ".rst")):
+            buckets["docs"] += 1
+        if "/test" in lower or lower.endswith((".test.ts", ".spec.ts", ".test.js", ".spec.js")):
+            buckets["tests"] += 1
+        if lower.endswith((".yml", ".yaml")) or ".github/workflows/" in lower:
+            buckets["automation"] += 1
+        if "package.json" in lower or "requirements" in lower or "pyproject" in lower:
+            buckets["deps"] += 1
+        if "migration" in lower or "schema" in lower or lower.endswith(".sql"):
+            buckets["data"] += 1
+        if lower.endswith((".ts", ".tsx", ".js", ".jsx", ".py", ".sh")):
+            buckets["code"] += 1
+    return buckets
+
+
+def bullet(items: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in items)
+
+
+def build_review(pr_url: str, meta: dict, diff: str) -> str:
+    files = changed_files(diff)
+    file_buckets = classify_files(files)
+    line_buckets = count_added_lines(diff)
+    additions = int(meta.get("additions") or 0)
+    deletions = int(meta.get("deletions") or 0)
+    changed = int(meta.get("changed_files") or len(files))
+
+    focus = []
+    if file_buckets["code"]:
+        focus.append(f"{file_buckets['code']} code file(s)")
+    if file_buckets["docs"]:
+        focus.append(f"{file_buckets['docs']} documentation file(s)")
+    if file_buckets["tests"]:
+        focus.append(f"{file_buckets['tests']} test file(s)")
+    if file_buckets["automation"]:
+        focus.append(f"{file_buckets['automation']} automation/config file(s)")
+    if not focus:
+        focus.append(f"{changed} changed file(s)")
+
+    risks = []
+    if changed > 8 or additions + deletions > 500:
+        risks.append("Large diff size raises review risk; consider splitting behavior, docs, and test changes if feedback becomes hard to isolate.")
+    if file_buckets["deps"]:
+        risks.append("Dependency or package metadata changed; verify lockfiles and install commands stay reproducible.")
+    if file_buckets["data"] or line_buckets["data"]:
+        risks.append("Database or migration-related content changed; verify rollback, idempotency, and production data assumptions.")
+    if line_buckets["config"]:
+        risks.append("Configuration or token-related text appears in the diff; confirm examples use placeholders and no secrets are committed.")
+    if file_buckets["automation"]:
+        risks.append("Automation/workflow files changed; validate permissions, triggers, and failure behavior before relying on the workflow.")
+    if not risks:
+        risks.append("No high-risk file category was detected by the heuristic pass; still review edge cases and project-specific behavior manually.")
+
+    suggestions = []
+    if file_buckets["tests"] or line_buckets["test"]:
+        suggestions.append("Keep the included test or sample output in the PR body so reviewers can reproduce the validation quickly.")
+    else:
+        suggestions.append("Add or link a small reproducible test case for the main path touched by this PR.")
+    if file_buckets["docs"]:
+        suggestions.append("Check that docs include the minimum setup commands and expected output for a first-time user.")
+    if line_buckets["errors"] == 0 and file_buckets["code"]:
+        suggestions.append("Confirm failure paths are explicit, especially for missing credentials, network errors, and invalid input.")
+    suggestions.append("State any assumptions in the PR description so maintainers can judge fit without reading the full diff first.")
+
+    confidence = "High"
+    if changed > 10 or additions + deletions > 800:
+        confidence = "Low"
+    elif changed > 5 or additions + deletions > 300 or file_buckets["data"] or file_buckets["automation"]:
+        confidence = "Medium"
+
+    summary = (
+        f"This PR, `{meta.get('title', 'untitled')}`, changes {changed} file(s) with "
+        f"{additions} additions and {deletions} deletions. The diff is concentrated in "
+        f"{', '.join(focus)}, so the main review focus should be correctness, reproducibility, "
+        "and whether the submitted artifacts match the stated acceptance criteria."
+    )
+
+    return "\n".join(
+        [
+            "## Summary",
+            "",
+            summary,
+            "",
+            "## Identified risks",
+            "",
+            bullet(risks),
+            "",
+            "## Improvement suggestions",
+            "",
+            bullet(suggestions),
+            "",
+            "## Confidence score",
+            "",
+            confidence,
+            "",
+            "<!-- Generated by claude-review for " + pr_url + " -->",
+        ]
+    )
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL, for example https://github.com/owner/repo/pull/123")
+    args = parser.parse_args(argv)
+
+    ref = parse_pr_url(args.pr)
+    meta, diff = load_pr(ref)
+    print(build_review(args.pr, meta, diff))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
