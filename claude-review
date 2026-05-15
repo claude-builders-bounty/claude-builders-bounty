@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""Claude Code PR Review Agent — fetch PR diffs for structured review.
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --json
+  claude-review --pr https://github.com/owner/repo/pull/123 --prompt > review-prompt.txt
+
+Requires: gh CLI (github.com/cli/cli), authenticated.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+
+# ── Data types ───────────────────────────────────────────────────
+
+@dataclass
+class PRInfo:
+    """Structured PR information extracted from GitHub."""
+    owner: str = ""
+    repo: str = ""
+    number: int = 0
+    title: str = ""
+    author: str = ""
+    base_branch: str = ""
+    head_branch: str = ""
+    state: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    additions: int = 0
+    deletions: int = 0
+    changed_files: int = 0
+    labels: list[str] = field(default_factory=list)
+    diff: str = ""
+    files_list: list[str] = field(default_factory=list)
+    comments_count: int = 0
+    body: str = ""
+
+
+# ── PR URL parsing ───────────────────────────────────────────────
+
+RE_PR_URL = re.compile(
+    r"github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)"
+)
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    """Parse a GitHub PR URL into (owner, repo, number)."""
+    m = RE_PR_URL.search(url)
+    if not m:
+        raise ValueError(f"Invalid GitHub PR URL: {url}")
+    return m.group("owner"), m.group("repo"), int(m.group("number"))
+
+
+# ── GitHub CLI wrappers ──────────────────────────────────────────
+
+def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    """Run a gh CLI command and return the result."""
+    return subprocess.run(
+        ["gh"] + list(args),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=check,
+    )
+
+
+def fetch_pr_info(owner: str, repo: str, number: int) -> PRInfo:
+    """Fetch complete PR information using gh CLI and API."""
+    pr = PRInfo(owner=owner, repo=repo, number=number)
+
+    repo_path = f"{owner}/{repo}"
+
+    # Fetch PR metadata via gh API
+    try:
+        result = gh("pr", "view", str(number), "--repo", repo_path,
+                    "--json", "title,author,baseRefName,headRefName,state,"
+                             "createdAt,updatedAt,additions,deletions,"
+                             "changedFiles,labels,number,body,comments",
+                    check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            meta = json.loads(result.stdout)
+            pr.title = meta.get("title", "")
+            author_info = meta.get("author", {})
+            pr.author = author_info.get("login", "") if isinstance(author_info, dict) else str(author_info)
+            pr.base_branch = meta.get("baseRefName", "")
+            pr.head_branch = meta.get("headRefName", "")
+            pr.state = meta.get("state", "")
+            pr.created_at = meta.get("createdAt", "")
+            pr.updated_at = meta.get("updatedAt", "")
+            pr.additions = meta.get("additions", 0)
+            pr.deletions = meta.get("deletions", 0)
+            pr.changed_files = meta.get("changedFiles", 0)
+            pr.labels = [l.get("name", "") for l in meta.get("labels", [])]
+            pr.comments_count = sum(c.get("totalCount", 0) for c in meta.get("comments", []))
+            pr.body = meta.get("body", "") or ""
+    except Exception as e:
+        print(f"Warning: failed to fetch PR metadata: {e}", file=sys.stderr)
+
+    # Fetch PR diff
+    try:
+        result = gh("pr", "diff", str(number), "--repo", repo_path, check=False)
+        if result.returncode == 0:
+            pr.diff = result.stdout
+    except Exception as e:
+        print(f"Warning: failed to fetch PR diff: {e}", file=sys.stderr)
+
+    # Extract changed files from diff
+    if pr.diff:
+        pr.files_list = re.findall(r"^diff --git a/(.+?) b/", pr.diff, re.MULTILINE)
+        pr.files_list = sorted(set(pr.files_list))
+
+    return pr
+
+
+# ── Output formatters ────────────────────────────────────────────
+
+def pr_to_dict(pr: PRInfo) -> dict[str, Any]:
+    """Serialize PRInfo to a JSON-safe dict."""
+    return {
+        "owner": pr.owner,
+        "repo": pr.repo,
+        "number": pr.number,
+        "title": pr.title,
+        "author": pr.author,
+        "base_branch": pr.base_branch,
+        "head_branch": pr.head_branch,
+        "state": pr.state,
+        "created_at": pr.created_at,
+        "updated_at": pr.updated_at,
+        "additions": pr.additions,
+        "deletions": pr.deletions,
+        "changed_files": pr.changed_files,
+        "labels": pr.labels,
+        "files": pr.files_list,
+        "comments_count": pr.comments_count,
+        "diff": pr.diff,
+    }
+
+
+def format_markdown(pr: PRInfo) -> str:
+    """Generate a structured Markdown review template."""
+    file_list = "\n".join(f"  - `{f}`" for f in pr.files_list[:30])
+    if len(pr.files_list) > 30:
+        file_list += f"\n  - ... and {len(pr.files_list) - 30} more files"
+
+    diff_preview = pr.diff[:6000]
+    if len(pr.diff) > 6000:
+        diff_preview += f"\n\n... (diff truncated, {len(pr.diff)} total chars)"
+
+    return f"""## 🤖 Claude Code PR Review
+
+> 🔗 [{pr.owner}/{pr.repo}#{pr.number}](https://github.com/{pr.owner}/{pr.repo}/pull/{pr.number})
+> 👤 **Author:** {pr.author}
+> 📅 **Created:** {pr.created_at}
+> 📊 **Changes:** +{pr.additions}/-{pr.deletions} in {pr.changed_files} file(s)
+> 🏷️ **Labels:** {", ".join(pr.labels) if pr.labels else "none"}
+
+---
+
+### 📋 PR Metadata
+
+**Title:** {pr.title}
+
+**Changed Files:**
+{file_list}
+
+---
+
+### 📋 Summary of Changes
+
+[Review the diff below and write a 2–3 sentence summary of what changed]
+
+---
+
+### ⚠️ Identified Risks
+
+1. [Risk 1]
+2. [Risk 2]
+
+---
+
+### 💡 Improvement Suggestions
+
+1. [Suggestion 1]
+2. [Suggestion 2]
+
+---
+
+### 🟢 Confidence: `[Low / Medium / High]`
+
+---
+
+<details>
+<summary>📄 Full Diff Preview (first 6000 chars)</summary>
+
+```diff
+{diff_preview}
+```
+
+</details>
+"""
+
+
+def format_prompt(pr: PRInfo) -> str:
+    """Generate a Claude Code review prompt with the PR diff embedded."""
+    diff_truncated = pr.diff[:15000]
+    note = ""
+    if len(pr.diff) > 15000:
+        note = f"\n(Note: diff truncated to 15000 chars out of {len(pr.diff)} total)"
+
+    return f"""Review this GitHub pull request and provide a structured code review.
+
+PR: {pr.owner}/{pr.repo}#{pr.number}
+Title: {pr.title}
+Author: {pr.author}
+Changes: +{pr.additions} -{pr.deletions} in {pr.changed_files} files
+Files: {", ".join(pr.files_list[:20])}
+
+Output format:
+## 🤖 Claude Code PR Review
+### 📋 Summary of Changes
+[2-3 sentences]
+### ⚠️ Identified Risks
+1. ...
+2. ...
+### 💡 Improvement Suggestions
+1. ...
+2. ...
+### 🟢 Confidence: [Low/Medium/High]
+
+DIFF:{note}
+```diff
+{diff_truncated}
+```
+"""
+
+
+# ── Main ─────────────────────────────────────────────────────────
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Claude Code PR Review Agent — fetch PR diffs for structured review",
+    )
+    parser.add_argument(
+        "--pr", required=True,
+        help="GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)",
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--json", action="store_true", help="Output raw PR data as JSON")
+    group.add_argument("--prompt", action="store_true", help="Output a Claude-ready review prompt")
+    group.add_argument("--template", action="store_true", help="Output a Markdown review template")
+    args = parser.parse_args()
+
+    try:
+        owner, repo, number = parse_pr_url(args.pr)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Fetching {owner}/{repo}#{number}...", file=sys.stderr)
+    pr = fetch_pr_info(owner, repo, number)
+
+    if not pr.diff:
+        print("Error: could not fetch PR diff. Is gh CLI installed and authenticated?", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(pr_to_dict(pr), indent=2, ensure_ascii=False))
+    elif args.prompt:
+        print(format_prompt(pr))
+    elif args.template:
+        print(format_markdown(pr))
+    else:
+        # Default: output template
+        print(format_markdown(pr))
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

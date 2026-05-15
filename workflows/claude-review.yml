@@ -1,0 +1,61 @@
+name: Claude Code PR Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup gh CLI
+        run: |
+          echo "${{ github.token }}" | gh auth login --with-token
+
+      - name: Fetch PR data
+        id: pr
+        run: |
+          PR="${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
+          echo "number=$PR" >> $GITHUB_OUTPUT
+
+          gh pr view "$PR" --repo "${{ github.repository }}" \
+            --json title,author,additions,deletions,changedFiles,labels \
+            > /tmp/pr.json
+
+          gh pr diff "$PR" --repo "${{ github.repository }}" > /tmp/pr.diff
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          TITLE=$(jq -r '.title' /tmp/pr.json)
+          AUTHOR=$(jq -r '.author.login' /tmp/pr.json)
+          ADDS=$(jq -r '.additions' /tmp/pr.json)
+          DELS=$(jq -r '.deletions' /tmp/pr.json)
+          FILES=$(jq -r '.changedFiles' /tmp/pr.json)
+          DIFF_HEAD=$(head -c 3000 /tmp/pr.diff)
+
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(
+            printf '## Automated PR Review\n\n'
+            printf '| Property | Value |\n|----------|-------|\n'
+            printf '| PR | #%s: %s |\n' "$PR_NUMBER" "$TITLE"
+            printf '| Author | %s |\n' "$AUTHOR"
+            printf '| Changes | +%s/-%s in %s files |\n\n' "$ADDS" "$DELS" "$FILES"
+            printf '### Summary\n\n'
+            printf 'Automated diff fetched. For a detailed AI review, run locally:\n\n'
+            printf '```bash\nclaude-review --pr https://github.com/%s/pull/%s --prompt | claude\n```\n\n' "$REPO" "$PR_NUMBER"
+            printf '<details>\n<summary>Diff preview (first 3000 chars)</summary>\n\n'
+            printf '```diff\n%s\n```\n</details>\n' "$DIFF_HEAD"
+          )"
