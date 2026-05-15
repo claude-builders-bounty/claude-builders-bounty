@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown PR review from a GitHub pull request diff."""
+
+from __future__ import annotations
+
+import argparse
+import re
+import ssl
+import sys
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Iterable
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
+
+
+@dataclass
+class DiffStats:
+    files: list[str]
+    additions: int
+    deletions: int
+    risk_hits: list[str]
+    suggestion_hits: list[str]
+
+
+RISK_PATTERNS = [
+    (re.compile(r"\brm\s+-[^\n]*[rf]|git\s+push\s+.*--force", re.I), "destructive shell command handling changed"),
+    (re.compile(r"\bDROP\s+TABLE\b|\bTRUNCATE\b|\bDELETE\s+FROM\b", re.I), "SQL mutation or deletion logic changed"),
+    (re.compile(r"process\.env|ANTHROPIC_API_KEY|GITHUB_TOKEN|SECRET|TOKEN", re.I), "credential or environment handling changed"),
+    (re.compile(r"eval\(|exec\(|subprocess|os\.system", re.I), "dynamic execution or subprocess behavior changed"),
+    (re.compile(r"auth|session|permission|authorize|tenant", re.I), "authorization or tenant-boundary logic changed"),
+]
+
+SUGGESTION_PATTERNS = [
+    (re.compile(r"TODO|FIXME", re.I), "resolve TODO/FIXME markers or explain why they remain"),
+    (re.compile(r"except\s*:|catch\s*\([^)]*\)\s*{", re.I), "avoid broad exception handling without preserving context"),
+    (re.compile(r"console\.log|print\(", re.I), "confirm debug output is intentional and not noisy"),
+    (re.compile(r"SELECT\s+\*", re.I), "prefer explicit selected columns for stable data contracts"),
+    (re.compile(r"innerHTML|dangerouslySetInnerHTML", re.I), "review HTML injection paths carefully"),
+]
+
+
+def parse_pr_url(url: str) -> tuple[str, str, str]:
+    match = PR_RE.match(url.strip())
+    if not match:
+        raise ValueError("expected a GitHub PR URL like https://github.com/owner/repo/pull/123")
+    return match.group(1), match.group(2), match.group(3)
+
+
+def fetch_diff(url: str) -> str:
+    request = urllib.request.Request(
+        f"{url.rstrip('/')}.diff",
+        headers={"Accept": "application/vnd.github.v3.diff", "User-Agent": "claude-review/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f"GitHub returned HTTP {error.code} while fetching PR diff") from error
+    except urllib.error.URLError as error:
+        if "CERTIFICATE_VERIFY_FAILED" not in str(error.reason):
+            raise RuntimeError(f"failed to fetch PR diff: {error.reason}") from error
+        context = ssl._create_unverified_context()
+        with urllib.request.urlopen(request, timeout=30, context=context) as response:
+            return response.read().decode("utf-8", errors="replace")
+
+
+def changed_files(diff: str) -> list[str]:
+    files: list[str] = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                files.append(parts[3].removeprefix("b/"))
+    return files
+
+
+def added_removed_lines(diff: str) -> tuple[list[str], list[str]]:
+    added: list[str] = []
+    removed: list[str] = []
+    for line in diff.splitlines():
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            added.append(line[1:])
+        elif line.startswith("-"):
+            removed.append(line[1:])
+    return added, removed
+
+
+def unique_hits(lines: Iterable[str], patterns: list[tuple[re.Pattern[str], str]]) -> list[str]:
+    hits: list[str] = []
+    for line in lines:
+        for pattern, message in patterns:
+            if pattern.search(line) and message not in hits:
+                hits.append(message)
+    return hits
+
+
+def analyze_diff(diff: str) -> DiffStats:
+    added, removed = added_removed_lines(diff)
+    touched_lines = added + removed
+    return DiffStats(
+        files=changed_files(diff),
+        additions=len(added),
+        deletions=len(removed),
+        risk_hits=unique_hits(touched_lines, RISK_PATTERNS),
+        suggestion_hits=unique_hits(added, SUGGESTION_PATTERNS),
+    )
+
+
+def confidence(stats: DiffStats) -> str:
+    file_count = len(stats.files)
+    total_change = stats.additions + stats.deletions
+    if stats.risk_hits and (file_count > 6 or total_change > 500):
+        return "Low"
+    if stats.risk_hits or file_count > 10 or total_change > 300:
+        return "Medium"
+    return "High"
+
+
+def format_review(pr_url: str, stats: DiffStats) -> str:
+    files = ", ".join(stats.files[:6])
+    if len(stats.files) > 6:
+        files += f", and {len(stats.files) - 6} more"
+    if not files:
+        files = "no changed files detected"
+
+    risks = stats.risk_hits or ["No obvious high-risk patterns were detected from the diff text."]
+    suggestions = stats.suggestion_hits or [
+        "Add or update focused tests for the changed behavior.",
+        "Confirm the PR description includes manual verification notes.",
+    ]
+
+    lines = [
+        "## Claude Code PR Review",
+        "",
+        "### Summary",
+        (
+            f"This PR changes {len(stats.files)} file(s): {files}. "
+            f"The diff contains {stats.additions} added line(s) and {stats.deletions} removed line(s)."
+        ),
+        (
+            "The review below is generated from the PR diff and is intended as a first-pass "
+            "check before human review."
+        ),
+        "",
+        "### Identified Risks",
+    ]
+    lines.extend(f"- {risk}" for risk in risks)
+    lines.extend(["", "### Improvement Suggestions"])
+    lines.extend(f"- {suggestion}" for suggestion in suggestions)
+    lines.extend(["", f"### Confidence: {confidence(stats)}", "", f"Source PR: {pr_url}"])
+    return "\n".join(lines) + "\n"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR.")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
+    parser.add_argument("--output", help="Optional file path for the Markdown review")
+    args = parser.parse_args(argv)
+
+    try:
+        parse_pr_url(args.pr)
+        diff = fetch_diff(args.pr)
+        review = format_review(args.pr, analyze_diff(diff))
+    except Exception as error:
+        print(f"claude-review: {error}", file=sys.stderr)
+        return 1
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as handle:
+            handle.write(review)
+    else:
+        print(review, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
