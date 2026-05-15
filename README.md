@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Submitted Tools
+
+- [Changelog Generator](CHANGELOG_GENERATOR.md): generate a structured `CHANGELOG.md` from git history with `bash scripts/changelog.sh`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
