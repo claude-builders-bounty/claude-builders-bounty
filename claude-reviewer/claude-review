@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+
+
+def run(cmd):
+    return subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT).strip()
+
+
+def parse_pr(url):
+    m = re.match(r"https://github.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    if not m:
+        raise SystemExit("Expected PR URL like https://github.com/owner/repo/pull/123")
+    return m.group(1), m.group(2), m.group(3)
+
+
+def gh_json(owner, repo, pr):
+    return json.loads(run([
+        "gh", "pr", "view", pr, "--repo", f"{owner}/{repo}",
+        "--json", "title,body,files,additions,deletions,changedFiles,author,baseRefName,headRefName"
+    ]))
+
+
+def gh_diff(owner, repo, pr):
+    return run(["gh", "pr", "diff", pr, "--repo", f"{owner}/{repo}"])
+
+
+def heuristic_review(meta, diff):
+    files = meta.get("files", [])
+    changed = [f.get("path", "") for f in files]
+    risks = []
+    suggestions = []
+
+    if meta.get("changedFiles", 0) > 20 or meta.get("additions", 0) + meta.get("deletions", 0) > 1200:
+        risks.append("Large change size increases review and regression risk.")
+    if any(p.endswith(("package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock")) for p in changed):
+        risks.append("Dependency or lockfile changes may affect install/build reproducibility.")
+    if any("test" in p.lower() or p.endswith((".spec.ts", ".test.ts", ".spec.js", ".test.js")) for p in changed):
+        suggestions.append("Run the touched test suite and include the exact command/output in the PR.")
+    else:
+        risks.append("No obvious test file changed; behavior may be unverified.")
+        suggestions.append("Add or update a focused test, or document why existing coverage is sufficient.")
+    if any(p.endswith((".yml", ".yaml")) or ".github/workflows/" in p for p in changed):
+        risks.append("Workflow/config changes can fail only in CI-specific conditions.")
+    if "TODO" in diff or "FIXME" in diff:
+        suggestions.append("Resolve new TODO/FIXME markers or turn them into tracked follow-up issues.")
+
+    risks = risks or ["No major structural risks detected from the diff metadata."]
+    suggestions = suggestions or ["Keep the PR description aligned with user-visible behavior and verification steps."]
+    confidence = "High" if meta.get("changedFiles", 0) <= 5 and len(risks) <= 2 else "Medium"
+    return risks, suggestions, confidence
+
+
+def claude_review(meta, diff):
+    key = os.getenv("ANTHROPIC_API_KEY")
+    if not key:
+        return None
+    prompt = f"""Review this GitHub PR diff. Return Markdown with exactly these headings: Summary of changes, Identified risks, Improvement suggestions, Confidence score. Keep concise.\n\nPR metadata:\n{json.dumps(meta, ensure_ascii=False)[:6000]}\n\nDiff:\n{diff[:60000]}"""
+    data = json.dumps({
+        "model": os.getenv("CLAUDE_REVIEW_MODEL", "claude-sonnet-4-20250514"),
+        "max_tokens": 1200,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=data,
+        headers={
+            "content-type": "application/json",
+            "x-api-key": key,
+            "anthropic-version": "2023-06-01",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=60) as res:
+        payload = json.loads(res.read())
+    return "\n".join(block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text").strip()
+
+
+def render(meta, diff):
+    ai = claude_review(meta, diff)
+    if ai:
+        return ai
+    risks, suggestions, confidence = heuristic_review(meta, diff)
+    files = ", ".join(f.get("path", "") for f in meta.get("files", [])[:6]) or "no files listed"
+    if len(meta.get("files", [])) > 6:
+        files += ", ..."
+    return f"""## Summary of changes
+This PR changes {meta.get('changedFiles', 0)} file(s): {files}. It adds {meta.get('additions', 0)} line(s) and removes {meta.get('deletions', 0)} line(s) against `{meta.get('baseRefName')}`.
+
+## Identified risks
+""" + "\n".join(f"- {r}" for r in risks) + "\n\n## Improvement suggestions\n" + "\n".join(f"- {s}" for s in suggestions) + f"\n\n## Confidence score\n{confidence}\n"
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Generate a structured Claude Code PR review.")
+    ap.add_argument("--pr", required=True, help="GitHub PR URL")
+    args = ap.parse_args()
+    owner, repo, pr = parse_pr(args.pr)
+    meta = gh_json(owner, repo, pr)
+    diff = gh_diff(owner, repo, pr)
+    print(render(meta, diff))
+
+
+if __name__ == "__main__":
+    main()
