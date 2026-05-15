@@ -35,14 +35,34 @@ claude-review --pr 42
 
 ## GitHub Action
 
-The included workflow runs claude-review automatically on every new PR:
+Add this workflow to `.github/workflows/claude-review.yml` for automatic reviews:
 
 ```yaml
-# .github/workflows/claude-review.yml
-# See the included file for the full workflow
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Review PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x claude-review
+          ./claude-review --pr ${{ github.event.pull_request.number }}
 ```
 
-Add it to your repo and every PR gets an automatic review comment.
+Copy `claude-review` into your repo root and add the workflow file — every PR gets an automatic review comment.
 
 ## What it checks
 
