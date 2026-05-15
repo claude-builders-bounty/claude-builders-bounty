@@ -1,0 +1,201 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "value": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "name": "Weekly Trigger (Fri 5pm)"
+    },
+    {
+      "parameters": {
+        "owner": "={{$env.GITHUB_OWNER}}",
+        "repo": "={{$env.GITHUB_REPO}}",
+        "since": "={{$now.minus({weeks: 1}).toISONoSeconds()}}",
+        "until": "={{$now.toISONoSeconds()}}",
+        "perPage": 100
+      },
+      "id": "git-commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        460,
+        200
+      ],
+      "name": "Fetch Commits"
+    },
+    {
+      "parameters": {
+        "owner": "={{$env.GITHUB_OWNER}}",
+        "repo": "={{$env.GITHUB_REPO}}",
+        "state": "closed",
+        "since": "={{$now.minus({weeks: 1}).toISONoSeconds()}}",
+        "perPage": 100
+      },
+      "id": "git-issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        460,
+        400
+      ],
+      "name": "Fetch Closed Issues"
+    },
+    {
+      "parameters": {
+        "owner": "={{$env.GITHUB_OWNER}}",
+        "repo": "={{$env.GITHUB_REPO}}",
+        "state": "closed",
+        "merged": "true",
+        "since": "={{$now.minus({weeks: 1}).toISONoSeconds()}}",
+        "perPage": 100
+      },
+      "id": "git-prs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        460,
+        600
+      ],
+      "name": "Fetch Merged PRs"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Merge all fetched data into a single text summary\nconst commits = $input.all()[0].json;\nconst issues  = $input.all()[1].json;\nconst prs     = $input.all()[2].json;\n\nconst commitList = commits.slice(0, 50).map((c, i) =>\n  `${i+1}. **${c.commit.message.split('\\n')[0].trim()}** \u2014 @${c.author?.login || 'unknown'}`\n).join('\\n');\n\nconst issueList = issues.slice(0, 30).map((i, idx) =>\n  `${idx+1}. **${i.title}** (closed by @${i.user?.login || 'unknown'})`\n).join('\\n');\n\nconst prList = prs.slice(0, 30).map((p, idx) =>\n  `${idx+1}. **${p.title}** \u2014 @${p.user?.login || 'unknown'}`\n).join('\\n');\n\nreturn { json: {\n  commits_summary: commitList,\n  issues_summary: issueList,\n  prs_summary: prList,\n} };\n"
+      },
+      "id": "merge-data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        400
+      ],
+      "name": "Merge Data"
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "options": {
+          "maxTokens": 1024
+        },
+        "messages": {
+          "message": [
+            {
+              "role": "user",
+              "message": "={{`Generate a ${$env.LANGUAGE || 'EN'} weekly dev summary for this repo based on the data below.\\n\\nCommits:\\n${$json.commits_summary || 'None'}\\n\\nClosed Issues:\\n${$json.issues_summary || 'None'}\\n\\nMerged PRs:\\n${$json.prs_summary || 'None'}${\\nWrite 3 sections: Highlights, Key Changes, Next Week Focus.` }"
+            }
+          ]
+        }
+      },
+      "id": "claude-summary",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [
+        920,
+        400
+      ],
+      "name": "Generate Summary (Claude)"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.DISCORD_WEBHOOK || $env.SLACK_WEBHOOK}}",
+        "method": "POST",
+        "contentType": "json",
+        "body": "={{{\n  'content': `\ud83d\udccb **Weekly Dev Summary**\\n${$json.content || $json.text || ''}`,\n}}}"
+      },
+      "id": "webhook-send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        400
+      ],
+      "name": "Send to Discord/Slack"
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Fri 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord/Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
