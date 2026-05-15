@@ -1,7 +1,9 @@
 import importlib.util
+import os
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 
 MODULE_PATH = pathlib.Path(__file__).resolve().parents[1] / "claude_review.py"
@@ -64,6 +66,43 @@ diff --git a/tests/test_cli.py b/tests/test_cli.py
         self.assertIn("### Improvement Suggestions", review)
         self.assertIn("### Confidence Score:", review)
         self.assertIn("sensitive credential terms", review)
+
+    def test_comment_mode_requires_github_token(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(RuntimeError):
+                claude_review.github_token()
+
+    def test_post_comment_sends_issue_comment_payload(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self):
+                return b'{"html_url":"https://github.com/owner/repo/pull/123#issuecomment-1"}'
+
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["url"] = request.full_url
+            captured["method"] = request.get_method()
+            captured["data"] = request.data
+            captured["auth"] = request.headers.get("Authorization")
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "test-token"}, clear=True):
+            with mock.patch.object(claude_review.urllib.request, "urlopen", fake_urlopen):
+                url = claude_review.post_comment("owner", "repo", "123", "hello")
+
+        self.assertEqual(url, "https://github.com/owner/repo/pull/123#issuecomment-1")
+        self.assertEqual(captured["url"], "https://api.github.com/repos/owner/repo/issues/123/comments")
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(captured["data"], b'{"body": "hello"}')
+        self.assertEqual(captured["auth"], "Bearer test-token")
+        self.assertEqual(captured["timeout"], 30)
 
 
 if __name__ == "__main__":

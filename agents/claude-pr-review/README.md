@@ -12,6 +12,20 @@ python3 agents/claude-pr-review/claude_review.py --pr https://github.com/owner/r
 For private repositories or higher API limits, set `GITHUB_TOKEN` before
 running the command.
 
+## Claude Code Sub-Agent
+
+This PR includes a project sub-agent at
+`.claude/agents/pr-reviewer.md`. In Claude Code, ask the `pr-reviewer`
+sub-agent to review a pull request URL. It runs the local CLI and returns the
+structured Markdown review.
+
+To post the generated review back to the pull request, provide a `GITHUB_TOKEN`
+with comment permission and use:
+
+```bash
+python3 agents/claude-pr-review/claude_review.py --pr https://github.com/owner/repo/pull/123 --comment
+```
+
 ## Output
 
 The review always includes:
@@ -47,6 +61,14 @@ jobs:
             --pr "${{ github.event.pull_request.html_url }}" \
             > claude-pr-review.md
           cat claude-pr-review.md
+      - name: Post structured review comment
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 agents/claude-pr-review/claude_review.py \
+            --pr "${{ github.event.pull_request.html_url }}" \
+            --comment
 ```
 
 ## Sample Runs
@@ -59,4 +81,5 @@ jobs:
 ```bash
 python3 -m unittest discover agents/claude-pr-review/tests
 python3 agents/claude-pr-review/claude_review.py --pr https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1309
+GITHUB_TOKEN=... python3 agents/claude-pr-review/claude_review.py --pr https://github.com/owner/repo/pull/123 --comment
 ```

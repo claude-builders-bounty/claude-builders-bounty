@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -14,6 +15,7 @@ from typing import Iterable
 
 
 PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)/?$")
+API_ROOT = "https://api.github.com"
 
 
 @dataclass
@@ -34,7 +36,7 @@ def parse_pr_url(url: str) -> tuple[str, str, str]:
 
 def fetch_diff(owner: str, repo: str, number: str) -> str:
     request = urllib.request.Request(
-        f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}",
+        f"{API_ROOT}/repos/{owner}/{repo}/pulls/{number}",
         headers={
             "Accept": "application/vnd.github.v3.diff",
             "User-Agent": "claude-pr-review-agent",
@@ -51,6 +53,40 @@ def fetch_diff(owner: str, repo: str, number: str) -> str:
         raise RuntimeError(f"GitHub API returned HTTP {exc.code}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"could not fetch PR diff: {exc.reason}") from exc
+
+
+def github_token() -> str:
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise RuntimeError("GITHUB_TOKEN is required to post a PR comment")
+    return token
+
+
+def post_comment(owner: str, repo: str, number: str, body: str) -> str:
+    payload = json.dumps({"body": body}).encode("utf-8")
+    request = urllib.request.Request(
+        f"{API_ROOT}/repos/{owner}/{repo}/issues/{number}/comments",
+        data=payload,
+        method="POST",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {github_token()}",
+            "Content-Type": "application/json",
+            "User-Agent": "claude-pr-review-agent",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as exc:
+        message = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub comment API returned HTTP {exc.code}: {message}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"could not post PR comment: {exc.reason}") from exc
+
+    return str(data.get("html_url", ""))
 
 
 def diff_stats(diff: str) -> DiffStats:
@@ -165,16 +201,26 @@ def render_review(pr_url: str, stats: DiffStats) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    parser.add_argument(
+        "--comment",
+        action="store_true",
+        help="Post the generated review back to the pull request using GITHUB_TOKEN",
+    )
     args = parser.parse_args()
 
     try:
         owner, repo, number = parse_pr_url(args.pr)
         diff = fetch_diff(owner, repo, number)
+        review = render_review(args.pr, diff_stats(diff))
+        if args.comment:
+            url = post_comment(owner, repo, number, review)
+            print(f"Posted Claude PR review: {url}")
+        else:
+            print(review)
     except (RuntimeError, ValueError) as exc:
         print(f"claude-review: {exc}", file=sys.stderr)
         return 2
 
-    print(render_review(args.pr, diff_stats(diff)))
     return 0
 
 
