@@ -16,7 +16,7 @@ Generates a beautiful, structured `CHANGELOG.md` from your git history using **C
 | **7 Auto-Categories** | Added, Fixed, Changed, Removed, Deprecated, Security, Performance |
 | **Breaking Changes** | Automatically detects `!` and `BREAKING CHANGE` markers |
 | **Preserves History** | Prepends new entries to existing CHANGELOG (never overwrites) |
-| **CLI Flags** | `--since`, `--output`, `--dry-run`, `--include-merges` |
+| **CLI Flags** | `--since`, `--output`, `--repo`, `--dry-run`, `--include-merges` |
 | **Hermes Agent Ready** | Includes SKILL.md with proper frontmatter |
 | **Zero Dependencies** | Pure bash + git — no npm, Python, or Ruby needed |
 | **Test Suite** | Comprehensive tests covering all CLI flags, categories, edge cases |
@@ -44,6 +44,9 @@ bash skills/generate-changelog/changelog.sh --dry-run
 
 # Write to a custom location
 bash skills/generate-changelog/changelog.sh --output docs/CHANGELOG.md
+
+# Generate for another repo (no cd needed)
+bash skills/generate-changelog/changelog.sh --repo /path/to/project
 ```
 
 ### 3. Run the tests
@@ -60,6 +63,7 @@ Usage: changelog.sh [OPTIONS]
 Options:
   --since <ref>        Only include commits after this git ref (tag, commit, date)
   --output <file>      Write to a specific file (default: ./CHANGELOG.md)
+  --repo <path>        Path to git repository (default: auto-detect from cwd)
   --dry-run            Print to stdout without writing any files
   --include-merges     Include merge commits in the changelog
   -h, --help           Show this help message
@@ -70,6 +74,7 @@ Examples:
   changelog.sh --since "2025-01-01"                # Since Jan 1, 2025
   changelog.sh --since HEAD~10                     # Last 10 commits
   changelog.sh --output CHANGELOG.md                # Custom output
+  changelog.sh --repo /path/to/project              # Run in another repo
   changelog.sh --dry-run                           # Preview
   changelog.sh --include-merges                     # Include merge commits
 ```

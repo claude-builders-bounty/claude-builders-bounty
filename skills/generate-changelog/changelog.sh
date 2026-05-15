@@ -6,6 +6,7 @@
 #   bash changelog.sh                     # Generate full changelog
 #   bash changelog.sh --since v0.1.0      # Since a specific tag
 #   bash changelog.sh --output FILE.md    # Write to custom file
+#   bash changelog.sh --repo /path        # Run against a different repo
 #   bash changelog.sh --dry-run           # Preview only (stdout)
 #   bash changelog.sh --format json       # JSON output
 #   bash changelog.sh --include-merges    # Include merge commits
@@ -47,6 +48,7 @@ fi
 DEFAULT_OUTPUT="${REPO_ROOT}/CHANGELOG.md"
 SINCE_REF=""
 OUTPUT_FILE=""
+REPO_PATH=""
 DRY_RUN=false
 INCLUDE_MERGES=false
 OUTPUT_FORMAT="markdown"
@@ -87,6 +89,7 @@ Generate a structured CHANGELOG from conventional commit git history.
 Options:
   --since <ref>        Only include commits after this git ref (tag, commit, date)
   --output <file>      Write to a specific file (default: ${DEFAULT_OUTPUT})
+  --repo <path>        Path to git repository (default: auto-detect from cwd)
   --format <format>    Output format: markdown (default) or json
   --dry-run            Print to stdout without writing any files
   --include-merges     Include merge commits in the changelog
@@ -98,6 +101,7 @@ Examples:
   $(basename "$0") --since "2025-01-01"             # Changes since Jan 1, 2025
   $(basename "$0") --since HEAD~10                   # Last 10 commits
   $(basename "$0") --output docs/CHANGELOG.md        # Custom output path
+  $(basename "$0") --repo /path/to/project           # Run in another repo
   $(basename "$0") --format json                     # JSON output
   $(basename "$0") --dry-run                        # Preview only
   $(basename "$0") --include-merges                  # Include merges
@@ -117,6 +121,10 @@ parse_args() {
             --output)
                 if [[ -z "${2:-}" ]]; then error "Missing value for --output"; exit 1; fi
                 OUTPUT_FILE="$2"; shift 2
+                ;;
+            --repo)
+                if [[ -z "${2:-}" ]]; then error "Missing value for --repo"; exit 1; fi
+                REPO_PATH="$2"; shift 2
                 ;;
             --format)
                 if [[ -z "${2:-}" ]]; then error "Missing value for --format"; exit 1; fi
@@ -142,16 +150,25 @@ parse_args() {
 
 # ---- Git Operations ---------------------------------------------------------
 
+# Wrapper that uses --repo path if set
+git_cmd() {
+    if [[ -n "$REPO_PATH" ]]; then
+        command git -C "$REPO_PATH" "$@"
+    else
+        command git "$@"
+    fi
+}
+
 get_log_range() {
     if [[ -n "$SINCE_REF" ]]; then
-        if git rev-parse --verify --quiet "${SINCE_REF}" >/dev/null 2>&1; then
+        if git_cmd rev-parse --verify --quiet "${SINCE_REF}" >/dev/null 2>&1; then
             echo "${SINCE_REF}..HEAD"
         else
             echo "--after=${SINCE_REF}"
         fi
     else
         local last_tag
-        last_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+        last_tag="$(git_cmd describe --tags --abbrev=0 2>/dev/null || true)"
         if [[ -n "$last_tag" ]]; then
             echo "${last_tag}..HEAD"
         else
@@ -169,7 +186,7 @@ get_commits() {
     else
         git_args+=(-200)
     fi
-    git "${git_args[@]}"
+    git_cmd "${git_args[@]}"
 }
 
 # ---- Conventional Commit Parsing --------------------------------------------
@@ -218,7 +235,7 @@ has_breaking_change() {
 get_commit_url() {
     local hash="$1"
     local remote_url
-    remote_url="$(git config --get remote.origin.url 2>/dev/null || true)"
+    remote_url="$(git_cmd config --get remote.origin.url 2>/dev/null || true)"
     if [[ "$remote_url" =~ github\.com[:/](.+)/(.+)\..* ]]; then
         echo "https://github.com/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/commit/${hash}"
     elif [[ "$remote_url" =~ github\.com[:/](.+)/(.+) ]]; then
@@ -445,14 +462,21 @@ prepend_changelog() {
 main() {
     parse_args "$@"
 
-    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    # If --repo was specified, use it; otherwise detect from cwd
+    if [[ -n "$REPO_PATH" ]]; then
+        REPO_ROOT="$REPO_PATH"
+        if ! git_cmd rev-parse --git-dir >/dev/null 2>&1; then
+            error "Not inside a git repository: $REPO_PATH"
+            exit 1
+        fi
+    elif ! git_cmd rev-parse --git-dir >/dev/null 2>&1; then
         error "Not inside a git repository."
         exit 1
     fi
 
     cd "$REPO_ROOT"
 
-    if ! git rev-list --max-parents=0 HEAD &>/dev/null; then
+    if ! git_cmd rev-list --max-parents=0 HEAD &>/dev/null; then
         warn "This repository has no commits yet."
         echo ""
         info "Nothing to generate — commit something first."

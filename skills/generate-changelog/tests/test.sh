@@ -352,6 +352,24 @@ test_emoji_in_categories() {
     assert_contains "Emoji in Added" "$output" "✨"
 }
 
+test_repo_flag() {
+    echo -e "\n${BOLD}${CYAN}25. Repo Flag${RESET}"
+    # Create a temp repo
+    local temp_repo; temp_repo="$(mktemp -d)"
+    (
+        cd "$temp_repo"
+        git init
+        git config user.email "test@test.com"
+        git config user.name "Test"
+        git commit --allow-empty -m "feat: init in external repo"
+        git commit --allow-empty -m "fix: bugfix in external repo"
+    )
+    local output; output="$("$SCRIPT" --repo "$temp_repo" --dry-run 2>&1 || true)"
+    assert_contains "Repo flag: init in external repo" "$output" "init in external repo"
+    assert_contains "Repo flag: bugfix in external repo" "$output" "bugfix in external repo"
+    rm -rf "$temp_repo"
+}
+
 # ---- Main -------------------------------------------------------------------
 
 main() {
@@ -392,6 +410,7 @@ main() {
     test_json_format
     test_invalid_format
     test_emoji_in_categories
+    test_repo_flag
 
     teardown
 
