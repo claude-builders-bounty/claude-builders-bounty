@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 📋 Generate CHANGELOG — Conventional Commits → Structured Markdown
+# 📋 Generate CHANGELOG — Conventional Commits → Structured Output
 # =============================================================================
 # Usage:
 #   bash changelog.sh                     # Generate full changelog
 #   bash changelog.sh --since v0.1.0      # Since a specific tag
 #   bash changelog.sh --output FILE.md    # Write to custom file
 #   bash changelog.sh --dry-run           # Preview only (stdout)
+#   bash changelog.sh --format json       # JSON output
 #   bash changelog.sh --include-merges    # Include merge commits
 #
 # All notable changes to this project will be documented in this file.
@@ -16,15 +17,30 @@
 
 set -euo pipefail
 
+# ---- Emoji Map --------------------------------------------------------------
+
+declare -A EMOJI_MAP
+EMOJI_MAP=(
+    [Added]="✨"
+    [Fixed]="🐛"
+    [Changed]="🔄"
+    [Removed]="🗑️"
+    [Deprecated]="⚠️"
+    [Security]="🔒"
+    [Performance]="⚡"
+    [Documentation]="📚"
+    [Tests]="🧪"
+    [Build System]="🏗️"
+    [Chores]="🔧"
+)
+
 # ---- Configuration ----------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Determine repo root: use git root from current directory first
-# then fall back to going up 2 levels from script dir
 if REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" && [[ -n "$REPO_ROOT" ]]; then
-    : # REPO_ROOT already set
+    :
 elif REPO_ROOT="$(cd "${SCRIPT_DIR}" && cd ../../ 2>/dev/null && pwd)" && [[ -n "$REPO_ROOT" ]]; then
-    : # REPO_ROOT from path
+    :
 else
     REPO_ROOT="$SCRIPT_DIR"
 fi
@@ -33,8 +49,9 @@ SINCE_REF=""
 OUTPUT_FILE=""
 DRY_RUN=false
 INCLUDE_MERGES=false
+OUTPUT_FORMAT="markdown"
 
-# ---- Color helpers (disabled in dry-run to keep output clean) ----------------
+# ---- Color helpers ----------------------------------------------------------
 
 RESET=""
 BOLD=""
@@ -65,11 +82,12 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Generate a structured CHANGELOG.md from conventional commit git history.
+Generate a structured CHANGELOG from conventional commit git history.
 
 Options:
   --since <ref>        Only include commits after this git ref (tag, commit, date)
   --output <file>      Write to a specific file (default: ${DEFAULT_OUTPUT})
+  --format <format>    Output format: markdown (default) or json
   --dry-run            Print to stdout without writing any files
   --include-merges     Include merge commits in the changelog
   -h, --help           Show this help message
@@ -80,6 +98,7 @@ Examples:
   $(basename "$0") --since "2025-01-01"             # Changes since Jan 1, 2025
   $(basename "$0") --since HEAD~10                   # Last 10 commits
   $(basename "$0") --output docs/CHANGELOG.md        # Custom output path
+  $(basename "$0") --format json                     # JSON output
   $(basename "$0") --dry-run                        # Preview only
   $(basename "$0") --include-merges                  # Include merges
 EOF
@@ -92,32 +111,26 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --since)
-                if [[ -z "${2:-}" ]]; then
-                    error "Missing value for --since"
-                    exit 1
-                fi
-                SINCE_REF="$2"
-                shift 2
+                if [[ -z "${2:-}" ]]; then error "Missing value for --since"; exit 1; fi
+                SINCE_REF="$2"; shift 2
                 ;;
             --output)
-                if [[ -z "${2:-}" ]]; then
-                    error "Missing value for --output"
+                if [[ -z "${2:-}" ]]; then error "Missing value for --output"; exit 1; fi
+                OUTPUT_FILE="$2"; shift 2
+                ;;
+            --format)
+                if [[ -z "${2:-}" ]]; then error "Missing value for --format"; exit 1; fi
+                if [[ "$2" == "json" ]] || [[ "$2" == "markdown" ]]; then
+                    OUTPUT_FORMAT="$2"
+                else
+                    error "Invalid format: $2 (use 'markdown' or 'json')"
                     exit 1
                 fi
-                OUTPUT_FILE="$2"
                 shift 2
                 ;;
-            --dry-run)
-                DRY_RUN=true
-                shift
-                ;;
-            --include-merges)
-                INCLUDE_MERGES=true
-                shift
-                ;;
-            -h|--help)
-                usage
-                ;;
+            --dry-run)    DRY_RUN=true; shift ;;
+            --include-merges) INCLUDE_MERGES=true; shift ;;
+            -h|--help)    usage ;;
             *)
                 error "Unknown option: $1"
                 echo ""
@@ -129,18 +142,14 @@ parse_args() {
 
 # ---- Git Operations ---------------------------------------------------------
 
-# Determine git log range based on --since flag
 get_log_range() {
     if [[ -n "$SINCE_REF" ]]; then
-        # Check if since_ref resolves to something
         if git rev-parse --verify --quiet "${SINCE_REF}" >/dev/null 2>&1; then
             echo "${SINCE_REF}..HEAD"
         else
-            # Try as a date
             echo "--after=${SINCE_REF}"
         fi
     else
-        # Try last tag, fallback to all commits
         local last_tag
         last_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
         if [[ -n "$last_tag" ]]; then
@@ -151,282 +160,66 @@ get_log_range() {
     fi
 }
 
-# Fetch commits with proper format
 get_commits() {
     local range="$1"
     local git_args=(log --format="%s|||%h|||%an|||%ad" --date=short --reverse)
-
-    if [[ "$INCLUDE_MERGES" == "true" ]]; then
-        # Include merges — filter them later
-        :
-    else
-        git_args+=(--no-merges)
-    fi
-
+    if [[ "$INCLUDE_MERGES" == "true" ]]; then :; else git_args+=(--no-merges); fi
     if [[ -n "$range" ]]; then
-        # Range could be "tag..HEAD" or "--after=DATE"
-        if [[ "$range" == "--after="* ]]; then
-            git_args+=("$range")
-        else
-            git_args+=("$range")
-        fi
+        if [[ "$range" == "--after="* ]]; then git_args+=("$range"); else git_args+=("$range"); fi
     else
-        # No range specified, get last 200 commits
         git_args+=(-200)
     fi
-
     git "${git_args[@]}"
 }
 
 # ---- Conventional Commit Parsing --------------------------------------------
 
-# Parse conventional commit prefix from a commit message
-# Returns: prefix (e.g., "feat", "fix") or empty string
 parse_prefix() {
     local msg="$1"
-    # Match conventional commit pattern: type(scope)!: description
-    # or type: description
-    # Extract prefix before any (, ), or :
     if [[ "$msg" =~ ^([a-zA-Z]+) ]]; then
         local prefix="${BASH_REMATCH[1],,}"
-        # Verify it's followed by conventional commit structure
-        # Valid patterns: "type:", "type(scope):", "type!:"
-        if [[ "$msg" =~ ^[a-zA-Z]+[\(!]?\ *: ]]; then
-            echo "$prefix"
-        fi
+        if [[ "$msg" =~ ^[a-zA-Z]+[\(!]?\ *: ]]; then echo "$prefix"; fi
     fi
 }
 
-# Map conventional commit type to changelog category
-# Based on: https://www.conventionalcommits.org/en/v1.0.0/
 map_category() {
     local prefix="$1"
-
     case "$prefix" in
-        feat|feature|add|new)
-            echo "Added"
-            ;;
-        fix|bug|bugfix|hotfix|patch)
-            echo "Fixed"
-            ;;
-        refactor|style|update|change)
-            echo "Changed"
-            ;;
-        remove|delete|rm)
-            echo "Removed"
-            ;;
-        deprecate|deprecated)
-            echo "Deprecated"
-            ;;
-        revert)
-            echo "Removed"
-            ;;
-        perf|performance|speed|optimize)
-            echo "Performance"
-            ;;
-        security|secure)
-            echo "Security"
-            ;;
-        docs|documentation|readme|doc)
-            echo "Documentation"
-            ;;
-        test|tests|testing|spec)
-            echo "Tests"
-            ;;
-        build|ci|cd|infra|deps|dependencies)
-            echo "Build System"
-            ;;
-        chore|chores|config|configs)
-            echo "Chores"
-            ;;
-        *)
-            echo ""  # Uncategorized
-            ;;
+        feat|feature|add|new)          echo "Added" ;;
+        fix|bug|bugfix|hotfix|patch)   echo "Fixed" ;;
+        refactor|style|update|change)  echo "Changed" ;;
+        remove|delete|rm)              echo "Removed" ;;
+        deprecate|deprecated)          echo "Deprecated" ;;
+        revert)                        echo "Removed" ;;
+        perf|performance|speed|optimize) echo "Performance" ;;
+        security|secure)               echo "Security" ;;
+        docs|documentation|readme|doc) echo "Documentation" ;;
+        test|tests|testing|spec)       echo "Tests" ;;
+        build|ci|cd|infra|deps|dependencies) echo "Build System" ;;
+        chore|chores|config|configs)   echo "Chores" ;;
+        *)                             echo "" ;;
     esac
 }
 
-# Clean commit message: remove the conventional commit prefix
-# e.g., "feat(auth): add login" → "add login"
 clean_message() {
     local msg="$1"
-    # Remove type(scope)!: prefix using simpler approach
-    # Find the first ": " and take everything after it
-    if [[ "$msg" == *": "* ]]; then
-        echo "${msg#*: }"
-    else
-        echo "$msg"
-    fi
+    if [[ "$msg" == *": "* ]]; then echo "${msg#*: }"; else echo "$msg"; fi
 }
 
-# Check if message has breaking change indicator
 has_breaking_change() {
     local msg="$1"
-    # Check for ! before : or BREAKING CHANGE footer
-    # Use simple string matching for !: pattern
-    if [[ "$msg" == *"!"* && "$msg" == *": "* ]] && \
-       [[ "${msg%%:*}" == *"!" ]]; then
+    if [[ "$msg" == *"!"* && "$msg" == *": "* ]] && [[ "${msg%%:*}" == *"!" ]]; then
         return 0
     fi
-    if echo "$msg" | grep -qi "BREAKING CHANGE"; then
-        return 0
-    fi
+    if echo "$msg" | grep -qi "BREAKING CHANGE"; then return 0; fi
     return 1
 }
-
-# ---- Changelog Generation ---------------------------------------------------
-
-generate_changelog() {
-    local range
-    range="$(get_log_range)"
-    local commits
-    commits="$(get_commits "$range")"
-
-    # Check if we got any commits
-    if [[ -z "$commits" ]]; then
-        warn "No commits found${SINCE_REF:+ since '${SINCE_REF}'}."
-        return 1
-    fi
-
-    # Initialize category buckets
-    declare -A categories
-    categories=(
-        ["Added"]=""
-        ["Fixed"]=""
-        ["Changed"]=""
-        ["Removed"]=""
-        ["Deprecated"]=""
-        ["Security"]=""
-        ["Performance"]=""
-        ["Documentation"]=""
-        ["Tests"]=""
-        ["Build System"]=""
-        ["Chores"]=""
-    )
-
-    local total=0
-    local categorized=0
-    local breaking=0
-    local breaking_entries=""
-
-    # Process each commit (format: "msg|||hash|||author|||date")
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        total=$((total + 1))
-
-        local msg hash author date
-        msg="$(echo "$line" | cut -d'|' -f1)"
-        hash="$(echo "$line" | cut -d'|' -f2)"
-        author="$(echo "$line" | cut -d'|' -f3)"
-        date="$(echo "$line" | cut -d'|' -f4)"
-
-        local prefix
-        prefix="$(parse_prefix "$msg")"
-
-        if [[ -n "$prefix" ]]; then
-            local category
-            category="$(map_category "$prefix")"
-            local entry_msg
-            entry_msg="$(clean_message "$msg")"
-
-            if [[ -n "$category" ]]; then
-                # Check for breaking change
-                if has_breaking_change "$msg"; then
-                    category="Changed"  # Breaking changes go to Changed with a marker
-                    entry_msg="**BREAKING**: ${entry_msg}"
-                    breaking=$((breaking + 1))
-                    breaking_entries="${breaking_entries}  - ${entry_msg} (${hash})\n"
-                fi
-
-                local formatted_entry
-                if [[ -n "$hash" ]]; then
-                    formatted_entry="  - ${entry_msg} ([${hash}]($(get_commit_url "$hash")))"
-                else
-                    formatted_entry="  - ${entry_msg}"
-                fi
-
-                if [[ -z "${categories[$category]}" ]]; then
-                    categories[$category]="${formatted_entry}"
-                else
-                    categories[$category]="${categories[$category]}"$'\n'"${formatted_entry}"
-                fi
-                categorized=$((categorized + 1))
-            else
-                # Unknown type — put in Changed
-                local entry
-                entry="  - $(clean_message "$msg")"
-                if [[ -z "${categories['Changed']}" ]]; then
-                    categories['Changed']="$entry"
-                else
-                    categories['Changed']="${categories['Changed']}"$'\n'"$entry"
-                fi
-            fi
-        else
-            # No conventional commit prefix — try heuristic
-            local entry
-            entry="  - ${msg}"
-            if [[ -z "${categories['Changed']}" ]]; then
-                categories['Changed']="$entry"
-            else
-                categories['Changed']="${categories['Changed']}"$'\n'"$entry"
-            fi
-        fi
-    done <<< "$commits"
-
-    # ---- Generate Date/Version Header ----
-    local version="Unreleased"
-    local date_str
-    date_str="$(date +%Y-%m-%d)"
-
-    if [[ -n "$SINCE_REF" ]]; then
-        version="${SINCE_REF}"
-    else
-        local last_tag
-        last_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
-        if [[ -n "$last_tag" ]]; then
-            version="${last_tag}"
-        fi
-    fi
-
-    # ---- Assemble Output ----
-    local output=""
-
-    # Header
-    output+="# Changelog\n\n"
-    output+="All notable changes to this project will be documented in this file.\n"
-    output+="The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),\n"
-    output+="and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n"
-    output+="Commits are parsed using the [Conventional Commits](https://www.conventionalcommits.org/) specification.\n"
-    output+="\n## [${version}] - ${date_str}\n\n"
-
-    # Breaking changes first (if any)
-    if [[ $breaking -gt 0 ]]; then
-        output+="### ⚠ Breaking Changes\n\n"
-        output+="${breaking_entries}\n"
-    fi
-
-    # Categories in order
-    local order=("Added" "Fixed" "Changed" "Deprecated" "Removed" "Security" "Performance" "Documentation" "Tests" "Build System" "Chores")
-    for cat in "${order[@]}"; do
-        local items="${categories[$cat]}"
-        if [[ -n "$items" ]]; then
-            output+="### ${cat}\n\n${items}\n\n"
-        fi
-    done
-
-    # Stats summary
-    output+="---\n"
-    output+="_${categorized} categorized commits out of ${total} total${breaking:+ (${breaking} breaking)}_\n"
-
-    echo -e "$output"
-}
-
-# ---- Helper: Commit URL -----------------------------------------------------
 
 get_commit_url() {
     local hash="$1"
     local remote_url
     remote_url="$(git config --get remote.origin.url 2>/dev/null || true)"
-    if [[ "$remote_url" =~ github\.com[:/](.+)/(.+)\.git ]]; then
+    if [[ "$remote_url" =~ github\.com[:/](.+)/(.+)\..* ]]; then
         echo "https://github.com/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/commit/${hash}"
     elif [[ "$remote_url" =~ github\.com[:/](.+)/(.+) ]]; then
         echo "https://github.com/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/commit/${hash}"
@@ -435,20 +228,212 @@ get_commit_url() {
     fi
 }
 
-# ---- Prepend Existing Changelog ---------------------------------------------
+get_emoji() {
+    local cat="$1"
+    echo "${EMOJI_MAP[$cat]:-}"
+}
+
+# ---- JSON Escape Helper -----------------------------------------------------
+
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    echo "$s"
+}
+
+# ---- Changelog Generation ---------------------------------------------------
+
+generate_output() {
+    local range
+    range="$(get_log_range)"
+    local commits
+    commits="$(get_commits "$range")"
+
+    if [[ -z "$commits" ]]; then
+        warn "No commits found${SINCE_REF:+ since '${SINCE_REF}'}."
+        return 1
+    fi
+
+    # Initialize strings for each category (store entries as JSON lines)
+    local md_Added="" md_Fixed="" md_Changed="" md_Removed="" md_Deprecated=""
+    local md_Security="" md_Performance="" md_Documentation="" md_Tests=""
+    local md_Build_System="" md_Chores=""
+
+    local json_Added="" json_Fixed="" json_Changed="" json_Removed="" json_Deprecated=""
+    local json_Security="" json_Performance="" json_Documentation="" json_Tests=""
+    local json_Build_System="" json_Chores=""
+
+    local total=0 categorized=0 breaking=0
+    local breaking_entries_md=""
+    local breaking_entries_json=""
+
+    local CATEGORY_ORDER=("Added" "Fixed" "Changed" "Deprecated" "Removed"
+                          "Security" "Performance" "Documentation" "Tests"
+                          "Build System" "Chores")
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        total=$((total + 1))
+
+        # Parse the triple-pipe-delimited line
+        local msg hash author date
+        # Use field splitting: the format is "msg|||hash|||author|||date"
+        # With triple pipes, cut on single | gives fields at positions 1, 4, 7, 10
+        local IFS_backup="$IFS"
+        IFS='|' read -r msg _ _ hash _ _ author _ _ date <<< "$line"
+        IFS="$IFS_backup"
+
+        local prefix
+        prefix="$(parse_prefix "$msg")"
+        local is_breaking=false
+
+        if [[ -n "$prefix" ]]; then
+            local category
+            category="$(map_category "$prefix")"
+            local entry_msg
+            entry_msg="$(clean_message "$msg")"
+
+            if [[ -n "$category" ]]; then
+                if has_breaking_change "$msg"; then
+                    is_breaking=true
+                    entry_msg="BREAKING: ${entry_msg}"
+                    breaking=$((breaking + 1))
+                    local url
+                    url="$(get_commit_url "$hash")"
+                    breaking_entries_md="${breaking_entries_md}  - **${entry_msg}** ([${hash}](${url}))\n"
+                    breaking_entries_json="${breaking_entries_json}{\"message\":\"$(json_escape "$entry_msg")\",\"hash\":\"${hash}\"},"
+                fi
+
+                if [[ "$is_breaking" == false ]]; then
+                    local escaped_msg
+                    escaped_msg="$(json_escape "$entry_msg")"
+                    local md_entry="  - ${entry_msg} ([${hash}]($(get_commit_url "$hash")))"
+                    local json_entry="{\"message\":\"${escaped_msg}\",\"hash\":\"${hash}\"}"
+
+                    # Append to the right category
+                    local md_varname="md_${category// /_}"
+                    local json_varname="json_${category// /_}"
+                    if [[ -z "${!md_varname:-}" ]]; then
+                        eval "${md_varname}=\"${md_entry}\""
+                        eval "${json_varname}=\"${json_entry}\""
+                    else
+                        eval "${md_varname}=\"${!md_varname}\n${md_entry}\""
+                        eval "${json_varname}=\"${!json_varname},${json_entry}\""
+                    fi
+                fi
+                categorized=$((categorized + 1))
+            else
+                # Unknown type → Changed
+                local escaped_msg
+                escaped_msg="$(json_escape "$(clean_message "$msg")")"
+                if [[ -z "$md_Changed" ]]; then
+                    md_Changed="  - $(clean_message "$msg")"
+                    json_Changed="{\"message\":\"${escaped_msg}\",\"hash\":\"\"}"
+                else
+                    md_Changed="${md_Changed}\n  - $(clean_message "$msg")"
+                    json_Changed="${json_Changed},{\"message\":\"${escaped_msg}\",\"hash\":\"\"}"
+                fi
+            fi
+        else
+            # No conventional prefix → Changed
+            local escaped_msg
+            escaped_msg="$(json_escape "$msg")"
+            if [[ -z "$md_Changed" ]]; then
+                md_Changed="  - ${msg}"
+                json_Changed="{\"message\":\"${escaped_msg}\",\"hash\":\"\"}"
+            else
+                md_Changed="${md_Changed}\n  - ${msg}"
+                json_Changed="${json_Changed},{\"message\":\"${escaped_msg}\",\"hash\":\"\"}"
+            fi
+        fi
+    done <<< "$commits"
+
+    # ---- Version Header ----
+    local version="Unreleased"
+    local date_str
+    date_str="$(date +%Y-%m-%d)"
+    if [[ -n "$SINCE_REF" ]]; then
+        version="${SINCE_REF}"
+    else
+        local last_tag
+        last_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+        if [[ -n "$last_tag" ]]; then version="${last_tag}"; fi
+    fi
+
+    # ---- Output: JSON or Markdown ------------------------------------------
+
+    if [[ "$OUTPUT_FORMAT" == "json" ]]; then
+        echo "{"
+        echo "  \"version\": \"$(json_escape "$version")\","
+        echo "  \"date\": \"${date_str}\","
+        echo "  \"categories\": {"
+        local first_cat=true
+        for cat in "${CATEGORY_ORDER[@]}"; do
+            local json_varname="json_${cat// /_}"
+            local val="${!json_varname:-}"
+            if [[ -n "$val" ]]; then
+                if [[ "$first_cat" == false ]]; then echo ","; fi
+                first_cat=false
+                echo "    \"${cat}\": [${val}]"
+            fi
+        done
+        echo ""
+        echo "  },"
+        echo "  \"stats\": {"
+        echo "    \"total\": ${total},"
+        echo "    \"categorized\": ${categorized},"
+        echo "    \"breaking\": ${breaking}"
+        echo "  }"
+        echo "}"
+    else
+        # Markdown output
+        local output=""
+        output+="# Changelog\n\n"
+        output+="All notable changes to this project will be documented in this file.\n"
+        output+="The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),\n"
+        output+="and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n"
+        output+="Commits are parsed using the [Conventional Commits](https://www.conventionalcommits.org/) specification.\n"
+        output+="\n## [${version}] - ${date_str}\n\n"
+
+        if [[ $breaking -gt 0 ]]; then
+            output+="### 💥 Breaking Changes\n\n${breaking_entries_md}\n"
+        fi
+
+        for cat in "${CATEGORY_ORDER[@]}"; do
+            local md_varname="md_${cat// /_}"
+            local val="${!md_varname:-}"
+            if [[ -n "$val" ]]; then
+                local emoji
+                emoji="$(get_emoji "$cat")"
+                if [[ -n "$emoji" ]]; then
+                    output+="### ${emoji} ${cat}\n\n"
+                else
+                    output+="### ${cat}\n\n"
+                fi
+                output+="${val}\n\n"
+            fi
+        done
+
+        output+="---\n"
+        output+="_${categorized} categorized commits out of ${total} total${breaking:+ (${breaking} breaking)}_\n"
+
+        echo -e "$output"
+    fi
+}
+
+# ---- Prepend Existing Changelog (markdown only) -----------------------------
 
 prepend_changelog() {
     local new_content="$1"
     local output_file="$2"
-
     if [[ -f "$output_file" ]]; then
         local existing
         existing="$(cat "$output_file")"
-        # Remove BOM if present
         existing="$(echo -n "$existing" | sed '1s/^\xEF\xBB\xBF//')"
-
-        # Check if the existing file already has a header we should keep
-        # We'll insert the new content right after the title line
         echo -e "${new_content}\n\n$(cat "$output_file")"
     else
         echo "$new_content"
@@ -460,16 +445,13 @@ prepend_changelog() {
 main() {
     parse_args "$@"
 
-    # Verify we're in a git repo
     if ! git rev-parse --git-dir >/dev/null 2>&1; then
         error "Not inside a git repository."
         exit 1
     fi
 
-    # Change to repo root for git operations
     cd "$REPO_ROOT"
 
-    # Check for empty repo (no commits yet)
     if ! git rev-list --max-parents=0 HEAD &>/dev/null; then
         warn "This repository has no commits yet."
         echo ""
@@ -477,24 +459,22 @@ main() {
         exit 0
     fi
 
-    # Determine output file
     if [[ -z "$OUTPUT_FILE" ]]; then
         OUTPUT_FILE="$DEFAULT_OUTPUT"
     fi
 
     title "📋 Generating CHANGELOG"
 
-    # Show configuration
     echo -e "  ${CYAN}•${RESET} Repo root: ${BOLD}$REPO_ROOT${RESET}"
     echo -e "  ${CYAN}•${RESET} Since:     ${BOLD}${SINCE_REF:-last tag / all history}${RESET}"
     echo -e "  ${CYAN}•${RESET} Output:    ${BOLD}${OUTPUT_FILE}${RESET}"
+    echo -e "  ${CYAN}•${RESET} Format:    ${BOLD}${OUTPUT_FORMAT}${RESET}"
     echo -e "  ${CYAN}•${RESET} Dry run:   ${BOLD}${DRY_RUN}${RESET}"
     echo -e "  ${CYAN}•${RESET} Merges:    ${BOLD}${INCLUDE_MERGES}${RESET}"
     echo ""
 
-    # Generate changelog content
     local changelog_content
-    if ! changelog_content="$(generate_changelog)"; then
+    if ! changelog_content="$(generate_output)"; then
         error "Failed to generate changelog."
         exit 1
     fi
@@ -504,29 +484,24 @@ main() {
         exit 1
     fi
 
-    # Prepend to existing changelog if it exists
     local final_content
-    if [[ -f "$OUTPUT_FILE" ]]; then
+    if [[ -f "$OUTPUT_FILE" ]] && [[ "$OUTPUT_FORMAT" != "json" ]]; then
         info "Existing CHANGELOG found at ${OUTPUT_FILE} — prepending..."
         final_content="$(prepend_changelog "$changelog_content" "$OUTPUT_FILE")"
     else
         final_content="$changelog_content"
     fi
 
-    # Output
     if [[ "$DRY_RUN" == "true" ]]; then
-        # Strip ANSI for clean dry-run output
         echo ""
         echo -e "$final_content"
         echo ""
         info "Dry run complete — no files written."
     else
-        # Write to file
         echo "$final_content" > "$OUTPUT_FILE"
         info "CHANGELOG written to ${BOLD}${OUTPUT_FILE}${RESET}"
     fi
 
-    # Stats
     local commit_count
     commit_count="$(echo "$final_content" | grep -c "^- " || true)"
     echo ""

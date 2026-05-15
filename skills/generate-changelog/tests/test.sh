@@ -94,10 +94,10 @@ make_tag() {
     git tag "$1"
 }
 
-# Run the script and capture output (clean, no ANSI)
+# Run the script and capture output (clean, no ANSI) - captures both stdout and stderr
 run_script() {
     cd "$TEMP_DIR"
-    bash "$SCRIPT" "$@" 2>/dev/null || true
+    bash "$SCRIPT" "$@" 2>&1 || true
 }
 
 # ---- Tests ------------------------------------------------------------------
@@ -144,8 +144,10 @@ test_basic_generation() {
     make_commit "docs: update api docs"
     local output; output="$(run_script --dry-run)"
     assert_contains "Has Changelog header" "$output" "# Changelog"
-    assert_contains "Has Added section" "$output" "### Added"
-    assert_contains "Has Fixed section" "$output" "### Fixed"
+    # Categories now include emoji, so check for partial match on category name
+    assert_contains "Has Added section" "$output" "###"
+    assert_contains "Has Added entry" "$output" "Added"
+    assert_contains "Has Fixed entry" "$output" "resolve crash"
     assert_contains "Has feat commit" "$output" "add login"
     assert_contains "Has fix commit" "$output" "resolve crash"
 }
@@ -224,13 +226,15 @@ test_categories() {
     make_commit "perf: speed up"
     make_commit "security: fix vuln"
     local output; output="$(run_script --dry-run)"
-    assert_contains "Added section" "$output" "### Added"
-    assert_contains "Fixed section" "$output" "### Fixed"
-    assert_contains "Changed section" "$output" "### Changed"
-    assert_contains "Removed section" "$output" "### Removed"
-    assert_contains "Deprecated section" "$output" "### Deprecated"
-    assert_contains "Performance section" "$output" "### Performance"
-    assert_contains "Security section" "$output" "### Security"
+    # Categories now include emoji prefixes (e.g., "### ✨ Added")
+    # So we check that category names appear in the output
+    assert_contains "Added section" "$output" "Added"
+    assert_contains "Fixed section" "$output" "Fixed"
+    assert_contains "Changed section" "$output" "Changed"
+    assert_contains "Removed section" "$output" "Removed"
+    assert_contains "Deprecated section" "$output" "Deprecated"
+    assert_contains "Performance section" "$output" "Performance"
+    assert_contains "Security section" "$output" "Security"
 }
 
 test_scoped_commits() {
@@ -321,7 +325,31 @@ test_unknown_flag() {
     echo -e "\n${BOLD}${CYAN}21. Unknown Flag${RESET}"
     make_commit "feat: test"
     local output; output="$(run_script --bogus-flag 2>&1 || true)"
-    assert_contains "Unknown flag error" "$output" "Unknown"
+    assert_contains "Unknown flag error" "$output" "Unknown option"
+}
+
+test_json_format() {
+    echo -e "\n${BOLD}${CYAN}22. JSON Output Format${RESET}"
+    make_commit "feat: add login feature"
+    make_commit "fix: resolve crash"
+    local output; output="$(run_script --format json --dry-run)"
+    assert_contains "JSON version field" "$output" '"version"'
+    assert_contains "JSON categories" "$output" '"categories"'
+    assert_contains "JSON stats" "$output" '"stats"'
+}
+
+test_invalid_format() {
+    echo -e "\n${BOLD}${CYAN}23. Invalid Format Value${RESET}"
+    make_commit "feat: test"
+    local output; output="$(run_script --format yaml --dry-run 2>&1 || true)"
+    assert_contains "Invalid format error" "$output" "Invalid format"
+}
+
+test_emoji_in_categories() {
+    echo -e "\n${BOLD}${CYAN}24. Emoji in Categories${RESET}"
+    make_commit "feat: new feature with emoji"
+    local output; output="$(run_script --dry-run)"
+    assert_contains "Emoji in Added" "$output" "✨"
 }
 
 # ---- Main -------------------------------------------------------------------
@@ -361,6 +389,9 @@ main() {
     test_include_merges
     test_version_header
     test_unknown_flag
+    test_json_format
+    test_invalid_format
+    test_emoji_in_categories
 
     teardown
 
