@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown review for a GitHub PR."""
+import argparse, os, re, subprocess, sys, urllib.request
+
+
+def sh(cmd):
+    return subprocess.check_output(cmd, text=True).strip()
+
+
+def pr_diff(url):
+    if re.match(r"https://github.com/[^/]+/[^/]+/pull/\d+/?$", url):
+        return urllib.request.urlopen(url.rstrip('/') + '.diff', timeout=30).read().decode('utf-8', 'replace')
+    raise SystemExit('Expected PR URL like https://github.com/owner/repo/pull/123')
+
+
+def changed_files(diff):
+    files=[]
+    for line in diff.splitlines():
+        if line.startswith('diff --git '):
+            path=line.split(' b/',1)[-1]
+            files.append(path)
+    return files
+
+
+def local_review(diff, files):
+    added=sum(1 for l in diff.splitlines() if l.startswith('+') and not l.startswith('+++'))
+    removed=sum(1 for l in diff.splitlines() if l.startswith('-') and not l.startswith('---'))
+    risks=[]
+    suggestions=[]
+    low=diff.lower()
+    if any(k in low for k in ['auth','token','secret','password']):
+        risks.append('Security-sensitive code or text changed; verify secrets are not exposed and auth paths are covered.')
+    if any(k in low for k in ['migration','schema','database','sql']):
+        risks.append('Data/schema behavior changed; confirm migration/backward-compatibility plan.')
+    if added+removed>500:
+        risks.append('Large diff size increases review risk; consider splitting if possible.')
+    if not risks:
+        risks.append('No obvious high-risk pattern detected from the diff alone.')
+    if not re.search(r'(test|spec)', '\n'.join(files), re.I):
+        suggestions.append('Add or update tests that cover the changed behavior.')
+    suggestions.append('Run the project test/lint commands and include results in the PR.')
+    conf='Medium' if added+removed<800 else 'Low'
+    return f"""## PR Review
+
+### Summary
+This PR changes {len(files)} file(s) with approximately {added} added and {removed} removed lines. Main touched areas: {', '.join(files[:8])}{'...' if len(files)>8 else ''}.
+
+### Identified risks
+""" + ''.join(f'- {r}\n' for r in risks) + "\n### Improvement suggestions\n" + ''.join(f'- {s}\n' for s in suggestions) + f"\n### Confidence score: {conf}\n"
+
+
+def claude_review(diff):
+    prompt='''Review this pull request diff. Return Markdown with exactly these sections: Summary of changes (2-3 sentences), Identified risks, Improvement suggestions, Confidence score: Low / Medium / High.\n\nDIFF:\n'''+diff[:120000]
+    try:
+        return sh(['claude','-p',prompt])
+    except Exception:
+        return None
+
+
+def main():
+    ap=argparse.ArgumentParser(description='Structured Claude Code PR reviewer')
+    ap.add_argument('--pr', required=True, help='GitHub PR URL')
+    ap.add_argument('--no-claude', action='store_true', help='Use deterministic local fallback')
+    args=ap.parse_args()
+    diff=pr_diff(args.pr)
+    files=changed_files(diff)
+    out=None if args.no_claude else claude_review(diff)
+    print(out or local_review(diff, files))
+
+if __name__ == '__main__':
+    main()
