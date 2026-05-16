@@ -43,6 +43,12 @@ You're in the right place.
 
 ---
 
+## Tools
+
+- [Generate Changelog](docs/generate-changelog.md): `bash changelog.sh` creates a structured `CHANGELOG.md` from git history.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
