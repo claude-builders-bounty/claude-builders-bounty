@@ -1,0 +1,291 @@
+{
+  "name": "Weekly Dev Summary - Claude + n8n",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "seconds": 0
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn [{\n  json: {\n    since: lastWeek.toISOString(),\n    now: now.toISOString()\n  }\n}];"
+      },
+      "name": "Set Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getCommits",
+        "owner": "={{$credentials.githubApi.owner}}",
+        "repository": "={{$credentials.githubApi.repo}}",
+        "since": "={{$json.since}}"
+      },
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        650,
+        150
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "owner": "={{$credentials.githubApi.owner}}",
+        "repository": "={{$credentials.githubApi.repo}}",
+        "filters": {
+          "state": "closed",
+          "since": "={{$json.since}}"
+        },
+        "returnAll": true
+      },
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "owner": "={{$credentials.githubApi.owner}}",
+        "repository": "={{$credentials.githubApi.repo}}",
+        "filters": {
+          "state": "closed"
+        },
+        "returnAll": true
+      },
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        650,
+        450
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.all()[0]?.json || [];\nconst issues = $input.all()[1]?.json || [];\nconst prs = $input.all()[2]?.json || [];\n\nconst summary = {\n  commits: commits.slice(0, 20).map(c => ({\n    message: c.commit?.message?.split('\\n')[0] || '',\n    author: c.commit?.author?.name || '',\n    date: c.commit?.author?.date || ''\n  })),\n  closedIssues: issues.filter(i => i.state === 'closed').slice(0, 20).map(i => ({\n    number: i.number,\n    title: i.title,\n    closedAt: i.closed_at\n  })),\n  mergedPRs: prs.filter(p => p.merged_at).slice(0, 20).map(p => ({\n    number: p.number,\n    title: p.title,\n    author: p.user?.login || ''\n  }))\n};\n\nreturn [{ json: summary }];"
+      },
+      "name": "Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        850,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "message": [
+            {
+              "role": "system",
+              "content": "You are a technical writer creating weekly development summaries for engineering teams. Be concise but informative."
+            },
+            {
+              "role": "user",
+              "content": "=Write a weekly dev summary for {{$credentials.githubApi.owner}}/{{$credentials.githubApi.repo}} based on this week's activity:\n\nCommits ({{$json.commits.length}}):\n{{JSON.stringify($json.commits.slice(0,10), null, 2)}}\n\nClosed Issues ({{$json.closedIssues.length}}):\n{{JSON.stringify($json.closedIssues.slice(0,10), null, 2)}}\n\nMerged PRs ({{$json.mergedPRs.length}}):\n{{JSON.stringify($json.mergedPRs.slice(0,10), null, 2)}}\n\nFormat as a narrative paragraph (3-5 sentences). Mention highlights and key contributors."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 1500
+        }
+      },
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-creds",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "webhookUri": "={{$env.DISCORD_WEBHOOK_URL}}",
+        "content": "=📝 **Weekly Dev Summary: {{$credentials.githubApi.owner}}/{{$credentials.githubApi.repo}}**\n\n{{$json.content}}\n\n_Generated by Claude + n8n_",
+        "options": {}
+      },
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Date Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Date Range": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Data": {
+      "main": [
+        [
+          {
+            "node": "Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Chicago"
+  },
+  "tags": [
+    "claude",
+    "github",
+    "dev-summary",
+    "automation"
+  ]
+}
