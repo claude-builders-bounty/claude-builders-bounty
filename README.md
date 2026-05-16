@@ -43,6 +43,12 @@ You're in the right place.
 
 ---
 
+## Tools
+
+- [Claude PR Review Agent](docs/pr-review-agent.md): CLI that reviews a GitHub PR diff and prints a structured Markdown comment.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
