@@ -1,53 +1,24 @@
-# Claude Builders Bounty 🤖
+# Weekly Dev Summary — n8n + Claude Code
 
-> A community bounty board for Claude Code builders.
+**Bounty:** [#5](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/5) ($200)
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+An n8n workflow that generates a narrative weekly dev summary using Claude API.
 
----
+## Nodes
+| Node | Type | Purpose |
+|------|------|---------|
+| Weekly Cron | ScheduleTrigger | Runs Friday 5pm |
+| Get Commits | GitHub | Fetch repo commits |
+| Get Merged PRs | GitHub | Fetch closed/merged PRs |
+| Get Closed Issues | GitHub | Fetch closed issues |
+| Merge Data | Merge | Combine all sources |
+| Build Prompt | Set | Format Claude prompt |
+| Claude API | HTTP Request | Generate summary |
+| Format Output | Set | Format markdown report |
 
-## How it works
-
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## Setup
+1. Import `weekly-dev-summary.json` into n8n
+2. Add GitHub credential (PAT with `repo` scope)
+3. Add Anthropic credential (API key)
+4. Set workflow variables: `owner`, `repo`, `email`
+5. Activate
