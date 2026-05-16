@@ -1,0 +1,466 @@
+{
+  "name": "Weekly GitHub Activity Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": 1,
+          "unit": "weeks"
+        },
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyWeek",
+              "hour": 9,
+              "minute": 0,
+              "weekday": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "⏰ Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repo",
+              "value": "={{ $json.repo || $env.GITHUB_REPO || 'owner/repo' }}"
+            },
+            {
+              "name": "days",
+              "value": "7"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-repo",
+      "name": "🐙 Configure Repository",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.repo + '/pulls?state=closed&sort=updated&direction=desc&per_page=20' }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "n8n-weekly-summary/1.0"
+          }
+        },
+        "sendHeaders": true,
+        "sendBody": false,
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "fetch-prs",
+      "name": "📥 Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.repo + '/issues?state=closed&sort=updated&direction=desc&per_page=20' }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "n8n-weekly-summary/1.0"
+          }
+        },
+        "sendHeaders": true,
+        "sendBody": false,
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "fetch-issues",
+      "name": "🐛 Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        500,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.repo + '/commits?sha=main&per_page=20' }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "n8n-weekly-summary/1.0"
+          }
+        },
+        "sendHeaders": true,
+        "sendBody": false,
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "fetch-commits",
+      "name": "📝 Fetch Recent Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        500,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.repo + '/releases?per_page=5' }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "n8n-weekly-summary/1.0"
+          }
+        },
+        "sendHeaders": true,
+        "sendBody": false,
+        "method": "GET",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "fetch-releases",
+      "name": "🏷 Fetch Releases",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        500,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all data sources into one object\nconst prs = $input.all()[0]?.json || [];\nconst issues = $input.all()[1]?.json || [];\nconst commits = $input.all()[2]?.json || [];\nconst releases = $input.all()[3]?.json || [];\n\nconst repo = $json.repo;\n\n// Filter PRs merged in last 7 days\nconst mergedPRs = Array.isArray(prs) ? prs.filter(pr =>\n  pr.merged_at && new Date(pr.merged_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)\n) : [];\n\n// Filter issues from last 7 days\nconst recentIssues = Array.isArray(issues) ? issues.filter(issue =>\n  new Date(issue.closed_at || issue.updated_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)\n) : [];\n\n// Filter commits from last 7 days\nconst recentCommits = Array.isArray(commits) ? commits.filter(c =>\n  new Date(c.commit.author.date) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)\n) : [];\n\n// Get releases\nconst recentReleases = Array.isArray(releases) ? releases.slice(0, 5) : [];\n\nreturn {\n  repo,\n  week_ending: new Date().toISOString().split('T')[0],\n  stats: {\n    merged_prs: mergedPRs.length,\n    closed_issues: recentIssues.length,\n    commits: recentCommits.length,\n    releases: recentReleases.length,\n  },\n  merged_prs: mergedPRs.map(pr => ({\n    title: pr.title,\n    author: pr.user?.login,\n    url: pr.html_url,\n    merged_at: pr.merged_at,\n  })),\n  closed_issues: recentIssues.map(issue => ({\n    title: issue.title,\n    url: issue.html_url,\n    labels: issue.labels?.map(l => l.name) || [],\n  })),\n  recent_commits: recentCommits.slice(0, 5).map(c => ({\n    message: c.commit.message.split('\\n')[0],\n    author: c.commit.author.name,\n    url: c.html_url,\n  })),\n  releases: recentReleases.map(r => ({\n    name: r.name || r.tag_name,\n    url: r.html_url,\n    published_at: r.published_at,\n  })),\n};"
+      },
+      "id": "merge-data",
+      "name": "🔗 Merge Data Sources",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CLAUDE_API_URL || 'https://api.anthropic.com/v1/messages' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "sendBody": true,
+        "method": "POST",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": false,
+        "jsonParameters": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "={{ $env.CLAUDE_MODEL || 'claude-sonnet-4-20250514' }}"
+            },
+            {
+              "name": "max_tokens",
+              "value": 4000
+            },
+            {
+              "name": "system",
+              "value": "You are a technical writer creating a weekly narrative summary of GitHub repository activity. Write in a professional yet engaging tone. Focus on meaningful changes, not just counting activities."
+            },
+            {
+              "name": "messages",
+              "value": "=[\n  {\n    \"role\": \"user\",\n    \"content\": \"Create a weekly narrative summary for the GitHub repository {{ $json.repo }} for the week ending {{ $json.week_ending }}.\n\nRepository Activity:\n- Merged PRs: {{ $json.stats.merged_prs }}\n- Closed Issues: {{ $json.stats.closed_issues }}\n- Commits: {{ $json.stats.commits }}\n- Releases: {{ $json.stats.releases }}\n\nMerged Pull Requests:\n{{ JSON.stringify($json.merged_prs, null, 2) }}\n\nClosed Issues:\n{{ JSON.stringify($json.closed_issues, null, 2) }}\n\nRecent Commits:\n{{ JSON.stringify($json.recent_commits, null, 2) }}\n\nReleases:\n{{ JSON.stringify($json.releases, null, 2) }}\n\nWrite a narrative summary covering:\n1. **Overview** - What was the main theme of the week?\n2. **New Features & Improvements** - What was shipped?\n3. **Bug Fixes** - What was fixed?\n4. **Behind the Scenes** - Refactoring, deps, infrastructure\n5. **Looking Forward** - What is coming next?\n\nKeep it concise (300-500 words). Use Markdown formatting.\"\n  }\n]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "call-claude",
+      "name": "🤖 Claude Weekly Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude API response\nconst response = $json;\nlet summary = '';\n\nif (response.content && Array.isArray(response.content)) {\n  // Anthropic format\n  summary = response.content\n    .filter(c => c.type === 'text')\n    .map(c => c.text)\n    .join('\\n');\n} else if (response.choices) {\n  // OpenAI format fallback\n  summary = response.choices[0]?.message?.content || '';\n} else if (typeof response === 'string') {\n  summary = response;\n}\n\nreturn {\n  repo: $json.repo,\n  week_ending: $json.week_ending,\n  summary: summary || 'No summary generated',\n  word_count: (summary || '').split(' ').length,\n  generated_at: new Date().toISOString(),\n};"
+      },
+      "id": "parse-response",
+      "name": "📝 Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format the final markdown document\nconst summary = $json.summary;\nconst repo = $json.repo;\nconst weekEnding = $json.week_ending;\n\nconst markdown = [\n  '# Weekly Dev Summary: ' + repo,\n  '',\n  '**Week ending:** ' + weekEnding + '  |  **Generated:** ' + new Date().toLocaleString(),\n  '',\n  '---',\n  '',\n  summary,\n  '',\n  '---',\n  '',\n  '*Generated by n8n workflow using Claude AI*'\n].join('\\n');\n\nreturn {\n  repo: repo,\n  week_ending: weekEnding,\n  markdown_summary: markdown,\n  generated_at: $json.generated_at,\n};"
+      },
+      "id": "format-markdown",
+      "name": "📄 Format Markdown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "topic": "Weekly Dev Summary: {{ $json.repo }}",
+        "text": "={{ $json.markdown_summary }}",
+        "additionalFields": {},
+        "resource": "message",
+        "operation": "post",
+        "channelId": "={{ $env.SLACK_CHANNEL || '#engineering' }}"
+      },
+      "id": "send-slack",
+      "name": "📬 Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Save summary info\nconst repo = $json.repo.replace('/', '-');\nconst date = $json.week_ending;\n\nreturn {\n  repo: $json.repo,\n  date: $json.week_ending,\n  markdown: $json.markdown_summary,\n  file: 'weekly-summaries/' + repo + '-' + date + '.md',\n  word_count: $json.markdown_summary.split(' ').length,\n};"
+      },
+      "id": "save-local",
+      "name": "💾 Save Local Copy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WEBHOOK_URL || '' }}",
+        "sendBody": true,
+        "jsonParameters": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "repo",
+              "value": "={{ $json.repo }}"
+            },
+            {
+              "name": "summary",
+              "value": "={{ $json.markdown }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "webhook-out",
+      "name": "🔌 Custom Webhook (optional)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1500,
+        700
+      ]
+    }
+  ],
+  "connections": {
+    "schedule-trigger": {
+      "main": [
+        [
+          {
+            "node": "set-repo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "set-repo": {
+      "main": [
+        [
+          {
+            "node": "fetch-prs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "fetch-issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "fetch-commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "fetch-releases",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "fetch-prs": {
+      "main": [
+        [
+          {
+            "node": "merge-data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "fetch-issues": {
+      "main": [
+        [
+          {
+            "node": "merge-data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "fetch-commits": {
+      "main": [
+        [
+          {
+            "node": "merge-data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "fetch-releases": {
+      "main": [
+        [
+          {
+            "node": "merge-data",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "merge-data": {
+      "main": [
+        [
+          {
+            "node": "call-claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call-claude": {
+      "main": [
+        [
+          {
+            "node": "parse-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse-response": {
+      "main": [
+        [
+          {
+            "node": "format-markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "format-markdown": {
+      "main": [
+        [
+          {
+            "node": "send-slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "save-local",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "webhook-out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "automation"
+    },
+    {
+      "name": "github"
+    },
+    {
+      "name": "weekly-report"
+    },
+    {
+      "name": "claude"
+    }
+  ]
+}
