@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""
+claude-review — Claude Code sub-agent that reviews PRs and posts structured comments
+Usage: claude-review --pr https://github.com/owner/repo/pull/123
+       claude-review --repo owner/repo --pr-number 123
+       claude-review --diff-file /path/to/diff.patch
+"""
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+from claude_review_lib import (
+    fetch_pr_diff, generate_review, build_review_prompt,
+    post_github_comment, parse_pr_url
+)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude PR Review Agent")
+    parser.add_argument("--pr", help="Full GitHub PR URL")
+    parser.add_argument("--repo", help="Owner/repo format")
+    parser.add_argument("--pr-number", type=int, help="PR number")
+    parser.add_argument("--diff-file", help="Read diff from local file instead of fetching")
+    parser.add_argument("--post", action="store_true", help="Post review as GitHub comment (needs GITHUB_TOKEN)")
+    parser.add_argument("--output", "-o", help="Write review to file instead of stdout")
+    parser.add_argument("--model", default="~anthropic/claude-sonnet-latest", help="OpenRouter model to use")
+    parser.add_argument("--ollama-model", default="gemma4:latest", help="Ollama fallback model")
+    args = parser.parse_args()
+    
+    # Load API keys
+    github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN_CLASSIC") or os.environ.get("GITHUB_PAT")
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    
+    # Resolve repo and PR number
+    if args.pr:
+        repo, pr_number = parse_pr_url(args.pr)
+    elif args.repo and args.pr_number:
+        repo = args.repo
+        pr_number = args.pr_number
+    elif args.diff_file:
+        # When reading from local diff file, use placeholders
+        repo = args.repo or "local/diff"
+        pr_number = args.pr_number or 0
+    else:
+        print("❌ Need --pr URL or --repo + --pr-number")
+        sys.exit(1)
+    
+    # Fetch diff
+    if args.diff_file:
+        diff = Path(args.diff_file).read_text()
+        print(f"📄 Loaded diff from {args.diff_file} ({len(diff)} chars)")
+    else:
+        print(f"🔽 Fetching diff for {repo}#{pr_number}...")
+        diff = fetch_pr_diff(repo, pr_number, github_token)
+        print(f"   Fetched {len(diff)} chars")
+    
+    # Build prompt and generate review
+    print("🧠 Generating review...")
+    prompt = build_review_prompt(diff, repo, pr_number)
+    review = generate_review(prompt, api_key=openrouter_key, model=args.model)
+    
+    # Output
+    review_text = f"# 🔍 PR Review: {repo}#{pr_number}\n\n{review}\n\n---\n*Reviewed by Claude Code PR Review Agent*"
+    
+    if args.output:
+        Path(args.output).write_text(review_text)
+        print(f"✅ Review saved to {args.output}")
+    else:
+        print("\n" + "="*60)
+        print(review_text)
+        print("="*60)
+    
+    # Post to GitHub if requested
+    if args.post:
+        if not github_token:
+            print("❌ --post requires GITHUB_TOKEN (or GITHUB_TOKEN_CLASSIC / GITHUB_PAT)")
+            sys.exit(1)
+        print(f"📤 Posting comment to PR...")
+        comment_url = post_github_comment(repo, pr_number, review_text, github_token)
+        print(f"✅ Posted: {comment_url}")
+
+
+if __name__ == "__main__":
+    main()
