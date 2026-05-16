@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Claude Code PreToolUse hook that blocks destructive Bash commands."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+LOG_FILE = Path.home() / ".claude" / "hooks" / "blocked.log"
+
+
+def read_command() -> tuple[str, str]:
+    raw = sys.stdin.read().strip()
+    if raw:
+        try:
+            payload = json.loads(raw)
+            command = payload.get("tool_input", {}).get("command", "")
+            cwd = payload.get("cwd") or os.getcwd()
+            return command, cwd
+        except json.JSONDecodeError:
+            pass
+    command = " ".join(sys.argv[1:])
+    return command, os.getcwd()
+
+
+def delete_without_where(command: str) -> bool:
+    for match in re.finditer(r"\bDELETE\s+FROM\b", command, flags=re.IGNORECASE):
+        tail = command[match.end():]
+        statement = re.split(r";|&&|\|\||\n", tail, maxsplit=1)[0]
+        if not re.search(r"\bWHERE\b", statement, flags=re.IGNORECASE):
+            return True
+    return False
+
+
+def blocked_reason(command: str) -> str | None:
+    checks = [
+        (r"\brm\s+-[A-Za-z]*r[A-Za-z]*f[A-Za-z]*\b", "recursive forced remove command"),
+        (r"\bDROP\s+TABLE\b", "DROP TABLE statement"),
+        (r"\bTRUNCATE\b", "TRUNCATE statement"),
+        (r"\bgit\s+push\b[^\n;]*\s(?:--force(?:-with-lease)?|-f)\b", "force push"),
+    ]
+    for pattern, reason in checks:
+        if re.search(pattern, command, flags=re.IGNORECASE):
+            return reason
+    if delete_without_where(command):
+        return "DELETE FROM without a WHERE clause"
+    return None
+
+
+def log_blocked(command: str, cwd: str, reason: str) -> None:
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with LOG_FILE.open("a", encoding="utf-8") as handle:
+        handle.write(f"[{timestamp}] BLOCKED: {command} | Project: {cwd} | Reason: {reason}\n")
+
+
+def deny(reason: str, command: str) -> None:
+    message = f"Blocked destructive Bash command: {reason}. Command: {command}"
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": message,
+        }
+    }))
+
+
+def main() -> int:
+    command, cwd = read_command()
+    if not command:
+        return 0
+    reason = blocked_reason(command)
+    if reason:
+        log_blocked(command, cwd, reason)
+        deny(reason, command)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
