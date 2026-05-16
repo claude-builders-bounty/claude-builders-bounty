@@ -1,0 +1,486 @@
+{
+  "name": "Weekly GitHub Dev Summary — Claude + Slack/Discord",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        80,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "weekly-schedule",
+      "name": "Weekly Schedule — Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repo = ($vars.GITHUB_REPO || 'n8n-io/n8n').trim();\nif (!repo.includes('/')) {\n  throw new Error('GITHUB_REPO must use owner/repo format, for example n8n-io/n8n');\n}\nconst [owner, name] = repo.split('/');\nconst now = new Date();\nconst since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst language = (($vars.LANGUAGE || 'EN') + '').toUpperCase();\nconst deliveryMode = (($vars.DELIVERY_MODE || 'slack') + '').toLowerCase();\nconst destinationChannel = $vars.DESTINATION_CHANNEL || '';\nreturn [{\n  json: {\n    repo,\n    owner,\n    name,\n    since: since.toISOString(),\n    until: now.toISOString(),\n    language: ['EN', 'FR'].includes(language) ? language : 'EN',\n    delivery_mode: ['slack', 'discord'].includes(deliveryMode) ? deliveryMode : 'slack',\n    destination_channel: destinationChannel\n  }\n}];"
+      },
+      "id": "build-config",
+      "name": "Build Weekly Run Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        330,
+        410
+      ],
+      "notesInFlow": true,
+      "notes": "Configurable variables: GITHUB_REPO, LANGUAGE, DELIVERY_MODE, DESTINATION_CHANNEL."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "dry-run-enabled",
+              "leftValue": "={{ $vars.DRY_RUN }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-dry-run",
+      "name": "Dry Run Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        570,
+        410
+      ],
+      "notesInFlow": true,
+      "notes": "Set DRY_RUN=true for a no-secret validation execution using sample data."
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Build Weekly Run Config').first().json;\nreturn [{\n  json: {\n    ...cfg,\n    commits: [\n      { message: 'Add OAuth callback validation', author: 'sam', date: cfg.since, url: 'https://github.com/example/repo/commit/abc123' },\n      { message: 'Improve dashboard loading state', author: 'lee', date: cfg.until, url: 'https://github.com/example/repo/commit/def456' },\n      { message: 'Document deployment variables', author: 'mira', date: cfg.until, url: 'https://github.com/example/repo/commit/789abc' }\n    ],\n    closed_issues: [\n      { number: 42, title: 'OAuth callback fails on expired state', url: 'https://github.com/example/repo/issues/42', labels: ['bug'] },\n      { number: 45, title: 'Deployment docs missing webhook variables', url: 'https://github.com/example/repo/issues/45', labels: ['docs'] }\n    ],\n    merged_prs: [\n      { number: 77, title: 'Harden auth callback checks', author: 'sam', url: 'https://github.com/example/repo/pull/77', additions: 124, deletions: 31, changed_files: 5 },\n      { number: 82, title: 'Add production deployment guide', author: 'mira', url: 'https://github.com/example/repo/pull/82', additions: 88, deletions: 4, changed_files: 2 }\n    ],\n    source: 'dry-run-sample'\n  }\n}];"
+      },
+      "id": "dry-run-sample",
+      "name": "Generate Dry Run Sample Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        830,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/graphql",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $vars.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  query: `query RepoWeekly($owner: String!, $name: String!, $since: GitTimestamp!) {\n    repository(owner: $owner, name: $name) {\n      defaultBranchRef {\n        target {\n          ... on Commit {\n            history(first: 100, since: $since) {\n              nodes { oid committedDate messageHeadline url author { name email user { login } } }\n            }\n          }\n        }\n      }\n      issues(first: 100, states: CLOSED, orderBy: { field: UPDATED_AT, direction: DESC }) {\n        nodes { number title closedAt url labels(first: 10) { nodes { name } } author { login } }\n      }\n      pullRequests(first: 100, states: MERGED, orderBy: { field: UPDATED_AT, direction: DESC }) {\n        nodes { number title mergedAt url additions deletions changedFiles author { login } }\n      }\n    }\n  }`,\n  variables: { owner: $json.owner, name: $json.name, since: $json.since }\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-github",
+      "name": "Fetch GitHub Activity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        830,
+        570
+      ],
+      "notesInFlow": true,
+      "notes": "Uses GitHub GraphQL API to fetch commits, recently closed issues, and merged PRs."
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Build Weekly Run Config').first().json;\nconst response = $input.first().json;\nif (response.errors) {\n  throw new Error('GitHub GraphQL error: ' + JSON.stringify(response.errors));\n}\nconst repository = response.data?.repository;\nif (!repository) {\n  throw new Error('GitHub response did not include repository data. Check GITHUB_REPO and GITHUB_TOKEN.');\n}\nconst sinceMs = new Date(cfg.since).getTime();\nconst commits = (repository.defaultBranchRef?.target?.history?.nodes || []).map(c => ({\n  message: c.messageHeadline,\n  author: c.author?.user?.login || c.author?.name || 'unknown',\n  date: c.committedDate,\n  url: c.url\n}));\nconst closed_issues = (repository.issues?.nodes || [])\n  .filter(i => i.closedAt && new Date(i.closedAt).getTime() >= sinceMs)\n  .map(i => ({\n    number: i.number,\n    title: i.title,\n    url: i.url,\n    closed_at: i.closedAt,\n    labels: (i.labels?.nodes || []).map(l => l.name)\n  }));\nconst merged_prs = (repository.pullRequests?.nodes || [])\n  .filter(p => p.mergedAt && new Date(p.mergedAt).getTime() >= sinceMs)\n  .map(p => ({\n    number: p.number,\n    title: p.title,\n    author: p.author?.login || 'unknown',\n    url: p.url,\n    merged_at: p.mergedAt,\n    additions: p.additions,\n    deletions: p.deletions,\n    changed_files: p.changedFiles\n  }));\nreturn [{ json: { ...cfg, commits, closed_issues, merged_prs, source: 'github-graphql' } }];"
+      },
+      "id": "normalize",
+      "name": "Normalize Week Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        570
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst heading = data.language === 'FR'\n  ? 'Tu es un tech lead qui rédige un résumé hebdomadaire clair pour une équipe produit.'\n  : 'You are a tech lead writing a concise weekly development narrative for a product team.';\nconst instructions = data.language === 'FR'\n  ? 'Rédige en français. Structure: Highlights, Risques/Blocages, Détails clés, Prochaines étapes. Reste sous 500 mots.'\n  : 'Write in English. Structure: Highlights, Risks/Blockers, Key Details, Next Steps. Keep it under 500 words.';\nconst compact = {\n  repo: data.repo,\n  week: { since: data.since.slice(0, 10), until: data.until.slice(0, 10) },\n  counts: {\n    commits: data.commits.length,\n    closed_issues: data.closed_issues.length,\n    merged_prs: data.merged_prs.length\n  },\n  commits: data.commits.slice(0, 30),\n  closed_issues: data.closed_issues.slice(0, 30),\n  merged_prs: data.merged_prs.slice(0, 30)\n};\nconst prompt = `${heading}\\n\\n${instructions}\\n\\nWeekly GitHub activity JSON:\\n${JSON.stringify(compact, null, 2)}`;\nreturn [{\n  json: {\n    ...data,\n    claude_request: {\n      model: 'claude-sonnet-4-20250514',\n      max_tokens: 1400,\n      messages: [{ role: 'user', content: prompt }]\n    }\n  }\n}];"
+      },
+      "id": "prepare-claude",
+      "name": "Prepare Claude Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1330,
+        570
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $vars.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.claude_request}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API — Narrative Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1580,
+        570
+      ],
+      "notesInFlow": true,
+      "notes": "Calls claude-sonnet-4-20250514 as required by the bounty."
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Prepare Claude Request').first().json;\nconst response = $input.first().json;\nconst summary = response.content?.[0]?.text || response.output_text || 'Claude API returned no summary text.';\nreturn [{ json: { ...base, summary, generated_by: 'claude-api' } }];"
+      },
+      "id": "extract-claude",
+      "name": "Extract Claude Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1830,
+        570
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Generate Dry Run Sample Data').first().json;\nconst summary = data.language === 'FR'\n  ? `## Highlights\\n- ${data.commits.length} commits, ${data.closed_issues.length} tickets fermés et ${data.merged_prs.length} PRs fusionnées cette semaine.\\n- Le travail s'est concentré sur l'authentification, les états de chargement et la documentation de déploiement.\\n\\n## Risques / Blocages\\n- Aucun blocage critique détecté dans l'échantillon de validation.\\n\\n## Prochaines étapes\\n- Vérifier le prochain cycle de déploiement et surveiller les webhooks.`\n  : `## Highlights\\n- ${data.commits.length} commits, ${data.closed_issues.length} issues closed, and ${data.merged_prs.length} PRs merged this week.\\n- Work focused on authentication hardening, dashboard polish, and deployment documentation.\\n\\n## Risks / Blockers\\n- No critical blockers were detected in the validation sample.\\n\\n## Next Steps\\n- Verify the next deployment cycle and monitor webhook delivery.`;\nreturn [{ json: { ...data, summary, generated_by: 'dry-run' } }];"
+      },
+      "id": "demo-summary",
+      "name": "Generate Dry Run Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst title = data.language === 'FR'\n  ? `Résumé hebdomadaire — ${data.repo}`\n  : `Weekly Dev Summary — ${data.repo}`;\nconst period = `${data.since.slice(0, 10)} → ${data.until.slice(0, 10)}`;\nconst footer = data.language === 'FR'\n  ? `_Généré par n8n + Claude (${data.generated_by})_`\n  : `_Generated by n8n + Claude (${data.generated_by})_`;\nconst body = `*${title}*\\n${period}\\n\\n${data.summary}\\n\\n${footer}`;\nconst mode = data.delivery_mode || 'slack';\nlet delivery_url = '';\nlet payload = {};\nif (mode === 'discord') {\n  delivery_url = $vars.DISCORD_WEBHOOK_URL;\n  payload = {\n    username: 'Weekly Dev Summary',\n    embeds: [{\n      title,\n      description: `${period}\\n\\n${data.summary}`.slice(0, 4000),\n      color: 5814783,\n      footer: { text: `n8n + Claude · ${data.generated_by}` }\n    }]\n  };\n} else {\n  delivery_url = $vars.SLACK_WEBHOOK_URL;\n  payload = {\n    text: body,\n    channel: data.destination_channel || undefined,\n    blocks: [\n      { type: 'header', text: { type: 'plain_text', text: title.slice(0, 150) } },\n      { type: 'context', elements: [{ type: 'mrkdwn', text: period }] },\n      { type: 'section', text: { type: 'mrkdwn', text: data.summary.slice(0, 2900) } },\n      { type: 'context', elements: [{ type: 'mrkdwn', text: footer }] }\n    ]\n  };\n}\nif (!delivery_url && data.generated_by !== 'dry-run') {\n  throw new Error(`Missing webhook URL for DELIVERY_MODE=${mode}. Set SLACK_WEBHOOK_URL or DISCORD_WEBHOOK_URL.`);\n}\nreturn [{ json: { ...data, title, body, delivery_url, payload } }];"
+      },
+      "id": "format-delivery",
+      "name": "Format Slack/Discord Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        410
+      ],
+      "notesInFlow": true,
+      "notes": "Builds Slack or Discord payload based on DELIVERY_MODE and DESTINATION_CHANNEL."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "not-dry-run",
+              "leftValue": "={{ $json.generated_by }}",
+              "rightValue": "dry-run",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-send",
+      "name": "Send Real Webhook?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2330,
+        410
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.delivery_url}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.payload}}",
+        "options": {}
+      },
+      "id": "send-webhook",
+      "name": "Send Slack/Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2580,
+        570
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nreturn [{ json: { status: 'ok', mode: 'dry-run', title: data.title, body: data.body, payload: data.payload } }];"
+      },
+      "id": "dry-run-result",
+      "name": "Dry Run Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2580,
+        250
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Weekly Run Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Schedule — Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Build Weekly Run Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Weekly Run Config": {
+      "main": [
+        [
+          {
+            "node": "Dry Run Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dry Run Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Generate Dry Run Sample Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Dry Run Sample Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Dry Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Dry Run Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Slack/Discord Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Activity": {
+      "main": [
+        [
+          {
+            "node": "Normalize Week Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Week Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Claude Request": {
+      "main": [
+        [
+          {
+            "node": "Claude API — Narrative Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API — Narrative Summary": {
+      "main": [
+        [
+          {
+            "node": "Extract Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Slack/Discord Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slack/Discord Payload": {
+      "main": [
+        [
+          {
+            "node": "Send Real Webhook?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Real Webhook?": {
+      "main": [
+        [
+          {
+            "node": "Send Slack/Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Dry Run Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-05-16T15:30:00.000Z",
+  "versionId": "issue-5-n8n-claude-weekly-summary",
+  "id": "issue5WeeklySummary",
+  "active": false,
+  "createdAt": "2026-05-16T15:30:00.000Z",
+  "isArchived": false
+}
