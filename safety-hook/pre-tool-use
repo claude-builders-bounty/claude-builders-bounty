@@ -1,0 +1,93 @@
+#!/bin/bash
+# ============================================================================
+# Claude Code Pre-Tool-Use Hook
+# Blocks dangerous bash commands from being executed accidentally
+# 
+# Installation: cp this file to ~/.claude/hooks/pre-tool-use && chmod +x
+# ============================================================================
+
+# ---- Detect Tool Name and Command ----
+# Claude Code passes tool info via env vars (preferred) or argument
+TOOL_NAME="${CLAUDE_TOOL_NAME:-$1}"
+COMMAND="${CLAUDE_TOOL_INPUT:-}"
+
+# Only intercept the bash tool - let all other tools pass through
+if [ "$TOOL_NAME" != "bash" ]; then
+    exit 0
+fi
+
+LOG_FILE="$HOME/.claude/hooks/blocked.log"
+PROJECT_PATH="$(pwd)"
+
+# ---------- Block Patterns ----------
+# Exit codes:  0 = allow | 1 = block
+
+# 1. rm -rf (recursive force delete)
+if echo "$COMMAND" | grep -qiE '(^|[;&|])[[:space:]]*rm[[:space:]]+-rf'; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] BLOCKED: rm -rf | Cmd: $COMMAND | Path: $PROJECT_PATH" >> "$LOG_FILE"
+    echo ""
+    echo "╔══════════════════════════════════════════════╗"
+    echo "║  ❌ SAFETY BLOCK: rm -rf detected           ║"
+    echo "║  Recursive force delete is too dangerous.   ║"
+    echo "║  Use 'rm -r' with confirmation instead.     ║"
+    echo "╚══════════════════════════════════════════════╝"
+    echo "Logged to: $LOG_FILE"
+    exit 1
+fi
+
+# 2. DROP TABLE (database destruction)
+if echo "$COMMAND" | grep -qiE '\bDROP\s+TABLE\b'; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] BLOCKED: DROP TABLE | Cmd: $COMMAND | Path: $PROJECT_PATH" >> "$LOG_FILE"
+    echo ""
+    echo "╔══════════════════════════════════════════════╗"
+    echo "║  ❌ SAFETY BLOCK: DROP TABLE detected       ║"
+    echo "║  Dropping a table is irreversible.          ║"
+    echo "║  Use a migration tool or backup first.      ║"
+    echo "╚══════════════════════════════════════════════╝"
+    echo "Logged to: $LOG_FILE"
+    exit 1
+fi
+
+# 3. TRUNCATE (database mass deletion)
+if echo "$COMMAND" | grep -qiE '\bTRUNCATE\b'; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] BLOCKED: TRUNCATE | Cmd: $COMMAND | Path: $PROJECT_PATH" >> "$LOG_FILE"
+    echo ""
+    echo "╔══════════════════════════════════════════════╗"
+    echo "║  ❌ SAFETY BLOCK: TRUNCATE detected         ║"
+    echo "║  Truncating a table removes ALL data.       ║"
+    echo "║  Consider DELETE with WHERE instead.        ║"
+    echo "╚══════════════════════════════════════════════╝"
+    echo "Logged to: $LOG_FILE"
+    exit 1
+fi
+
+# 4. git push --force (forced overwrite)
+if echo "$COMMAND" | grep -qiE '\bgit\s+push\s+.*(--force|-f)\b'; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] BLOCKED: git push --force | Cmd: $COMMAND | Path: $PROJECT_PATH" >> "$LOG_FILE"
+    echo ""
+    echo "╔══════════════════════════════════════════════╗"
+    echo "║  ❌ SAFETY BLOCK: git push --force          ║"
+    echo "║  Force push overwrites remote history.      ║"
+    echo "║  Use 'git push --force-with-lease' instead. ║"
+    echo "╚══════════════════════════════════════════════╝"
+    echo "Logged to: $LOG_FILE"
+    exit 1
+fi
+
+# 5. DELETE FROM without WHERE clause (table-wide delete)
+if echo "$COMMAND" | grep -qiE '\bDELETE\s+FROM\b'; then
+    if ! echo "$COMMAND" | grep -qiE '\bWHERE\b'; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] BLOCKED: DELETE without WHERE | Cmd: $COMMAND | Path: $PROJECT_PATH" >> "$LOG_FILE"
+        echo ""
+        echo "╔══════════════════════════════════════════════╗"
+        echo "║  ❌ SAFETY BLOCK: DELETE without WHERE      ║"
+        echo "║  Deleting all rows is dangerous.            ║"
+        echo "║  Add a WHERE clause to limit the scope.     ║"
+        echo "╚══════════════════════════════════════════════╝"
+        echo "Logged to: $LOG_FILE"
+        exit 1
+    fi
+fi
+
+# Allow everything else
+exit 0
