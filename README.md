@@ -34,6 +34,48 @@ You're in the right place.
 
 ---
 
+## PR Review Agent
+
+This repository includes a `claude-review` CLI for bounty #4.
+
+Claude Code sub-agent definition:
+
+- `.claude/agents/pr-reviewer.md`
+
+Run it against a public GitHub PR:
+
+```bash
+python3 bin/claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+Use local deterministic heuristics only:
+
+```bash
+python3 bin/claude-review --pr https://github.com/owner/repo/pull/123 --heuristic-only
+```
+
+The output is structured Markdown:
+
+- Summary of changes
+- Identified risks
+- Improvement suggestions
+- Confidence score
+
+The CLI uses the local `claude` command when available and falls back to a deterministic heuristic reviewer when it is not installed. A GitHub Action workflow is included at `.github/workflows/claude-review.yml`.
+
+Run tests:
+
+```bash
+python3 -m unittest discover tests
+```
+
+Sample outputs:
+
+- `docs/sample-output-claude-builders-pr139.md`
+- `docs/sample-output-requests-pr6963.md`
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling

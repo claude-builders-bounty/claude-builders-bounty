@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+import argparse
+import re
+import shutil
+import subprocess
+import sys
+import textwrap
+import urllib.request
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)/?$")
+
+
+def fetch_diff(pr_url):
+    match = PR_RE.match(pr_url)
+    if not match:
+        raise SystemExit("Expected PR URL like https://github.com/owner/repo/pull/123")
+
+    owner, repo, number = match.groups()
+    diff_url = f"https://patch-diff.githubusercontent.com/raw/{owner}/{repo}/pull/{number}.diff"
+    request = urllib.request.Request(
+        diff_url,
+        headers={"User-Agent": "claude-review-agent"},
+    )
+
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def summarize_files(diff):
+    files = re.findall(r"^\+\+\+ b/(.+)$", diff, flags=re.MULTILINE)
+    return files
+
+
+def heuristic_review(pr_url, diff):
+    files = summarize_files(diff)
+    additions = len(re.findall(r"^\+", diff, flags=re.MULTILINE))
+    deletions = len(re.findall(r"^-", diff, flags=re.MULTILINE))
+    risky_terms = [
+        "eval(",
+        "exec(",
+        "subprocess",
+        "shell=True",
+        "password",
+        "secret",
+        "token",
+        "chmod 777",
+        "innerHTML",
+    ]
+    found_terms = [term for term in risky_terms if term in diff]
+    test_files = [path for path in files if "test" in path.lower() or "spec" in path.lower()]
+
+    summary = (
+        f"This PR changes {len(files)} file(s), with roughly {additions} added lines "
+        f"and {deletions} removed lines. The modified files include: "
+        f"{', '.join(files[:6]) or 'no file paths detected'}."
+    )
+
+    risks = []
+    if found_terms:
+        risks.append(f"Potentially sensitive or risky patterns appear in the diff: {', '.join(found_terms)}.")
+    if not test_files:
+        risks.append("No obvious test files were changed, so behavioral coverage may be missing.")
+    if additions + deletions > 500:
+        risks.append("The diff is large enough that review risk is higher; split review may be useful.")
+    if not risks:
+        risks.append("No high-risk patterns were detected by the local heuristic pass.")
+
+    suggestions = []
+    if not test_files:
+        suggestions.append("Add or update tests that cover the changed behavior.")
+    suggestions.append("Confirm the changed files match the intended scope of the PR.")
+    if found_terms:
+        suggestions.append("Manually review the flagged patterns for security and data-handling impact.")
+
+    confidence = "Medium" if files else "Low"
+    if found_terms or additions + deletions > 500:
+        confidence = "Low"
+
+    return "\n".join(
+        [
+            "## Summary",
+            "",
+            f"{summary} This automated review was generated for {pr_url}.",
+            "",
+            "## Identified Risks",
+            "",
+            "\n".join(f"- {risk}" for risk in risks),
+            "",
+            "## Improvement Suggestions",
+            "",
+            "\n".join(f"- {suggestion}" for suggestion in suggestions),
+            "",
+            "## Confidence",
+            "",
+            confidence,
+            "",
+        ]
+    )
+
+
+def claude_review(pr_url, diff):
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        return None
+
+    prompt = textwrap.dedent(
+        f"""\
+        You are a careful PR reviewer. Review this pull request diff and return structured Markdown with:
+        - Summary of changes in 2-3 sentences
+        - Identified risks as a list
+        - Improvement suggestions as a list
+        - Confidence score: Low / Medium / High
+
+        PR URL: {pr_url}
+
+        Diff:
+        {diff[:120000]}
+        """
+    )
+
+    result = subprocess.run(
+        [claude_path, "-p", prompt],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Review a GitHub pull request and print structured Markdown.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL.")
+    parser.add_argument("--heuristic-only", action="store_true", help="Skip Claude CLI and use local heuristics.")
+    args = parser.parse_args()
+
+    diff = fetch_diff(args.pr)
+    review = None if args.heuristic_only else claude_review(args.pr, diff)
+    if not review:
+        review = heuristic_review(args.pr, diff)
+
+    print(review)
+
+
+if __name__ == "__main__":
+    main()
