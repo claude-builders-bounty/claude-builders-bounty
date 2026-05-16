@@ -16,3 +16,12 @@ This template was checked against a fresh Next.js 15 App Router project shape
 with SQLite-oriented folders. It gives Claude Code concrete rules for structure,
 migrations, components, server actions, anti-patterns, and completion gates
 without requiring follow-up clarification.
+
+Run the acceptance guard after edits:
+
+```bash
+python3 templates/next15-sqlite-saas/check-template.py
+```
+
+The guard verifies the expected sections, SQLite/Turso/better-sqlite3 coverage,
+standard dev commands, and that opinionated rule bullets include a reason.
