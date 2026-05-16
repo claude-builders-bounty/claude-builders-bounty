@@ -5,10 +5,13 @@ Claude Code `PreToolUse` hook that blocks dangerous Bash commands before they ru
 ## Install
 
 ```bash
-mkdir -p ~/.claude/hooks && cp hooks/destructive-bash-guard/destructive_bash_guard.py ~/.claude/hooks/destructive_bash_guard.py
+python3 hooks/destructive-bash-guard/install.py
+python3 -m unittest discover -s hooks/destructive-bash-guard/tests
 ```
 
-Add this to your Claude Code hooks config:
+The installer copies the hook to `~/.claude/hooks/destructive_bash_guard.py`
+and merges this Bash `PreToolUse` entry into `~/.claude/settings.json` without
+removing existing hooks:
 
 ```json
 {
