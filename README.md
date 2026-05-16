@@ -43,6 +43,12 @@ You're in the right place.
 
 ---
 
+## Templates
+
+- [Next.js SQLite SaaS CLAUDE.md](templates/nextjs-sqlite-saas/CLAUDE.md): opinionated Claude Code project instructions for a greenfield SaaS app.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
