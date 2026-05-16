@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""Structured PR review CLI for Claude Code workflows.
+
+Fetches a GitHub PR diff, analyzes changed files and patch content, then prints a
+Markdown review with summary, risks, suggestions, and confidence score.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Iterable
+
+PR_RE = re.compile(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)")
+
+
+@dataclass
+class FileChange:
+    path: str
+    additions: int
+    deletions: int
+    patch: str
+
+
+@dataclass
+class PullRequest:
+    owner: str
+    repo: str
+    number: int
+    title: str
+    body: str
+    author: str
+    files: list[FileChange]
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    match = PR_RE.fullmatch(url.rstrip("/"))
+    if not match:
+        raise ValueError("Expected PR URL like https://github.com/owner/repo/pull/123")
+    owner, repo, number = match.groups()
+    return owner, repo, int(number)
+
+
+def run_gh(args: list[str]) -> str | None:
+    try:
+        return subprocess.check_output(["gh", *args], text=True, stderr=subprocess.DEVNULL)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+
+
+def github_request(path: str) -> object:
+    token = os.environ.get("GITHUB_TOKEN")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "claude-review-cli",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(f"https://api.github.com{path}", headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def fetch_pr(url: str) -> PullRequest:
+    owner, repo, number = parse_pr_url(url)
+
+    gh_json = run_gh([
+        "pr",
+        "view",
+        url,
+        "--json",
+        "title,body,author,files",
+    ])
+    if gh_json:
+        data = json.loads(gh_json)
+        files = [
+            FileChange(
+                path=f["path"],
+                additions=int(f.get("additions") or 0),
+                deletions=int(f.get("deletions") or 0),
+                patch="",
+            )
+            for f in data.get("files", [])
+        ]
+        diff = run_gh(["pr", "diff", url]) or ""
+        patches = split_diff_by_file(diff)
+        for f in files:
+            f.patch = patches.get(f.path, "")
+        return PullRequest(
+            owner=owner,
+            repo=repo,
+            number=number,
+            title=data.get("title") or "",
+            body=data.get("body") or "",
+            author=(data.get("author") or {}).get("login", "unknown"),
+            files=files,
+        )
+
+    pr = github_request(f"/repos/{owner}/{repo}/pulls/{number}")
+    files_data = github_request(f"/repos/{owner}/{repo}/pulls/{number}/files?per_page=100")
+    files = [
+        FileChange(
+            path=f["filename"],
+            additions=int(f.get("additions") or 0),
+            deletions=int(f.get("deletions") or 0),
+            patch=f.get("patch") or "",
+        )
+        for f in files_data
+    ]
+    return PullRequest(
+        owner=owner,
+        repo=repo,
+        number=number,
+        title=pr.get("title") or "",
+        body=pr.get("body") or "",
+        author=(pr.get("user") or {}).get("login", "unknown"),
+        files=files,
+    )
+
+
+def split_diff_by_file(diff: str) -> dict[str, str]:
+    patches: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                current = parts[3][2:] if parts[3].startswith("b/") else parts[3]
+                patches[current] = [line]
+            continue
+        if current:
+            patches[current].append(line)
+    return {path: "\n".join(lines) for path, lines in patches.items()}
+
+
+def summarize_files(files: list[FileChange]) -> str:
+    total_add = sum(f.additions for f in files)
+    total_del = sum(f.deletions for f in files)
+    if not files:
+        return "This PR does not expose file-level changes through the API."
+
+    roots = sorted({f.path.split("/", 1)[0] for f in files})
+    top_files = sorted(files, key=lambda f: f.additions + f.deletions, reverse=True)[:3]
+    return (
+        f"This PR changes {len(files)} file(s) with +{total_add}/-{total_del} lines. "
+        f"The main touched areas are {', '.join(roots[:5])}. "
+        f"Largest changes: {', '.join(f.path for f in top_files)}."
+    )
+
+
+def is_test_path(path: str) -> bool:
+    return (
+        path.startswith(("test", "tests", "__tests__"))
+        or "/tests/" in path
+        or "/__tests__/" in path
+        or ".test." in path
+        or ".spec." in path
+    )
+
+
+def find_risks(pr: PullRequest) -> list[str]:
+    risks: list[str] = []
+    total_changed = sum(f.additions + f.deletions for f in pr.files)
+    paths = [f.path for f in pr.files]
+    patches = "\n".join(f.patch for f in pr.files)
+
+    if total_changed > 800:
+        risks.append("Large diff size may hide regressions; consider splitting or adding focused reviewer notes.")
+    if any("migration" in p.lower() or p.endswith(".sql") for p in paths):
+        risks.append("Database or migration files changed; verify rollback behavior, idempotency, and data preservation.")
+    if any(p.startswith(".github/workflows/") for p in paths):
+        risks.append("CI workflow changed; verify permissions, secret exposure, and trigger scope.")
+    if any(p.endswith(("package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock")) for p in paths):
+        risks.append("Dependencies changed; audit new packages, lockfile integrity, and supply-chain impact.")
+    if re.search(r"(?i)(password|secret|api[_-]?key|token)\s*[:=]\s*['\"][^'\"]+", patches):
+        risks.append("Possible hard-coded secret detected in added code; confirm no credentials are committed.")
+    if re.search(r"(?i)delete\s+from\s+\w+(?![^;\n]*\bwhere\b)", patches):
+        risks.append("Potential DELETE FROM without WHERE detected; verify it cannot wipe entire tables unintentionally.")
+    if re.search(r"(?i)dangerouslySetInnerHTML|eval\(|new Function\(", patches):
+        risks.append("Dynamic code or raw HTML rendering detected; verify sanitization and XSS protections.")
+    if not any(is_test_path(p) for p in paths):
+        risks.append("No obvious test files changed; regression coverage may be missing.")
+
+    return risks or ["No major structural risks detected from the diff metadata and patch scan."]
+
+
+def find_suggestions(pr: PullRequest) -> list[str]:
+    suggestions: list[str] = []
+    paths = [f.path for f in pr.files]
+    patches = "\n".join(f.patch for f in pr.files)
+
+    if not any(p.lower().endswith(("readme.md", "docs.md")) or p.startswith("docs/") for p in paths):
+        suggestions.append("Add or update documentation if user-facing behavior, setup, or operational steps changed.")
+    if not any(is_test_path(p) for p in paths):
+        suggestions.append("Add a focused unit or smoke test covering the changed behavior.")
+    if any(p.endswith((".ts", ".tsx", ".js", ".jsx")) for p in paths):
+        suggestions.append("Run lint, typecheck, and the relevant test suite before merge.")
+    if re.search(r"TODO|FIXME", patches):
+        suggestions.append("Resolve or ticket TODO/FIXME comments introduced by this PR before merging.")
+    if sum(f.additions + f.deletions for f in pr.files) > 800:
+        suggestions.append("Consider extracting mechanical or generated changes into a separate PR to simplify review.")
+
+    return suggestions or ["Keep the PR description updated with validation steps and any known limitations."]
+
+
+def confidence(pr: PullRequest, risks: list[str]) -> str:
+    total_changed = sum(f.additions + f.deletions for f in pr.files)
+    has_tests = any(is_test_path(p.path) for p in pr.files)
+    serious = [r for r in risks if "secret" in r.lower() or "delete from" in r.lower()]
+    if serious or total_changed > 1200:
+        return "Low"
+    if has_tests and total_changed <= 500:
+        return "High"
+    return "Medium"
+
+
+def render_review(pr: PullRequest) -> str:
+    summary = summarize_files(pr.files)
+    risks = find_risks(pr)
+    suggestions = find_suggestions(pr)
+    score = confidence(pr, risks)
+
+    def bullets(items: Iterable[str]) -> str:
+        return "\n".join(f"- {item}" for item in items)
+
+    return f"""## Structured PR Review
+
+### Summary of changes
+{summary}
+PR title: **{pr.title}** by @{pr.author}.
+
+### Identified risks
+{bullets(risks)}
+
+### Improvement suggestions
+{bullets(suggestions)}
+
+### Confidence score
+**{score}**
+"""
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Review a GitHub PR and print structured Markdown")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
+    parser.add_argument("--output", help="Optional path to write the Markdown review")
+    args = parser.parse_args(argv)
+
+    try:
+        pr = fetch_pr(args.pr)
+        review = render_review(pr)
+    except Exception as exc:  # CLI should fail clearly for automation.
+        print(f"claude-review failed: {exc}", file=sys.stderr)
+        return 1
+
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(review, encoding="utf-8")
+    print(review)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
