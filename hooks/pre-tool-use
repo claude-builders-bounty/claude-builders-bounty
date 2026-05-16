@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook: Blocks destructive bash commands.
+
+Installed to ~/.claude/hooks/pre-tool-use, this hook intercepts bash
+tool calls before Claude Code executes them and blocks dangerous patterns
+like rm -rf, DROP TABLE, git push --force, etc.
+
+Protocol: Claude Code calls hooks/* as executables. For pre-tool-use hooks,
+the tool name is passed as argv[1] and the args as subsequent argv values.
+
+Returns:
+  exit 0 = allow the command
+  exit 1 = block the command (Claude Code will show the hook's output to the user)
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+# -- Configuration -----------------------------------------------------------------
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+# Dangerous patterns to block (case-insensitive matching on combined command string)
+BLOCKED_PATTERNS = {
+    "rm_rf": {
+        "pattern": r"rm\s+(-[rRfF]+|-[rfRF]+\s+-[rfRF]+|\s*-[rfRF]+)",
+        "reason": "Recursive force deletion - use 'rm <file>' for single files, or empty trash instead",
+        "severity": "critical",
+    },
+    "drop_table": {
+        "pattern": r"DROP\s+TABLE",
+        "reason": "Destructive database operation - use DROP TABLE IF EXISTS with a WHERE clause, or backup first",
+        "severity": "critical",
+    },
+    "force_push": {
+        "pattern": r"git\s+push\s+.*(--force|-f)\b",
+        "reason": "Force push overwrites remote history - use 'git push --force-with-lease' for safety",
+        "severity": "high",
+    },
+    "truncate": {
+        "pattern": r"\bTRUNCATE\b",
+        "reason": "TRUNCATE removes all rows without logging - use DELETE with a WHERE clause",
+        "severity": "high",
+    },
+    "delete_no_where": {
+        "pattern": r"DELETE\s+FROM\s+\w+\s*(?:;|$|\s+--|\s+#)",
+        "reason": "DELETE without WHERE clause removes all rows - add a WHERE clause or use SELECT first to preview affected rows",
+        "severity": "high",
+    },
+    "drop_database": {
+        "pattern": r"DROP\s+DATABASE",
+        "reason": "Dropping a database is irreversible - verify you have backups first",
+        "severity": "critical",
+    },
+    "rm_slash": {
+        "pattern": r"rm\s+(-[rRfF]+\s+)?\/\b",
+        "reason": "rm on root filesystem is catastrophic",
+        "severity": "critical",
+    },
+    "dd": {
+        "pattern": r"\bdd\s+if=",
+        "reason": "dd with if= can overwrite block devices - verify the target is correct",
+        "severity": "high",
+    },
+    "mkfs": {
+        "pattern": r"\bmkfs\b",
+        "reason": "mkfs formats a filesystem, destroying all data on the target device",
+        "severity": "critical",
+    },
+}
+
+# Commands that are always allowed (exact match on first arg)
+ALLOWED_CMDS = {"ls", "cat", "head", "tail", "echo", "printf", "cd", "pwd", "which",
+                "python3", "python", "node", "npm", "pip", "pip3", "cargo", "rustc",
+                "gcc", "g++", "clang", "make", "cmake", "go", "deno"}
+
+# -- Hook Logic ---------------------------------------------------------------------
+
+
+def log_block(cmd_str: str, pattern_name: str, reason: str):
+    """Log a blocked command attempt to the log file."""
+    timestamp = datetime.now().isoformat()
+    project = os.environ.get("CLAUDE_PROJECT", os.getcwd())
+    log_entry = json.dumps({
+        "timestamp": timestamp,
+        "command": cmd_str,
+        "pattern": pattern_name,
+        "reason": reason,
+        "project": project,
+        "pid": os.getpid(),
+    })
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        with open(LOG_FILE, "a") as f:
+            f.write(log_entry + "\n")
+    except OSError:
+        pass  # Silently fail if we can't log; the block itself is more important
+
+
+def check_command(command: str) -> tuple:
+    """Check a command against blocked patterns. Returns (blocked, pattern_name, reason)."""
+    cmd_lower = command.lower()
+    for name, rule in BLOCKED_PATTERNS.items():
+        if re.search(rule["pattern"], cmd_lower):
+            return True, name, rule["reason"]
+    return False, "", ""
+
+
+def main():
+    # Claude Code passes: hook_name tool_name [args...]
+    hook_name = sys.argv[0] if len(sys.argv) > 0 else "unknown"
+    tool_name = sys.argv[1] if len(sys.argv) > 1 else ""
+    tool_args = sys.argv[2:] if len(sys.argv) > 2 else []
+
+    # We only intercept bash commands
+    command_str = " ".join(tool_args)
+
+    # Quick allowlist: short commands that are clearly not dangerous
+    first_token = tool_args[0].lower() if tool_args else ""
+    if first_token in ALLOWED_CMDS:
+        sys.exit(0)
+
+    # Check the full combined command string
+    blocked, pattern_name, reason = check_command(command_str)
+
+    if blocked:
+        log_block(command_str, pattern_name, reason)
+        print(f"BLOCKED: This command was intercepted by the safety hook.")
+        print(f"   Pattern: {pattern_name}")
+        print(f"   Reason: {reason}")
+        print(f"   Command: {command_str[:200]}")
+        print()
+        print(f"   To allow this command, modify ~/.claude/hooks/pre-tool-use")
+        print(f"   or temporarily remove the hook file.")
+        sys.exit(1)
+
+    # Command is safe -- allow it
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
