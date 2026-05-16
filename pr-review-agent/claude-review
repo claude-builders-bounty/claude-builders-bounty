@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+"""
+Claude Code PR Review Agent — Bounty $150
+Reviews any GitHub PR and posts a structured Markdown comment.
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --model claude-sonnet-4
+  claude-review --pr URL --dry-run    (print review, don't post)
+
+Requirements:
+  pip install requests
+  Set GITHUB_TOKEN env var (classic PAT with repo scope)
+  Set ANTHROPIC_API_KEY or OPENAI_API_KEY or DEEPSEEK_API_KEY
+"""
+
+import argparse, os, sys, json, re
+import subprocess
+
+# ═══════════════════════════════════════════════════
+# CONFIG
+# ═══════════════════════════════════════════════════
+
+def get_llm_config():
+    """Detect available LLM provider"""
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return {"provider": "anthropic", "model": "claude-sonnet-4-20250514", "key": os.getenv("ANTHROPIC_API_KEY")}
+    if os.getenv("DEEPSEEK_API_KEY"):
+        return {"provider": "openai-compat", "model": "deepseek-chat", "key": os.getenv("DEEPSEEK_API_KEY"), "base_url": "https://api.deepseek.com/v1"}
+    if os.getenv("OPENAI_API_KEY"):
+        return {"provider": "openai", "model": "gpt-4o", "key": os.getenv("OPENAI_API_KEY")}
+    return None
+
+# ═══════════════════════════════════════════════════
+# GITHUB API
+# ═══════════════════════════════════════════════════
+
+def github_api(path):
+    """Call GitHub API with token auth."""
+    import urllib.request
+    token = os.getenv("GITHUB_TOKEN")
+    if not token:
+        print("Error: GITHUB_TOKEN not set", file=sys.stderr)
+        sys.exit(1)
+    req = urllib.request.Request(
+        f"https://api.github.com{path}",
+        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github.v3.diff+json", "User-Agent": "Claude-PR-Review-Agent"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.read().decode('utf-8', errors='replace')
+    except Exception as e:
+        print(f"GitHub API error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def get_pr_diff(owner, repo, pr_number):
+    """Get diff for a PR."""
+    # GitHub returns diff when Accept header is diff
+    import urllib.request
+    token = os.getenv("GITHUB_TOKEN")
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}",
+        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github.v3.diff", "User-Agent": "Claude-PR-Review-Agent"}
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.read().decode('utf-8', errors='replace')
+
+def get_pr_info(owner, repo, pr_number):
+    """Get PR metadata."""
+    import urllib.request
+    token = os.getenv("GITHUB_TOKEN")
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}",
+        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json", "User-Agent": "Claude-PR-Review-Agent"}
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read().decode())
+
+def post_review_comment(owner, repo, pr_number, body):
+    """Post a review comment on the PR."""
+    import urllib.request
+    token = os.getenv("GITHUB_TOKEN")
+    data = json.dumps({"body": body, "event": "COMMENT"}).encode()
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments",
+        data=data,
+        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json", "Content-Type": "application/json", "User-Agent": "Claude-PR-Review-Agent"}
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read().decode())
+
+# ═══════════════════════════════════════════════════
+# LLM CALL
+# ═══════════════════════════════════════════════════
+
+SYSTEM_PROMPT = """You are an expert code reviewer. Analyze the git diff and return a structured review.
+
+Output EXACTLY this JSON format, nothing else:
+
+{
+  "summary": "2-3 sentence summary of what this PR changes and why",
+  "risks": [
+    "specific risk 1 — explain the impact",
+    "specific risk 2 — explain the impact"
+  ],
+  "suggestions": [
+    "specific suggestion 1 with code context",
+    "specific suggestion 2 with code context"
+  ],
+  "confidence": "Low|Medium|High"
+}
+
+Rules:
+- summary: 2-3 sentences, factual, mention the type of change (feature/bugfix/refactor)
+- risks: real concerns only — security, breakage, perf, data loss. If none, return empty list.
+  Each risk MUST reference a specific file and line/section.
+- suggestions: actionable improvements — better patterns, missing tests, edge cases. If none, return empty list.
+  Each suggestion MUST reference a specific file.
+- confidence: Low = unsure/massive diff, Medium = reasonably sure, High = confident
+- Be specific: reference exact file names and line numbers from the diff
+- If the PR is trivial (typo fix, whitespace), say so and return minimal feedback
+- NEVER fabricate issues — if code is clean, say so"""
+
+def call_llm(diff, title, body, llm_cfg):
+    """Call LLM to review the PR."""
+    prompt = f"""Review this pull request:
+
+**Title:** {title}
+**Description:** {body or '(none)'}
+
+```diff
+{diff[:15000]}
+```
+
+Return a JSON object with summary, risks, suggestions, and confidence."""
+
+    if llm_cfg["provider"] == "anthropic":
+        return call_anthropic(prompt, llm_cfg)
+    else:
+        return call_openai_compat(prompt, llm_cfg)
+
+def call_anthropic(prompt, cfg):
+    """Call Anthropic Claude API."""
+    import urllib.request
+    data = json.dumps({
+        "model": cfg["model"],
+        "max_tokens": 2048,
+        "temperature": 0.2,
+        "system": SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": prompt}]
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=data,
+        headers={
+            "x-api-key": cfg["key"],
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+        }
+    )
+    with urllib.request.urlopen(req, timeout=60) as r:
+        resp = json.loads(r.read().decode())
+        return resp["content"][0]["text"]
+
+def call_openai_compat(prompt, cfg):
+    """Call OpenAI-compatible API (OpenAI, DeepSeek, Ollama, etc)."""
+    import urllib.request
+    base = cfg.get("base_url", "https://api.openai.com/v1")
+    data = json.dumps({
+        "model": cfg["model"],
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 2048
+    }).encode()
+    req = urllib.request.Request(
+        f"{base}/chat/completions",
+        data=data,
+        headers={
+            "Authorization": f"Bearer {cfg['key']}",
+            "Content-Type": "application/json"
+        }
+    )
+    with urllib.request.urlopen(req, timeout=60) as r:
+        resp = json.loads(r.read().decode())
+        return resp["choices"][0]["message"]["content"]
+
+# ═══════════════════════════════════════════════════
+# FORMATTER
+# ═══════════════════════════════════════════════════
+
+def format_review(review_json, pr_url, model):
+    """Format JSON review into structured Markdown."""
+    try:
+        # Handle markdown code block wrapping
+        text = review_json.strip()
+        if text.startswith("```"):
+            text = re.sub(r"```(?:json)?\s*", "", text)
+            text = text.rstrip("`").strip()
+        r = json.loads(text)
+    except json.JSONDecodeError:
+        return f"""## 🤖 AI PR Review
+
+⚠️ Could not parse AI response. Raw output:
+
+```
+{review_json[:1000]}
+```
+"""
+
+    summary = r.get("summary", "No summary provided.")
+    confidence = r.get("confidence", "Medium").capitalize()
+    risks = r.get("risks", [])
+    suggestions = r.get("suggestions", [])
+
+    emoji = {"Low": "🔴", "Medium": "🟡", "High": "🟢"}.get(confidence, "⚪")
+
+    lines = [
+        "## 🤖 AI PR Review",
+        "",
+        f"**Confidence:** {emoji} {confidence} | **Model:** `{model}`",
+        "",
+        "---",
+        "",
+        "### 📝 Summary",
+        "",
+        summary,
+        "",
+    ]
+
+    if risks:
+        lines.append("### ⚠️ Risks")
+        lines.append("")
+        for i, risk in enumerate(risks, 1):
+            lines.append(f"{i}. {risk}")
+        lines.append("")
+
+    if suggestions:
+        lines.append("### 💡 Suggestions")
+        lines.append("")
+        for i, sug in enumerate(suggestions, 1):
+            lines.append(f"{i}. {sug}")
+        lines.append("")
+
+    if not risks and not suggestions:
+        lines.append("✅ No risks or suggestions — code looks good!")
+        lines.append("")
+
+    lines.append("---")
+    lines.append(f"*Automated review by Claude PR Review Agent • [Source]({pr_url})*")
+
+    return "\n".join(lines)
+
+# ═══════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Review Agent")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--model", help="LLM model override")
+    parser.add_argument("--dry-run", action="store_true", help="Print review without posting")
+    args = parser.parse_args()
+
+    # Parse PR URL
+    match = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)", args.pr)
+    if not match:
+        print("Error: Invalid PR URL format", file=sys.stderr)
+        sys.exit(1)
+    owner, repo, pr_number = match.groups()
+
+    # LLM config
+    llm_cfg = get_llm_config()
+    if not llm_cfg:
+        print("Error: No LLM API key found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY", file=sys.stderr)
+        sys.exit(1)
+    if args.model:
+        llm_cfg["model"] = args.model
+
+    print(f"🔍 Reviewing {owner}/{repo}#{pr_number} with {llm_cfg['provider']}/{llm_cfg['model']}...")
+
+    # Get PR info
+    print("  📥 Fetching PR metadata...")
+    pr_info = get_pr_info(owner, repo, pr_number)
+
+    # Get diff
+    print("  📥 Fetching diff...")
+    diff = get_pr_diff(owner, repo, pr_number)
+    print(f"  📊 Diff size: {len(diff)} chars")
+
+    if len(diff) < 10:
+        print("  ⚠️ Empty diff — nothing to review")
+        sys.exit(0)
+
+    # Call LLM
+    print("  🤖 Calling LLM for review...")
+    review_raw = call_llm(diff, pr_info.get("title", ""), pr_info.get("body", ""), llm_cfg)
+
+    # Format
+    review_md = format_review(review_raw, args.pr, llm_cfg["model"])
+
+    if args.dry_run:
+        print("\n" + "="*60)
+        print(review_md)
+        print("="*60 + "\n[Dry run — not posted]")
+    else:
+        print("  📝 Posting review comment...")
+        posted = post_review_comment(owner, repo, pr_number, review_md)
+        print(f"  ✅ Review posted: {posted.get('html_url', 'success')}")
+
+    print("\nDone!")
+
+if __name__ == "__main__":
+    main()
