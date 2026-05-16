@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""
+pre-tool-use hook for Claude Code.
+Blocks destructive commands before execution.
+Install: cp this file to ~/.claude/hooks/pre-tool-use
+"""
+
+import json
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+
+LOG_FILE = Path.home() / ".claude" / "hooks" / "blocked.log"
+HOOK_NAME = "safety-hook"
+
+# Blocked patterns (case-insensitive)
+BLOCKED_PATTERNS = [
+    # Destructive file operations
+    ("rm -rf", "Recursive force delete — this cannot be undone"),
+    ("rm -fr", "Recursive force delete — this cannot be undone"),
+    ("rm -r -f", "Recursive force delete — this cannot be undone"),
+    ("rm --recursive --force", "Recursive force delete — this cannot be undone"),
+    ("rm -rf /", "⚠️ DANGER: wiping the entire filesystem!"),
+    ("rm -rf /*", "⚠️ DANGER: wiping the entire filesystem!"),
+    ("mkfs.", "Formatting a filesystem — destroys all data on the device"),
+    ("dd if=/dev/zero", "Writing zeroes to a device — destructive"),
+    ("> /dev/sd", "Direct block device write — data loss risk"),
+    (":(){ :|:& };:", "Fork bomb — will crash the system"),
+    
+    # Database destruction
+    ("drop table", "Drops a database table — ALL DATA LOST"),
+    ("truncate table", "Truncates a table — ALL DATA LOST (no rollback)"),
+    ("delete from", "DELETE without WHERE clause — would remove ALL rows"),
+    ("drop database", "Drops an entire database"),
+    ("drop schema", "Drops a database schema"),
+    
+    # Git force operations
+    ("git push --force", "Force push overwrites remote history"),
+    ("git push -f", "Force push overwrites remote history"),
+    ("git reset --hard", "Discards all uncommitted changes permanently"),
+    ("git checkout -- .", "Discards all working directory changes"),
+    ("git clean -fd", "Deletes all untracked files permanently"),
+    ("git branch -D", "Deletes a branch (capital -D skips safety checks)"),
+    
+    # System operations
+    ("shutdown", "Shuts down the system"),
+    ("reboot", "Reboots the system"),
+    ("poweroff", "Powers off the system"),
+    ("halt", "Halts the system"),
+    ("chmod -r 000", "Makes files unreadable — lock yourself out"),
+    ("chown -r", "Recursive ownership change — can break system permissions"),
+    ("sudo rm", "Root-level deletion — extreme caution required"),
+    
+    # Package manager conflicts
+    ("pip uninstall", "Uninstalls Python packages — may break dependencies"),
+    ("npm uninstall", "Uninstalls npm packages — may break dependencies"),
+    ("apt remove", "Removes system packages"),
+    ("brew uninstall", "Uninstalls Homebrew packages"),
+    
+    # Crypto operations (often destructive when wrong)
+    ("gpg --delete", "Deletes GPG keys irretrievably"),
+    ("openssl rsa -in", "RSA key operations — can destroy keys if misused"),
+]
+
+def should_block(command: str) -> tuple[bool, str]:
+    """Check if a command should be blocked. Returns (block, reason)."""
+    cmd_lower = command.lower().strip()
+    
+    for pattern, reason in BLOCKED_PATTERNS:
+        if pattern in cmd_lower:
+            return True, reason
+    
+    # Special: DELETE FROM without WHERE
+    if "delete from" in cmd_lower and "where" not in cmd_lower.split("from")[-1][:50].lower():
+        return True, "DELETE without WHERE clause — would remove ALL rows"
+    
+    return False, ""
+
+
+def log_blocked(command: str, reason: str, cwd: str):
+    """Log a blocked command attempt."""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"[{timestamp}] BLOCKED | reason={reason} | cwd={cwd} | cmd={command[:200]}\n"
+    
+    with open(LOG_FILE, "a") as f:
+        f.write(log_entry)
+
+
+def main():
+    # Claude Code hooks protocol: read JSON from stdin
+    try:
+        payload = json.load(sys.stdin)
+    except (json.JSONDecodeError, EOFError):
+        # No input — not being called by Claude Code
+        return
+    
+    tool_use = payload.get("tool_use", {})
+    tool_name = tool_use.get("name", "")
+    
+    # Only intercept Bash tool
+    if tool_name != "Bash":
+        return
+    
+    command = tool_use.get("input", {}).get("command", "")
+    cwd = tool_use.get("input", {}).get("cwd", os.getcwd())
+    
+    if not command:
+        return
+    
+    block, reason = should_block(command)
+    
+    if block:
+        log_blocked(command, reason, cwd)
+        
+        result = {
+            "type": "tool_result",
+            "tool_use_id": tool_use.get("id"),
+            "content": f"""⛔ **Blocked by {HOOK_NAME}**
+
+**Command:** `{command[:100]}{'...' if len(command) > 100 else ''}`
+**Reason:** {reason}
+**Project:** {cwd}
+
+This command was intercepted by the safety pre-tool-use hook.
+Logged to: {LOG_FILE}
+
+To proceed anyway, you need to: (a) modify the command to be safer, or
+(b) temporarily disable this hook by removing the file from ~/.claude/hooks/
+""",
+            "is_error": True,
+        }
+        
+        print(json.dumps(result))
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
