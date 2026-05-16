@@ -1,0 +1,554 @@
+#!/usr/bin/env python3
+"""
+claude-review — AI-powered PR review analysis CLI.
+Fetches GitHub PR diffs and produces structured Markdown review output.
+Minimal dependencies: only 'requests'.
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import textwrap
+from collections import defaultdict
+
+try:
+    import requests
+except ImportError:
+    print("ERROR: 'requests' is required. Install with: pip install requests", file=sys.stderr)
+    sys.exit(1)
+
+
+# ── helpers ────────────────────────────────────────────────────────────
+
+def get_github_token():
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        token = os.environ.get("GH_TOKEN")
+    if token:
+        return token
+    try:
+        token = input("GitHub token (or set GITHUB_TOKEN env var): ").strip()
+        if token:
+            return token
+    except (EOFError, KeyboardInterrupt):
+        pass
+    print("ERROR: GitHub token required. Set GITHUB_TOKEN or GH_TOKEN.", file=sys.stderr)
+    sys.exit(1)
+
+
+def parse_pr_url(url):
+    """Extract owner, repo, pr_number from a GitHub PR URL."""
+    m = re.match(r'https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)', url)
+    if not m:
+        print(f"ERROR: Invalid GitHub PR URL: {url}", file=sys.stderr)
+        sys.exit(1)
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def build_headers(token):
+    return {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3.diff",
+        "User-Agent": "claude-review/1.0",
+    }
+
+
+def build_headers_json(token):
+    h = build_headers(token)
+    h["Accept"] = "application/vnd.github.v3+json"
+    return h
+
+
+def fetch_pr_diff(owner, repo, pr_number, token):
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    resp = requests.get(url, headers=build_headers(token))
+    if resp.status_code == 404:
+        print(f"ERROR: PR not found (404). Check URL and token scopes.", file=sys.stderr)
+        sys.exit(1)
+    if resp.status_code == 403:
+        print(f"ERROR: API rate limited or insufficient permissions (403).", file=sys.stderr)
+        sys.exit(1)
+    if resp.status_code != 200:
+        print(f"ERROR: GitHub API returned HTTP {resp.status_code}", file=sys.stderr)
+        sys.exit(1)
+    return resp.text
+
+
+def fetch_pr_metadata(owner, repo, pr_number, token):
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    resp = requests.get(url, headers=build_headers_json(token))
+    if resp.status_code != 200:
+        return {"title": "Unknown", "body": "", "changed_files": 0, "additions": 0, "deletions": 0}
+    data = resp.json()
+    return {
+        "title": data.get("title", "Unknown"),
+        "body": data.get("body") or "",
+        "changed_files": data.get("changed_files", 0),
+        "additions": data.get("additions", 0),
+        "deletions": data.get("deletions", 0),
+    }
+
+
+def fetch_pr_files(owner, repo, pr_number, token):
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
+    resp = requests.get(url, headers=build_headers_json(token))
+    if resp.status_code != 200:
+        return []
+    return resp.json()
+
+
+# ── diff parsing ───────────────────────────────────────────────────────
+
+def parse_diff_per_file(diff_text):
+    """Split unified diff into per-file chunks with metadata."""
+    files = []
+    current = None
+    current_lines = []
+    file_pat = re.compile(r'^diff --git a/(.+?) b/(.+?)$')
+    hunk_pat = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@')
+
+    for line in diff_text.splitlines():
+        m = file_pat.match(line)
+        if m:
+            if current is not None:
+                files.append(_finalize_file(current, current_lines))
+            current = {"old_path": m.group(1), "new_path": m.group(2)}
+            current_lines = [line]
+            continue
+        if current is not None:
+            current_lines.append(line)
+
+    if current is not None:
+        files.append(_finalize_file(current, current_lines))
+
+    return files
+
+
+def _finalize_file(info, lines):
+    info["diff_lines"] = lines
+    additions = 0
+    deletions = 0
+    for line in lines:
+        if line.startswith("+") and not line.startswith("+++"):
+            additions += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            deletions += 1
+    info["additions"] = additions
+    info["deletions"] = deletions
+    info["total_changes"] = additions + deletions
+    return info
+
+
+# ── file type detection ────────────────────────────────────────────────
+
+FILE_TYPE_MAP = {
+    ".py": "Python",
+    ".js": "JavaScript",
+    ".jsx": "JSX (React)",
+    ".ts": "TypeScript",
+    ".tsx": "TSX (React)",
+    ".go": "Go",
+    ".rs": "Rust",
+    ".java": "Java",
+    ".rb": "Ruby",
+    ".php": "PHP",
+    ".c": "C",
+    ".h": "C Header",
+    ".cpp": "C++",
+    ".hpp": "C++ Header",
+    ".cs": "C#",
+    ".swift": "Swift",
+    ".kt": "Kotlin",
+    ".scala": "Scala",
+    ".html": "HTML",
+    ".css": "CSS",
+    ".scss": "SCSS",
+    ".less": "Less",
+    ".sql": "SQL",
+    ".sh": "Shell",
+    ".bash": "Bash",
+    ".yaml": "YAML",
+    ".yml": "YAML",
+    ".json": "JSON",
+    ".xml": "XML",
+    ".md": "Markdown",
+    ".rst": "reStructuredText",
+    ".txt": "Text",
+    ".toml": "TOML",
+    ".ini": "INI Config",
+    ".cfg": "Config",
+    ".dockerfile": "Dockerfile",
+    ".tf": "Terraform",
+}
+
+
+def detect_file_type(filepath):
+    lower = filepath.lower()
+    if lower.endswith("/dockerfile") or lower == "dockerfile":
+        return "Dockerfile"
+    if lower.endswith("makefile") or lower == "makefile":
+        return "Makefile"
+    _, ext = os.path.splitext(filepath)
+    return FILE_TYPE_MAP.get(ext, "Unknown")
+
+
+# ── risk detection ─────────────────────────────────────────────────────
+
+SECRET_PATTERNS = [
+    (r'(?i)(api[_-]?key\s*[:=]\s*["\'][^"\']+["\'])', "Hardcoded API key"),
+    (r'(?i)(password\s*[:=]\s*["\'][^"\']+["\'])', "Hardcoded password"),
+    (r'(?i)(secret\s*[:=]\s*["\'][^"\']+["\'])', "Hardcoded secret"),
+    (r'(?i)(token\s*[:=]\s*["\'][^"\']+["\'])', "Hardcoded token"),
+    (r'(?:AKIA[0-9A-Z]{16})', "AWS Access Key ID"),
+    (r'(?:sk-[a-zA-Z0-9]{20,})', "OpenAI API key-like pattern"),
+    (r'(?i)(-----BEGIN\s+(?:RSA\s+)?PRIVATE KEY-----)', "Embedded private key"),
+]
+
+DEBUG_PATTERNS = [
+    (r'(?i)(console\.log\s*\()', "console.log (JS)"),
+    (r'(?i)(print\s*\(?\s*["\'])', "print() debug statement"),
+    (r'(?i)(\bTODO\b)', "TODO comment"),
+    (r'(?i)(\bFIXME\b)', "FIXME comment"),
+    (r'(?i)(\bHACK\b)', "HACK comment"),
+    (r'(?i)(\bXXX\b)', "XXX comment"),
+    (r'(?i)(debugger\s*;?)', "debugger statement"),
+    (r'(?i)(pdb\.set_trace)', "pdb breakpoint"),
+    (r'(?i)(import\s+pdb)', "pdb import (debug code)"),
+    (r'(?i)(ipdb\.set_trace)', "ipdb breakpoint"),
+    (r'(?i)(var_dump\s*\()', "var_dump (PHP debug)"),
+    (r'(?i)(dd\s*\()', "dd() dump (Laravel/PHP debug)"),
+]
+
+# Import patterns (new dependencies)
+DEPENDENCY_PATTERNS = {
+    "package.json": [
+        (r'"([^"]+)"\s*:\s*"[~^]?\d+\.', "npm package"),
+    ],
+    "requirements.txt": [
+        (r'^([a-zA-Z0-9_.-]+)[=<>~!]', "pip package"),
+    ],
+    "Cargo.toml": [
+        (r'^([a-zA-Z0-9_-]+)\s*=', "crate (Rust)"),
+    ],
+    "go.mod": [
+        (r'^\s+([a-zA-Z0-9_./-]+)\s+v', "Go module"),
+    ],
+    "Gemfile": [
+        (r"gem\s+['\"]([^'\"]+)['\"]", "Ruby gem"),
+    ],
+    "build.gradle": [
+        (r"implementation\s+['\"]([^:]+):", "Gradle dependency"),
+    ],
+    "Pipfile": [
+        (r'^([a-zA-Z0-9_.-]+)\s*=', "Pipenv package"),
+    ],
+    "pyproject.toml": [
+        (r'^([a-zA-Z0-9_.-]+)\s*=', "Poetry/pyproject dependency (not Python itself)"),
+    ],
+}
+
+DEPENDENCY_FILENAMES = set(DEPENDENCY_PATTERNS.keys())
+
+
+def detect_full_risk_for_added_lines(file_info):
+    """Run all risk checks on the added lines of a diff."""
+    added_lines = [l[1:] for l in file_info["diff_lines"] if l.startswith("+") and not l.startswith("+++")]
+    added_text = "\n".join(added_lines)
+
+    secrets = []
+    debug_items = []
+    large_file_risk = None
+    deps_risk = []
+
+    # Large file
+    if file_info["total_changes"] > 500:
+        large_file_risk = f"Large diff: {file_info['total_changes']} lines changed"
+    elif file_info["additions"] > 200:
+        large_file_risk = f"Large addition: {file_info['additions']} lines added"
+
+    # Secrets
+    for pattern, label in SECRET_PATTERNS:
+        if re.search(pattern, added_text):
+            secrets.append(label)
+
+    # Debug code
+    for pattern, label in DEBUG_PATTERNS:
+        if re.search(pattern, added_text):
+            debug_items.append(label)
+
+    # New dependencies
+    filename = os.path.basename(file_info["new_path"])
+    if filename in DEPENDENCY_FILENAMES:
+        patterns = DEPENDENCY_PATTERNS[filename]
+        for pattern, label_prefix in patterns:
+            for m in re.finditer(pattern, added_text, re.MULTILINE):
+                dep_name = m.group(1)
+                deps_risk.append(f"New {label_prefix}: **{dep_name}**")
+
+    return {
+        "secrets": secrets,
+        "debug": debug_items,
+        "large_file": large_file_risk,
+        "dependencies": deps_risk,
+        "added_lines": len(added_lines),
+    }
+
+
+# ── confidence scoring ────────────────────────────────────────────────
+
+def compute_confidence(all_risks, total_files):
+    """Assign Low / Medium / High confidence based on findings."""
+    if not all_risks:
+        return "High"  # trivial PR, easy to review
+
+    total_risks = sum(
+        len(r.get("secrets", [])) + len(r.get("debug", [])) +
+        (1 if r.get("large_file") else 0) + len(r.get("dependencies", []))
+        for r in all_risks
+    )
+
+    if total_risks == 0:
+        return "High"
+    if total_risks <= 3:
+        return "Medium"
+    return "Low"
+
+
+# ── markdown output ────────────────────────────────────────────────────
+
+def generate_review_markdown(metadata, files, all_risks, file_analyses):
+    lines = []
+    lines.append(f"# PR Review: {metadata['title']}")
+    lines.append("")
+    lines.append(f"- **PR URL:** (provided via `--pr`)")
+    lines.append(f"- **Files changed:** {metadata['changed_files']}")
+    lines.append(f"- **Additions:** +{metadata['additions']}  **Deletions:** –{metadata['deletions']}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("## Summary")
+    lines.append("")
+    total_risks = sum(
+        len(r.get("secrets", [])) + len(r.get("debug", []))
+        for r in all_risks
+    )
+    total_deps = sum(len(r.get("dependencies", [])) for r in all_risks)
+    large_files = sum(1 for r in all_risks if r.get("large_file"))
+
+    summary_parts = []
+    if total_risks:
+        summary_parts.append(f"{total_risks} potential risk(s)")
+    if total_deps:
+        summary_parts.append(f"{total_deps} new dependenc{'y' if total_deps == 1 else 'ies'}")
+    if large_files:
+        summary_parts.append(f"{large_files} large file diff(s)")
+
+    if summary_parts:
+        lines.append(f"This PR introduces changes across **{metadata['changed_files']} files** (+{metadata['additions']}/–{metadata['deletions']} lines).")
+        lines.append("")
+        lines.append(f"Notable findings: {', '.join(summary_parts)}.")
+    else:
+        lines.append("This PR appears clean. No significant risks detected.")
+
+    body = metadata.get("body", "")
+    if body and body.strip():
+        body_preview = textwrap.shorten(body.strip(), width=300, placeholder="...")
+        lines.append("")
+        lines.append("### Description Preview")
+        lines.append("")
+        lines.append(f"> {body_preview}")
+
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("## File-by-File Analysis")
+    lines.append("")
+
+    for i, fi in enumerate(files):
+        fname = fi["new_path"]
+        ftype = detect_file_type(fname)
+        add = fi["additions"]
+        dele = fi["deletions"]
+        change_type = "modified"
+        if fi.get("old_path") == "/dev/null":
+            change_type = "added"
+        elif fi.get("new_path") == "/dev/null":
+            change_type = "deleted"
+
+        lines.append(f"### `{fname}`")
+        lines.append("")
+        lines.append(f"- **Type:** {ftype}")
+        lines.append(f"- **Change:** {change_type}")
+        lines.append(f"- **Stats:** +{add}/–{dele} ({fi['total_changes']} total)")
+        lines.append("")
+
+        risks = all_risks[i]
+        findings = []
+        if risks["large_file"]:
+            findings.append(f"⚠️ {risks['large_file']}")
+        for s in risks["secrets"]:
+            findings.append(f"🔴 **Secret/credential risk:** {s}")
+        for d in risks["debug"]:
+            findings.append(f"🟡 **Debug code:** {d}")
+        for dep in risks["dependencies"]:
+            findings.append(f"📦 **New dependency:** {dep}")
+
+        if findings:
+            lines.append("**Findings:**")
+            lines.append("")
+            for f in findings:
+                lines.append(f"- {f}")
+            lines.append("")
+
+    lines.append("---")
+    lines.append("")
+    lines.append("## Risks Found")
+    lines.append("")
+
+    all_secrets = [(files[i]["new_path"], r["secrets"]) for i, r in enumerate(all_risks) if r["secrets"]]
+    all_debugs = [(files[i]["new_path"], r["debug"]) for i, r in enumerate(all_risks) if r["debug"]]
+    all_larges = [(files[i]["new_path"], r["large_file"]) for i, r in enumerate(all_risks) if r["large_file"]]
+    all_newdeps = [(files[i]["new_path"], r["dependencies"]) for i, r in enumerate(all_risks) if r["dependencies"]]
+
+    severity_map = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}
+
+    if all_secrets:
+        lines.append("### 🔴 Secrets / Credentials")
+        for path, items in all_secrets:
+            for item in items:
+                lines.append(f"- `{path}` — {item}")
+        lines.append("")
+
+    if all_debugs:
+        lines.append("### 🟡 Debug Code / TODOs")
+        for path, items in all_debugs:
+            for item in items:
+                lines.append(f"- `{path}` — {item}")
+        lines.append("")
+
+    if all_larges:
+        lines.append("### ⚠️ Large Changes")
+        for path, item in all_larges:
+            lines.append(f"- `{path}` — {item}")
+        lines.append("")
+
+    if all_newdeps:
+        lines.append("### 📦 New Dependencies")
+        for path, items in all_newdeps:
+            for item in items:
+                lines.append(f"- {item} (`{path}`)")
+        lines.append("")
+
+    if not (all_secrets or all_debugs or all_larges or all_newdeps):
+        lines.append("_No risks detected._")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("")
+    lines.append("## Suggestions")
+    lines.append("")
+
+    suggestions = []
+    for i, risks in enumerate(all_risks):
+        path = files[i]["new_path"]
+        if risks["secrets"]:
+            suggestions.append(f"- **`{path}`**: Remove hardcoded secrets — use environment variables or a secrets manager instead.")
+        if risks["debug"]:
+            suggestions.append(f"- **`{path}`**: Remove or resolve debug statements / TODOs before merging.")
+        if risks["large_file"] and fi["total_changes"] > 500:
+            suggestions.append(f"- **`{path}`**: Consider splitting this large change into smaller, focused PRs for easier review.")
+
+    # Collect all new deps for a grouped suggestion
+    all_new_dep_names = []
+    for path, items in all_newdeps:
+        for item in items:
+            all_new_dep_names.append(item)
+    if all_new_dep_names:
+        dep_list = ", ".join(d.replace("New ", "").replace("dependency:", "dep:") for d in all_new_dep_names[:5])
+        if len(all_new_dep_names) > 5:
+            dep_list += f" (and {len(all_new_dep_names) - 5} more)"
+        suggestions.append(f"- **Dependencies**: Review new dependencies for licensing, security, and necessity: {dep_list}.")
+
+    if not suggestions:
+        suggestions.append("- No significant issues found. Continue with standard code review process.")
+
+    for s in suggestions:
+        lines.append(s)
+        lines.append("")
+
+    # ── confidence ──
+    conf = compute_confidence(all_risks, len(files))
+    lines.append("---")
+    lines.append("")
+    lines.append(f"## Confidence: **{conf}**")
+    lines.append("")
+    notes = {
+        "High": "This review is based on clear, deterministic analysis with few or no findings. The assessment is reliable.",
+        "Medium": "Some risks were detected; review areas flagged above for manual verification.",
+        "Low": "Multiple risks or complex changes detected. Manual review strongly recommended.",
+    }
+    lines.append(f"{severity_map[conf]} *{notes[conf]}*")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append(f"*Generated by claude-review · {__file__}*")
+
+    return "\n".join(lines)
+
+
+# ── main ───────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="claude-review — GitHub PR review analysis tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent("""\
+            Examples:
+              claude-review --pr https://github.com/owner/repo/pull/123
+              claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+        """),
+    )
+    parser.add_argument("--pr", required=True, help="GitHub Pull Request URL")
+    parser.add_argument("-o", "--output", help="Output file (default: stdout)")
+    args = parser.parse_args()
+
+    token = get_github_token()
+    owner, repo, pr_number = parse_pr_url(args.pr)
+
+    print(f"🔍 Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+
+    metadata = fetch_pr_metadata(owner, repo, pr_number, token)
+    print(f"   Title: {metadata['title']}", file=sys.stderr)
+    print(f"   Files changed: {metadata['changed_files']}", file=sys.stderr)
+
+    diff_text = fetch_pr_diff(owner, repo, pr_number, token)
+    files = parse_diff_per_file(diff_text)
+    print(f"   Parsed {len(files)} file diff(s)", file=sys.stderr)
+
+    all_risks = []
+    file_analyses = []
+    for fi in files:
+        risks = detect_full_risk_for_added_lines(fi)
+        all_risks.append(risks)
+        file_analyses.append({
+            "file": fi["new_path"],
+            "type": detect_file_type(fi["new_path"]),
+            "additions": fi["additions"],
+            "deletions": fi["deletions"],
+            "risks": risks,
+        })
+
+    markdown = generate_review_markdown(metadata, files, all_risks, file_analyses)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(markdown)
+        print(f"✅ Review written to {args.output}", file=sys.stderr)
+    else:
+        print(markdown)
+
+
+if __name__ == "__main__":
+    main()
