@@ -6,7 +6,8 @@ structured Markdown review comment.
 ## Setup
 
 ```bash
-python3 agents/claude-pr-review/claude_review.py --pr https://github.com/owner/repo/pull/123
+export PATH="$PWD/agents/claude-pr-review:$PATH"
+claude-review --pr https://github.com/owner/repo/pull/123
 ```
 
 For private repositories or higher API limits, set `GITHUB_TOKEN` before
@@ -23,7 +24,7 @@ To post the generated review back to the pull request, provide a `GITHUB_TOKEN`
 with comment permission and use:
 
 ```bash
-python3 agents/claude-pr-review/claude_review.py --pr https://github.com/owner/repo/pull/123 --comment
+claude-review --pr https://github.com/owner/repo/pull/123 --comment
 ```
 
 ## Output
@@ -76,10 +77,18 @@ jobs:
 - [sample-code-server-1309.md](samples/sample-code-server-1309.md)
 - [sample-waymark-1.md](samples/sample-waymark-1.md)
 
+These were generated from real pull requests with:
+
+```bash
+claude-review --pr https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1309 > agents/claude-pr-review/samples/sample-code-server-1309.md
+claude-review --pr https://github.com/XenomorphingTV/waymark/pull/1 > agents/claude-pr-review/samples/sample-waymark-1.md
+```
+
 ## Verification
 
 ```bash
+export PATH="$PWD/agents/claude-pr-review:$PATH"
 python3 -m unittest discover agents/claude-pr-review/tests
-python3 agents/claude-pr-review/claude_review.py --pr https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1309
-GITHUB_TOKEN=... python3 agents/claude-pr-review/claude_review.py --pr https://github.com/owner/repo/pull/123 --comment
+claude-review --pr https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1309
+GITHUB_TOKEN=... claude-review --pr https://github.com/owner/repo/pull/123 --comment
 ```
