@@ -1,0 +1,101 @@
+name: Claude PR Review
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    if: "!github.event.pull_request.draft"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+          # Truncate to 8000 chars for API context
+          head -c 8000 /tmp/pr.diff > /tmp/pr_truncated.diff
+
+      - name: Review with Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY=$(echo '${{ toJSON(github.event.pull_request.body) }}' | python3 -c "import sys,json; print(json.load(sys.stdin)[:2000])" 2>/dev/null || echo "")
+          DIFF=$(cat /tmp/pr_truncated.diff)
+          ADDITIONS="${{ github.event.pull_request.additions }}"
+          DELETIONS="${{ github.event.pull_request.deletions }}"
+          CHANGED="${{ github.event.pull_request.changed_files }}"
+          REPO="${{ github.repository }}"
+
+          PROMPT="You are a senior code reviewer. Analyze this GitHub PR and provide a structured review.
+
+          ## PR Information
+          - Title: ${PR_TITLE}
+          - Repository: ${REPO}
+          - Stats: +${ADDITIONS} -${DELETIONS}, ${CHANGED} files changed
+
+          ## PR Description
+          ${PR_BODY}
+
+          ## Diff (truncated)
+          ${DIFF}
+
+          ## Your Task
+          Provide a structured review in this exact Markdown format:
+
+          ## 🔍 PR Review: ${PR_TITLE}
+
+          ### 📋 Summary
+          (2-3 sentences summarizing what this PR does)
+
+          ### ⚠️ Identified Risks
+          - (list each risk, or \"None identified\" if clean)
+
+          ### 💡 Improvement Suggestions
+          - (actionable suggestions, or \"Looks good as-is\")
+
+          ### 🎯 Confidence Score
+          **[Low/Medium/High]** — (one sentence explaining your confidence level)
+
+          ---
+          *Reviewed by claude-review (GitHub Action)*"
+
+          RESPONSE=$(python3 -c "
+          import json, urllib.request, os
+
+          payload = json.dumps({
+              'model': 'claude-sonnet-4-20250514',
+              'max_tokens': 1500,
+              'messages': [{'role': 'user', 'content': '''$PROMPT'''}]
+          }).encode()
+
+          req = urllib.request.Request(
+              'https://api.anthropic.com/v1/messages',
+              data=payload,
+              headers={
+                  'content-type': 'application/json',
+                  'x-api-key': os.environ['ANTHROPIC_API_KEY'],
+                  'anthropic-version': '2023-06-01'
+              }
+          )
+
+          with urllib.request.urlopen(req) as resp:
+              data = json.loads(resp.read())
+              print(data['content'][0]['text'])
+          ")
+
+          echo "$RESPONSE" > /tmp/review.md
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/review.md

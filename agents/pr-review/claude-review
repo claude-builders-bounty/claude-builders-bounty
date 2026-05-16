@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# claude-review — Claude Code PR Review Agent
+# Reviews a GitHub PR and outputs a structured Markdown comment.
+#
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --pr owner/repo#123
+#   claude-review --pr https://github.com/owner/repo/pull/123 --post
+#
+# Requirements:
+#   - gh CLI (authenticated)
+#   - curl
+#   - ANTHROPIC_API_KEY environment variable (or uses gh as fallback for diff)
+
+set -euo pipefail
+
+VERSION="1.0.0"
+POST_COMMENT=false
+MODEL="claude-sonnet-4-20250514"
+
+usage() {
+  cat <<EOF
+claude-review v${VERSION} — AI-powered PR review agent
+
+USAGE:
+  claude-review --pr <url-or-ref> [OPTIONS]
+
+OPTIONS:
+  --pr <ref>       GitHub PR URL or owner/repo#number (required)
+  --post           Post the review as a comment on the PR
+  --model <model>  Claude model to use (default: claude-sonnet-4-20250514)
+  --help           Show this help
+
+ENVIRONMENT:
+  ANTHROPIC_API_KEY   Required for Claude API calls
+
+EXAMPLES:
+  claude-review --pr https://github.com/octocat/hello/pull/42
+  claude-review --pr octocat/hello#42 --post
+EOF
+  exit 0
+}
+
+# Parse arguments
+PR_REF=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_REF="$2"; shift 2 ;;
+    --post) POST_COMMENT=true; shift ;;
+    --model) MODEL="$2"; shift 2 ;;
+    --help|-h) usage ;;
+    *) echo "Unknown option: $1"; usage ;;
+  esac
+done
+
+if [[ -z "$PR_REF" ]]; then
+  echo "Error: --pr is required"
+  usage
+fi
+
+# Parse PR reference
+if [[ "$PR_REF" =~ ^https://github.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+  OWNER="${BASH_REMATCH[1]}"
+  REPO="${BASH_REMATCH[2]}"
+  PR_NUM="${BASH_REMATCH[3]}"
+elif [[ "$PR_REF" =~ ^([^/]+)/([^#]+)#([0-9]+)$ ]]; then
+  OWNER="${BASH_REMATCH[1]}"
+  REPO="${BASH_REMATCH[2]}"
+  PR_NUM="${BASH_REMATCH[3]}"
+else
+  echo "Error: Cannot parse PR reference: $PR_REF"
+  echo "Expected: https://github.com/owner/repo/pull/123 or owner/repo#123"
+  exit 1
+fi
+
+FULL_REPO="${OWNER}/${REPO}"
+
+echo "🔍 Reviewing PR #${PR_NUM} in ${FULL_REPO}..."
+
+# Fetch PR metadata
+PR_JSON=$(gh pr view "$PR_NUM" --repo "$FULL_REPO" --json title,body,additions,deletions,changedFiles,files,baseRefName,headRefName 2>/dev/null) || {
+  echo "Error: Failed to fetch PR metadata. Is gh authenticated?"
+  exit 1
+}
+
+PR_TITLE=$(echo "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))")
+PR_BODY=$(echo "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('body','')[:2000])")
+ADDITIONS=$(echo "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('additions',0))")
+DELETIONS=$(echo "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('deletions',0))")
+CHANGED_FILES=$(echo "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('changedFiles',0))")
+FILES=$(echo "$PR_JSON" | python3 -c "import sys,json; files=json.load(sys.stdin).get('files',[]); print('\n'.join(f['path'] for f in files[:30]))")
+
+# Fetch diff (limit to 8000 chars to fit in context)
+DIFF=$(gh pr diff "$PR_NUM" --repo "$FULL_REPO" 2>/dev/null | head -c 8000) || {
+  echo "Warning: Could not fetch full diff"
+  DIFF="(diff unavailable)"
+}
+
+# Check for API key
+if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "Error: ANTHROPIC_API_KEY environment variable is required"
+  exit 1
+fi
+
+# Build the prompt
+PROMPT=$(cat <<PROMPT_END
+You are a senior code reviewer. Analyze this GitHub PR and provide a structured review.
+
+## PR Information
+- **Title:** ${PR_TITLE}
+- **Repository:** ${FULL_REPO}
+- **Stats:** +${ADDITIONS} -${DELETIONS}, ${CHANGED_FILES} files changed
+- **Files:** 
+${FILES}
+
+## PR Description
+${PR_BODY}
+
+## Diff (truncated)
+\`\`\`diff
+${DIFF}
+\`\`\`
+
+## Your Task
+Provide a structured review in this exact Markdown format:
+
+## 🔍 PR Review: ${PR_TITLE}
+
+### 📋 Summary
+(2-3 sentences summarizing what this PR does)
+
+### ⚠️ Identified Risks
+- (list each risk, or "None identified" if clean)
+
+### 💡 Improvement Suggestions
+- (actionable suggestions, or "Looks good as-is")
+
+### 🎯 Confidence Score
+**[Low/Medium/High]** — (one sentence explaining your confidence level)
+
+---
+*Reviewed by claude-review v${VERSION}*
+PROMPT_END
+)
+
+# Call Claude API
+echo "🤖 Analyzing with ${MODEL}..."
+
+RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+  -H "content-type: application/json" \
+  -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+  -H "anthropic-version: 2023-06-01" \
+  -d "$(python3 -c "
+import json, sys
+prompt = sys.stdin.read()
+print(json.dumps({
+    'model': '${MODEL}',
+    'max_tokens': 1500,
+    'messages': [{'role': 'user', 'content': prompt}]
+}))
+" <<< "$PROMPT")")
+
+# Extract text from response
+REVIEW=$(echo "$RESPONSE" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if 'content' in data and len(data['content']) > 0:
+        print(data['content'][0]['text'])
+    elif 'error' in data:
+        print(f\"API Error: {data['error'].get('message', 'Unknown error')}\")
+        sys.exit(1)
+    else:
+        print('Error: Unexpected response format')
+        sys.exit(1)
+except Exception as e:
+    print(f'Error parsing response: {e}')
+    sys.exit(1)
+") || {
+  echo "Error: Failed to get review from Claude API"
+  echo "Response: $RESPONSE"
+  exit 1
+}
+
+echo ""
+echo "═══════════════════════════════════════════"
+echo "$REVIEW"
+echo "═══════════════════════════════════════════"
+
+# Post as comment if requested
+if [[ "$POST_COMMENT" == "true" ]]; then
+  echo ""
+  echo "📝 Posting review comment on PR #${PR_NUM}..."
+  echo "$REVIEW" | gh pr comment "$PR_NUM" --repo "$FULL_REPO" --body-file - || {
+    echo "Error: Failed to post comment"
+    exit 1
+  }
+  echo "✅ Review posted successfully!"
+fi
