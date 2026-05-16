@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+"""AI-powered structured PR review CLI.
+
+Fetches a GitHub PR diff, analyzes it using an LLM (via OpenRouter API),
+and generates a structured Markdown review with summary, risks,
+improvement suggestions, and confidence score.
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+  claude-review --pr 123 --repo owner/repo
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable
+from urllib.error import HTTPError
+
+PR_RE = re.compile(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)")
+
+# ── Data types ──────────────────────────────────────────────────────
+
+@dataclass
+class FileChange:
+    path: str
+    additions: int
+    deletions: int
+    patch: str
+    status: str = "modified"
+
+@dataclass
+class PullRequest:
+    owner: str
+    repo: str
+    number: int
+    title: str
+    body: str
+    author: str
+    files: list[FileChange]
+    diff_text: str = ""
+
+# ── GitHub API helpers ──────────────────────────────────────────────
+
+def _gh_token() -> str | None:
+    """Read token from gh CLI config or GITHUB_TOKEN env var."""
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        return token
+    # Try reading from gh CLI config
+    config_path = Path.home() / ".config" / "gh" / "hosts.yml"
+    if config_path.exists():
+        try:
+            import yaml
+            data = yaml.safe_load(config_path.read_text())
+            if data and "github.com" in data:
+                return data["github.com"].get("oauth_token") or data["github.com"].get("user", {}).get("oauth_token")
+        except Exception:
+            pass
+    return None
+
+def _github_api(path: str, accept: str = "application/vnd.github+json") -> object:
+    token = _gh_token()
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-review-cli",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    url = f"https://api.github.com{path}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = resp.read().decode("utf-8")
+            if "application/json" in resp.headers.get("Content-Type", ""):
+                return json.loads(body)
+            return body
+    except HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub API {e.code} for {path}: {error_body[:500]}")
+
+def _run_gh(args: list[str]) -> str | None:
+    try:
+        return subprocess.check_output(["gh", *args], text=True, stderr=subprocess.DEVNULL)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    match = PR_RE.fullmatch(url.rstrip("/"))
+    if not match:
+        raise ValueError(
+            "Expected PR URL like https://github.com/owner/repo/pull/123"
+        )
+    owner, repo, number = match.groups()
+    return owner, repo, int(number)
+
+def fetch_pr(url_or_number: str, repo: str | None = None) -> PullRequest:
+    """Fetch PR data from GitHub using gh CLI (preferred) or REST API."""
+    if repo:
+        owner, repo_name = repo.split("/", 1)
+        number = int(url_or_number)
+        url = f"https://github.com/{owner}/{repo_name}/pull/{number}"
+    else:
+        owner, repo_name, number = parse_pr_url(url_or_number)
+        url = url_or_number
+
+    # Try gh CLI first (faster, includes diff)
+    gh_json = _run_gh(["pr", "view", url, "--json", "title,body,author,files"])
+    gh_diff = _run_gh(["pr", "diff", url])
+
+    if gh_json and gh_diff:
+        data = json.loads(gh_json)
+        patches = _split_diff_by_file(gh_diff)
+        files = []
+        for f in data.get("files", []):
+            patch = patches.get(f["path"], "")
+            files.append(FileChange(
+                path=f["path"],
+                additions=int(f.get("additions") or 0),
+                deletions=int(f.get("deletions") or 0),
+                patch=patch,
+                status=f.get("status", "modified"),
+            ))
+        return PullRequest(
+            owner=owner, repo=repo_name, number=number,
+            title=data.get("title") or "",
+            body=data.get("body") or "",
+            author=(data.get("author") or {}).get("login", "unknown"),
+            files=files,
+            diff_text=gh_diff,
+        )
+
+    # Fallback to REST API
+    pr_data = _github_api(f"/repos/{owner}/{repo_name}/pulls/{number}")
+    files_data = _github_api(
+        f"/repos/{owner}/{repo_name}/pulls/{number}/files?per_page=100"
+    )
+    files = [
+        FileChange(
+            path=f["filename"],
+            additions=int(f.get("additions") or 0),
+            deletions=int(f.get("deletions") or 0),
+            patch=f.get("patch") or "",
+            status=f.get("status", "modified"),
+        )
+        for f in files_data
+    ]
+    return PullRequest(
+        owner=owner, repo=repo_name, number=number,
+        title=pr_data.get("title") or "",
+        body=pr_data.get("body") or "",
+        author=(pr_data.get("user") or {}).get("login", "unknown"),
+        files=files,
+        diff_text="\n".join(f.get("patch", "") for f in files_data if f.get("patch")),
+    )
+
+def _split_diff_by_file(diff: str) -> dict[str, str]:
+    patches: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                path = parts[3]
+                if path.startswith("b/"):
+                    path = path[2:]
+                current = path
+                patches[current] = [line]
+            continue
+        if current:
+            patches.setdefault(current, []).append(line)
+    return {p: "\n".join(lines) for p, lines in patches.items()}
+
+# ── LLM-powered review ──────────────────────────────────────────────
+
+def _openrouter_key() -> str:
+    key = os.environ.get("OPENROUTER_API_KEY")
+    if not key:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY not set. Get one at https://openrouter.ai/keys\n"
+            "Then: export OPENROUTER_API_KEY=sk-or-v1-..."
+        )
+    return key
+
+def generate_llm_review(pr: PullRequest) -> str:
+    """Use OpenRouter LLM to analyze the PR and generate a structured review."""
+    api_key = _openrouter_key()
+
+    # Build a compact representation of the PR for the LLM
+    files_summary = []
+    for f in pr.files:
+        lines = f.patch.split("\n")
+        # Show first 60 lines of each file's patch
+        patch_preview = "\n".join(lines[:60])
+        if len(lines) > 60:
+            patch_preview += f"\n... ({len(lines) - 60} more lines)"
+        files_summary.append(f"### {f.path} (+{f.additions}/-{f.deletions})\n```diff\n{patch_preview}\n```")
+
+    files_text = "\n\n".join(files_summary)
+    body_text = (pr.body or "")[:2000]
+
+    system_prompt = """You are an expert code reviewer. Analyze the provided GitHub pull request and produce a structured Markdown review.
+
+Your review MUST have these sections in order:
+
+## Summary of changes
+2-3 sentences explaining what this PR does, its scope, and impact.
+
+## Identified risks
+A bullet list of specific risks or concerns. Be concrete — reference specific files, patterns, or logic issues you find in the diff. If the diff is clean, list fewer items. Examples: error handling gaps, breaking changes, performance issues, security concerns, missing edge cases.
+
+## Improvement suggestions
+A bullet list of actionable improvements. Again, be specific — reference line numbers, patterns, or logic. If the PR is well-written, keep it brief but still offer at least one suggestion if possible.
+
+## Confidence score
+**High**, **Medium**, or **Low** based on:
+- High: Small, well-tested change with clear intent and no concerns
+- Medium: Moderate change, some areas need closer look
+- Low: Large/destructive change, critical paths affected, or insufficient testing
+
+Be thorough but reasonable. Focus on code quality, correctness, and maintainability."""
+
+    user_prompt = f"""## Pull Request #{pr.number}: {pr.title}
+Author: @{pr.author}
+Description: {body_text}
+
+## Changed Files ({len(pr.files)} files)
+
+{files_text}
+
+Review this PR thoroughly and provide your structured Markdown review."""
+
+    # Try models in order of preference, fall through on rate limits
+    free_models = [
+        "openrouter/free",
+        "qwen/qwen3-coder:free",
+        "deepseek/deepseek-v4-flash:free",
+        "nousresearch/hermes-3-llama-3.1-405b:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+    ]
+
+    last_error = None
+    for model in free_models:
+        payload = {
+            "model": model,
+            "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": 4096,
+        "temperature": 0.3,
+    }
+
+        try:
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/claude-builders-bounty/claude-builders-bounty",
+                    "X-Title": "claude-review",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                return result["choices"][0]["message"]["content"].strip()
+        except HTTPError as e:
+            error_body = e.read().decode("utf-8", errors="replace")
+            code = e.code
+            last_error = f"OpenRouter API error {code} on {model}: {error_body[:200]}"
+            if code != 429 and code != 402:
+                # Non-retryable errors — stop trying other models
+                raise RuntimeError(last_error)
+            # Rate-limited or insufficient credits — try next model
+            continue
+        except (KeyError, IndexError, json.JSONDecodeError) as e:
+            last_error = f"Failed to parse OpenRouter response on {model}: {e}"
+            continue
+
+    # All models failed
+    if last_error:
+        raise RuntimeError(last_error)
+    raise RuntimeError("All free OpenRouter models are rate-limited. Try again later or set a paid model.")
+
+# ── Fallback heuristic review (when no API key) ─────────────────────
+
+def heuristic_review(pr: PullRequest) -> str:
+    """Generate a review using heuristics when no LLM is available."""
+    total_add = sum(f.additions for f in pr.files)
+    total_del = sum(f.deletions for f in pr.files)
+    paths = [f.path for f in pr.files]
+    patches = "\n".join(f.patch for f in pr.files)
+
+    # Summary
+    roots = sorted({p.split("/", 1)[0] for p in paths})
+    top_files = sorted(pr.files, key=lambda f: f.additions + f.deletions, reverse=True)[:3]
+    summary = (
+        f"This PR changes {len(pr.files)} file(s) with +{total_add}/-{total_del} lines. "
+        f"Main areas: {', '.join(roots[:5])}. "
+        f"Largest changes: {', '.join(f.path for f in top_files)}."
+    )
+
+    # Risks
+    risks = []
+    total_changed = total_add + total_del
+    if total_changed > 800:
+        risks.append("Large diff size may hide regressions; consider reviewing in smaller chunks.")
+    if any("migration" in p.lower() or p.endswith(".sql") for p in paths):
+        risks.append("Database migrations changed — verify rollback and data preservation.")
+    if any(p.startswith(".github/workflows/") for p in paths):
+        risks.append("CI workflow changed — verify permissions and secret exposure.")
+    if any(p.endswith(("package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock")) for p in paths):
+        risks.append("Dependencies changed — audit new packages for supply-chain risk.")
+    if re.search(r"(?i)(password|secret|api[_-]?key|token)\s*[:=]\s*['\"][^'\"]+", patches):
+        risks.append("Possible hard-coded secret detected — confirm no credentials committed.")
+    if re.search(r"(?i)delete\s+from\s+\w+(?![^;\n]*\bwhere\b)", patches):
+        risks.append("DELETE without WHERE detected — verify it can't wipe tables unintentionally.")
+    if re.search(r"(?i)dangerouslySetInnerHTML|eval\(|new Function\(", patches):
+        risks.append("Dynamic code or raw HTML — verify sanitization and XSS protections.")
+
+    def _is_test_path(p: str) -> bool:
+        return bool(
+            p.startswith(("test", "tests", "__tests__"))
+            or "/tests/" in p
+            or "/__tests__/" in p
+            or ".test." in p
+            or ".spec." in p
+        )
+
+    if not any(_is_test_path(p) for p in paths):
+        risks.append("No test files changed — consider adding test coverage.")
+
+    # Suggestions
+    suggestions = []
+    if not any(p.lower().endswith(("readme.md", "docs.md")) or p.startswith("docs/") for p in paths):
+        suggestions.append("Update documentation if user-facing behavior changed.")
+    if not any(_is_test_path(p) for p in paths):
+        suggestions.append("Add unit/smoke tests covering the changed behavior.")
+    if any(p.endswith((".ts", ".tsx", ".js", ".jsx")) for p in paths):
+        suggestions.append("Run lint, typecheck, and test suite before merge.")
+    if re.search(r"TODO|FIXME", patches):
+        suggestions.append("Resolve TODO/FIXME comments introduced by this PR.")
+    if total_changed > 800:
+        suggestions.append("Consider splitting large changes into smaller PRs for easier review.")
+
+    # Confidence
+    has_tests = any(_is_test_path(p) for p in paths)
+    serious = [r for r in risks if "secret" in r.lower()]
+    if serious or total_changed > 1200:
+        confidence = "Low"
+    elif has_tests and total_changed <= 500:
+        confidence = "High"
+    else:
+        confidence = "Medium"
+
+    def bullets(items: Iterable[str]) -> str:
+        return "\n".join(f"- {item}" for item in items)
+
+    return f"""## Structured PR Review
+
+### Summary of changes
+{summary}
+PR title: **{pr.title}** by @{pr.author}.
+
+### Identified risks
+{bullets(risks) if risks else "- No major structural risks detected."}
+
+### Improvement suggestions
+{bullets(suggestions) if suggestions else "- Review looks clean. Consider adding docs/tests if applicable."}
+
+### Confidence score
+**{confidence}**"""
+
+# ── Main ────────────────────────────────────────────────────────────
+
+def render_review(pr: PullRequest, use_llm: bool = True) -> str:
+    if use_llm:
+        try:
+            return generate_llm_review(pr)
+        except Exception as e:
+            print(f"LLM review failed ({e}), falling back to heuristic review.", file=sys.stderr)
+            return heuristic_review(pr)
+    return heuristic_review(pr)
+
+def post_comment(pr_url: str, review_body: str) -> None:
+    """Post the review as a PR comment via gh CLI."""
+    result = _run_gh(["pr", "comment", pr_url, "--body", review_body])
+    if result is None:
+        # Fallback: try REST API
+        owner, repo, number = parse_pr_url(pr_url)
+        token = _gh_token()
+        if not token:
+            print("Cannot post comment: no GitHub authentication.", file=sys.stderr)
+            return
+        data = json.dumps({"body": review_body}).encode("utf-8")
+        url = f"https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments"
+        req = urllib.request.Request(
+            url, data=data,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "User-Agent": "claude-review-cli",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30):
+                pass
+        except HTTPError as e:
+            print(f"Failed to post comment: {e}", file=sys.stderr)
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="AI-powered PR review — generates structured Markdown reviews"
+    )
+    parser.add_argument("--pr", required=True, help="PR URL (https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--repo", help="owner/repo (use with --pr NUMBER)")
+    parser.add_argument("--output", help="Write review to file instead of stdout")
+    parser.add_argument("--no-llm", action="store_true", help="Use heuristic-only review (no API key needed)")
+    parser.add_argument("--post", action="store_true", help="Post review as a PR comment on GitHub")
+    args = parser.parse_args(argv)
+
+    try:
+        pr = fetch_pr(args.pr, repo=args.repo)
+        review = render_review(pr, use_llm=not args.no_llm)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.output:
+        out_path = Path(args.output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(review, encoding="utf-8")
+        print(f"Review written to {out_path}")
+
+    if args.post:
+        post_comment(args.pr, review)
+        print(f"Review posted as comment on {args.pr}")
+
+    print(review)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
