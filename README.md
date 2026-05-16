@@ -43,6 +43,12 @@ You're in the right place.
 
 ---
 
+## Workflows
+
+- [n8n Weekly GitHub Dev Summary](workflows/n8n-weekly-dev-summary.README.md): weekly GitHub activity summary delivered through Claude and Discord.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
