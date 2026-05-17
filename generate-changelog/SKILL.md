@@ -18,7 +18,7 @@ bash generate-changelog/changelog.sh
 2. Review `CHANGELOG.md` and keep the four required sections:
 
 - Added
-- Fixed
+- Fixed  
 - Changed
 - Removed
 
@@ -28,17 +28,13 @@ bash generate-changelog/changelog.sh
 CHANGELOG_VERSION=v1.2.3 bash generate-changelog/changelog.sh
 ```
 
-## Behavior
+## How it works
 
-- Fetches commits since the latest git tag with `git describe --tags --abbrev=0`.
-- If the repo has no tags, uses the full commit history.
-- Skips merge commits.
-- Categorizes Conventional Commit prefixes and common words into Added, Fixed, Changed, and Removed.
-- Writes a properly formatted `CHANGELOG.md`.
+Uses `generate_changelog.py` — a dependency-free Python script that reads commits since the latest git tag, classifies commit subjects into changelog sections, and writes a formatted release block.
 
 ## Category rules
 
-- Added: `feat:`, `feature:`, `add:`, `implement`, `introduce`
-- Fixed: `fix:`, `bugfix:`, `hotfix:`, `repair`, `resolve`
-- Removed: `remove:`, `delete:`
-- Changed: `change:`, `update:`, `refactor:`, `perf:`, `docs:`, `test:`, `chore:`, `ci:`, `style:`, `build:`, and uncategorized commits
+- Added: feat, add, create, implement, introduce, new
+- Fixed: fix, bugfix, bug, repair, resolve, patch
+- Changed: change: change, update, refactor, improve, enhance, perf, docs, test, ci, build, chore
+- Removed: remove, delete, drop, deprecate

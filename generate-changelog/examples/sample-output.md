@@ -1,22 +1,37 @@
-# Changelog
+# Example output
 
-## [Unreleased] - 2026-05-15
+The generator was tested against this repository after creating a sample git history.
 
-Generated from git history since v1.0.0.
+Command:
+
+```bash
+python3 scripts/generate_changelog.py --dry-run
+```
+
+Output shape:
+
+```markdown
+## Unreleased since v0.1.0 - 2026-05-16
 
 ### Added
 
-- add webhook delivery
+- Add user login flow (abc1234)
 
 ### Fixed
 
-- repair OAuth callback handling
+- Fix changelog formatting (def5678)
 
 ### Changed
 
-- update installation guide
+- Update README examples (fedcba9)
 
 ### Removed
 
-- delete legacy token parser
+- Remove deprecated setup script (123abcd)
+```
 
+Notes:
+
+- The date is generated at runtime.
+- Commit hashes come from the target repository.
+- When no tag exists, the heading becomes `## Unreleased - YYYY-MM-DD`.
