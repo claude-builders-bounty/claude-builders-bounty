@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+"""
+Claude Code PR Review Agent
+Analyzes PR diffs and generates structured Markdown review comments.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr 123 --repo owner/repo
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from typing import List, Optional
+
+import requests
+
+
+@dataclass
+class ReviewResult:
+    summary: str
+    risks: List[str]
+    suggestions: List[str]
+    confidence: str  # Low, Medium, High
+
+
+class PRReviewAgent:
+    def __init__(self, github_token: Optional[str] = None):
+        self.github_token = github_token or os.environ.get('GITHUB_TOKEN')
+        self.headers = {}
+        if self.github_token:
+            self.headers['Authorization'] = f'token {self.github_token}'
+        self.headers['Accept'] = 'application/vnd.github.v3+json'
+
+    def parse_pr_url(self, pr_url: str) -> tuple:
+        """Parse PR URL to extract owner, repo, and PR number."""
+        pattern = r'github\.com/([^/]+)/([^/]+)/pull/(\d+)'
+        match = re.search(pattern, pr_url)
+        if match:
+            return match.group(1), match.group(2), int(match.group(3))
+        raise ValueError(f"Invalid PR URL: {pr_url}")
+
+    def get_pr_diff(self, owner: str, repo: str, pr_number: int) -> str:
+        """Fetch PR diff from GitHub API."""
+        url = f'https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}'
+        headers = {**self.headers, 'Accept': 'application/vnd.github.v3.diff'}
+        
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.text
+
+    def get_pr_info(self, owner: str, repo: str, pr_number: int) -> dict:
+        """Fetch PR information from GitHub API."""
+        url = f'https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}'
+        response = requests.get(url, headers=self.headers)
+        response.raise_for_status()
+        return response.json()
+
+    def analyze_with_claude(self, diff: str, pr_info: dict) -> ReviewResult:
+        """Use Claude API to analyze the PR diff."""
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+
+        prompt = f"""You are a code reviewer analyzing a GitHub Pull Request.
+
+PR Title: {pr_info.get('title', 'N/A')}
+PR Description: {pr_info.get('body', 'N/A')}
+
+Here is the diff:
+```diff
+{diff[:150000]}  # Limit diff size
+```
+
+Please analyze this PR and provide:
+1. A brief summary of the changes (2-3 sentences)
+2. Identified risks (list any potential issues, bugs, or security concerns)
+3. Improvement suggestions (list specific recommendations)
+4. A confidence score for this review: Low, Medium, or High
+
+Format your response as JSON:
+{{
+    "summary": "...",
+    "risks": ["risk1", "risk2", ...],
+    "suggestions": ["suggestion1", "suggestion2", ...],
+    "confidence": "Medium"
+}}"""
+
+        response = requests.post(
+            'https://api.anthropic.com/v1/messages',
+            headers={
+                'Content-Type': 'application/json',
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01'
+            },
+            json={
+                'model': 'claude-sonnet-4-20250514',
+                'max_tokens': 2000,
+                'messages': [{'role': 'user', 'content': prompt}]
+            }
+        )
+        response.raise_for_status()
+        
+        content = response.json()['content'][0]['text']
+        
+        # Extract JSON from response
+        json_match = re.search(r'\{[\s\S]*\}', content)
+        if json_match:
+            result = json.loads(json_match.group())
+            return ReviewResult(
+                summary=result.get('summary', 'No summary provided'),
+                risks=result.get('risks', []),
+                suggestions=result.get('suggestions', []),
+                confidence=result.get('confidence', 'Low')
+            )
+        else:
+            raise ValueError("Could not parse Claude response")
+
+    def format_review(self, result: ReviewResult) -> str:
+        """Format review result as Markdown."""
+        emoji_map = {
+            'High': '🟢',
+            'Medium': '🟡',
+            'Low': '🔴'
+        }
+        
+        review = f"""## 🤖 Automated PR Review
+
+### Summary
+{result.summary}
+
+### Confidence Score
+{emoji_map.get(result.confidence, '⚪')} **{result.confidence}**
+
+### ⚠️ Identified Risks
+"""
+        if result.risks:
+            for risk in result.risks:
+                review += f"- {risk}\n"
+        else:
+            review += "- No significant risks identified\n"
+
+        review += "\n### 💡 Improvement Suggestions\n"
+        if result.suggestions:
+            for suggestion in result.suggestions:
+                review += f"- {suggestion}\n"
+        else:
+            review += "- No suggestions at this time\n"
+
+        review += "\n---\n*Generated by Claude Code PR Review Agent*"
+        return review
+
+    def post_review_comment(self, owner: str, repo: str, pr_number: int, review: str) -> None:
+        """Post review comment to GitHub PR."""
+        url = f'https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments'
+        response = requests.post(
+            url,
+            headers=self.headers,
+            json={'body': review}
+        )
+        response.raise_for_status()
+        print(f"✅ Review posted to PR #{pr_number}")
+
+    def review_pr(self, pr_url: str, post_comment: bool = False) -> str:
+        """Main entry point to review a PR."""
+        owner, repo, pr_number = self.parse_pr_url(pr_url)
+        
+        print(f"🔍 Analyzing PR #{pr_number} in {owner}/{repo}...")
+        
+        pr_info = self.get_pr_info(owner, repo, pr_number)
+        diff = self.get_pr_diff(owner, repo, pr_number)
+        
+        print(f"📊 Diff size: {len(diff)} characters")
+        print("🤖 Sending to Claude for analysis...")
+        
+        result = self.analyze_with_claude(diff, pr_info)
+        review = self.format_review(result)
+        
+        if post_comment:
+            self.post_review_comment(owner, repo, pr_number, review)
+        
+        return review
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Claude Code PR Review Agent')
+    parser.add_argument('--pr', required=True, help='PR URL (e.g., https://github.com/owner/repo/pull/123)')
+    parser.add_argument('--post', action='store_true', help='Post review as comment on PR')
+    parser.add_argument('--output', '-o', help='Output file for review (default: stdout)')
+    
+    args = parser.parse_args()
+    
+    try:
+        agent = PRReviewAgent()
+        review = agent.review_pr(args.pr, post_comment=args.post)
+        
+        if args.output:
+            with open(args.output, 'w') as f:
+                f.write(review)
+            print(f"\n📝 Review saved to {args.output}")
+        else:
+            print("\n" + "="*60)
+            print(review)
+            print("="*60)
+            
+    except Exception as e:
+        print(f"❌ Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
