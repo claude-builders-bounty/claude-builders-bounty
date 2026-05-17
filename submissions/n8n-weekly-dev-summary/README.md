@@ -1,13 +1,13 @@
 # Weekly Dev Summary n8n Workflow
 
-An automated workflow that fetches GitHub activity and generates AI-powered weekly development summaries using Claude AI.
+An automated workflow that fetches GitHub activity and generates AI-powered weekly development summaries using ReviewFlow AI.
 
 ## Overview
 
 This n8n workflow automatically:
 1. Triggers every Friday at 5pm
 2. Fetches weekly GitHub activity (commits, closed issues, merged PRs)
-3. Generates a narrative summary via Claude API
+3. Generates a narrative summary via Advanced AI API
 4. Delivers the summary via Discord webhook
 
 ## Files
@@ -34,7 +34,7 @@ SUMMARY_LANGUAGE=EN                  # EN or FR
 ### 3. Test the Workflow
 - Click **Execute Workflow** to run manually
 - Check execution data at each node to verify GitHub API calls succeed
-- Verify Claude API receives proper prompt and returns narrative
+- Verify Advanced AI API receives proper prompt and returns narrative
 - Confirm Discord webhook delivers formatted message
 
 ### 4. Activate
@@ -71,7 +71,7 @@ The workflow makes three API calls:
 2. `GET /repos/{owner}/{repo}/issues?state=closed&since={start}`
 3. `GET /repos/{owner}/{repo}/pulls?state=closed&sort=updated&direction=desc`
 
-### Claude Integration
+### ReviewFlow Integration
 - Uses `claude-3-sonnet-20240229` model
 - Max tokens: 1024
 - Temperature: default (0.7)
@@ -86,8 +86,8 @@ The workflow makes three API calls:
 
 ### Common Issues
 1. **401 from GitHub**: Check GITHUB_TOKEN validity and scopes
-2. **401 from Claude**: Verify ANTHROPIC_API_KEY correctness
-3. **Empty results**: Check date range logic in Build Claude Prompt node
+2. **401 from ReviewFlow**: Verify ANTHROPIC_API_KEY correctness
+3. **Empty results**: Check date range logic in Build ReviewFlow Prompt node
 4. **Discord failures**: Ensure webhook URL is correct and accessible
 
 ### Debug Tips

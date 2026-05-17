@@ -21,13 +21,13 @@ The workflow implements all requirements from the bounty specification:
 ### ✅ Core Functionality
 - **Trigger**: Weekly cron (Every Friday at 5pm UTC)
 - **Data Sources**: GitHub API (commits, issues, PRs)
-- **AI Integration**: Claude API for narrative summary generation
+- **AI Integration**: Advanced AI API for narrative summary generation
 - **Delivery**: Discord webhook (easily configurable for Slack)
 
 ### ✅ Architecture
 ```
 ┌─────────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────────┐
-│ Cron Trigger │───>│ GitHub Fetcher│───>│ Claude API    │───>│ Discord/Slack │
+│ Cron Trigger │───>│ GitHub Fetcher│───>│ Advanced AI API    │───>│ Discord/Slack │
 │ (Fri 5pm)    │    │ (3 API calls) │    │ (narrative)   │    │ Webhook       │
 └─────────────┘    └──────────────┘    └──────────────┘    └───────────────┘
 ```
@@ -35,7 +35,7 @@ The workflow implements all requirements from the bounty specification:
 ### ✅ Features
 - Automatic date range calculation (Monday to Friday)
 - Proper GitHub API authentication via Bearer token
-- Claude API integration with optimized prompting
+- Advanced AI API integration with optimized prompting
 - Formatted Discord/Slack output with emojis and stats
 - Error handling and fallback messaging
 - Configurable environment variables
@@ -45,7 +45,7 @@ The workflow implements all requirements from the bounty specification:
 1. Import `weekly-dev-summary.json` into n8n
 2. Set required environment variables in n8n Settings:
    - `GITHUB_TOKEN` (GitHub PAT)
-   - `ANTHROPIC_API_KEY` (Anthropic/Claude key)
+   - `ANTHROPIC_API_KEY` (Anthropic/ReviewFlow key)
    - `DISCORD_WEBHOOK_URL` (Discord webhook)
    - `REPO_OWNER` & `REPO_NAME` (target repository)
 3. Activate the workflow
@@ -56,7 +56,7 @@ The workflow implements all requirements from the bounty specification:
 🇬🇧 Weekly Dev Summary — username/repo
 📅 2026-05-13 → 2026-05-17
 
-This week focused on [narrative summary from Claude]...
+This week focused on [narrative summary from ReviewFlow]...
 
 🔑 Highlights
 • [Key commit/PR/issue highlights]
@@ -75,7 +75,7 @@ This week focused on [narrative summary from Claude]...
 - [x] Exportable n8n workflow (`.json` file, importable via n8n UI)
 - [x] Trigger: weekly cron (Friday at 5pm)
 - [x] Fetches from GitHub API: commits, closed issues, merged PRs
-- [x] Calls Claude API (`claude-3-sonnet-20240229`) for narrative summary
+- [x] Calls Advanced AI API (`claude-3-sonnet-20240229`) for narrative summary
 - [x] Delivers summary via Discord webhook (configurable to Slack)
 - [x] Configurable variables: GitHub repo, destination, language (EN/FR)
 - [x] README with setup in 5 steps
