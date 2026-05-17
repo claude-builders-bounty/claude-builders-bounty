@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""
+claude-review — Structured PR code review agent
+Usage: claude-review --pr https://github.com/owner/repo/pull/123
+"""
+
+import argparse, json, os, re, subprocess, sys
+from datetime import datetime
+
+
+def gh_api(cmd: list) -> dict:
+    """Run gh CLI and return JSON"""
+    result = subprocess.run(["gh"] + cmd, capture_output=True, text=True, timeout=30)
+    return json.loads(result.stdout) if result.stdout else {}
+
+
+def parse_pr_url(url: str) -> tuple:
+    """Parse GitHub PR URL into owner/repo/number"""
+    m = re.search(r'github\.com/([^/]+/[^/]+)/pull/(\d+)', url)
+    if not m:
+        raise ValueError(f"Invalid PR URL: {url}")
+    return m.group(1), int(m.group(2))
+
+
+def get_pr_diff(repo: str, pr_num: int) -> str:
+    """Get PR diff via API"""
+    # Get files changed
+    files_result = subprocess.run(
+        ["gh", "api", f"repos/{repo}/pulls/{pr_num}/files", "--jq", ".[].filename"],
+        capture_output=True, text=True, timeout=15
+    )
+    files = [f for f in files_result.stdout.strip().split("\n") if f]
+    
+    # Build a synthetic diff from file list + get actual diff via raw API
+    diff_result = subprocess.run(
+        ["gh", "api", f"repos/{repo}/pulls/{pr_num}", 
+         "--header", "Accept: application/vnd.github.v3.diff"],
+        capture_output=True, text=True, timeout=15
+    )
+    diff = diff_result.stdout
+    
+    # If diff API fails, construct summary from files
+    if not diff or len(diff) < 10:
+        pr_result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/pulls/{pr_num}"],
+            capture_output=True, text=True, timeout=15
+        )
+        pr_data = json.loads(pr_result.stdout)
+        diff = f"Files changed: {len(files)}\n" + "\n".join(f"  {f}" for f in files)
+        diff += f"\nAdditions: {pr_data.get('additions', 0)}\nDeletions: {pr_data.get('deletions', 0)}"
+    
+    return diff
+
+
+def get_pr_info(repo: str, pr_num: int) -> dict:
+    """Get PR metadata"""
+    return gh_api(["api", f"repos/{repo}/pulls/{pr_num}"])
+
+
+def analyze_diff(diff: str, pr_info: dict) -> dict:
+    """Analyze a PR diff and generate structured review"""
+    lines = diff.split("\n")
+    stats = {
+        "total_lines": len(lines),
+        "additions": sum(1 for l in lines if l.startswith("+") and not l.startswith("+++")),
+        "deletions": sum(1 for l in lines if l.startswith("-") and not l.startswith("---")),
+        "files_changed": sum(1 for l in lines if l.startswith("diff --git")),
+    }
+    
+    risks = []
+    suggestions = []
+    
+    # Risk detection patterns
+    diff_lower = diff.lower()
+    
+    if "console.log" in diff_lower or "print(" in diff_lower:
+        risks.append("Debug output detected — remove console.log/print before merging")
+    
+    if "TODO" in diff or "FIXME" in diff:
+        risks.append("TODO/FIXME comments found — these should be resolved or tracked as issues")
+    
+    if re.search(r'\.env(?!\.example)', diff):
+        risks.append("Potential .env file exposure — never commit environment files")
+    
+    if "password" in diff_lower or "secret" in diff_lower or "token" in diff_lower or "api_key" in diff_lower:
+        risks.append("Credentials/secrets detected in diff — use environment variables instead")
+    
+    if "try:" in diff and "except:" in diff and "pass" in diff_lower:
+        risks.append("Bare except: pass blocks found — exception swallowing hides bugs")
+    
+    if re.search(r'eval\(|exec\(', diff):
+        risks.append("eval()/exec() usage detected — major security risk, avoid if possible")
+    
+    if "SELECT * FROM" in diff.upper() or "SELECT * from" in diff:
+        suggestions.append("Consider replacing SELECT * with explicit column names for clarity and performance")
+    
+    if "npm install" in diff_lower and "package-lock.json" not in "\n".join(lines[:50]):
+        suggestions.append("package-lock.json not present in diff when dependencies changed — verify lock file is updated")
+    
+    if stats["files_changed"] > 10:
+        suggestions.append(f"Large PR ({stats['files_changed']} files) — consider splitting into smaller, focused PRs")
+    
+    if stats["files_changed"] == 0:
+        risks.append("No file changes detected — PR may be empty")
+    
+    # Check for test files
+    has_tests = any("test" in l.lower() or "spec" in l.lower() for l in lines if l.startswith("+++"))
+    if stats["additions"] > 20 and not has_tests:
+        suggestions.append("No test files found in this PR — consider adding tests for the changes")
+    
+    # Confidence scoring
+    if len(risks) == 0 and len(suggestions) <= 1:
+        confidence = "High"
+    elif len(risks) <= 2 and len(suggestions) <= 3:
+        confidence = "Medium"
+    else:
+        confidence = "Low"
+    
+    return {
+        "stats": stats,
+        "risks": risks,
+        "suggestions": suggestions,
+        "confidence": confidence,
+    }
+
+
+def generate_review(pr_info: dict, analysis: dict) -> str:
+    """Generate structured Markdown review"""
+    title = pr_info.get("title", "Unknown PR")
+    author = pr_info.get("user", {}).get("login", "unknown")
+    stats = analysis["stats"]
+    
+    return f"""## Code Review: {title}
+
+**Author:** @{author}  
+**Files:** {stats['files_changed']} | **+{stats['additions']}** **-{stats['deletions']}**  
+**Reviewed:** {datetime.now():%Y-%m-%d %H:%M}
+
+### Summary of changes
+This PR modifies {stats['files_changed']} file(s) with {stats['additions']} additions and {stats['deletions']} deletions. {"The changes appear focused on a specific feature or fix." if stats['files_changed'] <= 5 else "The scope is broad — verify that all changes are related to the stated goal."}
+
+### Identified risks
+{chr(10).join(f'- ⚠️ {r}' for r in analysis['risks']) if analysis['risks'] else '- ✅ No significant risks identified'}
+
+### Improvement suggestions
+{chr(10).join(f'- 💡 {s}' for s in analysis['suggestions']) if analysis['suggestions'] else '- ✅ No improvement suggestions — code looks clean'}
+
+### Confidence score
+**{analysis['confidence']}** — {"This PR appears ready to merge after a brief review." if analysis['confidence'] == 'High' else "Some items need attention before merging." if analysis['confidence'] == 'Medium' else "Multiple concerns — thorough review recommended."}
+
+---
+*Generated by claude-review agent*"""
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Review Agent")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--output", help="Output file (default: stdout)")
+    args = parser.parse_args()
+    
+    try:
+        repo, pr_num = parse_pr_url(args.pr)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"Fetching PR #{pr_num} from {repo}...", file=sys.stderr)
+    
+    pr_info = get_pr_info(repo, pr_num)
+    diff = get_pr_diff(repo, pr_num)
+    
+    if not diff:
+        print("Error: Could not fetch PR diff", file=sys.stderr)
+        sys.exit(1)
+    
+    analysis = analyze_diff(diff, pr_info)
+    review = generate_review(pr_info, analysis)
+    
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(review)
+        print(f"Review saved to {args.output}", file=sys.stderr)
+    else:
+        print(review)
+    
+    # Print stats to stderr
+    s = analysis['stats']
+    print(f"\nStats: {s['files_changed']} files, +{s['additions']}/-{s['deletions']}, "
+          f"{len(analysis['risks'])} risks, {len(analysis['suggestions'])} suggestions, "
+          f"confidence: {analysis['confidence']}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
