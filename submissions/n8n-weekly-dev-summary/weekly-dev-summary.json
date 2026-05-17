@@ -1,0 +1,373 @@
+{
+  "name": "Weekly Dev Summary — Claude Code",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 17,
+              "triggerAtDay": 5
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Schedule Trigger (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_owner }}/{{ $json.repo_name }}/commits?since={{ $json.since }}&until={{ $json.until }}",
+        "baseURL": "https://api.github.com/repos",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.GITHUB_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits (This Week)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/issues?state=closed&since={{ $json.since }}",
+        "qsParameters": {
+          "parameters": [
+            {
+              "name": "per_page",
+              "value": "100"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.GITHUB_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        450,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/pulls?state=closed&sort=updated&direction=desc",
+        "qsParameters": {
+          "parameters": [
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.GITHUB_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        450,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─── Build the Claude prompt from GitHub data ───\n\nconst now = new Date();\nconst monday = new Date(now);\nmonday.setDate(now.getDate() - ((now.getDay() + 6) % 7));\nmonday.setHours(0, 0, 0, 0);\nconst friday = new Date(monday);\nfriday.setDate(monday.getDate() + 4);\nfriday.setHours(23, 59, 59, 999);\n\nconst commits = $input.all()[0]?.json || [];\nconst issues = $input.all()[1]?.json || [];\nconst prs = $input.all()[2]?.json || [];\n\nconst repoOwner = $env.REPO_OWNER || 'owner';\nconst repoName = $env.REPO_NAME || 'repo';\nconst language = $env.SUMMARY_LANGUAGE || 'EN';\n\nconst prompt = `Write a developer summary for ${repoOwner}/${repoName}. Commits: ${commits.length}, Issues: ${issues.length}, PRs: ${prs.length}. Language: ${language}.`;\n\nreturn {\n  prompt,\n  stats: {\n    repo: `${repoOwner}/${repoName}`,\n    period: `${monday.toISOString().split('T')[0]} to ${friday.toISOString().split('T')[0]}`,\n    totalCommits: commits.length,\n    closedIssues: issues.length,\n    mergedPRs: prs.length,\n    language\n  }\n};"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-3-sonnet-20240229"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1024
+            },
+            {
+              "name": "messages",
+              "value": [
+                {
+                  "role": "user",
+                  "content": "={{ $json.prompt }}"
+                }
+              ]
+            }
+          ]
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API (Generate Summary)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        850,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $input.all()[0]?.json;\nconst narrative = claudeResponse?.content?.[0]?.text || 'Unable to generate summary.';\nconst stats = $('Build Claude Prompt').item.json.stats;\nconst icon = stats.language === 'FR' ? '🇫🇷' : '🇬🇧';\n\nreturn {\n  content: `${icon} **Weekly Dev Summary — ${stats.repo}**\\n📅 ${stats.period}\\n\\n${narrative}\\n\\n---\\n📊 **Stats:** ${stats.totalCommits} commits · ${stats.closedIssues} issues · ${stats.mergedPRs} PRs`,\n  username: 'Weekly Dev Bot'\n};"
+      },
+      "id": "format-message",
+      "name": "Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.content }}"
+            },
+            {
+              "name": "username",
+              "value": "={{ $json.username }}"
+            }
+          ]
+        }
+      },
+      "id": "discord-webhook",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1250,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repo_owner",
+              "value": "={{ $env.REPO_OWNER }}"
+            },
+            {
+              "name": "repo_name",
+              "value": "={{ $env.REPO_NAME }}"
+            },
+            {
+              "name": "since",
+              "value": "2026-05-11T00:00:00Z"
+            },
+            {
+              "name": "until",
+              "value": "2026-05-16T23:59:59Z"
+            }
+          ]
+        }
+      },
+      "id": "set-config",
+      "name": "Set Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        250,
+        150
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (Fri 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Set Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits (This Week)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits (This Week)": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API (Generate Summary)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API (Generate Summary)": {
+      "main": [
+        [
+          {
+            "node": "Format Discord Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Discord Message": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
