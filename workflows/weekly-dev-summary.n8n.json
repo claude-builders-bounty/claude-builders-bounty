@@ -1,0 +1,254 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d001",
+      "name": "Run Now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d002",
+      "name": "Weekly Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repo = ($env.GITHUB_REPO || '').trim();\nconst githubToken = ($env.GITHUB_TOKEN || '').trim();\nconst anthropicApiKey = ($env.ANTHROPIC_API_KEY || '').trim();\nconst slackWebhookUrl = ($env.SLACK_WEBHOOK_URL || '').trim();\nconst discordWebhookUrl = ($env.DISCORD_WEBHOOK_URL || '').trim();\nconst webhookUrl = slackWebhookUrl || discordWebhookUrl;\nconst deliveryPlatform = ($env.DELIVERY_PLATFORM || (slackWebhookUrl ? 'slack' : 'discord')).toLowerCase();\nconst language = (($env.LANGUAGE || 'EN').trim().toUpperCase() === 'FR') ? 'FR' : 'EN';\nconst model = ($env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514').trim();\nconst missing = [];\n\nif (!repo) missing.push('GITHUB_REPO');\nif (!githubToken) missing.push('GITHUB_TOKEN');\nif (!anthropicApiKey) missing.push('ANTHROPIC_API_KEY');\nif (!webhookUrl) missing.push('SLACK_WEBHOOK_URL or DISCORD_WEBHOOK_URL');\n\nconst [owner = '', repoName = ''] = repo.split('/');\nconst until = new Date();\nconst since = new Date(until);\nsince.setDate(since.getDate() - 7);\n\nreturn [\n  {\n    json: {\n      repo,\n      owner,\n      repoName,\n      githubToken,\n      anthropicApiKey,\n      webhookUrl,\n      deliveryPlatform,\n      language,\n      model,\n      sinceIso: since.toISOString(),\n      untilIso: until.toISOString(),\n      sinceDate: since.toISOString().slice(0, 10),\n      untilDate: until.toISOString().slice(0, 10),\n      missingConfig: missing.join(', '),\n      hasMissingConfig: missing.length > 0,\n      destinationLabel: $env.DESTINATION_CHANNEL || 'Slack/Discord channel'\n    }\n  }\n];"
+      },
+      "id": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d003",
+      "name": "Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasMissingConfig }}",
+              "operation": "equal",
+              "value2": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d004",
+      "name": "Has Required Config",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        720,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const missing = $json.missingConfig || 'unknown';\nthrow new Error(`Missing required configuration: ${missing}`);"
+      },
+      "id": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d005",
+      "name": "Config Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { owner, repoName, repo, githubToken, sinceIso, untilIso, sinceDate, untilDate } = $json;\nconst headers = {\n  Authorization: `Bearer ${githubToken}`,\n  Accept: 'application/vnd.github+json',\n  'X-GitHub-Api-Version': '2022-11-28'\n};\n\nasync function githubGet(url, label) {\n  try {\n    return await this.helpers.httpRequest({\n      url,\n      method: 'GET',\n      headers,\n      json: true,\n      returnFullResponse: true,\n      timeout: 120000\n    });\n  } catch (error) {\n    const statusCode = error?.statusCode || error?.response?.statusCode || error?.cause?.statusCode;\n    if (statusCode === 403 || statusCode === 429) {\n      throw new Error(`GitHub rate limit or permission issue while fetching ${label}. Check token scopes and retry after the reset window.`);\n    }\n    throw new Error(`GitHub request failed for ${label}: ${error.message || error}`);\n  }\n}\n\nconst commitsUrl = `https://api.github.com/repos/${owner}/${repoName}/commits?since=${encodeURIComponent(sinceIso)}&until=${encodeURIComponent(untilIso)}&per_page=100`;\nconst issuesUrl = `https://api.github.com/search/issues?q=${encodeURIComponent(`repo:${repo} is:issue is:closed closed:${sinceDate}..${untilDate}`)}&per_page=100`;\nconst prsUrl = `https://api.github.com/search/issues?q=${encodeURIComponent(`repo:${repo} is:pr is:merged merged:${sinceDate}..${untilDate}`)}&per_page=100`;\n\nconst [commitsRes, issuesRes, prsRes] = await Promise.all([\n  githubGet.call(this, commitsUrl, 'commits'),\n  githubGet.call(this, issuesUrl, 'closed issues'),\n  githubGet.call(this, prsUrl, 'merged PRs')\n]);\n\nconst commits = Array.isArray(commitsRes.body) ? commitsRes.body.map((commit) => ({\n  sha: String(commit.sha || '').slice(0, 7),\n  message: commit?.commit?.message?.split('\\n')[0] || '(no message)',\n  author: commit?.commit?.author?.name || commit?.author?.login || 'unknown',\n  date: commit?.commit?.author?.date || commit?.commit?.committer?.date || null,\n  url: commit.html_url || ''\n})) : [];\n\nconst closedIssues = Array.isArray(issuesRes.body?.items) ? issuesRes.body.items.map((item) => ({\n  number: item.number,\n  title: item.title,\n  url: item.html_url,\n  closedAt: item.closed_at || null\n})) : [];\n\nconst mergedPrs = Array.isArray(prsRes.body?.items) ? prsRes.body.items.map((item) => ({\n  number: item.number,\n  title: item.title,\n  url: item.html_url,\n  closedAt: item.closed_at || null\n})) : [];\n\nreturn [\n  {\n    json: {\n      ...$json,\n      githubActivity: {\n        commits,\n        closedIssues,\n        mergedPrs,\n        counts: {\n          commits: commits.length,\n          closedIssues: closedIssues.length,\n          mergedPrs: mergedPrs.length\n        }\n      }\n    }\n  }\n];"
+      },
+      "id": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d006",
+      "name": "Fetch GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { language, repo, sinceDate, untilDate, githubActivity } = $json;\nconst counts = githubActivity.counts;\nconst commits = githubActivity.commits.slice(0, 8);\nconst closedIssues = githubActivity.closedIssues.slice(0, 8);\nconst mergedPrs = githubActivity.mergedPrs.slice(0, 8);\n\nconst intro = language === 'FR'\n  ? `Tu rédiges un résumé hebdomadaire en Markdown pour le dépôt ${repo}. La période couvre du ${sinceDate} au ${untilDate}.`\n  : `You are writing a weekly Markdown summary for the repository ${repo}. The reporting window runs from ${sinceDate} through ${untilDate}.`;\n\nconst rules = language === 'FR'\n  ? [\n      'Reste concis, clair et orienté vers l action.',\n      'Mentionne les totaux pour les commits, issues fermées et PR fusionnées.',\n      'Ajoute une section Points saillants, une section Risques ou blocages, et une section Prochaines étapes.',\n      'Si les données sont faibles, le note honnêtement sans inventer.'\n    ].join(' ')\n  : [\n      'Keep the tone concise, clear, and action-oriented.',\n      'Mention totals for commits, closed issues, and merged PRs.',\n      'Include a Highlights section, a Risks or Blockers section, and a Next Steps section.',\n      'If the week is quiet, say so honestly without inventing activity.'\n    ].join(' ');\n\nconst bullets = [\n  language === 'FR' ? `Commits: ${counts.commits}` : `Commits: ${counts.commits}`,\n  language === 'FR' ? `Issues fermées: ${counts.closedIssues}` : `Closed issues: ${counts.closedIssues}`,\n  language === 'FR' ? `PR fusionnées: ${counts.mergedPrs}` : `Merged PRs: ${counts.mergedPrs}`,\n  '',\n  language === 'FR' ? 'Derniers commits:' : 'Recent commits:',\n  ...commits.map((commit) => `- ${commit.sha} ${commit.message} (${commit.author})`),\n  '',\n  language === 'FR' ? 'Issues fermées:' : 'Closed issues:',\n  ...closedIssues.map((issue) => `- #${issue.number} ${issue.title}`),\n  '',\n  language === 'FR' ? 'PR fusionnées:' : 'Merged PRs:',\n  ...mergedPrs.map((pr) => `- #${pr.number} ${pr.title}`)\n].join('\\n');\n\nreturn [\n  {\n    json: {\n      ...$json,\n      claudePrompt: `${intro}\\n\\n${rules}\\n\\n${bullets}`,\n      claudeSystemPrompt: language === 'FR'\n        ? 'Tu es un analyste de livraison technique. Écris en Markdown propre, avec des puces courtes et des titres simples.'\n        : 'You are a technical delivery analyst. Write clean Markdown with short bullets and simple headings.'\n    }\n  }\n];"
+      },
+      "id": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d007",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { anthropicApiKey, model, claudePrompt, claudeSystemPrompt } = $json;\n\ntry {\n  const response = await this.helpers.httpRequest({\n    url: 'https://api.anthropic.com/v1/messages',\n    method: 'POST',\n    headers: {\n      'x-api-key': anthropicApiKey,\n      'anthropic-version': '2023-06-01',\n      'content-type': 'application/json'\n    },\n    body: {\n      model,\n      max_tokens: 1200,\n      temperature: 0.3,\n      system: claudeSystemPrompt,\n      messages: [\n        {\n          role: 'user',\n          content: claudePrompt\n        }\n      ]\n    },\n    json: true,\n    returnFullResponse: true,\n    timeout: 120000\n  });\n\n  const text = Array.isArray(response.body?.content)\n    ? response.body.content.map((part) => part?.text || '').join('').trim()\n    : '';\n\n  if (!text) {\n    throw new Error('Anthropic response did not include summary text.');\n  }\n\n  return [\n    {\n      json: {\n        ...$json,\n        summaryMarkdown: text,\n        anthropicResponseId: response.body?.id || '',\n        summaryWordCount: text.split(/\\s+/).filter(Boolean).length\n      }\n    }\n  ];\n} catch (error) {\n  const statusCode = error?.statusCode || error?.response?.statusCode || error?.cause?.statusCode;\n  if (statusCode === 401) {\n    throw new Error('Anthropic rejected the API key. Check ANTHROPIC_API_KEY.');\n  }\n  throw new Error(`Claude summary generation failed: ${error.message || error}`);\n}"
+      },
+      "id": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d008",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { repo, language, deliveryPlatform, destinationLabel, summaryMarkdown, githubActivity, sinceDate, untilDate } = $json;\nconst intro = language === 'FR'\n  ? `Résumé hebdomadaire pour ${repo} (${sinceDate} → ${untilDate})`\n  : `Weekly summary for ${repo} (${sinceDate} → ${untilDate})`;\n\nconst header = [\n  intro,\n  language === 'FR'\n    ? `Commits: ${githubActivity.counts.commits} | Issues fermées: ${githubActivity.counts.closedIssues} | PR fusionnées: ${githubActivity.counts.mergedPrs}`\n    : `Commits: ${githubActivity.counts.commits} | Closed issues: ${githubActivity.counts.closedIssues} | Merged PRs: ${githubActivity.counts.mergedPrs}`,\n  `Destination: ${destinationLabel}`\n].join('\\n');\n\nconst payloadText = `${header}\\n\\n${summaryMarkdown}`;\nconst webhookPayload = deliveryPlatform === 'discord'\n  ? { content: payloadText }\n  : { text: payloadText };\n\nreturn [\n  {\n    json: {\n      ...$json,\n      payloadText,\n      webhookPayload\n    }\n  }\n];"
+      },
+      "id": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d009",
+      "name": "Build Webhook Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { webhookUrl, webhookPayload, deliveryPlatform } = $json;\n\ntry {\n  const response = await this.helpers.httpRequest({\n    url: webhookUrl,\n    method: 'POST',\n    body: webhookPayload,\n    json: true,\n    returnFullResponse: true,\n    timeout: 120000\n  });\n\n  return [\n    {\n      json: {\n        ...$json,\n        deliveryStatus: response.statusCode || 200,\n        deliveredTo: deliveryPlatform\n      }\n    }\n  ];\n} catch (error) {\n  throw new Error(`Webhook delivery failed: ${error.message || error}`);\n}"
+      },
+      "id": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d010",
+      "name": "Send Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1940,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Run Now": {
+      "main": [
+        [
+          {
+            "node": "Build Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Build Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Context": {
+      "main": [
+        [
+          {
+            "node": "Has Required Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Required Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Config Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Activity": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Build Webhook Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Webhook Payload": {
+      "main": [
+        [
+          {
+            "node": "Send Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": "d2d0d1ef-83d2-4b1b-9a1b-8f1d5eb0d011",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

@@ -51,3 +51,15 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Workflow Contribution
+
+Issue #5 is implemented in the files below:
+
+- `workflows/weekly-dev-summary.n8n.json` - importable n8n workflow
+- `workflows/weekly-dev-summary.md` - workflow notes and node map
+- `examples/weekly-summary.md` - sample output
+
+Setup is kept to five steps or fewer in the workflow README, and the export uses code nodes for the GitHub and Claude API calls so the workflow stays compact and easy to import.
