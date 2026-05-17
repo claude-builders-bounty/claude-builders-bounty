@@ -1,0 +1,300 @@
+#!/usr/bin/env python3
+"""
+Claude Code PR Review Agent — CLI tool that takes a PR URL, fetches the diff,
+and returns a structured Markdown review using Claude API.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr https://github.com/owner/repo/pull/123 --post-comment
+    claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+
+Requirements:
+    pip install requests
+    export ANTHROPIC_API_KEY=sk-ant-...
+    Optional: export GITHUB_TOKEN=ghp_...  (needed for --post-comment and higher rate limits)
+
+Author: Claude Builders Bounty (#4)
+License: MIT
+"""
+
+import argparse
+import os
+import re
+import sys
+
+import requests
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Constants
+# ──────────────────────────────────────────────────────────────────────────────
+CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
+CLAUDE_MODEL = "claude-sonnet-4-20250514"
+MAX_DIFF_BYTES = 100_000
+GITHUB_API_BASE = "https://api.github.com"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CLI argument parsing
+# ──────────────────────────────────────────────────────────────────────────────
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Claude Code PR Review Agent — structured Markdown code review via Claude API"
+    )
+    parser.add_argument(
+        "--pr",
+        required=True,
+        metavar="URL",
+        help="GitHub pull request URL, e.g. https://github.com/owner/repo/pull/123",
+    )
+    parser.add_argument(
+        "--post-comment",
+        action="store_true",
+        help="Post the review as a PR comment (requires GITHUB_TOKEN)",
+    )
+    parser.add_argument(
+        "--output", "-o",
+        metavar="PATH",
+        help="Write review Markdown to a file (default: stdout)",
+    )
+    parser.add_argument(
+        "--model",
+        default=CLAUDE_MODEL,
+        help=f"Claude model to use (default: {CLAUDE_MODEL})",
+    )
+    return parser.parse_args()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PR URL parsing
+# ──────────────────────────────────────────────────────────────────────────────
+PR_URL_RE = re.compile(
+    r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)/?.*$"
+)
+
+
+def parse_pr_url(url: str) -> dict:
+    """Extract owner, repo, and PR number from a GitHub PR URL."""
+    m = PR_URL_RE.match(url)
+    if not m:
+        sys.exit(
+            f"❌ Invalid PR URL: {url}\n"
+            f"   Expected format: https://github.com/owner/repo/pull/123"
+        )
+    return {
+        "owner": m.group("owner"),
+        "repo": m.group("repo"),
+        "number": int(m.group("number")),
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GitHub API helpers
+# ──────────────────────────────────────────────────────────────────────────────
+def github_headers() -> dict:
+    """Build GitHub API headers, optionally with auth token."""
+    h = {"Accept": "application/vnd.github.v3+json"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+    return h
+
+
+def fetch_pr_info(owner: str, repo: str, pr_number: int) -> dict:
+    """Fetch pull request metadata (title, description, base/head branches)."""
+    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}"
+    resp = requests.get(url, headers=github_headers(), timeout=30)
+    if resp.status_code == 404:
+        sys.exit(f"❌ PR not found: {owner}/{repo}#{pr_number}")
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_pr_files(owner: str, repo: str, pr_number: int) -> list:
+    """Fetch the list of changed files in the PR (includes patches)."""
+    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/files"
+    resp = requests.get(url, headers=github_headers(), timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def build_diff_text(files: list) -> str:
+    """Build a unified diff-like text from the GitHub files API response."""
+    lines = []
+    total_bytes = 0
+    for f in files:
+        status = f.get("status", "?")
+        filename = f.get("filename", "<unknown>")
+        additions = f.get("additions", 0)
+        deletions = f.get("deletions", 0)
+        patch = f.get("patch", "")
+
+        header = (
+            f"--- a/{filename}  (status={status}, +{additions} -{deletions})"
+        )
+        lines.append(header)
+        lines.append(f"+++ b/{filename}")
+        if patch:
+            for patch_line in patch.split("\n"):
+                total_bytes += len(patch_line) + 1
+                if total_bytes > MAX_DIFF_BYTES:
+                    lines.append("")
+                    lines.append("... (truncated: diff exceeds 100 KB limit)")
+                    return "\n".join(lines)
+                lines.append(patch_line)
+        lines.append("")
+    return "\n".join(lines)
+
+
+def post_pr_comment(owner: str, repo: str, pr_number: int, body: str) -> None:
+    """Post a review comment on the PR."""
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        sys.exit(
+            "❌ --post-comment requires GITHUB_TOKEN environment variable"
+        )
+    url = (
+        f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{pr_number}/comments"
+    )
+    resp = requests.post(
+        url,
+        headers=github_headers(),
+        json={"body": body},
+        timeout=30,
+    )
+    if resp.status_code == 201:
+        print(
+            f"✅ Comment posted to {owner}/{repo}#{pr_number}", file=sys.stderr
+        )
+    else:
+        print(
+            f"⚠️  Failed to post comment: {resp.status_code} {resp.text}",
+            file=sys.stderr,
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Claude API
+# ──────────────────────────────────────────────────────────────────────────────
+SYSTEM_PROMPT = """You are a senior software engineer conducting a thorough pull request review.
+You will receive a PR diff and metadata. Produce a structured Markdown review with exactly these sections:
+
+## Summary
+2-3 sentences describing what this PR does at a high level.
+
+## Identified Risks
+Bullet list of potential risks: regressions, breaking changes, performance issues, race conditions, etc.
+If no risks, write "No significant risks identified."
+
+## Improvement Suggestions
+Bullet list of concrete, actionable suggestions for improving code quality, readability, test coverage, or architecture.
+If the code looks great, write "No improvements needed — LGTM! 🚀"
+
+## Security Concerns
+Bullet list of security issues: injection vectors, secrets exposure, unsafe deserialization, missing auth checks, etc.
+If none, write "No security concerns identified."
+
+Rules:
+- Be concise and specific. Reference file names and line numbers from the diff.
+- If the PR is trivial or empty, say so in the summary.
+- Do NOT include generic flattery or filler text.
+- Output ONLY the structured review Markdown — no preamble or postamble."""
+
+
+def call_claude(diff_text: str, pr_info: dict, model: str) -> str:
+    """Send the diff to Claude and return its review."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        sys.exit(
+            "❌ ANTHROPIC_API_KEY environment variable not set.\n"
+            "   Get your key at https://console.anthropic.com/ and run:\n"
+            "   export ANTHROPIC_API_KEY=sk-ant-..."
+        )
+
+    user_message = f"""Review this pull request:
+
+**PR Title:** {pr_info.get('title', 'N/A')}
+**PR Description:**
+{pr_info.get('body', '*(no description)*')}
+
+**Changed Files Diff:**
+```diff
+{diff_text}
+```"""
+
+    payload = {
+        "model": model,
+        "max_tokens": 4096,
+        "system": SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_message}],
+    }
+
+    resp = requests.post(
+        CLAUDE_API_URL,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        json=payload,
+        timeout=120,
+    )
+
+    if resp.status_code != 200:
+        sys.exit(f"❌ Claude API error {resp.status_code}: {resp.text}")
+
+    data = resp.json()
+    for block in data.get("content", []):
+        if block.get("type") == "text":
+            return block["text"]
+
+    sys.exit(
+        "❌ Unexpected Claude API response format — no text content found."
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────────────────────────────────────
+def main() -> None:
+    args = parse_args()
+
+    # 1. Parse PR URL
+    pr = parse_pr_url(args.pr)
+    owner, repo, pr_number = pr["owner"], pr["repo"], pr["number"]
+    print(f"🔍 Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+
+    # 2. Fetch PR metadata and files from GitHub
+    pr_info = fetch_pr_info(owner, repo, pr_number)
+    files = fetch_pr_files(owner, repo, pr_number)
+    print(f"   {len(files)} file(s) changed.", file=sys.stderr)
+
+    diff_text = build_diff_text(files)
+    print(f"   Diff size: {len(diff_text):,} bytes", file=sys.stderr)
+
+    # 3. Send to Claude for review
+    print(f"🤖 Calling Claude ({args.model}) for review...", file=sys.stderr)
+    review = call_claude(diff_text, pr_info, args.model)
+    print("✅ Review complete.\n", file=sys.stderr)
+
+    # 4. Output
+    output = f"# PR Review: {owner}/{repo}#{pr_number}\n\n"
+    output += f"**PR:** [{pr_info.get('title', 'N/A')}]({args.pr})\n\n"
+    output += "---\n\n"
+    output += review
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(output)
+        print(f"📄 Review written to {args.output}", file=sys.stderr)
+    else:
+        print(output)
+
+    # 5. Optionally post as PR comment
+    if args.post_comment:
+        print("💬 Posting review as PR comment...", file=sys.stderr)
+        post_pr_comment(owner, repo, pr_number, output)
+
+
+if __name__ == "__main__":
+    main()
