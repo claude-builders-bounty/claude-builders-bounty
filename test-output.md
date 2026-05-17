@@ -1,0 +1,52 @@
+# Changelog
+
+## v2026.5.16 (2026-05-17)
+
+### Added
+  - merge blockchain/base into blockchain/evm; salvage PR #2010
+  - add EVM multi-chain skill (8 chains, 14 commands)
+  - optional codex app-server runtime for OpenAI/Codex models (#24182)
+  - unified video_generate tool with pluggable provider backends (#25126)
+  - prompt and persist explicit api_mode for custom providers
+  - rename Alibaba Cloud to Qwen Cloud, reorder picker (#24835)
+  - unified client=hermes-client-v<version> tag on every Portal request (#24779)
+  - wire clarify tool with inline keyboard buttons on Telegram (#24199)
+  - semantic diagnostics from real language servers in write_file/patch (#24168)
+  - support externally managed Camofox sessions
+  - per-turn file-mutation verifier footer (#24498)
+  - supply-chain advisory checker + lazy-install framework + tiered install fallback (#24220)
+  - add client marker tag on aux inference requests
+  - refresh cua-driver on `hermes update` + add `install --upgrade` (#24063)
+  - resolve markdown links to readable page titles (#24013)
+  - expose HERMES_SESSION_ID to agent tools via ContextVar + env (#23847)
+  - cross-session 1h prefix cache for Claude on Anthropic / OpenRouter / Nous Portal (#23828)
+  - add extraDependencyGroups for sealed venv extras (#21817)
+  - add hindsight-client as optional dependency (#21818)
+  - docker_extra_args + display.timestamps
+  - add stocks & finance skill (Yahoo Finance, no API key)
+  - Add unit tests for hyperliquid skill functionality
+  - add api-testing optional skill (#1800)
+  - stranded_in_ready diagnostic for unclaimed tasks (#23578)
+  - dashboard batch QOL upgrade
+  - add reclaim_first support to bulk reassign endpoint
+  - native draft streaming via sendMessageDraft (Bot API 9.5+)
+  - /goal checklist + /subgoal user controls (#23456)
+  - make /handoff actually transfer the session live
+  - add /handoff command for cross-platform session transfer
+  - per-platform admin/user split for slash commands (salvage of #4443) (#23373)
+  - shutdown forensics — non-blocking diag, per-phase timing, stale-unit warning (#23285)
+  - aggregate all toolset-name typos in skills before raising
+  - native <details> collapse + skip empty metadata
+  - localize all gateway commands + web dashboard, add 8 new locales (16 total) (#22914)
+  - run any LLM call from inside a plugin via ctx.llm (#23194)
+  - hint at `hermes curator pin` in the rename block (#23212)
+  - add LINE Messaging API platform plugin (#23197)
+  - add orchestrator board tools
+  - add gpt-5.3-codex-spark model
+  - add upstream + timing diagnostics to drop log (#23005)
+  - vision_analyze returns pixels to vision-capable models, not aux text (#22955)
+  - show rename map in user-visible summary (#22910)
+  - richer info panels on the Skills Hub for built-in + optional skills (#22905)
+  - wire Pareto Code router with min_coding_score knob (#22838)
+  - add Telegram notification mode to suppress intermediate push notifications
+  - pass reasoning.effort to xAI Respon
