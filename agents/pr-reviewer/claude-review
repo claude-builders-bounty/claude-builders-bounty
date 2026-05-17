@@ -1,0 +1,307 @@
+#!/usr/bin/env python3
+"""
+claude-review — AI-powered PR reviewer.
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+  claude-review --help
+
+Analyzes a GitHub pull request diff using an LLM and produces
+a structured code review report.
+
+Environment variables:
+  GITHUB_TOKEN    — GitHub personal access token (repo scope)
+  LLM_API_KEY     — API key for the LLM provider
+  LLM_MODEL       — Model name (default: claude-sonnet-4-20250514)
+  LLM_BASE_URL    — Base URL for the API (optional, for proxies)
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import urllib.request
+import urllib.error
+from pathlib import Path
+
+
+# ── Config ──────────────────────────────────────────────────────────
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+LLM_API_KEY  = os.environ.get("LLM_API_KEY", os.environ.get("DEEPSEEK_API_KEY", ""))
+LLM_MODEL    = os.environ.get("LLM_MODEL", "deepseek-chat")
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1")
+
+# For Anthropic Claude, set:
+#   LLM_MODEL=claude-sonnet-4-20250514
+#   LLM_BASE_URL=https://api.anthropic.com/v1
+#   LLM_API_KEY=sk-ant-...
+
+# For OpenRouter, set:
+#   LLM_MODEL=anthropic/claude-sonnet-4
+#   LLM_BASE_URL=https://openrouter.ai/api/v1
+
+
+# ── Helpers ─────────────────────────────────────────────────────────
+
+def fatal(msg: str) -> None:
+    print(f"Error: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def api_get(url: str) -> dict:
+    """Make an authenticated GET request to the GitHub API."""
+    req = urllib.request.Request(url)
+    if GITHUB_TOKEN:
+        req.add_header("Authorization", f"token {GITHUB_TOKEN}")
+    req.add_header("Accept", "application/vnd.github.v3+json")
+    req.add_header("User-Agent", "claude-review/1.0")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        fatal(f"GitHub API error {e.code}: {body}")
+
+
+def api_get_diff(url: str) -> str:
+    """Fetch the raw diff of a PR."""
+    req = urllib.request.Request(url)
+    if GITHUB_TOKEN:
+        req.add_header("Authorization", f"token {GITHUB_TOKEN}")
+    req.add_header("Accept", "application/vnd.github.v3.diff")
+    req.add_header("User-Agent", "claude-review/1.0")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        fatal(f"GitHub API error {e.code}: {body}")
+
+
+# ── PR parsing ──────────────────────────────────────────────────────
+
+def parse_pr_url(url: str) -> tuple:
+    """Parse a GitHub PR URL into (owner, repo, pr_number)."""
+    # https://github.com/owner/repo/pull/123
+    parts = url.rstrip("/").split("/")
+    if "pull" not in parts or len(parts) < 2:
+        fatal(f"Invalid PR URL: {url}. Expected: https://github.com/owner/repo/pull/NUMBER")
+    idx = parts.index("pull")
+    owner = parts[idx - 2]
+    repo = parts[idx - 1]
+    pr_num = parts[idx + 1]
+    return owner, repo, pr_num
+
+
+def get_pr_info(owner: str, repo: str, pr_num: str) -> dict:
+    """Fetch PR metadata."""
+    return api_get(f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}")
+
+
+def get_pr_diff(owner: str, repo: str, pr_num: str) -> str:
+    """Fetch raw PR diff."""
+    return api_get_diff(f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}")
+
+
+def get_pr_files(owner: str, repo: str, pr_num: str) -> list:
+    """Fetch changed files list."""
+    return api_get(f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}/files")
+
+
+# ── LLM integration ─────────────────────────────────────────────────
+
+def call_llm(prompt: str) -> str:
+    """
+    Call an OpenAI-compatible chat completions API.
+    Works with DeepSeek, OpenRouter, and any OpenAI-compatible endpoint.
+    For Anthropic native API, set LLM_BASE_URL to an OpenAI-compatible proxy.
+    """
+    if not LLM_API_KEY:
+        fatal(
+            "No API key found. Set LLM_API_KEY or DEEPSEEK_API_KEY.\n"
+            "  export LLM_API_KEY=sk-...\n"
+            "  export LLM_MODEL=claude-sonnet-4-20250514\n"
+            "  export LLM_BASE_URL=https://api.anthropic.com/v1"
+        )
+
+    payload = json.dumps({
+        "model": LLM_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert code reviewer. Analyze pull request diffs "
+                    "and produce structured, actionable feedback."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 4096,
+    }).encode()
+
+    url = f"{LLM_BASE_URL.rstrip('/')}/chat/completions"
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {LLM_API_KEY}",
+            "User-Agent": "claude-review/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read())
+            return data["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        fatal(f"LLM API error {e.code}: {body}")
+    except (KeyError, IndexError) as e:
+        fatal(f"Unexpected LLM response format: {e}")
+
+
+# ── Review prompt ───────────────────────────────────────────────────
+
+def build_review_prompt(info: dict, diff: str, files: list) -> str:
+    """Build the analysis prompt from PR data."""
+    title = info.get("title", "")
+    description = info.get("body", "") or ""
+    file_list = "\n".join(f"  {f['filename']} ({f['status']}, +{f['additions']}/-{f['deletions']})" for f in files[:30])
+
+    # Truncate diff if too large
+    if len(diff) > 80000:
+        diff = diff[:80000] + "\n\n# ... (diff truncated, see full diff on GitHub)"
+
+    return f"""# Pull Request Review Request
+
+## PR Title
+{title}
+
+## Description
+{description[:2000]}
+
+## Changed Files ({len(files)} total)
+{file_list}
+
+## Diff
+```diff
+{diff}
+```
+
+---
+
+Please analyze this pull request and produce a structured review with the following sections:
+
+## Review
+
+### Summary
+(2–3 sentences describing what this PR does and whether it achieves its goal)
+
+### Identified Risks
+- Risk 1: ...
+- Risk 2: ...
+- Risk 3: ...
+
+### Improvement Suggestions
+- Suggestion 1: ...
+- Suggestion 2: ...
+- Suggestion 3: ...
+
+### Confidence Score
+**Low / Medium / High**
+
+(Brief explanation of confidence level)
+"""
+
+
+# ── Output formatting ──────────────────────────────────────────────
+
+def format_review(info: dict, review: str) -> str:
+    """Wrap the LLM output into a polished markdown comment."""
+    html_url = info.get("html_url", "")
+    title = info.get("title", "")
+    author = info.get("user", {}).get("login", "unknown")
+    additions = info.get("additions", 0)
+    deletions = info.get("deletions", 0)
+    files_count = info.get("changed_files", 0)
+
+    header = f"""# PR Review: {title}
+
+**PR:** [{html_url}]({html_url})
+**Author:** @{author}  
+**Changes:** +{additions}/-{deletions} across {files_count} files
+
+---
+
+"""
+    return header + review.strip()
+
+
+# ── CLI ─────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="AI-powered pull request reviewer",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        "--pr", required=True,
+        help="Full GitHub PR URL, e.g. https://github.com/owner/repo/pull/123"
+    )
+    parser.add_argument(
+        "--output", "-o",
+        help="Write review to file instead of stdout"
+    )
+    parser.add_argument(
+        "--diff-only",
+        action="store_true",
+        help="Only fetch and print the diff (skip LLM review)"
+    )
+    args = parser.parse_args()
+
+    # Parse PR URL
+    owner, repo, pr_num = parse_pr_url(args.pr)
+    print(f"Fetching PR #{pr_num} from {owner}/{repo}...", file=sys.stderr)
+
+    # Fetch PR data
+    info = get_pr_info(owner, repo, pr_num)
+    files = get_pr_files(owner, repo, pr_num)
+
+    title = info.get("title", "")
+    additions = info.get("additions", 0)
+    deletions = info.get("deletions", 0)
+    print(f"  Title: {title}", file=sys.stderr)
+    print(f"  Changes: +{additions}/-{deletions} across {len(files)} files", file=sys.stderr)
+
+    # Fetch diff
+    diff = get_pr_diff(owner, repo, pr_num)
+    diff_size = len(diff)
+    print(f"  Diff size: {diff_size:,} bytes", file=sys.stderr)
+
+    if args.diff_only:
+        print(diff)
+        return
+
+    # Build prompt and call LLM
+    print("  Analyzing with LLM...", file=sys.stderr)
+    prompt = build_review_prompt(info, diff, files)
+    review = call_llm(prompt)
+
+    # Format output
+    output = format_review(info, review)
+
+    # Write or print
+    if args.output:
+        Path(args.output).write_text(output)
+        print(f"  Review written to {args.output}", file=sys.stderr)
+    else:
+        print(output)
+
+
+if __name__ == "__main__":
+    main()
