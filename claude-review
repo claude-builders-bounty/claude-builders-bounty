@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+claude-review - Claude Code sub-agent for structured PR review
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr 123 --repo owner/repo
+  claude-review --diff-file pr.diff
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+
+def get_pr_diff(repo: str, pr_number: int, token: str = None) -> str:
+    """Fetch PR diff via GitHub API."""
+    url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+    headers = {"Accept": "application/vnd.github.v3.diff"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    
+    cmd = ["curl", "-s"]
+    for k, v in headers.items():
+        cmd.extend(["-H", f"{k}: {v}"])
+    cmd.append(url)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    return result.stdout
+
+
+def analyze_diff(diff: str) -> dict:
+    """Analyze diff for key metrics."""
+    lines = diff.split("\n")
+    
+    added = sum(1 for l in lines if l.startswith("+") and not l.startswith("+++"))
+    removed = sum(1 for l in lines if l.startswith("-") and not l.startswith("---"))
+    
+    files_changed = set()
+    for line in lines:
+        if line.startswith("diff --git"):
+            parts = line.split()
+            if len(parts) >= 3:
+                files_changed.add(parts[2].lstrip("a/"))
+    
+    has_tests = any("test" in f.lower() or "spec" in f.lower() or "__tests__" in f 
+                   for f in files_changed)
+    has_migrations = any("migration" in f.lower() for f in files_changed)
+    has_env_changes = any(f.endswith(".env") or f.endswith(".env.example") 
+                         for f in files_changed)
+    
+    return {
+        "files_changed": len(files_changed),
+        "lines_added": added,
+        "lines_removed": removed,
+        "has_tests": has_tests,
+        "has_migrations": has_migrations,
+        "has_env_changes": has_env_changes,
+        "files": sorted(files_changed)[:20]
+    }
+
+
+def generate_review_prompt(diff: str, stats: dict, repo: str, pr_number: int) -> str:
+    """Generate the Claude review prompt."""
+    return f"""You are a senior code reviewer. Review this PR diff and provide a structured review.
+
+PR: {repo}#{pr_number}
+Stats: {stats['files_changed']} files, +{stats['lines_added']}/-{stats['lines_removed']}
+
+## Review Format
+
+### Summary
+[2-3 sentence overview of what this PR does]
+
+### Issues Found
+[Only if issues exist. Use: - Critical / - Warning / - Suggestion]
+
+### Questions
+[Clarifying questions for the author, if any]
+
+### Verdict
+[Approve / Approve with comments / Request changes]
+
+## Diff
+
+```diff
+{diff[:15000]}
+```
+
+Focus on: correctness, security, performance, maintainability, and test coverage.
+If this is a simple/trivial change, say so. Don't nitpick formatting.
+"""
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR review sub-agent")
+    parser.add_argument("--pr", help="PR URL or number")
+    parser.add_argument("--repo", help="Repository (owner/name)")
+    parser.add_argument("--diff-file", help="Local diff file to review")
+    parser.add_argument("--output", "-o", default="-", help="Output file (default: stdout)")
+    
+    args = parser.parse_args()
+    
+    if args.diff_file:
+        with open(args.diff_file) as f:
+            diff = f.read()
+        repo = "local"
+        pr_number = 0
+    elif args.pr:
+        pr_input = args.pr
+        if pr_input.startswith("http"):
+            parts = pr_input.rstrip("/").split("/")
+            pr_number = int(parts[-1])
+            repo = f"{parts[-4]}/{parts[-3]}"
+        else:
+            pr_number = int(pr_input)
+            if not args.repo:
+                print("Error: --repo required when --pr is a number", file=sys.stderr)
+                sys.exit(1)
+            repo = args.repo
+        
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        diff = get_pr_diff(repo, pr_number, token)
+    else:
+        parser.print_help()
+        sys.exit(1)
+    
+    stats = analyze_diff(diff)
+    prompt = generate_review_prompt(diff, stats, repo, pr_number)
+    
+    output = f"""# Code Review: {repo}#{pr_number}
+
+## Stats
+- Files changed: {stats['files_changed']}
+- Lines: +{stats['lines_added']}/-{stats['lines_removed']}
+- Has tests: {'Yes' if stats['has_tests'] else 'No -- consider adding tests'}
+- Has migrations: {'Yes -- review carefully' if stats['has_migrations'] else 'No'}
+- Env changes: {'Yes -- verify no secrets exposed' if stats['has_env_changes'] else 'No'}
+
+## Files Changed
+{chr(10).join(f'- `{f}`' for f in stats['files'])}
+
+---
+## Review Prompt for Claude
+
+Paste the following into Claude Code or Claude.ai:
+
+```
+{prompt[:5000]}
+```
+"""
+    
+    if args.output == "-":
+        print(output)
+    else:
+        with open(args.output, "w") as f:
+            f.write(output)
+        print(f"Review prompt written to {args.output}")
+
+
+if __name__ == "__main__":
+    main()
