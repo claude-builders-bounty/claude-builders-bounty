@@ -1,0 +1,361 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "e1d1f8a2-3b4c-45d6-8e7f-80a0b1c2d3e4",
+      "name": "Weekly Friday 5pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate the current week's date range (Monday 00:00 to now)\n// Runs every Friday at 5pm - captures Mon-Fri activity\nconst now = new Date();\nconst dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat\nconst diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // days since Monday\nconst monday = new Date(now);\nmonday.setDate(now.getDate() - diff);\nmonday.setHours(0, 0, 0, 0);\n\nconst since = monday.toISOString();\nconst until = now.toISOString();\nconst weekStart = monday.toISOString().split('T')[0];\nconst weekEnd = now.toISOString().split('T')[0];\n\n// ═══════════════════════════════════════════\n// CONFIGURATION - Edit these values\n// ═══════════════════════════════════════════\nconst config = {\n  owner: 'claude-builders-bounty',\n  repo: 'claude-builders-bounty',\n  githubToken: process.env.GITHUB_TOKEN || 'YOUR_GITHUB_PERSONAL_ACCESS_TOKEN',\n  claudeApiKey: process.env.CLAUDE_API_KEY || 'YOUR_CLAUDE_API_KEY',\n  githubApiBase: 'https://api.github.com'\n};\n\nreturn [{\n  json: {\n    ...config,\n    since,\n    until,\n    weekStart,\n    weekEnd,\n    weekLabel: `${weekStart} to ${weekEnd}`,\n    generatedAt: now.toISOString()\n  }\n}];"
+      },
+      "id": "f2e2a9b3-4c5d-46f7-8a80-90b0c1d2e3f5",
+      "name": "Calculate Week Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 500]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/claude-builders-bounty/claude-builders-bounty/commits",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $('Calculate Week Range').first().json.githubToken }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "{{ $('Calculate Week Range').first().json.since }}"
+            },
+            {
+              "name": "until",
+              "value": "{{ $('Calculate Week Range').first().json.until }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a3f3b0c4-5d6e-47a0-8a90-b0c0d1e2f3a6",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and format commit data from GitHub API response\nconst commitsResponse = $input.first().json;\n\nlet commits = [];\nif (Array.isArray(commitsResponse)) {\n  commits = commitsResponse;\n} else if (commitsResponse.body && Array.isArray(commitsResponse.body)) {\n  commits = commitsResponse.body;\n}\n\nconst formatted = commits.slice(0, 30).map(c => ({\n  sha: c.sha ? c.sha.substring(0, 7) : 'unknown',\n  message: c.commit ? (c.commit.message || '').split('\\n')[0].trim() : (c.message || 'N/A'),\n  author: (c.commit && c.commit.author) ? c.commit.author.name : (c.author ? c.author.login : 'unknown'),\n  date: (c.commit && c.commit.author) ? c.commit.author.date : (c.created_at || 'unknown'),\n  url: c.html_url || `https://github.com/${$('Calculate Week Range').first().json.owner}/${$('Calculate Week Range').first().json.repo}/commit/${c.sha}`\n}));\n\nreturn [{\n  json: {\n    commits: formatted,\n    commitsCount: commits.length\n  }\n}];"
+      },
+      "id": "b4a4c1d5-6e7f-48a0-9a0b-c0d0e1f2a4b7",
+      "name": "Process Commits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 900]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/claude-builders-bounty/claude-builders-bounty/issues",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $('Calculate Week Range').first().json.githubToken }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "{{ $('Calculate Week Range').first().json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c5b5d2e6-7f80-49a0-ba1c-d0e0f1a2b5c8",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 1100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and format closed issues, filtering out PRs\nconst issuesResponse = $input.first().json;\n\nlet issues = [];\nif (Array.isArray(issuesResponse)) {\n  issues = issuesResponse;\n} else if (issuesResponse.body && Array.isArray(issuesResponse.body)) {\n  issues = issuesResponse.body;\n}\n\n// Filter out pull requests (GitHub issues API returns PRs too)\nconst pureIssues = issues.filter(i => !i.pull_request);\n\nconst formatted = pureIssues.slice(0, 30).map(i => ({\n  number: i.number,\n  title: i.title,\n  user: i.user ? i.user.login : 'unknown',\n  state: i.state,\n  closedAt: i.closed_at || 'unknown',\n  labels: i.labels ? i.labels.map(l => l.name) : [],\n  url: i.html_url || ''\n}));\n\nreturn [{\n  json: {\n    issues: formatted,\n    issuesCount: pureIssues.length\n  }\n}];"
+      },
+      "id": "d6c6e3f7-8a90-4b0a-8a2d-e0f0a1b2c6d9",
+      "name": "Process Issues",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 1300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/claude-builders-bounty/claude-builders-bounty/pulls",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $('Calculate Week Range').first().json.githubToken }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e7d7f4a8-9a0b-4c1a-9a3e-f0a0b1c2d7e0",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 1500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all collected data and build the Claude API prompt\nconst config = $('Calculate Week Range').first().json;\nconst commitsData = $('Process Commits').first().json;\nconst issuesData = $('Process Issues').first().json;\nconst prsResponse = $input.first().json;\n\n// Parse PRs\nlet prs = [];\nif (Array.isArray(prsResponse)) {\n  prs = prsResponse;\n} else if (prsResponse.body && Array.isArray(prsResponse.body)) {\n  prs = prsResponse.body;\n}\n\n// Filter to PRs from this week using since date\nconst weekSince = new Date(config.since);\nconst recentPRs = prs.filter(p => {\n  const closedDate = new Date(p.closed_at || p.updated_at || 0);\n  return closedDate >= weekSince;\n});\n\nconst formattedPRs = recentPRs.slice(0, 20).map(p => ({\n  number: p.number,\n  title: p.title,\n  user: p.user ? p.user.login : 'unknown',\n  state: p.state,\n  merged: p.merged_at ? true : false,\n  closedAt: p.closed_at || 'unknown',\n  mergedAt: p.merged_at || null,\n  url: p.html_url || ''\n}));\n\n// Build commits list for prompt\nconst commitsList = commitsData.commits && commitsData.commits.length > 0\n  ? commitsData.commits.map((c, i) => `${i + 1}. [${c.sha}] ${c.message} - ${c.author} (${c.date})`).join('\\n')\n  : 'No commits this week.';\n\n// Build issues list for prompt\nconst issuesList = issuesData.issues && issuesData.issues.length > 0\n  ? issuesData.issues.map((i, idx) => `${idx + 1}. #${i.number} ${i.title} - closed by ${i.user}${i.labels && i.labels.length ? ' [' + i.labels.join(', ') + ']' : ''}`).join('\\n')\n  : 'No issues closed this week.';\n\n// Build PRs list for prompt\nconst prsList = formattedPRs.length > 0\n  ? formattedPRs.map((p, idx) => `${idx + 1}. #${p.number} ${p.title} - by ${p.user}${p.merged ? ' ✅ merged' : ' ❌ closed'} (${p.closedAt})`).join('\\n')\n  : 'No PRs closed this week.';\n\n// Collect all unique contributors\nconst allContributors = new Set();\ncommitsData.commits?.forEach(c => allContributors.add(c.author));\nissuesData.issues?.forEach(i => allContributors.add(i.user));\nformattedPRs.forEach(p => allContributors.add(p.user));\nconst contributorsList = [...allContributors].filter(Boolean).join(', ');\n\n// Build the Claude prompt\nconst prompt = `You are a helpful developer relations assistant. Generate a weekly development summary for the GitHub repository \"${config.owner}/${config.repo}\".\n\n## Repository: ${config.owner}/${config.repo}\n## Week: ${config.weekLabel}\n## All Contributors This Week: ${contributorsList || 'None'}\n\n---\n\n### Commits This Week (${commitsData.commitsCount} total):\n${commitsList}\n\n### Closed Issues (${issuesData.issuesCount} total):\n${issuesList}\n\n### Merged/Closed Pull Requests (${formattedPRs.length} total):\n${prsList}\n\n---\n\nPlease generate a weekly summary with these sections:\n\n1. **🏆 Highlight of the Week** - The single most significant change, achievement, or milestone. Be specific.\n\n2. **🔑 Key Changes** - Summarize the most important commits and their impact. Group related changes together. Focus on what changed and why it matters.\n\n3. **🌟 Contributor Shoutouts** - Recognize contributors by name. Be specific about what each person contributed. If someone had multiple contributions, highlight their best work. Use their GitHub usernames with @ mentions.\n\n4. **📋 Upcoming Priorities** - Based on the activity patterns, suggest 2-4 logical next priorities for the coming week. Be actionable and specific.\n\n5. **📊 Weekly Stats** - Quick stats block:\n   - Commits: ${commitsData.commitsCount}\n   - Issues Closed: ${issuesData.issuesCount}\n   - PRs Merged/Closed: ${formattedPRs.length}\n   - Active Contributors: ${allContributors.size}\n\nFormat the response in clean, engaging Markdown suitable for posting in a team chat or discussion thread. Keep it concise but informative — aim for 300-500 words total. Use emoji sparingly and tastefully.\n\nStart your response directly with \"# Weekly Dev Summary\" as the title.`;\n\nreturn [{\n  json: {\n    prompt,\n    model: 'claude-sonnet-4-20250514',\n    maxTokens: 2048,\n    weekLabel: config.weekLabel,\n    summaryData: {\n      commitsCount: commitsData.commitsCount,\n      issuesCount: issuesData.issuesCount,\n      prsCount: formattedPRs.length,\n      contributorsCount: allContributors.size\n    }\n  }\n}];"
+      },
+      "id": "f8e8a5b9-0b1c-4d2a-8a4f-a0b0c1d2e8f1",
+      "name": "Aggregate All Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 1700]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "{{ $('Calculate Week Range').first().json.claudeApiKey }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "a9f9b6c0-1c2d-4e3b-8a50-b0c0d1e2f902",
+      "name": "Generate Summary (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 1900]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude API response and format the final output\nconst claudeResponse = $input.first().json;\nconst config = $('Calculate Week Range').first().json;\nconst aggregateData = $('Aggregate All Data').first().json;\n\nlet summaryContent = '';\n\n// Parse Claude's Messages API response format\nif (claudeResponse.content && Array.isArray(claudeResponse.content)) {\n  // Standard Anthropic Messages API response\n  summaryContent = claudeResponse.content\n    .map(c => c.text || '')\n    .join('\\n');\n} else if (claudeResponse.choices && Array.isArray(claudeResponse.choices)) {\n  // OpenAI-compatible format\n  summaryContent = claudeResponse.choices[0]?.message?.content || '';\n} else if (claudeResponse.completion) {\n  // Legacy completions format\n  summaryContent = claudeResponse.completion;\n} else if (typeof claudeResponse === 'string') {\n  summaryContent = claudeResponse;\n} else {\n  // Fallback: stringify the whole response\n  summaryContent = JSON.stringify(claudeResponse, null, 2);\n}\n\n// Build the final structured output\nconst finalOutput = {\n  repo: `${config.owner}/${config.repo}`,\n  weekLabel: config.weekLabel,\n  generatedAt: new Date().toISOString(),\n  stats: aggregateData.summaryData,\n  summary: summaryContent,\n  usage: claudeResponse.usage || null,\n  model: claudeResponse.model || 'claude-sonnet-4-20250514'\n};\n\nreturn [{\n  json: finalOutput\n}];"
+      },
+      "id": "b0a0c7d1-2d3e-4f4c-8a61-c0d0e1f2a013",
+      "name": "Format Final Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 2100]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 5pm Trigger": {
+      "main": [
+        [
+          {
+            "node": "Calculate Week Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Week Range": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Process Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Commits": {
+      "main": [
+        [
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Process Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Issues": {
+      "main": [
+        [
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate All Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Format Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "c1b2d3e4-5f6a-7b80-9c0d-1e2f3a4b5c6d",
+  "active": false,
+  "id": "d4e5f6a7-8b90-4c1d-9e2f-3a4b5c6d7e8f",
+  "createdAt": "2025-05-17T11:27:00.000Z",
+  "updatedAt": "2025-05-17T11:27:00.000Z"
+}
