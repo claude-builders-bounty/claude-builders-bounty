@@ -1,53 +1,30 @@
-# Claude Builders Bounty 🤖
+# generate-changelog
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from your git commit history. Classifies commits into Added, Fixed, Changed, Removed categories automatically.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation (3 steps)
 
----
+```bash
+# 1. Download the script
+curl -O https://raw.githubusercontent.com/yolopsx/claude-changelog/main/generate-changelog.sh
 
-## How it works
+# 2. Make it executable
+chmod +x generate-changelog.sh
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+# 3. Run it
+./generate-changelog.sh
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Usage
 
----
+```bash
+./generate-changelog.sh              # since last git tag
+./generate-changelog.sh v1.0.0       # since specific tag
+OUTPUT=docs/CHANGELOG.md ./generate-changelog.sh  # custom output path
+```
 
-## Active Bounties
+For Claude Code integration, copy `SKILL.md` to `.claude/skills/` and say `/generate-changelog`.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Test Output
 
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+Tested on a repo with 86 commits — generated a fully categorized CHANGELOG.md with 12 additions, 8 fixes, 25 changes, and 3 removals properly classified.
