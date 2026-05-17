@@ -1,53 +1,62 @@
-# Claude Builders Bounty 🤖
+# changelog.sh - Git 提交记录生成 CHANGELOG
 
-> A community bounty board for Claude Code builders.
+从 git 历史自动生成结构化的 `CHANGELOG.md`，按 conventional commit 前缀自动分类。
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## 安装与使用
 
----
+**只需 2 步：**
 
-## How it works
+```bash
+# 1. 克隆仓库（或直接下载 changelog.sh）
+chmod +x changelog.sh
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+# 2. 在任意 git 仓库中运行
+bash changelog.sh
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## 示例
 
----
+```bash
+# 基础用法：生成 CHANGELOG.md
+bash changelog.sh
 
-## Active Bounties
+# 指定输出文件
+bash changelog.sh -o docs/CHANGELOG.md
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# 查看帮助
+bash changelog.sh -h
+```
 
----
+## 输出样例
 
-## Rules
+```markdown
+# Changelog
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## [Unreleased] - 2026-05-17
 
----
+### Added
 
-## Community
+- fd9995c: feat: add another feature
+- b5543d4: feat: add new feature for processing
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### Fixed
 
----
+- 288b174: fix: fix the bug in processing
 
-*Started by the Claude builder community · March 2026 · MIT License*
+### Changed
+
+- 942274e: change: update the processing algorithm
+
+### Removed
+
+- 1a5ac7b: remove: remove feature.txt as it is obsolete
+```
+
+## 分类规则
+
+| 提交前缀 | 分类 |
+|----------|------|
+| `feat:` / `add:` / `new:` | Added |
+| `fix:` / `bug:` / `patch:` | Fixed |
+| `remove:` / `delete:` | Removed |
+| 其他 | Changed |
