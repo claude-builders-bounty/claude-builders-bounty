@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""
+Claude Code Pre-Tool-Use Hook: Safety Guard
+Blocks destructive bash commands before execution.
+
+Installation:
+    mkdir -p ~/.claude/hooks
+    cp safety_hook.py ~/.claude/hooks/pre-tool-use
+    chmod +x ~/.claude/hooks/pre-tool-use
+
+Usage:
+    This hook automatically intercepts bash commands and blocks dangerous patterns.
+"""
+
+import json
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+# Dangerous command patterns
+DANGEROUS_PATTERNS = [
+    # Destructive file operations
+    (r'rm\s+-rf?\s+/', 'rm -rf on root or system directories'),
+    (r'rm\s+-rf?\s+~', 'rm -rf on home directory'),
+    (r'rm\s+-rf?\s+\*', 'rm -rf with wildcard (potentially destructive)'),
+    
+    # Database destructive operations
+    (r'DROP\s+TABLE', 'DROP TABLE - destructive database operation'),
+    (r'TRUNCATE\s+TABLE', 'TRUNCATE TABLE - deletes all data'),
+    (r'DELETE\s+FROM\s+\w+\s*$', 'DELETE FROM without WHERE clause'),
+    (r'DELETE\s+FROM\s+\w+\s*;?\s*$', 'DELETE FROM without WHERE clause'),
+    
+    # Git destructive operations
+    (r'git\s+push\s+--force', 'git push --force - overwrites remote history'),
+    (r'git\s+push\s+-f', 'git push -f - overwrites remote history'),
+    (r'git\s+reset\s+--hard', 'git reset --hard - destructive history rewrite'),
+    
+    # System destructive operations
+    (r':\(\)\s*\{\s*:\|:\s*&\s*\};\s*:', 'fork bomb detected'),
+    (r'dd\s+if=.*of=/dev/[sh]d', 'dd to system disk - can destroy data'),
+    (r'mkfs\.\w+\s+/dev/', 'filesystem format on device'),
+    (r'>\s*/dev/[sh]d\w', 'direct write to disk device'),
+]
+
+# Log file path
+LOG_FILE = Path.home() / '.claude' / 'hooks' / 'blocked.log'
+
+
+def log_blocked_attempt(command: str, reason: str, project_path: str):
+    """Log blocked command to file."""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().isoformat()
+    log_entry = f"[{timestamp}] BLOCKED: {reason}\n"
+    log_entry += f"  Command: {command}\n"
+    log_entry += f"  Project: {project_path}\n"
+    log_entry += "-" * 60 + "\n"
+    
+    with open(LOG_FILE, 'a') as f:
+        f.write(log_entry)
+
+
+def check_command_dangerous(command: str) -> tuple[bool, str]:
+    """
+    Check if a command matches dangerous patterns.
+    Returns (is_dangerous, reason)
+    """
+    command_upper = command.upper()
+    
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True, reason
+    
+    return False, ""
+
+
+def main():
+    """Main hook entry point."""
+    # Read input from stdin (Claude Code sends tool use info as JSON)
+    try:
+        input_data = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        # Not JSON input, pass through
+        print(json.dumps({"allow": True}))
+        return
+    
+    # Extract tool information
+    tool_name = input_data.get('tool', '')
+    tool_input = input_data.get('input', {})
+    
+    # Only intercept bash commands
+    if tool_name != 'bash':
+        print(json.dumps({"allow": True}))
+        return
+    
+    command = tool_input.get('command', '')
+    if not command:
+        print(json.dumps({"allow": True}))
+        return
+    
+    # Check if command is dangerous
+    is_dangerous, reason = check_command_dangerous(command)
+    
+    if is_dangerous:
+        # Get project path from environment or input
+        project_path = input_data.get('project_path', str(Path.cwd()))
+        
+        # Log the blocked attempt
+        log_blocked_attempt(command, reason, project_path)
+        
+        # Return block response with explanation
+        response = {
+            "allow": False,
+            "message": f"\n🚫 BLOCKED: {reason}\n\n"
+                       f"Command: {command}\n\n"
+                       f"This command has been blocked for safety. "
+                       f"If you're sure you want to run it, use a different approach "
+                       f"or modify the command to avoid the dangerous pattern.\n\n"
+                       f"Blocked attempt logged to: {LOG_FILE}"
+        }
+        print(json.dumps(response))
+        return
+    
+    # Command is safe, allow it
+    print(json.dumps({"allow": True}))
+
+
+if __name__ == '__main__':
+    main()
