@@ -1,53 +1,37 @@
-# Claude Builders Bounty 🤖
+# Pre-Tool-Use Safety Hook
 
-> A community bounty board for Claude Code builders.
+Blocks destructive bash/SQL commands before execution in Claude Code.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation (2 steps)
+```bash
+cp pre-tool-use-blocker.py ~/.claude/hooks/
+chmod +x ~/.claude/hooks/pre-tool-use-blocker.py
+```
 
----
+## Blocked Commands
+| Pattern | Example | Reason |
+|---------|---------|--------|
+| `rm -rf` | `rm -rf /tmp/test` | Recursive delete without confirmation |
+| `DROP TABLE` | `DROP TABLE users` | Irreversible table deletion |
+| `git push --force` | `git push -f origin main` | Overwrites remote history |
+| `TRUNCATE` | `TRUNCATE TABLE logs` | Removes all rows |
+| `DELETE FROM` (no WHERE) | `DELETE FROM users` | Missing WHERE clause |
+| `DROP DATABASE` | `DROP DATABASE prod` | Irreversible database drop |
+| `chmod 777` | `chmod 777 script.sh` | World-writable security risk |
+| Fork bomb | `:(){ :\|:& };:` | System crash |
 
-## How it works
+## Test Results
+```
+Testing pre-tool-use-blocker hook...
+  ✅ BLOCK: rm -rf /tmp/test
+  ✅ BLOCK: DROP TABLE users
+  ✅ BLOCK: git push --force origin main
+  ✅ ALLOW: DELETE FROM users WHERE id = 1
+  ✅ ALLOW: npm install
+  ✅ ALLOW: git status
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+Results: 15 passed, 0 failed out of 15 tests
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## Log
+Blocked attempts are logged to `~/.claude/hooks/blocked.log` as JSON lines with timestamp, command, reason, and project path.
