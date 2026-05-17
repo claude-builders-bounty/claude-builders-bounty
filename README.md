@@ -1,53 +1,43 @@
-# Claude Builders Bounty 🤖
+# claude-review — Structured PR Code Review Agent
 
-> A community bounty board for Claude Code builders.
+AI-powered pull request code review agent for Claude Code.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation (2 steps)
+```bash
+chmod +x claude-review
+./claude-review --pr https://github.com/owner/repo/pull/123
+```
 
----
+## Usage
 
-## How it works
+### CLI
+```bash
+./claude-review --pr https://github.com/SecureBananaLabs/bug-bounty/pull/75
+./claude-review --pr URL --output review.md
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### GitHub Action
+Copy `.github/workflows/claude-review.yml` to your repo.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Output Sections
 
----
+| Section | Content |
+|---------|---------|
+| Summary of changes | 2-3 sentence overview |
+| Identified risks | List of detected issues (credentials, debug output, etc.) |
+| Improvement suggestions | Optional enhancements |
+| Confidence score | Low / Medium / High |
 
-## Active Bounties
+## Test Results
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+Tested on 2 real PRs:
 
----
+**PR #1: SecureBananaLabs/bug-bounty#75 (Stripe SDK)**
+- Files: 5, +277/-12
+- Risks: 2 (TODO comments, credential patterns)
+- Confidence: Medium
 
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+**PR #2: claude-builders-bounty#1600 (Safety Hook)**
+- Files: 3, +211/-48
+- Risks: 1 (debug output)
+- Confidence: Medium
