@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""
+pre-tool-use — Claude Code hook that blocks destructive bash commands.
+
+Install: cp this file to ~/.claude/hooks/pre-tool-use && chmod +x
+
+The hook receives a JSON tool-use object on stdin.
+Exit 0  → allow the command
+Exit 1  → block it (stderr explains why)
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+# ── Dangerous patterns (case-insensitive) ──────────────────────────
+
+DANGEROUS_PATTERNS = [
+    # rm -rf / and variants
+    (r'(?<!\w)rm\s+(-[rfv]+|-[rfv]+\s+-[rfv]+)\s*/', "Recursive force-delete of root (/). Use with extreme caution."),
+    (r'(?<!\w)rm\s+-rf\s+\~?$', "Recursive force-delete without a path argument."),
+
+    # git push --force / --force-with-lease
+    (r'git\s+push.*--force', "Force push rewrites remote history and can lose others' work."),
+    (r'git\s+push.*\+\w+', "Force push via refspec '+' prefix rewrites remote history."),
+
+    # DROP TABLE / DROP DATABASE
+    (r'(?<!\w)DROP\s+(TABLE|DATABASE)\s', "Destructive DDL — drops a table or database permanently."),
+
+    # TRUNCATE
+    (r'(?<!\w)TRUNCATE\s+\w+', "TRUNCATE removes all rows from a table irreversibly."),
+
+    # DELETE FROM without WHERE
+    (r'(?<!\w)DELETE\s+FROM\s+\w+(?:\s+WHERE\s+\S)?', "DELETE without a WHERE clause removes every row. Add a WHERE."),
+    (r'(?<!\w)DELETE\s+FROM\s+\w+$', "DELETE without a WHERE clause removes every row. Add a WHERE."),
+
+    # Data destruction
+    (r'(?<!\w)dd\s+if=/dev/urandom\s+of=', "Overwriting a device or file with random data is destructive."),
+    (r'(?<!\w)mkfs\.', "Formatting a filesystem destroys all data on the target."),
+
+    # Chmod 777 on sensitive paths
+    (r'chmod\s+(-R\s+)?777\s+/', "World-writable permissions on root are a security risk."),
+]
+
+
+def check_command(command: str) -> str | None:
+    """Return a reason string if the command is dangerous, else None."""
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return reason
+    return None
+
+
+def log_block(command: str, reason: str, cwd: str) -> None:
+    """Log the blocked attempt to blocked.log."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry = f"[{timestamp}] BLOCKED | reason={reason} | cwd={cwd} | cmd={command}\n"
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        with open(LOG_FILE, "a") as f:
+            f.write(entry)
+    except OSError:
+        pass  # Best-effort logging — don't fail the hook over a write error
+
+
+def main():
+    # Read the tool-use JSON from stdin
+    try:
+        raw = sys.stdin.read()
+        tool_call = json.loads(raw)
+    except (json.JSONDecodeError, EOFError):
+        # Not valid JSON — allow through
+        sys.exit(0)
+
+    # Extract the command
+    tool_name = tool_call.get("tool_name", "")
+    tool_input = tool_call.get("tool_input", {})
+
+    if tool_name != "Bash":
+        sys.exit(0)  # Only check Bash commands
+
+    command = tool_input.get("command", "")
+    if not command:
+        sys.exit(0)
+
+    cwd = tool_input.get("cwd", os.getcwd())
+
+    # Check against dangerous patterns
+    reason = check_command(command)
+
+    if reason is not None:
+        log_block(command, reason, cwd)
+        message = (
+            f"\n⚠️  BLOCKED by security hook\n"
+            f"   Reason: {reason}\n"
+            f"   Command: {command[:200]}\n"
+            f"   Logged to: {LOG_FILE}\n"
+        )
+        print(message, file=sys.stderr)
+        sys.exit(1)
+
+    # Command is safe — allow it
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
