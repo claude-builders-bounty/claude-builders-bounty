@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import argparse
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -27,7 +27,17 @@ def category(subject: str) -> str:
 
 
 def main() -> int:
-    output = Path(sys.argv[1] if len(sys.argv) > 1 else "CHANGELOG.md")
+    parser = argparse.ArgumentParser(
+        description="Generate a structured CHANGELOG.md from git history."
+    )
+    parser.add_argument(
+        "output",
+        nargs="?",
+        default="CHANGELOG.md",
+        help="output file path (default: CHANGELOG.md)",
+    )
+    args = parser.parse_args()
+    output = Path(args.output)
     try:
         git("rev-parse", "--is-inside-work-tree")
     except subprocess.CalledProcessError:
