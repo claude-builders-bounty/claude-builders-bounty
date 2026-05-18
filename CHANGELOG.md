@@ -3,6 +3,7 @@
 Generated on 2026-05-08 (Full History)
 
 ## Added
+- Complete CHANGELOG generator skill and wrapper script (Issue #1) ([6cfa5834])
 - Implement structured PR reviewer sub-agent (Issue #4) ([46ef0823])
 - Implement CHANGELOG generator skill (Issue #1) ([fbd7739e])
 - Implement pre-tool-use hook to block destructive commands ([4a083b65])
