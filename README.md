@@ -34,6 +34,20 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+This repo includes a Claude Code skill and shell command for bounty [#1](../../issues/1).
+
+1. Run `bash changelog.sh` from any git repository, or `python generate_changelog.py` on Windows.
+2. Review the generated `CHANGELOG.md`.
+3. Commit the changelog with your release notes.
+
+The command uses commits since the latest git tag, or the full history when no tag exists. It groups entries into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+See [examples/sample-CHANGELOG.md](examples/sample-CHANGELOG.md) for sample output.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
