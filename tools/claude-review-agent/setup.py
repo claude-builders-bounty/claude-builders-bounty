@@ -1,17 +1,16 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 setup(
     name="claude-review-agent",
     version="0.1.0",
-    packages=find_packages(),
-    py_modules=["claude-review"],
+    py_modules=["claude_review"],
     install_requires=[
-        "anthropic>=0.18.0",
-        "openai>=1.0.0",
+        "anthropic>=0.25.0",
+        "openai>=1.12.0",
     ],
     entry_points={
         "console_scripts": [
-            "claude-review=claude-review:main",
+            "claude-review=claude_review:main",
         ],
     },
     author="Claude Code",
