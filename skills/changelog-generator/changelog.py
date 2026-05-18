@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
 """Generate a structured CHANGELOG.md from git history."""
 
+import argparse
 import subprocess
 import sys
 import re
 from pathlib import Path
 
-OUTPUT = sys.argv[1] if len(sys.argv) > 1 else "CHANGELOG.md"
 
-
-def run(cmd):
+def run(cmd, required=True):
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        print(f"Error running {' '.join(cmd)}: {e.stderr.strip()}", file=sys.stderr)
-        sys.exit(1)
+        result = subprocess.run(cmd, capture_output=True, text=True)
     except FileNotFoundError:
-        print("Error: git not found. Make sure git is installed.", file=sys.stderr)
+        print("Error: git not found. Install git and try again.", file=sys.stderr)
         sys.exit(1)
+    if result.returncode != 0:
+        if required:
+            print(f"Error: `{' '.join(cmd)}` failed:\n{result.stderr.strip()}", file=sys.stderr)
+            sys.exit(1)
+        return ""
+    return result.stdout.strip()
 
 
 def get_commit_range():
     head = run(["git", "rev-parse", "HEAD"])
-    tag = run(["git", "describe", "--tags", "--abbrev=0"])
+    tag = run(["git", "describe", "--tags", "--abbrev=0"], required=False)
     if tag:
         tag_commit = run(["git", "rev-list", "-n", "1", tag])
         if tag_commit == head:
@@ -48,28 +49,40 @@ def categorize(line):
     return None
 
 
-since = get_commit_range()
-raw = run(["git", "log", f"{since}..HEAD", "--pretty=format:%s"])
-lines = [l for l in raw.split("\n") if l.strip()]
+def main():
+    parser = argparse.ArgumentParser(description="Generate CHANGELOG.md from git history")
+    parser.add_argument("--output", default="CHANGELOG.md", help="Output file path")
+    parser.add_argument("--limit", type=int, default=0, help="Max commits to include (0 = all)")
+    args = parser.parse_args()
 
-changelog = ["# Changelog", ""]
+    since = get_commit_range()
+    raw = run(["git", "log", f"{since}..HEAD", "--pretty=format:%s"])
+    lines = [l for l in raw.split("\n") if l.strip()]
+    if args.limit > 0:
+        lines = lines[:args.limit]
 
-if not lines:
-    changelog.append(f"No new commits since {since[:8]}.")
-    changelog.append("")
-else:
-    buckets = {}
-    for line in lines:
-        cat = categorize(line)
-        buckets.setdefault(cat or "Uncategorized", []).append(line)
+    changelog = ["# Changelog", ""]
 
-    for section in ["Added", "Fixed", "Changed", "Removed", "Uncategorized"]:
-        items = buckets.get(section)
-        if items:
-            changelog.append(f"## {section}")
-            for item in items:
-                changelog.append(f"- {item}")
-            changelog.append("")
+    if not lines:
+        changelog.append(f"No new commits since {since[:8]}.")
+        changelog.append("")
+    else:
+        buckets = {}
+        for line in lines:
+            cat = categorize(line)
+            buckets.setdefault(cat or "Uncategorized", []).append(line)
 
-Path(OUTPUT).write_text("\n".join(changelog) + "\n")
-print(f"Generated {OUTPUT} ({len(lines)} commits since {since[:8]})")
+        for section in ["Added", "Fixed", "Changed", "Removed", "Uncategorized"]:
+            items = buckets.get(section)
+            if items:
+                changelog.append(f"## {section}")
+                for item in items:
+                    changelog.append(f"- {item}")
+                changelog.append("")
+
+    Path(args.output).write_text("\n".join(changelog) + "\n")
+    print(f"Generated {args.output} ({len(lines)} commits since {since[:8]})")
+
+
+if __name__ == "__main__":
+    main()

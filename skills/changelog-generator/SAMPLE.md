@@ -1,21 +1,41 @@
 # Sample Output
 
-Generated from https://github.com/tianjun056-ux/15-Language-Translator (v1.0.0..HEAD):
+## Test repo
+
+A temporary git repo created locally with these commits:
+
+```
+init: project setup
+feat: add login page
+fix: correct off-by-one
+chore: update dependencies
+remove: drop unused helpers
+```
+
+## Commit range
+
+`first-commit..HEAD` (no tags present, 4 commits)
+
+## Generate command
+
+```bash
+python3 skills/changelog-generator/changelog.py
+```
+
+## Result
 
 ```markdown
 # Changelog
 
+## Added
+- feat: add login page
+
+## Fixed
+- fix: correct off-by-one
+
 ## Changed
-- chore: stop tracking runtime log (src/error_log.log)
-- chore: hard reset tracked files to match local (remove remote leftovers)
-- chore: sync repo to match local working tree
-```
+- chore: update dependencies
 
-## Verification commands
-
-```bash
-# Run on any git repo
-cd /path/to/repo
-python3 /path/to/changelog.py
-bash /path/to/changelog.sh
+## Removed
+- remove: drop unused helpers
 ```
