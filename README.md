@@ -1,48 +1,71 @@
-# Claude Code Pre-Tool-Use Security Hook
+# Changelog Generator
 
-Blocks destructive bash commands before they execute. Protects against accidental data loss from `rm -rf`, unconditioned `DELETE FROM`, `DROP TABLE`, `TRUNCATE`, and `git push --force`.
+Generate structured `CHANGELOG.md` files from git history. Supports conventional commits and freeform messages.
 
-## Installation (2 commands)
+## Setup (3 steps)
 
 ```bash
-# 1. Link the hook into your Claude hooks directory
-ln -s /path/to/pre-tool-use.py ~/.claude/hooks/pre-tool-use.py
+# 1. Save changelog.sh to your project
+curl -O https://raw.githubusercontent.com/vanhci/claude-builders-bounty/main/changelog.sh
+chmod +x changelog.sh
 
-# 2. Create the blocked log file
-touch ~/.claude/hooks/blocked.log
+# 2. Run from your repo
+cd /path/to/your/project
+bash changelog.sh
+
+# 3. Done — your CHANGELOG.md is ready
+cat CHANGELOG.md
 ```
 
-Replace `/path/to/pre-tool-use.py` with the actual path to wherever you place this script.
+## Options
 
-## What it blocks
+| Flag | Description |
+|------|-------------|
+| `--since-tag <tag>` | Start changelog from a specific tag |
+| `--repo <path>` | Target repository (default: current dir) |
+| `--output <file>` | Output file (default: `CHANGELOG.md`) |
 
-| Pattern | Reason |
-|---------|--------|
-| `rm -rf` | Recursively deletes directory trees |
-| `git push --force` | Rewrites remote history |
-| `DROP TABLE` (no IF EXISTS) | Removes table structure and all data |
-| `DELETE FROM` (no WHERE) | Deletes all rows from a table |
-| `TRUNCATE` | Removes all rows from a table |
+## Examples
 
-## Blocked log
-
-Every blocked attempt is appended to `~/.claude/hooks/blocked.log` with:
-- Timestamp (UTC)
-- Project path
-- Reason
-- Full command (truncated at 200 chars)
-
-## How it works
-
-Claude Code invokes the hook with a JSON payload on stdin. The hook inspects the `tool_name` (only acts on `Bash`) and the `command` string, then returns:
-- `{"allow": true}` — command proceeds
-- `{"allow": false, "error": "..."}` — command is blocked with a message
-
-## Disabling temporarily
-
-If you need to run a blocked command, you can temporarily rename the hook file:
 ```bash
-mv ~/.claude/hooks/pre-tool-use.py ~/.claude/hooks/pre-tool-use.py.disabled
-# run your command
-mv ~/.claude/hooks/pre-tool-use.py.disabled ~/.claude/hooks/pre-tool-use.py
+# From last release tag
+bash changelog.sh --repo .
+
+# From a specific version
+bash changelog.sh --since-tag v2.0.0 --output HISTORY.md
+
+# From any git repository
+bash changelog.sh --repo /path/to/project
+```
+
+## Requirements
+
+- `git`
+- `python3`
+
+## Output Format
+
+Commits are automatically categorized into sections:
+- **Added** — new features
+- **Fixed** — bug fixes
+- **Changed** — improvements, refactors, dependency updates
+- **Removed** — deletions
+- **Security** — security-related changes
+
+Uses [Keep a Changelog](https://keepachangelog.com/) format.
+
+## Sample Output
+
+```markdown
+# Changelog
+
+## [2026-05-18]
+### Added
+- user authentication module (a1b2c3d)
+
+### Fixed
+- session timeout edge case (e5f6g7h)
+
+### Changed
+- upgrade async HTTP client (i9j0k1l)
 ```
