@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Claude Code PreToolUse hook: block destructive Bash/SQL commands.
+
+Reads Claude Code hook JSON from stdin. For Bash tool calls, denies commands
+matching high-risk shell or SQL patterns and logs the blocked attempt to
+~/.claude/hooks/blocked.log with timestamp, attempted command, and project path.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+BLOCK_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "recursive force deletion (rm -rf / rm -fr)",
+        re.compile(r"(?is)(?:^|[;&|()`$\n]|\bsudo\s+)\s*rm\s+-[A-Za-z]*r[A-Za-z]*f[A-Za-z]*\b"),
+    ),
+    (
+        "DROP TABLE statement",
+        re.compile(r"(?is)\bdrop\s+table\b"),
+    ),
+    (
+        "force push (git push --force / -f)",
+        re.compile(r"(?is)\bgit\s+push\b(?=[^\n;&|]*?(?:--force(?:-with-lease)?\b|\s-f\b))"),
+    ),
+    (
+        "TRUNCATE statement",
+        re.compile(r"(?is)\btruncate\b"),
+    ),
+]
+
+DELETE_FROM_RE = re.compile(r"(?is)\bdelete\s+from\s+[\w.\"`\[\]-]+(?P<tail>[^;]*)")
+WHERE_RE = re.compile(r"(?is)\bwhere\b")
+
+
+def _extract_command(payload: dict[str, Any]) -> str:
+    tool_input = payload.get("tool_input") or {}
+    command = tool_input.get("command", "")
+    return command if isinstance(command, str) else str(command)
+
+
+def _project_path(payload: dict[str, Any]) -> str:
+    for key in ("cwd", "project_dir", "project_path"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    tool_input = payload.get("tool_input") or {}
+    value = tool_input.get("cwd")
+    if isinstance(value, str) and value:
+        return value
+    env_project = os.environ.get("CLAUDE_PROJECT_DIR")
+    return env_project or os.getcwd()
+
+
+def _blocked_reason(command: str) -> str | None:
+    for label, pattern in BLOCK_PATTERNS:
+        if pattern.search(command):
+            return label
+
+    # Block DELETE FROM statements unless the statement itself contains WHERE.
+    for match in DELETE_FROM_RE.finditer(command):
+        if not WHERE_RE.search(match.group("tail")):
+            return "DELETE FROM statement without WHERE clause"
+
+    return None
+
+
+def _log_block(command: str, project_path: str, reason: str) -> None:
+    log_dir = Path.home() / ".claude" / "hooks"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    safe_command = command.replace("\n", "\\n")
+    with (log_dir / "blocked.log").open("a", encoding="utf-8") as fh:
+        fh.write(
+            f"{timestamp}\tproject={project_path}\treason={reason}\tcommand={safe_command}\n"
+        )
+
+
+def _deny(reason: str) -> None:
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": (
+                        "Blocked destructive Bash command: "
+                        f"{reason}. Rewrite the command to be safer, add an explicit WHERE "
+                        "clause for data changes, or ask the user for a safer alternative."
+                    ),
+                }
+            }
+        )
+    )
+
+
+def main() -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except json.JSONDecodeError as exc:
+        print(f"Invalid Claude hook JSON: {exc}", file=sys.stderr)
+        return 1
+
+    if payload.get("tool_name") != "Bash":
+        return 0
+
+    command = _extract_command(payload)
+    reason = _blocked_reason(command)
+    if reason is None:
+        return 0
+
+    _log_block(command, _project_path(payload), reason)
+    _deny(reason)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
