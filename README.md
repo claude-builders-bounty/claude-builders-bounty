@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Workflows
+
+- [Weekly GitHub dev summary with Claude](workflows/weekly-dev-summary/README.md)
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
