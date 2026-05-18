@@ -1,0 +1,67 @@
+name: Claude Code PR Review
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: github.event.comment.body == '/claude-review'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install anthropic openai
+
+      - name: Install Claude Review Agent
+        run: |
+          pip install -e tools/claude-review-agent/
+
+      - name: Get PR information
+        id: pr-info
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get PR number from the comment
+          PR_URL="${{ github.event.issue.pull_request.url }}"
+          PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$' | tail -1)
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "REPO=${{ github.repository }}" >> $GITHUB_OUTPUT
+
+      - name: Run Claude Review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          claude-review \
+            --pr "https://github.com/${{ github.repository }}/pull/${{ steps.pr-info.outputs.PR_NUMBER }}" \
+            --output review.md
+
+      - name: Post review comment
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ steps.pr-info.outputs.PR_NUMBER }} \
+            --body-file review.md
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "Review failed. Check logs for details."

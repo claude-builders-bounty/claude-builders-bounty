@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""
+Claude Code PR Review Agent
+CLI tool for analyzing PRs and posting structured review comments.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --diff ./path/to/diff.patch
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+import urllib.error
+from typing import Optional
+
+# Try to import anthropic, fall back to openai if not available
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+
+def get_default_client():
+    """Get API client based on available libraries."""
+    if ANTHROPIC_AVAILABLE:
+        return Anthropic(), "anthropic"
+    elif OPENAI_AVAILABLE:
+        return OpenAI(), "openai"
+    else:
+        print("Error: Neither anthropic nor openai library available", file=sys.stderr)
+        print("Install with: pip install anthropic openai", file=sys.stderr)
+        sys.exit(1)
+
+
+def parse_pr_url(pr_url: str) -> tuple[str, str, int]:
+    """Parse PR URL into owner, repo, pr_number."""
+    # Handle various GitHub URL formats
+    patterns = [
+        r"github\.com/([^/]+)/([^/]+)/pull/(\d+)",
+        r"github\.com/([^/]+)/([^/]+)/releases/tag/[^#]+#(\d+)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, pr_url)
+        if match:
+            return match.group(1), match.group(2), int(match.group(3))
+    raise ValueError(f"Invalid PR URL: {pr_url}")
+
+
+def fetch_pr_diff(owner: str, repo: str, pr_number: int, token: Optional[str] = None) -> str:
+    """Fetch the diff for a PR using GitHub API."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+
+    headers = {
+        "Accept": "application/vnd.github.v3.diff",
+        "User-Agent": "claude-review-agent"
+    }
+    if token:
+        headers["Authorization"] = f"token {token}"
+
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return response.read().decode('utf-8')
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise ValueError(f"PR not found: {owner}/{repo}/pull/{pr_number}")
+        raise
+
+
+def read_diff_from_file(path: str) -> str:
+    """Read diff from a local file."""
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+
+def analyze_diff(diff: str, client, client_type: str) -> dict:
+    """Use LLM to analyze the diff and generate a review."""
+
+    prompt = f"""You are an expert code reviewer analyzing a PR diff.
+
+Analyze the following diff and provide a structured review in Markdown format.
+
+## Requirements for your review:
+
+1. **Summary**: 2-3 sentences summarizing what this PR does
+2. **Risks**: List potential risks or concerns (security, performance, breaking changes, etc.)
+3. **Suggestions**: List concrete improvement suggestions
+4. **Confidence Score**: Rate as Low, Medium, or High based on how confident you are in this review
+
+## Output Format:
+```markdown
+## Summary
+[Your 2-3 sentence summary here]
+
+## Risks
+- [Risk 1]
+- [Risk 2]
+- ...
+
+## Suggestions
+- [Suggestion 1]
+- [Suggestion 2]
+- ...
+
+## Confidence Score
+[Low / Medium / High]
+
+## Files Changed
+- Total files: [N]
+- Approximate lines added/removed: [+X/-Y]
+```
+
+## The Diff:
+```
+{diff[:15000]}  # Limit to first 15k chars to stay within token limits
+```
+
+If the diff is empty or too short, provide a review based on what you can see.
+"""
+
+    if client_type == "anthropic":
+        response = client.messages.create(
+            model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return {"review": response.content[0].text, "model": client_type}
+    else:
+        response = client.chat.completions.create(
+            model=os.environ.get("OPENAI_MODEL", "gpt-4"),
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2048
+        )
+        return {"review": response.choices[0].message.content, "model": client_type}
+
+
+def post_review_comment(pr_url: str, review: str, token: Optional[str] = None) -> bool:
+    """Post the review as a comment on the PR."""
+    if not token:
+        token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        print("Warning: No GitHub token, skipping comment posting", file=sys.stderr)
+        return False
+
+    owner, repo, pr_number = parse_pr_url(pr_url)
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"token {token}",
+        "User-Agent": "claude-review-agent"
+    }
+
+    body = f"""## Claude Code PR Review\n\n{review}\n\n---\n*🤖 Generated by claude-review-agent*"""
+
+    data = json.dumps({"body": body}).encode('utf-8')
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            print(f"✅ Comment posted successfully!")
+            return True
+    except urllib.error.HTTPError as e:
+        print(f"Warning: Could not post comment: {e.code} {e.reason}", file=sys.stderr)
+        return False
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Claude Code PR Review Agent - Analyze PRs with AI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --diff ./my_changes.patch
+  claude-review --pr https://github.com/owner/repo/pull/123 --post-comment
+        """
+    )
+
+    parser.add_argument("--pr", help="GitHub PR URL")
+    parser.add_argument("--diff", help="Path to local diff file (.patch or .diff)")
+    parser.add_argument("--post-comment", action="store_true",
+                        help="Post the review as a comment on the PR")
+    parser.add_argument("--output", "-o", help="Save review to file")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
+
+    args = parser.parse_args()
+
+    if not args.pr and not args.diff:
+        parser.error("Either --pr or --diff is required")
+
+    # Get the diff
+    if args.pr:
+        owner, repo, pr_number = parse_pr_url(args.pr)
+        print(f"📥 Fetching PR #{pr_number} from {owner}/{repo}...")
+        diff = fetch_pr_diff(owner, repo, pr_number)
+    else:
+        print(f"📂 Reading diff from {args.diff}...")
+        diff = read_diff_from_file(args.diff)
+
+    if not diff:
+        print("Error: Empty diff", file=sys.stderr)
+        sys.exit(1)
+
+    # Stats
+    lines_added = diff.count('\n+')
+    lines_removed = diff.count('\n-')
+    files_changed = len([h for h in diff.split('diff --git') if h.strip()])
+    print(f"📊 Diff stats: ~{files_changed} files, +{lines_added}/-{lines_removed} lines")
+
+    # Analyze
+    print("🤔 Analyzing with AI...")
+    client, client_type = get_default_client()
+    result = analyze_diff(diff, client, client_type)
+
+    review = result["review"]
+
+    # Output
+    if args.json:
+        print(json.dumps({"review": review, "model": result["model"]}, indent=2))
+    else:
+        print("\n" + "="*60)
+        print(review)
+        print("="*60)
+
+    if args.output:
+        with open(args.output, 'w', encoding='utf-8') as f:
+            f.write(review)
+        print(f"\n💾 Review saved to {args.output}")
+
+    # Post comment if requested
+    if args.post_comment and args.pr:
+        print("\n📤 Posting comment to PR...")
+        post_review_comment(args.pr, review)
+
+    print("\n✅ Done!")
+
+
+if __name__ == "__main__":
+    main()
