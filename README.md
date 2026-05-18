@@ -8,6 +8,20 @@ You're in the right place.
 
 ---
 
+## PreToolUse destructive command blocker
+
+This repository includes a Claude Code `PreToolUse` hook at `hooks/destructive-command-blocker/pre-tool-use` that inspects Bash tool calls before they run. See `hooks/destructive-command-blocker/README.md` for two-command installation instructions.
+
+It blocks the required destructive patterns: `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` without a `WHERE` clause. Every blocked attempt is logged to `~/.claude/hooks/blocked.log`; normal Bash commands are allowed without output.
+
+Run the sample test suite with:
+
+```bash
+python3 tests/test_destructive_command_blocker.py
+```
+
+---
+
 ## How it works
 
 **To post a bounty**
