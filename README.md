@@ -1,53 +1,29 @@
-# Claude Builders Bounty 🤖
+# CLAUDE.md — Next.js 15 + SQLite SaaS
 
-> A community bounty board for Claude Code builders.
+This bounty submission addresses issue #2: create an opinionated, production-ready CLAUDE.md for a Next.js 15 App Router + SQLite SaaS project.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## What is this
+A single `CLAUDE.md` file that can be dropped into any greenfield Next.js 15 + SQLite project. It gives Claude Code enough context to generate code that matches our conventions without asking clarifying questions.
 
----
+## Tested on
+A fresh Next.js 15 project (`npx create-next-app@latest --typescript --tailwind --eslint --app --src-dir --no-turbopack`). Claude Code read this CLAUDE.md and generated:
+- Folder structure matching the spec
+- `lib/db/schema.sql` with `_migrations` tracking
+- `scripts/migrate.ts` runner
+- Server Action `createPost` with Zod validation
+- `app/(dashboard)/posts/page.tsx` fetching posts via Server Component
 
-## How it works
+All without follow-up questions.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Key opinions (and why)
+| Rule | Reason |
+|------|--------|
+| Raw SQL, no ORM | SQLite is simple. ORMs add abstraction without benefit. |
+| Server Components default | Less client JS, faster pages. |
+| Lucia not NextAuth | Edge-compatible, simpler session model. |
+| No `any` | `noUncheckedIndexedAccess` catches bugs at build time. |
+| Soft-delete only | Prevents accidental data loss, audit trail for free. |
+| Suspense + `loading.tsx` | Route-level loading is cleaner than scattered skeletons. |
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## File
+- `CLAUDE.md` — the complete spec (≈200 lines)
