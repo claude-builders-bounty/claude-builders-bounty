@@ -51,3 +51,15 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Changelog generator
+
+Small Bash changelog generator for bounty #1. It reads Git commit subjects since the latest tag, groups them into Added/Changed/Fixed/Removed sections, and writes Markdown.
+
+Setup in 3 steps:
+
+1. Make it executable: `chmod +x changelog.sh`
+2. Generate the file: `./changelog.sh --output CHANGELOG.md`
+3. Optional custom range: `./changelog.sh --since v1.0.0 --output CHANGELOG.md`
+
+If the repo has no tags, it uses all commits on `HEAD`. See `SAMPLE_CHANGELOG.md` for expected output.
