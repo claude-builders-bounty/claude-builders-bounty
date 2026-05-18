@@ -8,40 +8,68 @@ from pathlib import Path
 
 OUTPUT = sys.argv[1] if len(sys.argv) > 1 else "CHANGELOG.md"
 
+
 def run(cmd):
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.stdout.strip()
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        print(f"Error running {' '.join(cmd)}: {e.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError:
+        print("Error: git not found. Make sure git is installed.", file=sys.stderr)
+        sys.exit(1)
 
-last_tag = run(["git", "describe", "--tags", "--abbrev=0"])
-if not last_tag:
-    last_tag = run(["git", "rev-list", "--max-parents=0", "HEAD"])
 
-log = run(["git", "log", f"{last_tag}..HEAD", "--pretty=format:%s"])
+def get_commit_range():
+    head = run(["git", "rev-parse", "HEAD"])
+    tag = run(["git", "describe", "--tags", "--abbrev=0"])
+    if tag:
+        tag_commit = run(["git", "rev-list", "-n", "1", tag])
+        if tag_commit == head:
+            siblings = run(["git", "tag", "--sort=-creatordate"])
+            tags = [t for t in siblings.split("\n") if t.strip() and t != tag]
+            tag = tags[0] if tags else ""
+    if not tag:
+        tag = run(["git", "rev-list", "--max-parents=0", "HEAD"])
+    return tag
 
-CATEGORIES = {
-    "Added": r"^(add|feature|feat|new)",
-    "Fixed": r"^(fix|bugfix|hotfix|patch)",
-    "Changed": r"^(change|refactor|update|upgrade|bump|migrate)",
-    "Removed": r"^(remove|delete|deprecate|drop)",
-}
+
+def categorize(line):
+    patterns = {
+        "Added": r"^(add|feature|feat|new)",
+        "Fixed": r"^(fix|bugfix|hotfix|patch)",
+        "Changed": r"^(change|refactor|update|upgrade|bump|migrate|chore)",
+        "Removed": r"^(remove|delete|deprecate|drop)",
+    }
+    for section, pattern in patterns.items():
+        if re.search(pattern, line, re.IGNORECASE):
+            return section
+    return None
+
+
+since = get_commit_range()
+raw = run(["git", "log", f"{since}..HEAD", "--pretty=format:%s"])
+lines = [l for l in raw.split("\n") if l.strip()]
 
 changelog = ["# Changelog", ""]
 
-for section, pattern in CATEGORIES.items():
-    matches = [l for l in log.split("\n") if re.search(pattern, l, re.IGNORECASE)]
-    if matches:
-        changelog.append(f"## {section}")
-        for m in matches:
-            changelog.append(f"- {m}")
-        changelog.append("")
-
-# Uncategorized
-uncategorized = [l for l in log.split("\n") if not any(re.search(p, l, re.IGNORECASE) for p in CATEGORIES.values())]
-if uncategorized:
-    changelog.append("## Uncategorized")
-    for m in uncategorized:
-        changelog.append(f"- {m}")
+if not lines:
+    changelog.append(f"No new commits since {since[:8]}.")
     changelog.append("")
+else:
+    buckets = {}
+    for line in lines:
+        cat = categorize(line)
+        buckets.setdefault(cat or "Uncategorized", []).append(line)
+
+    for section in ["Added", "Fixed", "Changed", "Removed", "Uncategorized"]:
+        items = buckets.get(section)
+        if items:
+            changelog.append(f"## {section}")
+            for item in items:
+                changelog.append(f"- {item}")
+            changelog.append("")
 
 Path(OUTPUT).write_text("\n".join(changelog) + "\n")
-print(f"Generated {OUTPUT} with {len(log.split(chr(10)))} commits")
+print(f"Generated {OUTPUT} ({len(lines)} commits since {since[:8]})")

@@ -6,7 +6,7 @@ command: python3 skills/changelog-generator/changelog.py
 
 # Changelog Generator
 
-Fetches commits since the last git tag and categorizes them into **Added**, **Fixed**, **Changed**, and **Removed**.
+Fetches commits since the last git tag and categorizes them into **Added**, **Fixed**, **Changed**, **Removed**.
 
 ## Usage
 
