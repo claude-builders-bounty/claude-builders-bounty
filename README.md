@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Generate a changelog from git history
+
+This repo includes `changelog.sh`, a small Bash utility that writes a structured `CHANGELOG.md` from git commits.
+
+1. Run `bash changelog.sh` from the repository root.
+2. Review the generated `CHANGELOG.md` sections: `Added`, `Fixed`, `Changed`, and `Removed`.
+3. Commit the changelog when it looks right.
+
+The script uses commits since the latest git tag. If the repository has no tags, it uses all commits reachable from `HEAD`. See `SAMPLE_CHANGELOG.md` for output generated against this repository.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
