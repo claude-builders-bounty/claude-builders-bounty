@@ -29,6 +29,7 @@ Use this checklist immediately before public submission for issue #5.
 - `node submissions/aviranchigoda/check-acceptance.mjs --require-real-evidence` passes.
 - User approval to comment `/opire try` on issue #5.
 - User approval to push a branch/fork and open the public PR.
+- Temporary n8n user folder removed after screenshot capture unless retained for local review.
 
 ## Public Submission Steps
 
@@ -42,5 +43,6 @@ Use this checklist immediately before public submission for issue #5.
 
 - Do not submit publicly if strict acceptance fails.
 - Do not include real API keys, webhook URLs, cookies, account data, or payment details in the PR.
+- Do not share the retained n8n user folder; it may contain local execution history.
 - Do not enter platform terms, account setup, payment details, or Opire/GitHub actions without explicit user approval.
 - Do not start Phase 2 Lightspeed/Binance work until the $200 bounty payout is actually awarded and verified.

@@ -14,6 +14,7 @@ Date: 2026-05-19
 - `npm exec --yes --package n8n@2.20.11 -- n8n import:workflow --input=submissions/aviranchigoda/weekly-dev-summary.workflow.json` successfully imported 1 workflow using a temporary `N8N_USER_FOLDER`.
 - `node submissions/aviranchigoda/validate-mock-execution.mjs` imported and executed the workflow end to end in n8n 2.20.11 with mocked Claude and Slack endpoints. It verified the Claude request model, Slack payload, final `delivered` status, and quiet-week behavior with zero commits/issues/PRs.
 - `node submissions/aviranchigoda/validate-real-execution.mjs` fails closed when `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` are absent, so real endpoint evidence can be produced later without storing credentials in the repository.
+- `validate-real-execution.mjs` writes its generated import workflow outside the n8n user folder and removes that import file after the run.
 - The latest sanitized mock execution evidence is stored at `evidence/mock-execution-result.json`.
 - The latest acceptance-coverage result is stored at `evidence/acceptance-check-result.json`.
 - `evidence/mock-n8n-execution-ui.png` captures the n8n Executions tab for the same local mock run showing execution `ID#1` succeeded.

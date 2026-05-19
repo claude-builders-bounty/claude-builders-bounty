@@ -188,15 +188,16 @@ const config = {
 };
 
 const providedUserFolder = process.env.N8N_REAL_EVIDENCE_USER_FOLDER;
-const tempDir = providedUserFolder || fs.mkdtempSync(path.join(os.tmpdir(), "n8n-weekly-summary-real-"));
-const shouldRemoveTempDir = !providedUserFolder && process.env.N8N_KEEP_REAL_EVIDENCE_USER_FOLDER !== "true";
-fs.mkdirSync(tempDir, { recursive: true });
+const n8nUserFolder = providedUserFolder || fs.mkdtempSync(path.join(os.tmpdir(), "n8n-weekly-summary-real-user-"));
+const workflowTempDir = fs.mkdtempSync(path.join(os.tmpdir(), "n8n-weekly-summary-real-import-"));
+const shouldRemoveUserFolder = !providedUserFolder && process.env.N8N_KEEP_REAL_EVIDENCE_USER_FOLDER !== "true";
+fs.mkdirSync(n8nUserFolder, { recursive: true });
 
 try {
-  const realWorkflowPath = prepareWorkflowForReal(config, tempDir);
+  const realWorkflowPath = prepareWorkflowForReal(config, workflowTempDir);
   const env = {
     ...process.env,
-    N8N_USER_FOLDER: tempDir,
+    N8N_USER_FOLDER: n8nUserFolder,
     N8N_SECURE_COOKIE: "false",
   };
   const n8nArgs = ["exec", "--yes", "--package", n8nPackage, "--", "n8n"];
@@ -258,7 +259,8 @@ try {
   console.error(redactSecrets(error.stack || error.message || error));
   process.exitCode = 1;
 } finally {
-  if (shouldRemoveTempDir) {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+  fs.rmSync(workflowTempDir, { recursive: true, force: true });
+  if (shouldRemoveUserFolder) {
+    fs.rmSync(n8nUserFolder, { recursive: true, force: true });
   }
 }

@@ -36,6 +36,8 @@ Expected result:
   `usedRealAnthropicApi: true`, `usedRealSlackWebhook: true`, and
   `finalStatus: "delivered"`.
 - The file does not include the Anthropic API key or Slack webhook URL.
+- The generated import workflow file is written outside the n8n user folder and
+  deleted automatically after import.
 
 ## Capture n8n UI Screenshot
 
@@ -58,6 +60,13 @@ submissions/aviranchigoda/evidence/real-n8n-execution-ui.png
 
 The screenshot should show the successful n8n execution state, but it must not
 show the Anthropic API key or Slack webhook URL.
+
+After the screenshot is captured, remove the temporary n8n user folder unless
+you still need it for local review:
+
+```bash
+rm -rf "$N8N_REAL_EVIDENCE_USER_FOLDER"
+```
 
 ## Final Local Check
 
