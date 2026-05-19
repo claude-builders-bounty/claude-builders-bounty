@@ -1,0 +1,150 @@
+{
+  "name": "Weekly Dev Summary — Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {"interval": [{"field": "cronExpression", "expression": "0 17 * * 5"}]}
+      },
+      "id": "cron",
+      "name": "Cron (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/commits?since={{ $now.minus({days:7}).toISO() }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=token {{ $env.GITHUB_TOKEN }}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/issues?state=closed&since={{ $now.minus({days:7}).toISO() }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=token {{ $env.GITHUB_TOKEN }}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 350]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/pulls?state=closed&sort=updated&direction=desc&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=token {{ $env.GITHUB_TOKEN }}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.all()[0].json;\nconst issues = $input.all()[1].json;\nconst prs = $input.all()[2].json;\nconst repo = $env.GITHUB_REPO || 'unknown/repo';\nconst weekAgo = new Date(Date.now() - 7*24*60*60*1000);\nconst recentCommits = Array.isArray(commits) ? commits.filter(c => new Date(c.commit.author.date) > weekAgo) : [];\nconst recentIssues = Array.isArray(issues) ? issues.filter(i => new Date(i.closed_at) > weekAgo) : [];\nconst mergedPRs = Array.isArray(prs) ? prs.filter(p => p.merged_at && new Date(p.merged_at) > weekAgo) : [];\nconst authors = new Set();\nrecentCommits.forEach(c => authors.add(c.commit?.author?.name || c.author?.login || 'unknown'));\nconst prompt = `Write a weekly dev summary for ${repo}. Activity: ${recentCommits.length} commits by ${authors.size} contributors, ${recentIssues.length} issues closed, ${mergedPRs.length} PRs merged. Write 200-400 words in ${$env.LANGUAGE || 'EN'}: start with velocity, highlight most impactful change, mention notable fixes/features, end with forward-looking note.`;\nreturn [{ json: { prompt } }];"
+      },
+      "id": "aggregate",
+      "name": "Aggregate & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "model", "value": "claude-sonnet-4-20250514"},
+            {"name": "max_tokens", "value": 1024},
+            {"name": "messages", "value": "=[{\"role\": \"user\", \"content\": $json.prompt}]"}
+          ]
+        }
+      },
+      "id": "claude",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.first().json.content?.[0]?.text || 'Summary unavailable.';\nconst summary = `# Dev Summary — ${$env.GITHUB_REPO || 'Repo'}\n\n${text}\n\n---\n*Auto-generated ${new Date().toISOString().split('T')[0]}*`;\nreturn [{ json: { summary } }];"
+      },
+      "id": "format",
+      "name": "Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [{"name": "content", "value": "={{ $json.summary }}"}]
+        }
+      },
+      "id": "deliver",
+      "name": "Deliver (Webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Cron (Friday 5pm)": {
+      "main": [[{"node": "Fetch Commits", "type": "main", "index": 0}, {"node": "Fetch Issues", "type": "main", "index": 0}, {"node": "Fetch PRs", "type": "main", "index": 0}]]
+    },
+    "Fetch Commits": {"main": [[{"node": "Aggregate & Build Prompt", "type": "main", "index": 0}]]},
+    "Fetch Issues": {"main": [[{"node": "Aggregate & Build Prompt", "type": "main", "index": 1}]]},
+    "Fetch PRs": {"main": [[{"node": "Aggregate & Build Prompt", "type": "main", "index": 2}]]},
+    "Aggregate & Build Prompt": {"main": [[{"node": "Claude API", "type": "main", "index": 0}]]},
+    "Claude API": {"main": [[{"node": "Format", "type": "main", "index": 0}]]},
+    "Format": {"main": [[{"node": "Deliver (Webhook)", "type": "main", "index": 0}]]}
+  }
+}
