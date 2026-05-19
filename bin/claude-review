@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown review for a GitHub pull request."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
+
+
+@dataclass(frozen=True)
+class PullRequest:
+    owner: str
+    repo: str
+    number: str
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.owner}/{self.repo}"
+
+    @property
+    def url(self) -> str:
+        return f"https://github.com/{self.full_name}/pull/{self.number}"
+
+
+def parse_pr_url(value: str) -> PullRequest:
+    match = PR_RE.match(value.strip())
+    if not match:
+        raise ValueError("expected PR URL like https://github.com/owner/repo/pull/123")
+    return PullRequest(owner=match.group(1), repo=match.group(2), number=match.group(3))
+
+
+def run_gh(args: list[str]) -> str:
+    proc = subprocess.run(["gh", *args], text=True, capture_output=True, check=False)
+    if proc.returncode != 0:
+        message = proc.stderr.strip() or proc.stdout.strip() or "gh command failed"
+        raise RuntimeError(message)
+    return proc.stdout
+
+
+def fetch_pr(pr: PullRequest) -> tuple[dict[str, Any], str]:
+    metadata_raw = run_gh(
+        [
+            "pr",
+            "view",
+            pr.number,
+            "--repo",
+            pr.full_name,
+            "--json",
+            "title,body,author,additions,deletions,changedFiles,files,url",
+        ]
+    )
+    diff = run_gh(["pr", "diff", pr.number, "--repo", pr.full_name])
+    return json.loads(metadata_raw), diff
+
+
+def changed_paths(metadata: dict[str, Any]) -> list[str]:
+    return [row.get("path", "") for row in metadata.get("files") or [] if row.get("path")]
+
+
+def path_matches(paths: list[str], *needles: str) -> bool:
+    return any(any(needle in path.lower() for needle in needles) for path in paths)
+
+
+def has_tests(paths: list[str]) -> bool:
+    return any(
+        "/test" in f"/{path.lower()}"
+        or path.lower().startswith("test")
+        or path.lower().endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", "_test.py"))
+        for path in paths
+    )
+
+
+def touches_database(paths: list[str]) -> bool:
+    for path in paths:
+        normalized = f"/{path.lower()}"
+        if (
+            "/db/" in normalized
+            or "/schema/" in normalized
+            or "migration" in normalized
+            or normalized.endswith(".sql")
+        ):
+            return True
+    return False
+
+
+def summarize(metadata: dict[str, Any], paths: list[str]) -> str:
+    title = metadata.get("title") or "Untitled pull request"
+    additions = metadata.get("additions", 0)
+    deletions = metadata.get("deletions", 0)
+    changed = metadata.get("changedFiles", len(paths))
+    top_dirs = sorted({path.split("/", 1)[0] for path in paths if path})
+    scope = ", ".join(top_dirs[:4]) if top_dirs else "the repository"
+    return (
+        f"This PR, \"{title}\", changes {changed} file(s) under {scope}. "
+        f"The diff adds {additions} line(s) and removes {deletions} line(s), so the review should focus on "
+        "whether the touched paths have matching validation and a clear runtime boundary."
+    )
+
+
+def risks(metadata: dict[str, Any], diff: str, paths: list[str]) -> list[str]:
+    additions = int(metadata.get("additions") or 0)
+    found: list[str] = []
+    if not has_tests(paths):
+        found.append("No test or sample validation file is visible in the changed paths.")
+    if additions > 500 or int(metadata.get("changedFiles") or 0) > 10:
+        found.append("The diff is broad enough that unrelated behavior could be reviewed together.")
+    if path_matches(paths, ".github/workflows", "workflow", "action"):
+        found.append("Workflow changes can expand token permissions or run untrusted code if events are too broad.")
+    if touches_database(paths):
+        found.append("Database or migration changes can affect existing data and should be checked against rollback needs.")
+    if path_matches(paths, "auth", "session", "cookie", "token", "secret"):
+        found.append("Authentication or secret-adjacent changes need explicit leakage and authorization review.")
+    if re.search(r"\b(eval|exec|subprocess|shell=True|curl\s+.*\|\s*(bash|sh))\b", diff):
+        found.append("The diff includes command execution or shell-like behavior that needs input sanitization review.")
+    if not found:
+        found.append("No high-risk path pattern was detected, but logic still needs maintainer review.")
+    return found[:6]
+
+
+def suggestions(metadata: dict[str, Any], paths: list[str]) -> list[str]:
+    found: list[str] = []
+    if not has_tests(paths):
+        found.append("Add a small regression test, fixture, or generated sample output for the primary behavior.")
+    if path_matches(paths, ".github/workflows", "workflow", "action"):
+        found.append("Keep workflow permissions minimal and document which event is safe for forked PRs.")
+    if path_matches(paths, "readme", "docs", ".md"):
+        found.append("Check that command examples can be copied from a clean checkout without hidden local assumptions.")
+    if path_matches(paths, "script", "bin/", "cli"):
+        found.append("Exercise the CLI with both a success case and a malformed-input case.")
+    if touches_database(paths):
+        found.append("Run migrations against an empty database and a populated fixture database before merging.")
+    if not found:
+        found.append("List the exact verification commands in the PR so reviewers can reproduce the result.")
+    return found[:6]
+
+
+def confidence(metadata: dict[str, Any], paths: list[str]) -> str:
+    additions = int(metadata.get("additions") or 0)
+    changed_files = int(metadata.get("changedFiles") or len(paths))
+    if has_tests(paths) and additions <= 350 and changed_files <= 6:
+        return "High"
+    if additions <= 700 and changed_files <= 12:
+        return "Medium"
+    return "Low"
+
+
+def render_review(metadata: dict[str, Any], diff: str) -> str:
+    paths = changed_paths(metadata)
+    risk_lines = "\n".join(f"- {item}" for item in risks(metadata, diff, paths))
+    suggestion_lines = "\n".join(f"- {item}" for item in suggestions(metadata, paths))
+    file_lines = "\n".join(f"- `{path}`" for path in paths[:12]) or "- No changed files returned by GitHub."
+    if len(paths) > 12:
+        file_lines += f"\n- ...and {len(paths) - 12} more"
+    return "\n".join(
+        [
+            "## Summary",
+            "",
+            summarize(metadata, paths),
+            "",
+            "Changed files reviewed:",
+            file_lines,
+            "",
+            "## Identified Risks",
+            "",
+            risk_lines,
+            "",
+            "## Improvement Suggestions",
+            "",
+            suggestion_lines,
+            "",
+            "## Confidence",
+            "",
+            confidence(metadata, paths),
+            "",
+        ]
+    )
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR.")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL, for example https://github.com/owner/repo/pull/123")
+    parser.add_argument("--output", help="Write Markdown review to this file instead of stdout")
+    args = parser.parse_args(argv)
+
+    try:
+        pr = parse_pr_url(args.pr)
+        metadata, diff = fetch_pr(pr)
+        review = render_review(metadata, diff)
+    except Exception as exc:  # noqa: BLE001 - CLI should print one actionable error.
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 2
+
+    if args.output:
+        Path(args.output).write_text(review, encoding="utf-8")
+    else:
+        print(review, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

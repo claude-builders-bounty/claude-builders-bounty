@@ -43,6 +43,35 @@ You're in the right place.
 
 ---
 
+## Claude Review Agent
+
+This repository includes a zero-dependency PR review helper for bounty #4:
+
+```bash
+python3 bin/claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+The command fetches PR metadata and the diff through the GitHub CLI, then prints
+a structured Markdown review with:
+
+- a 2-3 sentence summary
+- identified risks
+- improvement suggestions
+- a Low / Medium / High confidence score
+
+The same reviewer can run as a GitHub Action through
+`.github/workflows/claude-review.yml`, which posts the generated Markdown as a PR
+comment.
+
+Setup:
+
+1. Install and authenticate the GitHub CLI: `gh auth login`
+2. Run `python3 bin/claude-review --pr <pull-request-url>`
+3. Optionally copy `.github/workflows/claude-review.yml` into a repository to
+   review new PRs automatically
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
