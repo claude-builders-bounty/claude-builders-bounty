@@ -1,0 +1,343 @@
+#!/usr/bin/env python3
+"""
+claude-review — PR Review Agent for Claude Code
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --diff DIFF_FILE
+  claude-review --help
+
+Output: Structured Markdown review with summary, risks, suggestions, confidence.
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.request
+from datetime import datetime, timezone
+
+
+def parse_pr_url(url: str) -> tuple[str, str, str]:
+    """Parse GitHub PR URL into (owner, repo, pr_number)."""
+    m = re.match(r'https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)', url)
+    if not m:
+        raise ValueError(f"Invalid GitHub PR URL: {url}")
+    return m.group(1), m.group(2), m.group(3)
+
+
+def fetch_pr_diff(owner: str, repo: str, pr_number: str) -> str:
+    """Fetch PR diff from GitHub API."""
+    token = os.environ.get('GITHUB_TOKEN', '')
+    url = f'https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}'
+    
+    headers = {'Accept': 'application/vnd.github.v3.diff'}
+    if token:
+        headers['Authorization'] = f'token {token}'
+    
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req) as resp:
+        return resp.read().decode('utf-8')
+
+
+def fetch_pr_info(owner: str, repo: str, pr_number: str) -> dict:
+    """Fetch PR metadata."""
+    token = os.environ.get('GITHUB_TOKEN', '')
+    url = f'https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}'
+    
+    headers = {'Accept': 'application/vnd.github+json'}
+    if token:
+        headers['Authorization'] = f'token {token}'
+    
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+
+def analyze_diff(diff: str) -> dict:
+    """Analyze a git diff and extract metadata."""
+    lines = diff.split('\n')
+    
+    files_changed = set()
+    additions = 0
+    deletions = 0
+    file_stats = {}
+    
+    current_file = None
+    
+    for line in lines:
+        if line.startswith('diff --git'):
+            current_file = line.split(' b/')[1] if ' b/' in line else 'unknown'
+            files_changed.add(current_file)
+            file_stats[current_file] = {'+': 0, '-': 0}
+        elif line.startswith('+') and not line.startswith('+++'):
+            additions += 1
+            if current_file:
+                file_stats[current_file]['+'] += 1
+        elif line.startswith('-') and not line.startswith('---'):
+            deletions += 1
+            if current_file:
+                file_stats[current_file]['-'] += 1
+    
+    return {
+        'files_count': len(files_changed),
+        'files': sorted(files_changed),
+        'additions': additions,
+        'deletions': deletions,
+        'total_changes': additions + deletions,
+        'file_stats': file_stats,
+    }
+
+
+def detect_risks(diff: str, stats: dict) -> list[str]:
+    """Detect potential risks from the diff."""
+    risks = []
+    diff_lower = diff.lower()
+    files = [f.lower() for f in stats['files']]
+    
+    # Large changes
+    if stats['total_changes'] > 500:
+        risks.append(f"🟡 Large PR: {stats['total_changes']} lines changed across {stats['files_count']} files. Consider splitting.")
+    if stats['total_changes'] > 1000:
+        risks.append(f"🔴 Very large PR: {stats['total_changes']} changes. High review burden.")
+    
+    # Sensitive files modified
+    sensitive_patterns = [
+        ('auth', '🔴 Authentication logic changed'),
+        ('password', '🔴 Password-related code modified'),
+        ('secret', '🔴 Secrets management modified'),
+        ('token', '🟡 Token handling changed'),
+        ('migration', '🟡 Database migration included'),
+        ('schema', '🟡 Database schema change'),
+        ('config', '🟡 Configuration files modified'),
+        ('package.json', '🟡 Dependencies updated'),
+        ('requirements.txt', '🟡 Dependencies updated'),
+        ('dockerfile', '🟡 Docker build modified'),
+        ('ci', '🟡 CI/CD pipeline changed'),
+        ('workflow', '🟡 GitHub Actions workflow modified'),
+    ('env', '🔴 Environment file modified — ensure no secrets exposed'),
+        ('crypto', '🔴 Cryptographic code changed'),
+        ('payment', '🔴 Payment code modified'),
+        ('billing', '🔴 Billing code modified'),
+    ]
+    
+    for f in files:
+        for pattern, risk_msg in sensitive_patterns:
+            if re.search(pattern, f):
+                if risk_msg not in risks:
+                    risks.append(risk_msg)
+    
+    # Security patterns in diff
+    if re.search(r'eval\s*\(', diff_lower):
+        risks.append("🔴 `eval()` usage detected — potential code injection")
+    if re.search(r'innerHTML\s*=', diff_lower):
+        risks.append("🟡 `innerHTML` assignment — possible XSS vector")
+    if re.search(r'console\.log\s*\(', diff_lower):
+        risks.append("🟢 Debug `console.log` statements left in code")
+    if re.search(r'TODO|FIXME|HACK', diff):
+        risks.append("🟢 TODO/FIXME/HACK comments found")
+    if re.search(r'\.only\(', diff_lower) or re.search(r'xit\(|xdescribe\(', diff_lower):
+        risks.append("🟡 Test exclusions found (`.only`, `xit`, `xdescribe`)")
+    
+    return risks
+
+
+def generate_suggestions(diff: str, stats: dict) -> list[str]:
+    """Generate improvement suggestions."""
+    suggestions = []
+    diff_lower = diff.lower()
+    
+    # Check for tests
+    test_files = [f for f in stats['files'] if 'test' in f.lower() or 'spec' in f.lower()]
+    if not test_files and stats['additions'] > 20:
+        suggestions.append("📝 No test files found. Consider adding tests for new/changed functionality.")
+    
+    # Check for documentation
+    doc_files = [f for f in stats['files'] if f.endswith('.md') or 'docs' in f.lower()]
+    if not doc_files and stats['files_count'] > 3:
+        suggestions.append("📝 No documentation changes. If this adds a feature or changes behavior, consider updating docs.")
+    
+    # Large files
+    hot_files = sorted(stats['file_stats'].items(), key=lambda x: x[1]['+'] + x[1]['-'], reverse=True)
+    for fname, changes in hot_files[:3]:
+        total = changes['+'] + changes['-']
+        if total > 200:
+            suggestions.append(f"📦 `{fname}` has {total} changes — consider refactoring into smaller units.")
+    
+    # Error handling
+    if re.search(r'catch\s*\(', diff) and not re.search(r'(throw|reject|logger|sentry)', diff_lower):
+        suggestions.append("🛡️ Catch blocks found without re-throw or logging. Ensure errors are handled or surfaced.")
+    
+    # Magic numbers
+    magic_numbers = re.findall(r'(?<![\w.])[0-9]{4,}(?![\w])', diff)
+    unique_numbers = set(magic_numbers)
+    if len(unique_numbers) > 3:
+        suggestions.append("🔢 Multiple hardcoded numbers detected. Consider extracting to named constants.")
+    
+    return suggestions
+
+
+def calculate_confidence(stats: dict, risks: list[str]) -> str:
+    """Calculate review confidence based on PR complexity and risks."""
+    high_severity = sum(1 for r in risks if '🔴' in r)
+    medium_severity = sum(1 for r in risks if '🟡' in r)
+    
+    if stats['total_changes'] > 1000 or high_severity > 3:
+        return "Low"
+    elif stats['total_changes'] > 500 or high_severity > 1 or medium_severity > 5:
+        return "Medium"
+    else:
+        return "High"
+
+
+def generate_review(pr_info: dict, stats: dict, risks: list[str], suggestions: list[str], confidence: str) -> str:
+    """Generate the structured markdown review."""
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    
+    lines = []
+    lines.append(f"# 🤖 PR Review — {pr_info['title']}")
+    lines.append("")
+    lines.append(f"**PR:** [#{pr_info['number']}]({pr_info['html_url']})")  
+    lines.append(f"**Author:** @{pr_info['user']['login']}")
+    lines.append(f"**Branch:** `{pr_info['head']['label']}` → `{pr_info['base']['label']}`")
+    lines.append(f"**Reviewed:** {now}")
+    lines.append("")
+    
+    # Summary
+    lines.append("## 📋 Summary")
+    lines.append("")
+    file_list = ', '.join(stats['files'][:5])
+    if stats['files_count'] > 5:
+        file_list += f" (+{stats['files_count'] - 5} more)"
+    lines.append(f"This PR modifies **{stats['files_count']} file(s)** with "
+                 f"**+{stats['additions']}** additions and **-{stats['deletions']}** deletions. "
+                 f"Files changed: `{file_list}`.")
+    lines.append("")
+    
+    # Stats table
+    lines.append("## 📊 Changes by File")
+    lines.append("")
+    lines.append("| File | + | - |")
+    lines.append("|------|---|---|")
+    for fname, changes in sorted(stats['file_stats'].items()):
+        lines.append(f"| `{fname}` | +{changes['+']} | -{changes['-']} |")
+    lines.append("")
+    
+    # Risks
+    lines.append("## ⚠️ Risks")
+    lines.append("")
+    if risks:
+        for risk in risks:
+            lines.append(f"- {risk}")
+    else:
+        lines.append("- ✅ No significant risks detected.")
+    lines.append("")
+    
+    # Suggestions
+    lines.append("## 💡 Suggestions")
+    lines.append("")
+    if suggestions:
+        for s in suggestions:
+            lines.append(f"- {s}")
+    else:
+        lines.append("- ✅ No improvement suggestions at this time.")
+    lines.append("")
+    
+    # Confidence
+    confidence_emoji = {'High': '🟢', 'Medium': '🟡', 'Low': '🔴'}
+    lines.append("## 🎯 Confidence")
+    lines.append("")
+    conf_str = f"{confidence_emoji.get(confidence, '❓')} **{confidence}** — "
+    
+    if confidence == 'High':
+        conf_str += "This PR is well-scoped and low-risk. Ready for merge after basic checks."
+    elif confidence == 'Medium':
+        conf_str += "This PR has moderate complexity. Recommend careful review of flagged items."
+    else:
+        conf_str += "This PR is complex or has significant risks. Recommend thorough review and possibly splitting."
+    lines.append("")
+    lines.append(conf_str)
+    
+    lines.append("---")
+    lines.append(f"*Generated by claude-review • {now}*")
+    
+    return '\n'.join(lines)
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Claude Code PR Review Agent')
+    parser.add_argument('--pr', help='GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)')
+    parser.add_argument('--diff', help='Path to local diff file')
+    parser.add_argument('--output', '-o', default='-', help='Output file (default: stdout)')
+    parser.add_argument('--json', action='store_true', help='Output JSON instead of Markdown')
+    args = parser.parse_args()
+    
+    if args.pr:
+        owner, repo, pr_number = parse_pr_url(args.pr)
+        print(f"📥 Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+        
+        diff = fetch_pr_diff(owner, repo, pr_number)
+        pr_info = fetch_pr_info(owner, repo, pr_number)
+        source = f"https://github.com/{owner}/{repo}/pull/{pr_number}"
+    
+    elif args.diff:
+        with open(args.diff) as f:
+            diff = f.read()
+        pr_info = {
+            'title': 'Local Diff Review',
+            'number': 'N/A',
+            'html_url': '#',
+            'user': {'login': 'local'},
+            'head': {'label': 'local'},
+            'base': {'label': 'local'},
+        }
+        source = args.diff
+    
+    else:
+        # Try reading from stdin
+        if not sys.stdin.isatty():
+            diff = sys.stdin.read()
+        else:
+            parser.print_help()
+            sys.exit(1)
+        pr_info = {
+            'title': 'Stdin Diff Review',
+            'number': 'N/A',
+            'html_url': '#',
+            'user': {'login': 'stdin'},
+            'head': {'label': 'unknown'},
+            'base': {'label': 'unknown'},
+        }
+        source = 'stdin'
+    
+    # Analyze
+    stats = analyze_diff(diff)
+    risks = detect_risks(diff, stats)
+    suggestions = generate_suggestions(diff, stats)
+    confidence = calculate_confidence(stats, risks)
+    
+    if args.json:
+        result = {
+            'source': source,
+            'stats': {k: v for k, v in stats.items() if k != 'file_stats'},
+            'files': stats['files'],
+            'file_stats': stats['file_stats'],
+            'risks': risks,
+            'suggestions': suggestions,
+            'confidence': confidence,
+        }
+        output = json.dumps(result, indent=2)
+    else:
+        output = generate_review(pr_info, stats, risks, suggestions, confidence)
+    
+    if args.output == '-':
+        print(output)
+    else:
+        with open(args.output, 'w') as f:
+            f.write(output)
+        print(f"✅ Review written to {args.output}", file=sys.stderr)
+
+
+if __name__ == '__main__':
+    main()
