@@ -29,7 +29,7 @@ def analyze_diff(diff):
         return "Error: GEMINI_API_KEY not found in environment. Please set it to use the AI reviewer."
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-flash-latest')
     
     prompt = f"""
 You are an expert software engineer and security auditor.
