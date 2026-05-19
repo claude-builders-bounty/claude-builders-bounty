@@ -1,0 +1,124 @@
+#!/bin/bash
+# 🛡️ Claude Code Safety Hook - Bash Wrapper
+# 安装: 复制到 ~/.claude/hooks/pre-tool-use
+
+HOOK_DIR="$HOME/.claude/hooks"
+LOG_FILE="$HOOK_DIR/blocked.log"
+
+# 确保日志目录存在
+mkdir -p "$HOOK_DIR"
+
+# 读取 stdin 输入
+INPUT=$(cat)
+
+# 提取工具名称和命令
+TOOL_NAME=$(echo "$INPUT" | grep -o '"tool_name"[^,]*' | cut -d'"' -f4)
+COMMAND=$(echo "$INPUT" | grep -o '"command"[^,]*' | cut -d'"' -f4)
+PROJECT_PATH=$(echo "$INPUT" | grep -o '"project_path"[^,]*' | cut -d'"' -f4)
+
+# 如果不是 bash 命令，直接允许
+if [ "$TOOL_NAME" != "bash" ]; then
+    echo '{"allowed": true}'
+    exit 0
+fi
+
+# 定义危险模式检查函数
+check_dangerous() {
+    local cmd="$1"
+    
+    # rm -rf /
+    if echo "$cmd" | grep -qiE 'rm\s+-rf\s+/'; then
+        echo "BLOCKED|rm -rf /|CRITICAL|删除根目录，会摧毁整个系统"
+        return 0
+    fi
+    
+    # rm -rf ~
+    if echo "$cmd" | grep -qiE 'rm\s+-rf\s+~'; then
+        echo "BLOCKED|rm -rf ~|CRITICAL|删除用户主目录"
+        return 0
+    fi
+    
+    # rm -rf .
+    if echo "$cmd" | grep -qiE 'rm\s+-rf\s+\.'; then
+        echo "BLOCKED|rm -rf .|CRITICAL|删除当前目录"
+        return 0
+    fi
+    
+    # rm -rf *
+    if echo "$cmd" | grep -qiE 'rm\s+-rf\s+\*'; then
+        echo "BLOCKED|rm -rf *|HIGH|递归强制删除所有文件"
+        return 0
+    fi
+    
+    # DROP TABLE
+    if echo "$cmd" | grep -qiE 'DROP\s+TABLE'; then
+        echo "BLOCKED|DROP TABLE|HIGH|删除数据库表"
+        return 0
+    fi
+    
+    # DROP DATABASE
+    if echo "$cmd" | grep -qiE 'DROP\s+DATABASE'; then
+        echo "BLOCKED|DROP DATABASE|CRITICAL|删除整个数据库"
+        return 0
+    fi
+    
+    # git push --force 或 -f
+    if echo "$cmd" | grep -qiE 'git\s+push\s+.*(--force|-f\b)'; then
+        echo "BLOCKED|git push --force|HIGH|强制推送，会覆盖远程历史"
+        return 0
+    fi
+    
+    # TRUNCATE TABLE
+    if echo "$cmd" | grep -qiE 'TRUNCATE\s+TABLE'; then
+        echo "BLOCKED|TRUNCATE TABLE|HIGH|清空表数据"
+        return 0
+    fi
+    
+    # DELETE FROM without WHERE
+    if echo "$cmd" | grep -qiE 'DELETE\s+FROM\s+\w+$'; then
+        echo "BLOCKED|DELETE FROM without WHERE|HIGH|删除表中所有数据，没有WHERE条件"
+        return 0
+    fi
+    
+    # mkfs
+    if echo "$cmd" | grep -qiE 'mkfs\.'; then
+        echo "BLOCKED|mkfs|CRITICAL|格式化文件系统"
+        return 0
+    fi
+    
+    # dd to device
+    if echo "$cmd" | grep -qiE 'dd\s+if=.*of=/dev/'; then
+        echo "BLOCKED|dd to device|CRITICAL|直接写入设备，可能破坏分区"
+        return 0
+    fi
+    
+    return 1
+}
+
+# 检查命令
+RESULT=$(check_dangerous "$COMMAND")
+
+if [ -n "$RESULT" ]; then
+    # 解析结果
+    STATUS=$(echo "$RESULT" | cut -d'|' -f1)
+    RULE_NAME=$(echo "$RESULT" | cut -d'|' -f2)
+    SEVERITY=$(echo "$RESULT" | cut -d'|' -f3)
+    DESCRIPTION=$(echo "$RESULT" | cut -d'|' -f4)
+    
+    # 记录到日志
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "{\"timestamp\":\"$TIMESTAMP\",\"command\":\"$COMMAND\",\"rule_name\":\"$RULE_NAME\",\"severity\":\"$SEVERITY\",\"project_path\":\"$PROJECT_PATH\"}" >> "$LOG_FILE"
+    
+    # 输出阻止信息
+    cat << EOF
+{
+  "allowed": false,
+  "message": "🔴 SAFETY HOOK BLOCKED THIS COMMAND\\n\\nCommand: $COMMAND\\nRule: $RULE_NAME\\nSeverity: $SEVERITY\\n\\nWhy blocked:\\n$DESCRIPTION\\n\\nThis command could cause irreversible damage to your system or data.\\nIf you're sure you want to run it, you can:\\n1. Review the command carefully\\n2. Run it manually outside of Claude Code\\n3. Modify the command to be safer\\n\\nBlocked at: $TIMESTAMP\\nLogged to: $LOG_FILE"
+}
+EOF
+    exit 1
+else
+    # 允许执行
+    echo '{"allowed": true}'
+    exit 0
+fi
