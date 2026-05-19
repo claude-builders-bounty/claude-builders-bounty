@@ -1,0 +1,139 @@
+{
+  "name": "GitHub Activity to Slack Daily Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-slack",
+      "name": "Daily Trigger (9am)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $vars.GITHUB_REPO }}/commits",
+        "options": {
+          "qs": {
+            "since": "={{ $dateOffset(-1, 'DD') }}",
+            "per_page": 50
+          },
+          "headers": {
+            "Authorization": "token {{ $vars.GITHUB_TOKEN }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      },
+      "id": "fetch-commits-slack",
+      "name": "Fetch Yesterday's Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $vars.GITHUB_REPO }}/pulls?state=closed",
+        "options": {
+          "qs": {
+            "since": "={{ $dateOffset(-1, 'DD') }}",
+            "per_page": 20
+          },
+          "headers": {
+            "Authorization": "token {{ $vars.GITHUB_TOKEN }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      },
+      "id": "fetch-closed-prs",
+      "name": "Fetch Closed PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 450]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "=Generate a daily GitHub activity report from this data:\n\nCommits: {{ $json.commits }}\nClosed PRs: {{ $json.prs }}\n\nInclude: commit count, PR count, top contributors, and a brief summary."
+            }
+          ]
+        }
+      },
+      "id": "generate-report-slack",
+      "name": "Generate Report with Claude",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "channel": "={{ $vars.SLACK_CHANNEL }}",
+        "text": "={{ $json.report }}",
+        "otherOptions": {}
+      },
+      "id": "send-to-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "schedule-trigger-slack": {
+      "main": [
+        [
+          {
+            "node": "fetch-commits-slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "fetch-commits-slack": {
+      "main": [
+        [
+          {
+            "node": "generate-report-slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "fetch-closed-prs": {
+      "main": [
+        [
+          {
+            "node": "generate-report-slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "generate-report-slack": {
+      "main": [
+        [
+          {
+            "node": "send-to-slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
