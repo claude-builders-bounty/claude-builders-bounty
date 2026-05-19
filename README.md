@@ -1,25 +1,7 @@
-# Safety First: Claude Code Security Hook
+# Next.js 15 + SQLite SaaS Template
 
-This hook intercepts and blocks dangerous bash commands before they are executed by Claude Code.
+Opinionated template and guidance files for Next.js 15, Drizzle, and SQLite SaaS configurations.
 
-## Blocked Commands:
-- `rm -rf`
-- `DROP TABLE` (SQL)
-- `git push --force`
-- `TRUNCATE` (SQL)
-- `DELETE FROM` without a `WHERE` clause
+## Usage
 
-## Installation:
-
-1. Create the hooks directory:
-```bash
-mkdir -p ~/.claude/hooks
-```
-
-2. Copy the hook script:
-```bash
-cp security_hook.py ~/.claude/hooks/pre-tool-use.py
-```
-
-## Logs:
-All blocked attempts are logged to `~/.claude/hooks/blocked.log`.
+Simply copy `CLAUDE.md` to the root of your greenfield or existing Next.js + SQLite project. It will instruct Claude Code to operate according to best practices and project conventions without requiring custom configuration scripts.
