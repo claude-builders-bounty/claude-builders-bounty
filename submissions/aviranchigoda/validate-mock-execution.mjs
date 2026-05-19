@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
@@ -8,6 +9,7 @@ const root = new URL(".", import.meta.url).pathname;
 const workflowPath = path.join(root, "weekly-dev-summary.workflow.json");
 const evidenceDir = path.join(root, "evidence");
 const expectSlackFailure = process.argv.includes("--expect-slack-failure");
+const writeEvidence = !process.argv.includes("--no-write");
 const evidencePath = path.join(
   evidenceDir,
   expectSlackFailure ? "mock-slack-failure-result.json" : "mock-execution-result.json",
@@ -102,6 +104,19 @@ function startMockServer({ slackStatusCode = 200, slackResponseBody = "ok" } = {
   });
 }
 
+function findFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = address.port;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
 function prepareWorkflowForMock(baseUrl, tempDir) {
   const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
   workflow.id = "weeklyDevSummaryMock";
@@ -159,9 +174,19 @@ function extractExecutionResult(rawOutput) {
   return rawOutput?.json ?? rawOutput;
 }
 
+function writeAndPrintEvidence(evidence) {
+  if (writeEvidence) {
+    fs.mkdirSync(evidenceDir, { recursive: true });
+    fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  }
+
+  console.log(JSON.stringify(evidence, null, 2));
+}
+
 const providedUserFolder = process.env.N8N_EVIDENCE_USER_FOLDER;
 const tempDir = providedUserFolder || fs.mkdtempSync(path.join(os.tmpdir(), "n8n-weekly-summary-"));
 const shouldRemoveTempDir = !providedUserFolder && process.env.N8N_KEEP_EVIDENCE_USER_FOLDER !== "true";
+const n8nBrokerPort = await findFreePort();
 const server = await startMockServer(
   expectSlackFailure
     ? { slackStatusCode: 500, slackResponseBody: "simulated_slack_failure" }
@@ -174,6 +199,7 @@ try {
     ...process.env,
     N8N_USER_FOLDER: tempDir,
     N8N_SECURE_COOKIE: "false",
+    N8N_RUNNERS_BROKER_PORT: String(n8nBrokerPort),
   };
   const n8nArgs = ["exec", "--yes", "--package", "n8n@2.20.11", "--", "n8n"];
   const importResult = await command("npm", [...n8nArgs, "import:workflow", "--input", mockWorkflowPath], { env });
@@ -215,9 +241,7 @@ try {
       deliveredResultRejected: true,
     };
 
-    fs.mkdirSync(evidenceDir, { recursive: true });
-    fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-    console.log(JSON.stringify(evidence, null, 2));
+    writeAndPrintEvidence(evidence);
   } else if (executeResult.code !== 0) {
     throw new Error(`n8n execute failed\nSTDOUT:\n${executeResult.stdout}\nSTDERR:\n${executeResult.stderr}`);
   } else {
@@ -291,9 +315,7 @@ try {
       mergedPullRequestCount: result.mergedPullRequestCount,
     };
 
-    fs.mkdirSync(evidenceDir, { recursive: true });
-    fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-    console.log(JSON.stringify(evidence, null, 2));
+    writeAndPrintEvidence(evidence);
   }
 } finally {
   await server.close();

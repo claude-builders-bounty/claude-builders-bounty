@@ -179,6 +179,7 @@ const buildUrlsCode = readText("code-nodes/build-github-api-urls.js");
 const prepareClaudeCode = readText("code-nodes/prepare-claude-request.js");
 const prepareSlackCode = readText("code-nodes/prepare-slack-message.js");
 const executionResultCode = readText("code-nodes/execution-result.js");
+const mockRunnerCode = readText("validate-mock-execution.mjs");
 const realRunnerCode = readText("validate-real-execution.mjs");
 
 check(
@@ -332,6 +333,14 @@ check(
   mockSlackFailureEvidence
     ? `Slack failure rejected with n8n exit code ${mockSlackFailureEvidence.n8nExitCode}`
     : "missing mock Slack failure evidence",
+);
+check(
+  "local mock validator no-write mode",
+  mockRunnerCode.includes("--no-write")
+    && mockRunnerCode.includes("writeEvidence")
+    && mockRunnerCode.includes("writeAndPrintEvidence")
+    && mockRunnerCode.includes("N8N_RUNNERS_BROKER_PORT"),
+  "validate-mock-execution.mjs can rerun mock success and failure validation without rewriting evidence files or colliding on n8n's task-broker port",
 );
 check(
   "local mock n8n UI screenshot",

@@ -8,6 +8,7 @@ Use this checklist immediately before public submission for issue #5.
 - Submission directory: `submissions/aviranchigoda/`
 - Destination: Slack incoming webhook
 - Local acceptance check: `node submissions/aviranchigoda/check-acceptance.mjs`
+- Clean mock recheck: `node submissions/aviranchigoda/validate-mock-execution.mjs --no-write`
 - Strict acceptance check after real evidence: `node submissions/aviranchigoda/check-acceptance.mjs --require-real-evidence`
 - Real endpoint evidence runbook: `REAL_EVIDENCE.md`
 - Real endpoint environment preflight: `node submissions/aviranchigoda/validate-real-execution.mjs --check-env-only`
