@@ -1,0 +1,189 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "weeks", "weeksInterval": 1}],
+          "triggerTimes": {
+            "hour": 17,
+            "minute": 0,
+            "dayOfWeek": 5
+          }
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "since", "value": "={{ $json.week_start }}"},
+            {"name": "until", "value": "={{ $json.week_end }}"},
+            {"name": "per_page", "value": 100}
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/issues?state=closed",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "since", "value": "={{ $json.week_start }}"},
+            {"name": "per_page", "value": 100},
+            {"name": "filter", "value": "all"}
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/pulls?state=closed",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "since", "value": "={{ $json.week_start }}"},
+            {"name": "per_page", "value": 100},
+            {"name": "sort", "value": "updated"},
+            {"name": "direction", "value": "desc"}
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all GitHub data into a summary object\nconst commits = $input.all()[0].json;\nconst issues = $input.all()[1].json;\nconst prs = $input.all()[2].json;\n\nconst summary = {\n  repo: $('Set Repo URL').item.json.repo_name,\n  week: `${$('Set Repo URL').item.json.week_start} to ${$('Set Repo URL').item.json.week_end}`,\n  commits: (Array.isArray(commits) ? commits : []).map(c => ({\n    message: c.commit?.message?.split('\\n')[0] || '',\n    author: c.commit?.author?.name || c.author?.login || '',\n    date: c.commit?.author?.date || ''\n  })),\n  issues_closed: (Array.isArray(issues) ? issues : [])\n    .filter(i => !i.pull_request)\n    .map(i => ({\n      title: i.title,\n      number: i.number,\n      labels: (i.labels || []).map(l => l.name)\n    })),\n  prs_merged: (Array.isArray(prs) ? prs : [])\n    .filter(p => p.merged_at)\n    .map(p => ({\n      title: p.title,\n      number: p.number,\n      author: p.user?.login || '',\n      merged_at: p.merged_at\n    }))\n};\n\nreturn { json: summary };"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst commitCount = data.commits.length;\nconst issueCount = data.issues_closed.length;\nconst prCount = data.prs_merged.length;\n\n// Build commit summary\nconst commitList = data.commits.slice(0, 10).map(c => `- ${c.message}`).join('\\n');\n\n// Build PR summary\nconst prList = data.prs_merged.map(p => `- #${p.number}: ${p.title} (@${p.author})`).join('\\n');\n\n// Build issue summary\nconst issueList = data.issues_closed.map(i => `- #${i.number}: ${i.title}`).join('\\n');\n\nconst prompt = `You are a weekly dev summary writer. Write a concise, narrative summary for the project \"${data.repo}\" for the week of ${data.week}.\n\nStats:\n- ${commitCount} commits\n- ${prCount} PRs merged\n- ${issueCount} issues closed\n\n${commitCount > 0 ? 'Commits:\\n' + commitList : 'No commits this week.'}\n\n${prCount > 0 ? 'PRs Merged:\\n' + prList : 'No PRs merged this week.'}\n\n${issueCount > 0 ? 'Issues Closed:\\n' + issueList : 'No issues closed this week.'}\n\nWrite a 2-4 paragraph summary. Format:\n- First paragraph: high-level overview\n- Second: notable PRs/features merged\n- Third: issues resolved and ongoing themes\n- Keep it informative but friendly. Do NOT use markdown headers.`;\n\nreturn { json: { ...data, prompt } };\n"
+      },
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "content-type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "model", "value": "claude-sonnet-4-20250514"},
+            {"name": "max_tokens", "value": 2000},
+            {"name": "messages[0][role]", "value": "user"},
+            {"name": "messages[0][content]", "value": "={{ $json.prompt }}"}
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response.content?.[0]?.text || 'No summary generated.';\n\n// Add header\nconst header = `# 📊 Weekly Dev Summary\\n\\n**${$('Aggregate Data').first().json.repo}** — ${$('Aggregate Data').first().json.week}\\n\\n`;\n\nreturn { json: { summary: header + content } };\n"
+      },
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Set the repo URL, name, and date range for the week\nconst now = new Date();\nconst dayOfWeek = now.getDay();\nconst daysToLastFriday = dayOfWeek >= 5 ? dayOfWeek - 5 : dayOfWeek + 2;\nconst lastFriday = new Date(now);\nlastFriday.setDate(now.getDate() - daysToLastFriday - 7);\nconst weekStart = lastFriday.toISOString().split('T')[0];\nconst weekEnd = now.toISOString().split('T')[0];\n\nreturn {\n  json: {\n    repo_url: 'https://api.github.com/repos/REPO_OWNER/REPO_NAME',\n    repo_name: 'REPO_OWNER/REPO_NAME',\n    week_start: weekStart,\n    week_end: weekEnd\n  }\n};\n"
+      },
+      "id": "set-repo",
+      "name": "Set Repo URL",
+      "type": "n8n-nodes-base.code",
+      "position": [250, 100]
+    }
+  ],
+  "connections": {
+    "Friday 5pm": {
+      "main": [[{"node": "Set Repo URL", "type": "main", "index": 0}]]
+    },
+    "Set Repo URL": {
+      "main": [[
+        {"node": "Fetch Commits", "type": "main", "index": 0},
+        {"node": "Fetch Closed Issues", "type": "main", "index": 0},
+        {"node": "Fetch Merged PRs", "type": "main", "index": 0}
+      ]]
+    },
+    "Fetch Commits": {
+      "main": [[{"node": "Aggregate Data", "type": "main", "index": 0}]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{"node": "Aggregate Data", "type": "main", "index": 1}]]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{"node": "Aggregate Data", "type": "main", "index": 2}]]
+    },
+    "Aggregate Data": {
+      "main": [[{"node": "Build Prompt", "type": "main", "index": 0}]]
+    },
+    "Build Prompt": {
+      "main": [[{"node": "Call Claude API", "type": "main", "index": 0}]]
+    },
+    "Call Claude API": {
+      "main": [[{"node": "Format Output", "type": "main", "index": 0}]]
+    }
+  }
+}
