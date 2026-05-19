@@ -18,6 +18,8 @@ Date: 2026-05-19
 - `validate-real-execution.mjs` writes its generated import workflow outside the n8n user folder and removes that import file after the run.
 - `validate-real-execution.mjs` refuses to write real-run evidence if an approval-gated secret value appears in the sanitized evidence payload.
 - `node submissions/aviranchigoda/validate-real-execution.mjs --self-test-secret-guard` verifies the real evidence secret guard locally without credentials.
+- `node submissions/aviranchigoda/validate-real-execution.mjs --self-test-input-validation` verifies missing credential, placeholder, invalid Slack URL, invalid language, invalid lookback, and valid config handling locally without credentials.
+- `node submissions/aviranchigoda/validate-real-execution.mjs --check-env-only` validates approval-gated real-run environment variables without making network calls or writing evidence.
 - `ACCEPTANCE_MATRIX.md` maps issue #5 requirements to workflow nodes, helper files, evidence artifacts, and approval gates.
 - The latest sanitized mock execution evidence is stored at `evidence/mock-execution-result.json`.
 - The latest acceptance-coverage result is stored at `evidence/acceptance-check-result.json`.

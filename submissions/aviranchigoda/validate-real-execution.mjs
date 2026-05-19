@@ -9,6 +9,7 @@ const workflowPath = path.join(root, "weekly-dev-summary.workflow.json");
 const evidenceDir = path.join(root, "evidence");
 const evidencePath = path.join(evidenceDir, "real-execution-result.json");
 const n8nPackage = "n8n@2.20.11";
+const slackWebhookPrefix = "https://hooks.slack.com/services/";
 
 const secretValues = [
   process.env.ANTHROPIC_API_KEY,
@@ -59,6 +60,80 @@ function runSecretGuardSelfTest() {
   console.log(JSON.stringify({ status: "passed", check: "real evidence secret-leak guard" }, null, 2));
 }
 
+function expectValidationFailure(name, env, expectedMessage) {
+  try {
+    buildConfig(env);
+  } catch (error) {
+    if (error.message.includes(expectedMessage)) {
+      return;
+    }
+
+    throw new Error(`${name} failed with unexpected message: ${error.message}`);
+  }
+
+  throw new Error(`${name} did not fail as expected.`);
+}
+
+function runInputValidationSelfTest() {
+  expectValidationFailure("missing credentials", {}, "Missing required environment variable(s): ANTHROPIC_API_KEY, SLACK_WEBHOOK_URL");
+  expectValidationFailure(
+    "placeholder credentials",
+    {
+      ANTHROPIC_API_KEY: "REPLACE_ME_ANTHROPIC_API_KEY",
+      SLACK_WEBHOOK_URL: "REPLACE_ME_SLACK_WEBHOOK_URL",
+    },
+    "Missing required environment variable(s): ANTHROPIC_API_KEY, SLACK_WEBHOOK_URL",
+  );
+  expectValidationFailure(
+    "invalid Slack webhook",
+    {
+      ANTHROPIC_API_KEY: "self-test-anthropic-token",
+      SLACK_WEBHOOK_URL: "https://example.invalid/webhook",
+    },
+    "SLACK_WEBHOOK_URL must be a Slack incoming webhook URL.",
+  );
+  expectValidationFailure(
+    "invalid language",
+    {
+      ANTHROPIC_API_KEY: "self-test-anthropic-token",
+      SLACK_WEBHOOK_URL: `${slackWebhookPrefix}tself/bself/self`,
+      SUMMARY_LANGUAGE: "ES",
+    },
+    "SUMMARY_LANGUAGE must be EN or FR.",
+  );
+  expectValidationFailure(
+    "invalid lookback",
+    {
+      ANTHROPIC_API_KEY: "self-test-anthropic-token",
+      SLACK_WEBHOOK_URL: `${slackWebhookPrefix}tself/bself/self`,
+      LOOKBACK_DAYS: "0",
+    },
+    "LOOKBACK_DAYS must be an integer from 1 to 31.",
+  );
+
+  const config = buildConfig({
+    ANTHROPIC_API_KEY: "self-test-anthropic-token",
+    SLACK_WEBHOOK_URL: `${slackWebhookPrefix}tself/bself/self`,
+    GITHUB_OWNER: "example-owner",
+    GITHUB_REPO: "example-repo",
+    SUMMARY_LANGUAGE: "FR",
+    LOOKBACK_DAYS: "14",
+    SLACK_CHANNEL: "compat-channel",
+  });
+
+  if (
+    config.githubOwner !== "example-owner"
+    || config.githubRepo !== "example-repo"
+    || config.summaryLanguage !== "FR"
+    || config.lookbackDays !== 14
+    || config.slackChannel !== "compat-channel"
+  ) {
+    throw new Error("Input validation self-test produced an unexpected valid config.");
+  }
+
+  console.log(JSON.stringify({ status: "passed", check: "real evidence input validation" }, null, 2));
+}
+
 function command(commandName, args, options = {}) {
   return new Promise((resolve) => {
     const child = spawn(commandName, args, {
@@ -81,8 +156,8 @@ function command(commandName, args, options = {}) {
   });
 }
 
-function requireEnv(name) {
-  const value = process.env[name]?.trim();
+function requireEnv(name, env = process.env) {
+  const value = env[name]?.trim();
 
   if (!value || value.includes("REPLACE_ME")) {
     return null;
@@ -91,13 +166,13 @@ function requireEnv(name) {
   return value;
 }
 
-function optionalEnv(name, fallback) {
-  const value = process.env[name]?.trim();
+function optionalEnv(name, fallback, env = process.env) {
+  const value = env[name]?.trim();
   return value || fallback;
 }
 
-function parseLookbackDays() {
-  const rawValue = optionalEnv("LOOKBACK_DAYS", "7");
+function parseLookbackDays(env = process.env) {
+  const rawValue = optionalEnv("LOOKBACK_DAYS", "7", env);
   const value = Number(rawValue);
 
   if (!Number.isInteger(value) || value < 1 || value > 31) {
@@ -107,14 +182,68 @@ function parseLookbackDays() {
   return value;
 }
 
-function parseLanguage() {
-  const value = optionalEnv("SUMMARY_LANGUAGE", "EN").toUpperCase();
+function parseLanguage(env = process.env) {
+  const value = optionalEnv("SUMMARY_LANGUAGE", "EN", env).toUpperCase();
 
   if (!["EN", "FR"].includes(value)) {
     throw new Error("SUMMARY_LANGUAGE must be EN or FR.");
   }
 
   return value;
+}
+
+function isSlackWebhookUrl(value) {
+  try {
+    const url = new URL(value);
+    const pathParts = url.pathname.split("/").filter(Boolean);
+
+    return url.protocol === "https:"
+      && url.hostname === "hooks.slack.com"
+      && pathParts[0] === "services"
+      && pathParts.length >= 4;
+  } catch {
+    return false;
+  }
+}
+
+function buildConfig(env = process.env) {
+  const anthropicApiKey = requireEnv("ANTHROPIC_API_KEY", env);
+  const slackWebhookUrl = requireEnv("SLACK_WEBHOOK_URL", env);
+  const missing = [
+    ["ANTHROPIC_API_KEY", anthropicApiKey],
+    ["SLACK_WEBHOOK_URL", slackWebhookUrl],
+  ].filter(([, value]) => !value).map(([name]) => name);
+
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variable(s): ${missing.join(", ")}.`);
+  }
+
+  if (!isSlackWebhookUrl(slackWebhookUrl)) {
+    throw new Error("SLACK_WEBHOOK_URL must be a Slack incoming webhook URL.");
+  }
+
+  return {
+    githubOwner: optionalEnv("GITHUB_OWNER", "claude-builders-bounty", env),
+    githubRepo: optionalEnv("GITHUB_REPO", "claude-builders-bounty", env),
+    summaryLanguage: parseLanguage(env),
+    lookbackDays: parseLookbackDays(env),
+    anthropicApiKey,
+    slackWebhookUrl,
+    slackChannel: optionalEnv("SLACK_CHANNEL", "", env),
+  };
+}
+
+function safeConfigSummary(config) {
+  return {
+    githubOwner: config.githubOwner,
+    githubRepo: config.githubRepo,
+    summaryLanguage: config.summaryLanguage,
+    lookbackDays: config.lookbackDays,
+    hasAnthropicApiKey: true,
+    hasSlackWebhookUrl: true,
+    slackWebhookShape: isSlackWebhookUrl(config.slackWebhookUrl) ? "slack incoming webhook" : "invalid",
+    slackChannel: config.slackChannel || "(webhook default)",
+  };
 }
 
 function replaceConfigValue(jsCode, key, value) {
@@ -201,30 +330,27 @@ if (process.argv.includes("--self-test-secret-guard")) {
   process.exit(0);
 }
 
-const anthropicApiKey = requireEnv("ANTHROPIC_API_KEY");
-const slackWebhookUrl = requireEnv("SLACK_WEBHOOK_URL");
-const missing = [
-  ["ANTHROPIC_API_KEY", anthropicApiKey],
-  ["SLACK_WEBHOOK_URL", slackWebhookUrl],
-].filter(([, value]) => !value).map(([name]) => name);
-
-if (missing.length > 0) {
-  failClosed(`Missing required environment variable(s): ${missing.join(", ")}.`);
+if (process.argv.includes("--self-test-input-validation")) {
+  runInputValidationSelfTest();
+  process.exit(0);
 }
 
-if (!slackWebhookUrl.startsWith("https://hooks.slack.com/services/")) {
-  failClosed("SLACK_WEBHOOK_URL must be a Slack incoming webhook URL.");
+let config;
+
+try {
+  config = buildConfig();
+} catch (error) {
+  failClosed(error.message);
 }
 
-const config = {
-  githubOwner: optionalEnv("GITHUB_OWNER", "claude-builders-bounty"),
-  githubRepo: optionalEnv("GITHUB_REPO", "claude-builders-bounty"),
-  summaryLanguage: parseLanguage(),
-  lookbackDays: parseLookbackDays(),
-  anthropicApiKey,
-  slackWebhookUrl,
-  slackChannel: optionalEnv("SLACK_CHANNEL", ""),
-};
+if (process.argv.includes("--check-env-only")) {
+  console.log(JSON.stringify({
+    status: "passed",
+    check: "real evidence environment preflight",
+    config: safeConfigSummary(config),
+  }, null, 2));
+  process.exit(0);
+}
 
 const providedUserFolder = process.env.N8N_REAL_EVIDENCE_USER_FOLDER;
 const n8nUserFolder = providedUserFolder || fs.mkdtempSync(path.join(os.tmpdir(), "n8n-weekly-summary-real-user-"));

@@ -27,6 +27,13 @@ Local guard self-test, no credentials required:
 
 ```bash
 node submissions/aviranchigoda/validate-real-execution.mjs --self-test-secret-guard
+node submissions/aviranchigoda/validate-real-execution.mjs --self-test-input-validation
+```
+
+Credential preflight, no network calls and no evidence file writes:
+
+```bash
+node submissions/aviranchigoda/validate-real-execution.mjs --check-env-only
 ```
 
 ## Run Real Execution
@@ -44,6 +51,9 @@ Expected result:
 - The file does not include the Anthropic API key or Slack webhook URL.
 - The runner refuses to write the evidence file if an approval-gated secret
   value is detected in the sanitized evidence payload.
+- The runner can validate required environment variables, language, lookback
+  window, and Slack webhook URL shape without making network calls by using
+  `--check-env-only`.
 - The generated import workflow file is written outside the n8n user folder and
   deleted automatically after import.
 

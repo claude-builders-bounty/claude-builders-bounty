@@ -349,6 +349,17 @@ check(
   "validate-real-execution.mjs refuses to write sanitized evidence if an approval-gated secret appears in it and exposes a local self-test for the guard",
 );
 
+check(
+  "real evidence environment preflight",
+  realRunnerCode.includes("--check-env-only")
+    && realRunnerCode.includes("--self-test-input-validation")
+    && realRunnerCode.includes("buildConfig")
+    && realRunnerCode.includes("isSlackWebhookUrl")
+    && realRunnerCode.includes("safeConfigSummary")
+    && realRunnerCode.includes("real evidence environment preflight"),
+  "validate-real-execution.mjs can validate approval-gated environment variables without network calls or evidence writes",
+);
+
 const realEvidencePath = path.join(evidenceDir, "real-execution-result.json");
 const realScreenshotPath = path.join(evidenceDir, "real-n8n-execution-ui.png");
 const realEvidence = realEvidenceInfo(realEvidencePath);
