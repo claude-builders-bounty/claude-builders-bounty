@@ -10,6 +10,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - `ACCEPTANCE_MATRIX.md` - maps each issue #5 requirement to implementation artifacts and evidence.
 - `REAL_EVIDENCE.md` - approval-gated runbook for real endpoint validation and screenshot capture.
 - `SUBMISSION_CHECKLIST.md` - final checklist for evidence, `/opire try`, and PR submission.
+- `PUBLIC_SUBMISSION_DRAFT.md` - approval-gated public claim and PR metadata handoff.
 - `check-acceptance.mjs` - verifies local coverage of the issue #5 acceptance criteria and records remaining approval-gated real evidence.
 - `pre-submit-audit.mjs` - runs the no-write local pre-submit audit and reports approval-gated real evidence separately.
 - `validate-mock-execution.mjs` - imports and executes the workflow in n8n 2.20.11 with mocked Claude and Slack endpoints.

@@ -6,6 +6,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const workflowPath = path.join(root, "weekly-dev-summary.workflow.json");
 const readmePath = path.join(root, "README.md");
 const acceptanceMatrixPath = path.join(root, "ACCEPTANCE_MATRIX.md");
+const publicSubmissionDraftPath = path.join(root, "PUBLIC_SUBMISSION_DRAFT.md");
 const evidenceDir = path.join(root, "evidence");
 const resultPath = path.join(evidenceDir, "acceptance-check-result.json");
 const requireRealEvidence = process.argv.includes("--require-real-evidence");
@@ -173,6 +174,9 @@ const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 const readme = fs.readFileSync(readmePath, "utf8");
 const acceptanceMatrix = fs.existsSync(acceptanceMatrixPath)
   ? fs.readFileSync(acceptanceMatrixPath, "utf8")
+  : "";
+const publicSubmissionDraft = fs.existsSync(publicSubmissionDraftPath)
+  ? fs.readFileSync(publicSubmissionDraftPath, "utf8")
   : "";
 const configCode = readText("code-nodes/configure-summary.js");
 const buildUrlsCode = readText("code-nodes/build-github-api-urls.js");
@@ -352,6 +356,17 @@ check(
     && preSubmitAuditCode.includes("remote issue state")
     && preSubmitAuditCode.includes("branch scope"),
   "pre-submit-audit.mjs bundles local no-write checks, live issue status, branch-scope verification, and explicit real-evidence gates",
+);
+check(
+  "public submission draft",
+  publicSubmissionDraft.includes("/opire try")
+    && publicSubmissionDraft.includes("PR_DESCRIPTION.md")
+    && publicSubmissionDraft.includes("pre-submit-audit.mjs --require-real-evidence")
+    && publicSubmissionDraft.includes("Do not post")
+    && publicSubmissionDraft.includes("submissions/aviranchigoda/"),
+  publicSubmissionDraft
+    ? "PUBLIC_SUBMISSION_DRAFT.md records the exact approval-gated claim comment, PR metadata, strict audit command, and stop conditions"
+    : "missing PUBLIC_SUBMISSION_DRAFT.md",
 );
 check(
   "local mock n8n UI screenshot",

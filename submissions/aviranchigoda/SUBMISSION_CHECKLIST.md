@@ -7,6 +7,7 @@ Use this checklist immediately before public submission for issue #5.
 - Branch: `bounty/issue-5-weekly-dev-summary`
 - Submission directory: `submissions/aviranchigoda/`
 - Destination: Slack incoming webhook
+- Public submission draft: `PUBLIC_SUBMISSION_DRAFT.md`
 - Pre-submit local audit: `node submissions/aviranchigoda/pre-submit-audit.mjs`
 - Local acceptance check: `node submissions/aviranchigoda/check-acceptance.mjs`
 - Clean mock recheck: `node submissions/aviranchigoda/validate-mock-execution.mjs --no-write`
@@ -19,6 +20,7 @@ Use this checklist immediately before public submission for issue #5.
 - `weekly-dev-summary.workflow.json` is importable workflow JSON.
 - `README.md` has setup instructions in five steps.
 - `ACCEPTANCE_MATRIX.md` maps each issue #5 requirement to artifacts and evidence.
+- `PUBLIC_SUBMISSION_DRAFT.md` records the exact approval-gated `/opire try` comment, PR title, PR body source, final audit command, and stop conditions.
 - `pre-submit-audit.mjs` runs the no-write local audit and reports approval-gated real evidence separately.
 - `evidence/acceptance-check-result.json` records local acceptance coverage.
 - `evidence/mock-execution-result.json` records a successful n8n 2.20.11 execution with mocked Claude and Slack endpoints.
@@ -44,7 +46,7 @@ Use this checklist immediately before public submission for issue #5.
 1. Comment `/opire try` on issue #5.
 2. Push the local branch to the user's fork.
 3. Open a PR from the fork branch to `claude-builders-bounty:main`.
-4. Use `PR_DESCRIPTION.md` as the PR body.
+4. Use `PUBLIC_SUBMISSION_DRAFT.md` for the approved public-action details and `PR_DESCRIPTION.md` as the PR body.
 5. Confirm the PR includes only `submissions/aviranchigoda/` files.
 
 ## Stop Conditions
