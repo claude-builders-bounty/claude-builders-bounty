@@ -1,0 +1,112 @@
+{
+  "name": "Weekly GitHub Summary via Claude + Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyWeek",
+              "hour": 17,
+              "minute": 0,
+              "weekday": "friday"
+            }
+          ]
+        }
+      },
+      "id": "cron_weekly",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 2,
+      "position": [
+        280,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"repoOwner\": \"claude-builders-bounty\",\n  \"repoName\": \"claude-builders-bounty\",\n  \"language\": \"EN\",\n  \"githubToken\": \"YOUR_GITHUB_TOKEN\",\n  \"anthropicApiKey\": \"YOUR_ANTHROPIC_API_KEY\",\n  \"slackWebhookUrl\": \"https://hooks.slack.com/services/REPLACE/THIS/URL\"\n}"
+      },
+      "id": "config_vars",
+      "name": "Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        520,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $input.first().json;\n\nconst now = new Date();\nconst weekEndISO = now.toISOString();\nconst weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst weekStartISO = weekStart.toISOString();\n\nconst ghHeaders = {\n  'Accept': 'application/vnd.github+json',\n  'Authorization': `Bearer ${cfg.githubToken}`,\n  'X-GitHub-Api-Version': '2022-11-28',\n};\n\nconst base = `https://api.github.com/repos/${cfg.repoOwner}/${cfg.repoName}`;\n\nasync function getJson(url) {\n  const res = await fetch(url, {headers: ghHeaders});\n  if (!res.ok) {\n    const txt = await res.text();\n    throw new Error(`GitHub API ${res.status}: ${txt}`);\n  }\n  return res.json();\n}\n\nconst commits = await getJson(`${base}/commits?since=${encodeURIComponent(weekStartISO)}&until=${encodeURIComponent(weekEndISO)}&per_page=100`);\nconst issues = await getJson(`${base}/issues?state=closed&since=${encodeURIComponent(weekStartISO)}&per_page=100`);\nconst pulls = await getJson(`${base}/pulls?state=closed&sort=updated&direction=desc&per_page=100`);\n\nconst mergedPRs = pulls.filter(pr => pr.merged_at && pr.merged_at >= weekStartISO && pr.merged_at <= weekEndISO);\nconst closedIssues = issues.filter(i => !i.pull_request);\n\nconst commitLines = commits.slice(0, 40).map(c => `- ${c.sha.slice(0,7)} ${c.commit.message.split('\\n')[0]} (@${c.author?.login || 'unknown'})`);\nconst issueLines = closedIssues.slice(0, 40).map(i => `- #${i.number}: ${i.title}`);\nconst prLines = mergedPRs.slice(0, 40).map(pr => `- #${pr.number}: ${pr.title} (@${pr.user?.login || 'unknown'})`);\n\nconst language = (cfg.language || 'EN').toUpperCase() === 'FR' ? 'French' : 'English';\n\nconst prompt = `You are a senior engineering program assistant.\\nWrite a concise weekly development narrative in ${language}.\\n\\nContext:\\n- Repository: ${cfg.repoOwner}/${cfg.repoName}\\n- Time window: ${weekStartISO} -> ${weekEndISO}\\n- Commits count: ${commits.length}\\n- Closed issues count: ${closedIssues.length}\\n- Merged PR count: ${mergedPRs.length}\\n\\nCommits:\\n${commitLines.join('\\n') || '- none'}\\n\\nClosed issues:\\n${issueLines.join('\\n') || '- none'}\\n\\nMerged PRs:\\n${prLines.join('\\n') || '- none'}\\n\\nOutput format:\\n1) 3-5 sentence narrative summary\\n2) Bullet list: key technical highlights\\n3) Bullet list: risks / follow-ups for next week\\nKeep it practical and specific.`;\n\nconst anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {\n  method: 'POST',\n  headers: {\n    'x-api-key': cfg.anthropicApiKey,\n    'anthropic-version': '2023-06-01',\n    'content-type': 'application/json'\n  },\n  body: JSON.stringify({\n    model: 'claude-sonnet-4-20250514',\n    max_tokens: 1200,\n    messages: [{role: 'user', content: prompt}]\n  })\n});\n\nif (!anthropicRes.ok) {\n  const txt = await anthropicRes.text();\n  throw new Error(`Anthropic API ${anthropicRes.status}: ${txt}`);\n}\n\nconst anthropicJson = await anthropicRes.json();\nconst summary = anthropicJson?.content?.[0]?.text || 'No summary generated';\n\nreturn [{\n  json: {\n    ...cfg,\n    weekStartISO,\n    weekEndISO,\n    commitsCount: commits.length,\n    closedIssuesCount: closedIssues.length,\n    mergedPRsCount: mergedPRs.length,\n    summary,\n    slackText: `*Weekly Dev Summary* (${cfg.repoOwner}/${cfg.repoName})\\nWindow: ${weekStartISO} → ${weekEndISO}\\nCommits: ${commits.length} | Closed issues: ${closedIssues.length} | Merged PRs: ${mergedPRs.length}\\n\\n${summary}`\n  }\n}];"
+      },
+      "id": "generate_summary",
+      "name": "Generate Weekly Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.slackWebhookUrl}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": $json.slackText}"
+      },
+      "id": "slack_webhook",
+      "name": "Send to Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [
+        [
+          {
+            "node": "Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Generate Weekly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Weekly Summary": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "00000000-0000-0000-0000-000000000005",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
