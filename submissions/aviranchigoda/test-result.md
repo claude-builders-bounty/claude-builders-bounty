@@ -24,4 +24,5 @@ Date: 2026-05-19
 - `node submissions/aviranchigoda/check-acceptance.mjs --require-real-evidence` is expected to fail until `evidence/real-execution-result.json` and `evidence/real-n8n-execution-ui.png` are produced.
 - Real Anthropic/Slack execution was not attempted because `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` must be supplied by the user before running.
 - `REAL_EVIDENCE.md` documents the approval-gated sequence for producing real endpoint evidence and the final screenshot.
+- `SUBMISSION_CHECKLIST.md` documents the approval-gated `/opire try`, fork push, and public PR steps.
 - Public bounty claim and PR submission require user approval.

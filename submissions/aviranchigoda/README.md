@@ -8,6 +8,7 @@ Submission for issue #5. The workflow runs every Friday at 5pm, fetches weekly G
 - `code-nodes/` - readable copies of the Code node logic embedded in the workflow.
 - `generate-workflow.mjs` - local generator used to keep readable Code node files in sync with the workflow export.
 - `REAL_EVIDENCE.md` - approval-gated runbook for producing real Anthropic/Slack evidence and the real n8n screenshot.
+- `SUBMISSION_CHECKLIST.md` - approval-gated checklist for final evidence, claim, and PR submission.
 - `check-acceptance.mjs` - local acceptance-coverage check for the issue #5 requirements.
 - `validate-mock-execution.mjs` - local validation harness that imports and runs the workflow with mocked Claude and Slack endpoints.
 - `validate-real-execution.mjs` - approval-gated validation harness for real Anthropic and Slack endpoints using environment-provided credentials.
