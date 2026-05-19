@@ -1,0 +1,354 @@
+{
+  "name": "Weekly GitHub Narrative Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "interval": 1,
+              "dayOfWeek": [
+                5
+              ],
+              "hour": 17,
+              "minute": 0
+            }
+          ]
+        }
+      },
+      "id": "57b8740e-5581-410e-84df-cf7f175c590a",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "github_owner",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "github_repo",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "language",
+              "value": "EN"
+            },
+            {
+              "name": "destination_webhook",
+              "value": "https://hooks.slack.com/services/REPLACE_ME"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "10210c32-7b42-4e5f-8971-ea646bfe5cc3",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn [{ json: { since: since.toISOString(), until: now.toISOString(), ...$input.first().json } }];"
+      },
+      "id": "01a16211-d46a-4eef-8918-11293c0a6590",
+      "name": "Date Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "commit",
+        "operation": "list",
+        "owner": "={{$json.github_owner}}",
+        "repository": "={{$json.github_repo}}",
+        "filters": {
+          "since": "={{$json.since}}",
+          "until": "={{$json.until}}"
+        }
+      },
+      "id": "c221e4d4-f2d9-4bc3-9414-8fb2cc8d5596",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        730,
+        120
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "REPLACE_WITH_GITHUB_CREDENTIAL_ID",
+          "name": "GitHub Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "owner": "={{$json.github_owner}}",
+        "repository": "={{$json.github_repo}}",
+        "returnAll": false,
+        "limit": 50,
+        "filters": {
+          "state": "closed",
+          "since": "={{$json.since}}"
+        }
+      },
+      "id": "3d827b12-80ae-4479-a19c-57ec290ca29a",
+      "name": "GitHub Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        730,
+        300
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "REPLACE_WITH_GITHUB_CREDENTIAL_ID",
+          "name": "GitHub Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "owner": "={{$json.github_owner}}",
+        "repository": "={{$json.github_repo}}",
+        "returnAll": false,
+        "limit": 50,
+        "filters": {
+          "state": "closed"
+        }
+      },
+      "id": "d5e5efcb-7d45-400a-8388-0921e3c44765",
+      "name": "GitHub Pull Requests",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        730,
+        480
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "REPLACE_WITH_GITHUB_CREDENTIAL_ID",
+          "name": "GitHub Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const all = $input.all();\nconst config = all[0]?.json || {};\nconst commits = all.filter(i => i.json.sha || i.json.commit);\nconst issues = all.filter(i => i.json.state === 'closed' && !i.json.pull_request);\nconst prs = all.filter(i => i.json.merged_at || i.json.pull_request);\nconst prompt = `Generate a concise weekly narrative summary in ${config.language || 'EN'} for ${config.github_owner}/${config.github_repo}.\\n\\nCommits:\\n${JSON.stringify(commits.slice(0, 30), null, 2)}\\n\\nClosed issues:\\n${JSON.stringify(issues.slice(0, 30), null, 2)}\\n\\nMerged/closed PRs:\\n${JSON.stringify(prs.slice(0, 30), null, 2)}\\n\\nInclude highlights, shipped work, fixes, and next-week risks.`;\nreturn [{ json: { ...config, prompt } }];"
+      },
+      "id": "628a5a72-2c78-4ed4-a1ab-ed46bed13987",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1200,\n  \"messages\": [\n    {\"role\": \"user\", \"content\": $json.prompt}\n  ]\n}"
+      },
+      "id": "720fedc8-2342-4440-9553-adf8a9d9b9f3",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_ANTHROPIC_HEADER_AUTH",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst text = response.content?.[0]?.text || response.text || JSON.stringify(response);\nreturn [{ json: { text } }];"
+      },
+      "id": "e51e76cc-f87f-429b-b9f7-c7f39146e1bb",
+      "name": "Format Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node['Config'].json.destination_webhook}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": $json.text\n}"
+      },
+      "id": "c4cb6752-8afc-4ee8-8f42-3aa938167743",
+      "name": "Send Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Date Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Date Window": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Pull Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Format Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "76de0ae6-aefa-4feb-8ed9-018cb1c51c23"
+}
