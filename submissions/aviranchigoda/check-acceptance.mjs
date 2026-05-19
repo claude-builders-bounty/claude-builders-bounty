@@ -181,6 +181,7 @@ const prepareSlackCode = readText("code-nodes/prepare-slack-message.js");
 const executionResultCode = readText("code-nodes/execution-result.js");
 const mockRunnerCode = readText("validate-mock-execution.mjs");
 const realRunnerCode = readText("validate-real-execution.mjs");
+const preSubmitAuditCode = readText("pre-submit-audit.mjs");
 
 check(
   "exportable n8n workflow JSON",
@@ -341,6 +342,16 @@ check(
     && mockRunnerCode.includes("writeAndPrintEvidence")
     && mockRunnerCode.includes("N8N_RUNNERS_BROKER_PORT"),
   "validate-mock-execution.mjs can rerun mock success and failure validation without rewriting evidence files or colliding on n8n's task-broker port",
+);
+check(
+  "pre-submit audit command",
+  preSubmitAuditCode.includes("--require-real-evidence")
+    && preSubmitAuditCode.includes("validate-mock-execution.mjs")
+    && preSubmitAuditCode.includes("check-acceptance.mjs")
+    && preSubmitAuditCode.includes("strict real evidence acceptance")
+    && preSubmitAuditCode.includes("remote issue state")
+    && preSubmitAuditCode.includes("branch scope"),
+  "pre-submit-audit.mjs bundles local no-write checks, live issue status, branch-scope verification, and explicit real-evidence gates",
 );
 check(
   "local mock n8n UI screenshot",

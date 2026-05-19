@@ -11,6 +11,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - `REAL_EVIDENCE.md` - approval-gated runbook for real endpoint validation and screenshot capture.
 - `SUBMISSION_CHECKLIST.md` - final checklist for evidence, `/opire try`, and PR submission.
 - `check-acceptance.mjs` - verifies local coverage of the issue #5 acceptance criteria and records remaining approval-gated real evidence.
+- `pre-submit-audit.mjs` - runs the no-write local pre-submit audit and reports approval-gated real evidence separately.
 - `validate-mock-execution.mjs` - imports and executes the workflow in n8n 2.20.11 with mocked Claude and Slack endpoints.
 - `validate-real-execution.mjs` - approval-gated real endpoint runner that writes sanitized evidence when `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` are supplied, and refuses to write evidence if a secret value appears in the sanitized payload.
 - `evidence/acceptance-check-result.json` - latest local acceptance-coverage check result.
@@ -40,6 +41,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 ```bash
 node submissions/aviranchigoda/generate-workflow.mjs
 jq empty submissions/aviranchigoda/weekly-dev-summary.workflow.json
+node submissions/aviranchigoda/pre-submit-audit.mjs
 node submissions/aviranchigoda/check-acceptance.mjs
 node submissions/aviranchigoda/validate-mock-execution.mjs
 node submissions/aviranchigoda/validate-mock-execution.mjs --expect-slack-failure

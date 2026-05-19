@@ -11,6 +11,7 @@ Date: 2026-05-19
 - The workflow uses n8n HTTP Request nodes for GitHub, Claude, and Slack calls.
 - Slack webhook response handling is configured as text with full response enabled.
 - `node submissions/aviranchigoda/check-acceptance.mjs` passed all local acceptance-coverage checks, validated the mock screenshot PNG, and recorded the remaining approval-gated real evidence items.
+- `node submissions/aviranchigoda/pre-submit-audit.mjs` passed with approval gates, confirming local no-write checks, live issue status, branch scope, secret scan, and remaining real-evidence gates.
 - `npm exec --yes --package n8n@2.20.11 -- n8n import:workflow --input=submissions/aviranchigoda/weekly-dev-summary.workflow.json` successfully imported 1 workflow using a temporary `N8N_USER_FOLDER`.
 - `node submissions/aviranchigoda/validate-mock-execution.mjs` imported and executed the workflow end to end in n8n 2.20.11 with mocked Claude and Slack endpoints. It verified the Claude request model, Slack payload, final `delivered` status, and quiet-week behavior with zero commits/issues/PRs.
 - `node submissions/aviranchigoda/validate-mock-execution.mjs --expect-slack-failure` imported and executed the workflow with a mocked failing Slack endpoint, and verified that no `delivered` result is produced.
@@ -27,6 +28,7 @@ Date: 2026-05-19
 - `evidence/mock-n8n-execution-ui.png` captures the n8n Executions tab for the same local mock run showing execution `ID#1` succeeded.
 - After `git fetch origin main`, `git diff --name-only origin/main...HEAD` showed that every changed PR file is scoped under `submissions/aviranchigoda/`.
 - `check-acceptance.mjs --no-write` supports final verification without rewriting the committed evidence timestamp.
+- `pre-submit-audit.mjs --require-real-evidence` is the final strict local audit command after real endpoint evidence and the real n8n screenshot are captured.
 - Slack destination-channel configuration is documented as the channel selected by `slackWebhookUrl`, with `slackChannel` kept as an optional compatibility field.
 - Strict real-evidence acceptance now validates the contents of `evidence/real-execution-result.json`, not just that the file exists.
 - The workflow validates the Slack HTTP response before the final `Execution Result` node reports `delivered`.
