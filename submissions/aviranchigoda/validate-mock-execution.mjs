@@ -208,6 +208,13 @@ try {
     throw new Error(`Unexpected final execution result: ${JSON.stringify(result)}`);
   }
 
+  if (result.slackStatusCode !== 200 || result.slackResponseBody !== "ok") {
+    throw new Error(`Unexpected Slack delivery response: ${JSON.stringify({
+      slackStatusCode: result.slackStatusCode,
+      slackResponseBody: result.slackResponseBody,
+    })}`);
+  }
+
   const evidence = {
     status: "passed",
     generatedAt: new Date().toISOString(),
@@ -235,6 +242,8 @@ try {
     },
     finalStatus: result.status,
     destination: result.destination,
+    slackStatusCode: result.slackStatusCode,
+    slackResponseBody: result.slackResponseBody,
     repository: result.repository,
     commitCount: result.commitCount,
     closedIssueCount: result.closedIssueCount,

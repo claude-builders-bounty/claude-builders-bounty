@@ -34,5 +34,6 @@ Submission for issue #5. The workflow runs every Friday at 5pm, fetches weekly G
 - `summaryLanguage = "FR"` switches the generated summary to French.
 - HTTP calls are handled by n8n HTTP Request nodes; Code nodes only configure and transform data.
 - GitHub HTTP nodes preserve empty arrays so quiet weeks still produce a summary instead of stopping the workflow.
+- The final result validates the Slack webhook HTTP response before reporting `delivered`.
 - `check-acceptance.mjs --require-real-evidence` can be used after real endpoint evidence is captured to enforce the remaining screenshot gate and validate screenshot PNG dimensions.
 - `validate-real-execution.mjs` can generate sanitized real-run evidence from `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` without committing credentials.

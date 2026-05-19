@@ -150,6 +150,14 @@ function realEvidenceInfo(filePath) {
     mismatches.push(`summaryLength expected positive number got ${JSON.stringify(evidence.summaryLength)}`);
   }
 
+  if (typeof evidence.slackStatusCode !== "number" || evidence.slackStatusCode < 200 || evidence.slackStatusCode >= 300) {
+    mismatches.push(`slackStatusCode expected 2xx number got ${JSON.stringify(evidence.slackStatusCode)}`);
+  }
+
+  if (typeof evidence.slackResponseBody === "string" && evidence.slackResponseBody && evidence.slackResponseBody !== "ok" && evidence.slackResponseBody !== "empty") {
+    mismatches.push(`slackResponseBody expected "ok" or "empty" got ${JSON.stringify(evidence.slackResponseBody)}`);
+  }
+
   if (mismatches.length > 0) {
     return { valid: false, evidence: mismatches.join("; ") };
   }
@@ -166,6 +174,7 @@ const configCode = readText("code-nodes/configure-summary.js");
 const buildUrlsCode = readText("code-nodes/build-github-api-urls.js");
 const prepareClaudeCode = readText("code-nodes/prepare-claude-request.js");
 const prepareSlackCode = readText("code-nodes/prepare-slack-message.js");
+const executionResultCode = readText("code-nodes/execution-result.js");
 
 check(
   "exportable n8n workflow JSON",
@@ -239,6 +248,15 @@ check(
     && prepareSlackCode.includes("slackPayload")
     && prepareSlackCode.includes("mrkdwn: true"),
   slackNode?.parameters?.url ?? "missing Slack URL",
+);
+
+check(
+  "Slack response validation",
+  executionResultCode.includes('"Send Slack Summary"')
+    && executionResultCode.includes("slackStatusCode")
+    && executionResultCode.includes("Slack webhook returned unexpected status code")
+    && executionResultCode.includes("Slack webhook returned unexpected body"),
+  "Execution Result verifies the Slack HTTP response before reporting delivered",
 );
 
 check(

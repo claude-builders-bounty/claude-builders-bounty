@@ -22,6 +22,7 @@ Date: 2026-05-19
 - `check-acceptance.mjs --no-write` supports final verification without rewriting the committed evidence timestamp.
 - Slack destination-channel configuration is documented as the channel selected by `slackWebhookUrl`, with `slackChannel` kept as an optional compatibility field.
 - Strict real-evidence acceptance now validates the contents of `evidence/real-execution-result.json`, not just that the file exists.
+- The workflow validates the Slack HTTP response before the final `Execution Result` node reports `delivered`.
 
 ## Pending Before Public PR
 

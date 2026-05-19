@@ -220,6 +220,14 @@ try {
     throw new Error(`Unexpected final execution result: ${redactSecrets(JSON.stringify(result))}`);
   }
 
+  if (typeof result.slackStatusCode !== "number" || result.slackStatusCode < 200 || result.slackStatusCode >= 300) {
+    throw new Error(`Unexpected Slack status code: ${redactSecrets(result.slackStatusCode)}`);
+  }
+
+  if (result.slackResponseBody && result.slackResponseBody !== "ok" && result.slackResponseBody !== "empty") {
+    throw new Error(`Unexpected Slack response body: ${redactSecrets(result.slackResponseBody)}`);
+  }
+
   const evidence = {
     status: "passed",
     generatedAt: new Date().toISOString(),
@@ -241,6 +249,8 @@ try {
     },
     finalStatus: result.status,
     destination: result.destination,
+    slackStatusCode: result.slackStatusCode,
+    slackResponseBody: result.slackResponseBody,
     repository: result.repository,
     periodStart: result.periodStart,
     periodEnd: result.periodEnd,
