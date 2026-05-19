@@ -1,53 +1,26 @@
-# Claude Builders Bounty 🤖
+# CHANGELOG Generator Skill
 
-> A community bounty board for Claude Code builders.
+This skill allows Claude Code to generate a structured `CHANGELOG.md` file directly from the repository's git history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Features
+- **Auto-categorization:** Groups commits into Added, Fixed, Changed, Removed, and Docs.
+- **Git Native:** Uses `git log` and `git describe` to find commits since the last tag.
+- **Zero Dependencies:** Pure Python 3 script.
+- **Markdown Output:** Generates a professional, easy-to-read `CHANGELOG.md`.
 
----
+## Setup
+1. Copy `generate_changelog.py` to your repository.
+2. Make it executable: `chmod +x generate_changelog.py`
 
-## How it works
+## Usage
+Run the script to generate or update your `CHANGELOG.md`:
+```bash
+python3 generate_changelog.py
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Claude Code Integration
+Add the following to your `CLAUDE.md` to enable the `/generate-changelog` command:
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+```markdown
+- **Generate Changelog:** `/generate-changelog` -> Run `python3 generate_changelog.py`
+```
