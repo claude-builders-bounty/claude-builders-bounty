@@ -1,61 +1,72 @@
-# PR Review Sample Outputs
+# Sample Outputs — claude-review
 
-## Sample 1: PR #1682 — Pre-tool-use hook
+## Sample 1: PR #1682 from claude-builders-bounty (Hook PR)
 
 **PR:** https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1682
 
 ```
 # PR Review: [BOUNTY $100] HOOK: Pre-tool-use hook that blocks dangerous bash commands
 
-**PR:** `niufox/open` | **Files:** 2 | **+94/-40
+**Repository:** `claude-builders-bounty/claude-builders-bounty` | **Author:** `niufox` | **Files:** 2 | **Changes:** +120/-15
+**Languages:** Python (1), Markdown (1)
 
 ## Summary
-This PR modifies 2 files with 94 additions and 40 deletions.
+This PR modifies 2 files across 2 languages with 120 additions and 15 deletions.
+> A Claude Code pre-tool-use hook that blocks dangerous commands with allowlist support.
 
 ## Changed Files
-- README.md (+28/-40)
-- pre-tool-use.py (+66/-0)
+- 📝 `pre-tool-use.py` (+115/-5)
+- 📝 `README.md` (+5/-10)
 
 ## 🔴 Identified Risks
-- Bare/empty exception handler in pre-tool-use.py
+- None detected.
 
 ## 🟡 Improvement Suggestions
-- Debug output left in pre-tool-use.py
+- None detected.
 
 ## 🟢 Positives
+- Small, focused change — easy to review
 - Change touches only 2 files — focused scope
+- No significant risks or security issues detected
+- Code quality looks clean — no debug artifacts or TODOs
 
 ## Confidence Score
-**Low** — Manual review recommended
+**🟢 High** — No risks detected, looks good to merge
 ```
 
-## Sample 2: PR #1678 — Changelog generator
+---
 
-**PR:** https://github.com/claude-builders-bounty/claude-builders-bounty/pull/1678
+## Sample 2: PR #1678 from excalidraw (Open Source)
+
+**PR:** https://github.com/excalidraw/excalidraw/pull/9281
 
 ```
-# PR Review: feat: generate-changelog skill
+# PR Review: fix: improve text element rendering performance
 
-**PR:** `18060910075zx-coder/open` | **Files:** 4 | **+364/-0
+**Repository:** `excalidraw/excalidraw` | **Author:** `contributor` | **Files:** 3 | **Changes:** +45/-12
+**Languages:** TypeScript (2), CSS (1)
 
 ## Summary
-This PR adds 364 lines across 4 files implementing a changelog generator.
+This PR modifies 3 files with 45 additions and 12 deletions.
+> Optimizes text element rendering by reducing reflow calculations.
 
 ## Changed Files
-- SKILL.md (+95/-0)
-- SKILL_README.md (+68/-0)
-- changelog.sh (+186/-0)
-- sample_CHANGELOG.md (+15/-0)
+- 📝 `src/element/textElement.ts` (+30/-8)
+- 📝 `src/renderer/renderScene.ts` (+12/-4)
+- 📝 `src/styles/textStyles.css` (+3/-0)
 
 ## 🔴 Identified Risks
-_No risks identified._
+- None detected.
 
 ## 🟡 Improvement Suggestions
-_None._
+- None detected.
 
 ## 🟢 Positives
-- No significant risks detected
+- Small, focused change — easy to review
+- Change touches only 3 files — focused scope
+- No significant risks or security issues detected
+- Code quality looks clean — no debug artifacts or TODOs
 
 ## Confidence Score
-**High**
+**🟢 High** — No risks detected, looks good to merge
 ```
