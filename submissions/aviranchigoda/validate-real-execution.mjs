@@ -25,6 +25,15 @@ function redactSecrets(value) {
   return text;
 }
 
+function assertNoSecretsInEvidence(evidence) {
+  const renderedEvidence = JSON.stringify(evidence);
+  const containsSecret = secretValues.some((secret) => renderedEvidence.includes(secret));
+
+  if (containsSecret) {
+    throw new Error("Refusing to write real evidence because it contains an approval-gated secret value.");
+  }
+}
+
 function command(commandName, args, options = {}) {
   return new Promise((resolve) => {
     const child = spawn(commandName, args, {
@@ -262,6 +271,7 @@ try {
     summaryLength: typeof result.summary === "string" ? result.summary.length : 0,
   };
 
+  assertNoSecretsInEvidence(evidence);
   fs.mkdirSync(evidenceDir, { recursive: true });
   fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
   console.log(JSON.stringify(evidence, null, 2));

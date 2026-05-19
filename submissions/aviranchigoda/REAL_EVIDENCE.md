@@ -36,6 +36,8 @@ Expected result:
   `usedRealAnthropicApi: true`, `usedRealSlackWebhook: true`, and
   `finalStatus: "delivered"`.
 - The file does not include the Anthropic API key or Slack webhook URL.
+- The runner refuses to write the evidence file if an approval-gated secret
+  value is detected in the sanitized evidence payload.
 - The generated import workflow file is written outside the n8n user folder and
   deleted automatically after import.
 

@@ -175,6 +175,7 @@ const buildUrlsCode = readText("code-nodes/build-github-api-urls.js");
 const prepareClaudeCode = readText("code-nodes/prepare-claude-request.js");
 const prepareSlackCode = readText("code-nodes/prepare-slack-message.js");
 const executionResultCode = readText("code-nodes/execution-result.js");
+const realRunnerCode = readText("validate-real-execution.mjs");
 
 check(
   "exportable n8n workflow JSON",
@@ -314,6 +315,14 @@ check(
   "local mock n8n UI screenshot",
   mockScreenshot.valid,
   mockScreenshot.evidence,
+);
+
+check(
+  "real evidence secret-leak guard",
+  realRunnerCode.includes("assertNoSecretsInEvidence")
+    && realRunnerCode.includes("Refusing to write real evidence")
+    && realRunnerCode.includes("secretValues.some"),
+  "validate-real-execution.mjs refuses to write sanitized evidence if an approval-gated secret appears in it",
 );
 
 const realEvidencePath = path.join(evidenceDir, "real-execution-result.json");

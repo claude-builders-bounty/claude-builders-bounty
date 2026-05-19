@@ -16,6 +16,7 @@ Date: 2026-05-19
 - `node submissions/aviranchigoda/validate-mock-execution.mjs --expect-slack-failure` imported and executed the workflow with a mocked failing Slack endpoint, and verified that no `delivered` result is produced.
 - `node submissions/aviranchigoda/validate-real-execution.mjs` fails closed when `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` are absent, so real endpoint evidence can be produced later without storing credentials in the repository.
 - `validate-real-execution.mjs` writes its generated import workflow outside the n8n user folder and removes that import file after the run.
+- `validate-real-execution.mjs` refuses to write real-run evidence if an approval-gated secret value appears in the sanitized evidence payload.
 - The latest sanitized mock execution evidence is stored at `evidence/mock-execution-result.json`.
 - The latest acceptance-coverage result is stored at `evidence/acceptance-check-result.json`.
 - `evidence/mock-n8n-execution-ui.png` captures the n8n Executions tab for the same local mock run showing execution `ID#1` succeeded.
