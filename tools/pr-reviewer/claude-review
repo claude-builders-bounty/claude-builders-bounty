@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.request
+from collections import Counter
+from dataclasses import dataclass
+
+
+@dataclass
+class PullRequest:
+    owner: str
+    repo: str
+    number: int
+
+
+def parse_pr(value: str) -> PullRequest:
+    match = re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)", value)
+    if not match:
+        raise SystemExit("Expected --pr to be a GitHub PR URL like https://github.com/owner/repo/pull/123")
+    return PullRequest(match.group(1), match.group(2), int(match.group(3)))
+
+
+def github_get(url: str, accept: str = "application/vnd.github+json") -> str:
+    headers = {"Accept": accept, "User-Agent": "claude-review-bounty-tool"}
+    token = os.getenv("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def fetch_metadata(pr: PullRequest) -> dict:
+    url = f"https://api.github.com/repos/{pr.owner}/{pr.repo}/pulls/{pr.number}"
+    return json.loads(github_get(url))
+
+
+def fetch_diff(pr: PullRequest) -> str:
+    url = f"https://api.github.com/repos/{pr.owner}/{pr.repo}/pulls/{pr.number}"
+    return github_get(url, accept="application/vnd.github.v3.diff")
+
+
+def summarize_diff(diff: str) -> tuple[Counter, int, int, list[str]]:
+    file_types: Counter[str] = Counter()
+    added = 0
+    removed = 0
+    files: list[str] = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            path = line.split(" b/", 1)[-1]
+            files.append(path)
+            ext = os.path.splitext(path)[1] or "[no extension]"
+            file_types[ext] += 1
+        elif line.startswith("+") and not line.startswith("+++"):
+            added += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            removed += 1
+    return file_types, added, removed, files
+
+
+def detect_risks(diff: str, files: list[str]) -> list[str]:
+    risks: list[str] = []
+    lower = diff.lower()
+    if any(secret in lower for secret in ["api_key", "secret", "password", "private_key", "token="]):
+        risks.append("Potential secret-handling change detected; confirm no credentials or tokens are committed.")
+    if any(term in lower for term in ["subprocess", "shell=true", "exec(", "eval(", "os.system"]):
+        risks.append("Command execution surface changed; verify inputs are trusted or sanitized.")
+    if any(term in lower for term in ["delete from", "drop table", "truncate"]):
+        risks.append("Database-destructive SQL appears in the diff; verify guardrails and migrations.")
+    if any(path.endswith((".yml", ".yaml")) and ".github/workflows/" in path for path in files):
+        risks.append("CI workflow changed; verify permissions, secret exposure, and pull_request_target usage.")
+    if not risks:
+        risks.append("No obvious high-risk patterns detected from the diff alone; still review logic and tests manually.")
+    return risks
+
+
+def confidence(diff: str, files: list[str]) -> str:
+    if len(diff) > 50000 or len(files) > 20:
+        return "Low"
+    if len(diff) > 15000 or len(files) > 8:
+        return "Medium"
+    return "High"
+
+
+def render_review(pr_url: str, meta: dict, diff: str) -> str:
+    file_types, added, removed, files = summarize_diff(diff)
+    risks = detect_risks(diff, files)
+    type_summary = ", ".join(f"{ext}: {count}" for ext, count in file_types.most_common()) or "no files"
+    title = meta.get("title", "Untitled PR")
+    body = meta.get("body") or ""
+    summary_hint = body.split("\n", 1)[0].strip() if body.strip() else "No PR body summary provided."
+
+    suggestions = [
+        "Confirm the PR includes a focused test or documented manual validation path.",
+        "Check that the implementation scope matches the linked issue and does not add unrelated behavior.",
+        "Review edge cases around empty inputs, API failures, and permission errors where relevant.",
+    ]
+
+    return f"""# PR Review Summary
+
+## Summary
+{title} changes {len(files)} file(s) with approximately +{added}/-{removed} diff lines. The PR body starts with: {summary_hint}
+
+The main touched file groups are: {type_summary}.
+
+## Identified Risks
+""" + "\n".join(f"- {risk}" for risk in risks) + f"""
+
+## Improvement Suggestions
+""" + "\n".join(f"- {item}" for item in suggestions) + f"""
+
+## Testing Notes
+- Run the repository's normal test command for the changed area.
+- Exercise at least one success path and one failure/edge path.
+- Re-check generated files or external workflow exports after import where applicable.
+
+## Confidence
+{confidence(diff, files)}
+
+Source PR: {pr_url}
+"""
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR diff.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    args = parser.parse_args()
+
+    pr = parse_pr(args.pr)
+    meta = fetch_metadata(pr)
+    diff = fetch_diff(pr)
+    print(render_review(args.pr, meta, diff))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
