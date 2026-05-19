@@ -8,6 +8,7 @@ const readmePath = path.join(root, "README.md");
 const evidenceDir = path.join(root, "evidence");
 const resultPath = path.join(evidenceDir, "acceptance-check-result.json");
 const requireRealEvidence = process.argv.includes("--require-real-evidence");
+const writeResult = !process.argv.includes("--no-write");
 
 const checks = [];
 const failures = [];
@@ -278,8 +279,10 @@ const result = {
   failures,
 };
 
-fs.mkdirSync(evidenceDir, { recursive: true });
-fs.writeFileSync(resultPath, `${JSON.stringify(result, null, 2)}\n`);
+if (writeResult) {
+  fs.mkdirSync(evidenceDir, { recursive: true });
+  fs.writeFileSync(resultPath, `${JSON.stringify(result, null, 2)}\n`);
+}
 console.log(JSON.stringify(result, null, 2));
 
 if (failures.length > 0) {

@@ -19,6 +19,7 @@ Date: 2026-05-19
 - The latest acceptance-coverage result is stored at `evidence/acceptance-check-result.json`.
 - `evidence/mock-n8n-execution-ui.png` captures the n8n Executions tab for the same local mock run showing execution `ID#1` succeeded.
 - After `git fetch origin main`, `git diff --name-only origin/main...HEAD` showed that every changed PR file is scoped under `submissions/aviranchigoda/`.
+- `check-acceptance.mjs --no-write` supports final verification without rewriting the committed evidence timestamp.
 
 ## Pending Before Public PR
 
