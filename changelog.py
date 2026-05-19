@@ -98,6 +98,8 @@ def categorize_commit(subject):
         return "Changed"
     elif subject_lower.startswith("remove") or subject_lower.startswith("del"):
         return "Removed"
+    elif subject_lower.startswith("initial") or clean_subject.startswith("initial"):
+        return "Added"
     elif "add" in clean_subject or "new" in clean_subject:
         return "Added"
     elif "fix" in clean_subject or "bug" in clean_subject:
