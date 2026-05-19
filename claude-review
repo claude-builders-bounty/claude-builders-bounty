@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# claude-review — AI-powered PR review CLI. Fetches a GitHub PR diff and produces
+# a structured Markdown review comment.
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+#        claude-review --pr owner/repo#123                    (short form)
+# Requires: gh CLI (authenticated), curl, jq
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: claude-review --pr <PR_URL_OR_REF>
+
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr owner/repo#123
+
+Options:
+  --model <name>   Claude model (default: claude-sonnet-4-20250514)
+  --output <file>  Write review to file instead of stdout
+  --dry-run        Fetch diff only, don't call Claude API
+
+Requires: ANTHROPIC_API_KEY in environment
+EOF
+  exit 1
+}
+
+PR_REF=""
+MODEL="claude-sonnet-4-20250514"
+OUTPUT=""
+DRY_RUN=0
+ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_REF="$2"; shift 2 ;;
+    --model) MODEL="$2"; shift 2 ;;
+    --output) OUTPUT="$2"; shift 2 ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) usage ;;
+    *) echo "Unknown: $1"; usage ;;
+  esac
+done
+
+[ -z "$PR_REF" ] && { echo "Error: --pr is required"; usage; }
+
+# Parse PR reference to owner/repo/number
+if echo "$PR_REF" | grep -qE '^https?://'; then
+  OWNER=$(echo "$PR_REF" | sed -E 's|https://github.com/([^/]+)/.*|\1|')
+  REPO=$(echo "$PR_REF" | sed -E 's|https://github.com/[^/]+/([^/]+)/.*|\1|')
+  NUMBER=$(echo "$PR_REF" | grep -oE '[0-9]+$')
+elif echo "$PR_REF" | grep -qE '^.+/[^#]+#[0-9]+$'; then
+  OWNER=$(echo "$PR_REF" | cut -d/ -f1)
+  REPO=$(echo "$PR_REF" | cut -d/ -f2 | cut -d# -f1)
+  NUMBER=$(echo "$PR_REF" | cut -d# -f2)
+else
+  echo "Error: Invalid PR reference. Use URL or owner/repo#number"
+  exit 1
+fi
+
+echo "🔍 Fetching PR #$NUMBER from $OWNER/$REPO ..."
+
+DIFF=$(gh pr diff "$NUMBER" -R "$OWNER/$REPO" 2>/dev/null) || {
+  echo "Error: Could not fetch diff. Is gh CLI authenticated?"
+  exit 1
+}
+
+[ -z "$DIFF" ] && { echo "Error: Empty diff"; exit 1; }
+
+DIFF_LENGTH=$(echo "$DIFF" | wc -c)
+echo "📄 Diff size: $DIFF_LENGTH bytes"
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "--- DRY RUN (no API call) ---"
+  echo "$DIFF" | head -100
+  exit 0
+fi
+
+[ -z "$ANTHROPIC_API_KEY" ] && {
+  echo "Error: ANTHROPIC_API_KEY not set"
+  exit 1
+}
+
+PROMPT=$(cat <<PROMPT
+Review this GitHub PR diff. Output a structured Markdown review:
+
+## Summary
+2-3 sentences summarizing the changes.
+
+## Identified Risks
+- Risk 1: description
+- Risk 2: description
+
+## Improvement Suggestions
+- Suggestion 1: description
+- Suggestion 2: description
+
+## Security Concerns
+- Concern or "None identified"
+
+## Overall Assessment
+✅ Approve / ⚠️ Changes Requested / 💬 Comment
+
+PR diff:
+$DIFF
+PROMPT
+)
+
+echo "🤖 Calling Claude API ($MODEL) ..."
+
+RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "content-type: application/json" \
+  -d "$(jq -n --arg model "$MODEL" --arg prompt "$PROMPT" '{
+    model: $model,
+    max_tokens: 2000,
+    messages: [{role: "user", content: $prompt}]
+  }')")
+
+# Extract the review text
+REVIEW=$(echo "$RESPONSE" | jq -r '.content[0].text // .error.message // "Error: API returned unexpected response"')
+
+if [ -n "$OUTPUT" ]; then
+  echo "$REVIEW" > "$OUTPUT"
+  echo "✅ Review written to $OUTPUT"
+else
+  echo "$REVIEW"
+fi
