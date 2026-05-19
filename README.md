@@ -22,6 +22,65 @@ You're in the right place.
 
 ---
 
+## Solution: `changelog.sh` — CHANGELOG Generator
+
+Generate a structured `CHANGELOG.md` from conventional commits since the last git tag.
+
+### Setup (3 steps)
+
+```bash
+# 1. Download the script
+curl -O https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/changelog.sh
+
+# 2. Make it executable
+chmod +x changelog.sh
+
+# 3. Run it in any git repo
+bash changelog.sh
+```
+
+### Usage
+
+```bash
+bash changelog.sh                          # CHANGELOG.md since last tag
+bash changelog.sh --since v1.0.0           # Start from a specific tag
+bash changelog.sh --output RELEASE.md      # Custom output file
+bash changelog.sh --repo /path/to/project  # Run on a different repo
+bash changelog.sh --help                   # Full options
+```
+
+### How it works
+
+- Reads commits since the latest git tag (or first commit if no tags)
+- Auto-categorizes using conventional commit prefixes:
+  - `feat:` / `feat(scope):` → **Added**
+  - `fix:` / `fix(scope):` → **Fixed**
+  - `revert:` → **Removed**
+  - Everything else → **Changed**
+- Outputs a clean `CHANGELOG.md` with date and version header
+
+### Sample output
+
+```markdown
+# Changelog
+
+## [v1.2.0] — 2026-05-19
+
+### Added
+- Add dark mode toggle to settings
+- Add CSV export for reports
+
+### Fixed
+- Fix login redirect losing query params
+- Fix date picker timezone offset
+
+### Changed
+- Update dependencies to latest
+- Improve error messages in API responses
+```
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
