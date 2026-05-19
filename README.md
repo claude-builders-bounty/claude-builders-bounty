@@ -43,6 +43,20 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+Use the included changelog generator to create a structured `CHANGELOG.md` from
+commits since the latest git tag.
+
+1. Run `bash changelog.sh`
+2. Review the generated `CHANGELOG.md`
+3. Commit the changelog when it looks correct
+
+The generator groups commits into `Added`, `Fixed`, `Changed`, and `Removed`
+based on common conventional commit prefixes.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
