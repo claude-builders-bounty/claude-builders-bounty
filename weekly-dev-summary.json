@@ -1,0 +1,181 @@
+{
+  "name": "Weekly Dev Summary — Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "0 17 * * 5"}]
+        }
+      },
+      "id": "trigger-cron",
+      "name": "Cron Trigger (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/commits?since={{ $now.minus({days:7}).toISO() }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=token {{ $env.GITHUB_TOKEN }}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/issues?state=closed&since={{ $now.minus({days:7}).toISO() }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=token {{ $env.GITHUB_TOKEN }}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 350]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/pulls?state=closed&sort=updated&direction=desc&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=token {{ $env.GITHUB_TOKEN }}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate weekly activity from GitHub API responses\nconst commits = $input.all()[0].json;\nconst issues = $input.all()[1].json;\nconst prs = $input.all()[2].json;\nconst repo = $env.GITHUB_REPO || 'unknown/repo';\n\n// Filter last 7 days\nconst weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\n\nconst recentCommits = Array.isArray(commits) ? commits.filter(c => new Date(c.commit.author.date) > weekAgo) : [];\nconst recentIssues = Array.isArray(issues) ? issues.filter(i => new Date(i.closed_at) > weekAgo) : [];\nconst mergedPRs = Array.isArray(prs) ? prs.filter(p => p.merged_at && new Date(p.merged_at) > weekAgo) : [];\n\n// Contributors\nconst authors = new Set();\nrecentCommits.forEach(c => {\n  const name = c.commit?.author?.name || c.author?.login || 'unknown';\n  authors.add(name);\n});\n\n// Build summary context for Claude\nconst context = {\n  repo: repo,\n  period: `${weekAgo.toISOString().split('T')[0]} to ${new Date().toISOString().split('T')[0]}`,\n  stats: {\n    commits: recentCommits.length,\n    issues_closed: recentIssues.length,\n    prs_merged: mergedPRs.length,\n    contributors: authors.size\n  },\n  top_commits: recentCommits.slice(0, 5).map(c => ({\n    message: c.commit.message.split('\\n')[0].substring(0, 80),\n    author: c.commit.author.name\n  })),\n  closed_issues: recentIssues.slice(0, 10).map(i => ({\n    title: i.title,\n    number: i.number\n  })),\n  merged_prs: mergedPRs.slice(0, 5).map(p => ({\n    title: p.title,\n    number: p.number\n  }))\n};\n\n// Build prompt\nconst prompt = `You are a technical writer. Write a weekly dev summary for the ${repo} repository.\n\nActivity this week (${context.period}):\n- ${context.stats.commits} commits by ${context.stats.contributors} contributors\n- ${context.stats.issues_closed} issues closed\n- ${context.stats.prs_merged} PRs merged\n\nTop commits:\n${context.top_commits.map(c => `- ${c.message} (${c.author})`).join('\\n')}\n\nClosed issues:\n${context.closed_issues.map(i => `- #${i.number}: ${i.title}`).join('\\n')}\n\nMerged PRs:\n${context.merged_prs.map(p => `- #${p.number}: ${p.title}`).join('\\n')}\n\nWrite a narrative summary (200-400 words) in ${$env.LANGUAGE || 'EN'}:\n- Start with overall velocity (commits, contributors, PRs merged)\n- Highlight the most impactful change\n- Mention any notable bug fixes or new features\n- End with a positive, forward-looking note\n- Use emoji sparingly for visual appeal`;\n\nreturn [{ json: { prompt, context } }];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "model", "value": "claude-sonnet-4-20250514"},
+            {"name": "max_tokens", "value": 1024},
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": $json.prompt}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "call-claude",
+      "name": "Claude API (Generate Summary)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst text = response.content?.[0]?.text || 'Summary unavailable.';\n\nconst summary = `# 📊 Weekly Dev Summary — ${$env.GITHUB_REPO || 'Repo'}\n\n${text}\n\n---\n*Auto-generated by n8n + Claude API • ${new Date().toISOString().split('T')[0]}*`;\n\nreturn [{ json: { summary, raw_text: text } }];"
+      },
+      "id": "format-output",
+      "name": "Format Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WEBHOOK_URL }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "content", "value": "={{ $json.summary }}"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "deliver-webhook",
+      "name": "Deliver (Slack/Discord Webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Cron Trigger (Friday 5pm)": {
+      "main": [[{"node": "Fetch Commits", "type": "main", "index": 0}, {"node": "Fetch Closed Issues", "type": "main", "index": 0}, {"node": "Fetch Merged PRs", "type": "main", "index": 0}]]
+    },
+    "Fetch Commits": {
+      "main": [[{"node": "Aggregate & Build Prompt", "type": "main", "index": 0}]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{"node": "Aggregate & Build Prompt", "type": "main", "index": 1}]]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{"node": "Aggregate & Build Prompt", "type": "main", "index": 2}]]
+    },
+    "Aggregate & Build Prompt": {
+      "main": [[{"node": "Claude API (Generate Summary)", "type": "main", "index": 0}]]
+    },
+    "Claude API (Generate Summary)": {
+      "main": [[{"node": "Format Summary", "type": "main", "index": 0}]]
+    },
+    "Format Summary": {
+      "main": [[{"node": "Deliver (Slack/Discord Webhook)", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {}
+}
