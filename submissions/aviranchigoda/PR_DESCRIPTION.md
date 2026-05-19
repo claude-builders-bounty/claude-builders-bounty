@@ -7,6 +7,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - `weekly-dev-summary.workflow.json` - importable n8n workflow.
 - `code-nodes/` - readable source for the embedded n8n Code nodes.
 - `generate-workflow.mjs` - regenerates the workflow JSON from readable Code-node files.
+- `REAL_EVIDENCE.md` - approval-gated runbook for real endpoint validation and screenshot capture.
 - `check-acceptance.mjs` - verifies local coverage of the issue #5 acceptance criteria and records remaining approval-gated real evidence.
 - `validate-mock-execution.mjs` - imports and executes the workflow in n8n 2.20.11 with mocked Claude and Slack endpoints.
 - `validate-real-execution.mjs` - approval-gated real endpoint runner that writes sanitized evidence when `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` are supplied.
@@ -26,6 +27,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - Configurable target: `Configure Summary` controls GitHub owner/repo, language, lookback window, Slack webhook, and optional Slack channel.
 - Test evidence: `evidence/mock-execution-result.json` shows successful n8n import and execution with mocked Claude/Slack endpoints and real public GitHub API calls.
 - UI evidence: `evidence/mock-n8n-execution-ui.png` shows the same local n8n execution succeeded in the Executions tab.
+- Real evidence path: `REAL_EVIDENCE.md` documents how to produce sanitized real Anthropic/Slack evidence and `evidence/real-n8n-execution-ui.png` after approval.
 
 ## Local Validation
 

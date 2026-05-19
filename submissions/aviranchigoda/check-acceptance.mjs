@@ -89,6 +89,31 @@ function walkFiles(directory) {
   });
 }
 
+function pngInfo(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return { exists: false, valid: false, evidence: "missing file" };
+  }
+
+  const buffer = fs.readFileSync(filePath);
+  const signature = buffer.subarray(0, 8);
+  const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const validSignature = signature.equals(pngSignature);
+  const width = buffer.length >= 24 ? buffer.readUInt32BE(16) : 0;
+  const height = buffer.length >= 24 ? buffer.readUInt32BE(20) : 0;
+  const valid = validSignature && width >= 800 && height >= 500;
+
+  return {
+    exists: true,
+    valid,
+    width,
+    height,
+    sizeBytes: buffer.length,
+    evidence: valid
+      ? `valid PNG ${width}x${height}, ${buffer.length} bytes`
+      : `invalid or too small PNG ${width}x${height}, ${buffer.length} bytes`,
+  };
+}
+
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 const readme = fs.readFileSync(readmePath, "utf8");
 const configCode = readText("code-nodes/configure-summary.js");
@@ -201,6 +226,7 @@ for (const [nodeName, fileName] of codeNodeSources) {
 
 const mockEvidencePath = path.join(evidenceDir, "mock-execution-result.json");
 const mockScreenshotPath = path.join(evidenceDir, "mock-n8n-execution-ui.png");
+const mockScreenshot = pngInfo(mockScreenshotPath);
 check(
   "local mock n8n execution evidence",
   fs.existsSync(mockEvidencePath) && JSON.parse(fs.readFileSync(mockEvidencePath, "utf8")).finalStatus === "delivered",
@@ -208,19 +234,22 @@ check(
 );
 check(
   "local mock n8n UI screenshot",
-  fs.existsSync(mockScreenshotPath) && fs.statSync(mockScreenshotPath).size > 0,
-  "mock n8n execution screenshot exists",
+  mockScreenshot.valid,
+  mockScreenshot.evidence,
 );
 
+const realEvidencePath = path.join(evidenceDir, "real-execution-result.json");
+const realScreenshotPath = path.join(evidenceDir, "real-n8n-execution-ui.png");
+const realScreenshot = pngInfo(realScreenshotPath);
 const realEvidenceGate = gate(
   "real Anthropic and Slack execution evidence",
-  fs.existsSync(path.join(evidenceDir, "real-execution-result.json")),
-  "Run validate-real-execution.mjs with ANTHROPIC_API_KEY and SLACK_WEBHOOK_URL after user approval.",
+  fs.existsSync(realEvidencePath),
+  "Run validate-real-execution.mjs with ANTHROPIC_API_KEY and SLACK_WEBHOOK_URL after user approval; see REAL_EVIDENCE.md.",
 );
 const realScreenshotGate = gate(
   "real n8n execution screenshot",
-  fs.existsSync(path.join(evidenceDir, "real-n8n-execution-ui.png")),
-  "Capture evidence/real-n8n-execution-ui.png from the real n8n execution after credentials are supplied.",
+  realScreenshot.valid,
+  `Capture evidence/real-n8n-execution-ui.png from the real n8n execution after credentials are supplied; current state: ${realScreenshot.evidence}.`,
 );
 
 const secretPattern = new RegExp([
