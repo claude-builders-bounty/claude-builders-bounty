@@ -34,6 +34,24 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+This repository includes a submission for bounty [#1](../../issues/1): a
+zero-dependency Bash changelog generator plus a Claude Code skill wrapper.
+
+Setup and usage:
+
+1. Run `chmod +x changelog.sh`.
+2. Run `bash changelog.sh` from a git repository.
+3. Review the generated `CHANGELOG.md` before committing it.
+
+The script detects the latest git tag, reads commits from that tag through
+`HEAD`, categorizes them into `Added`, `Fixed`, `Changed`, and `Removed`, and
+writes a formatted changelog. See `samples/claude-builders-bounty-changelog.md`
+for output generated from this real GitHub repository.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
