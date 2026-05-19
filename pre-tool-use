@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook: blocks destructive bash commands.
+
+Place at: ~/.claude/hooks/pre-tool-use
+Make executable: chmod +x ~/.claude/hooks/pre-tool-use
+"""
+
+import json
+import re
+import sys
+import os
+from datetime import datetime, timezone
+
+# -----------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+# Patterns that will be blocked. Each is a regex matched against
+# the FULL command string (after stripping comments and whitespace).
+DANGEROUS_PATTERNS = [
+    # rm -rf variants
+    (r'\brm\s+.*-r.*-f\b|\brm\s+.*-rf\b|\brm\s+.*-fr\b|\brm\s+.*--recursive.*--force\b',
+     "⚠️  rm -rf — Recursive force removal can delete critical files. "
+     "Use explicit paths and review before deleting."),
+
+    # DROP TABLE / DROP DATABASE
+    (r'\bDROP\s+(TABLE|DATABASE|SCHEMA)\b',
+     "⚠️  DROP TABLE/DATABASE — Irreversible schema destruction. "
+     "Ensure you have a backup before proceeding."),
+
+    # TRUNCATE
+    (r'\bTRUNCATE\s+(TABLE\s+)?',
+     "⚠️  TRUNCATE — Removes all rows without WHERE clause. "
+     "This cannot be undone; consider DELETE with a WHERE clause instead."),
+
+    # git push --force variants
+    (r'\bgit\s+push\s+.*(--force|-f|--force-with-lease)\b',
+     "⚠️  git push --force — Overwrites remote history. "
+     "Use --force-with-lease if you must, and confirm the target branch."),
+
+    # DELETE FROM without WHERE
+    (r'\bDELETE\s+FROM\s+\w+(?!.*\bWHERE\b)',
+     "⚠️  DELETE FROM without WHERE — Deletes ALL rows from the table. "
+     "This is almost certainly not what you want. Add a WHERE clause."),
+]
+
+# -----------------------------------------------------------
+# Core logic
+# -----------------------------------------------------------
+
+def normalize_command(cmd: str) -> str:
+    """Remove comments and collapse whitespace for pattern matching."""
+    # Remove SQL comments (-- ...)
+    cmd = re.sub(r'--[^\n]*', '', cmd)
+    # Remove shell comments (# ...) but not on first char before #
+    cmd = re.sub(r'\s+#[^\n]*', '', cmd)
+    # Collapse whitespace
+    cmd = re.sub(r'\s+', ' ', cmd)
+    return cmd.upper().strip()
+
+
+def log_blocked(command: str, reason: str, cwd: str):
+    """Write a structured log entry for every blocked attempt."""
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "command": command,
+        "reason": reason,
+        "cwd": cwd,
+    }
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def main():
+    # Read the event from stdin
+    try:
+        event = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        # If we can't parse the event, allow it through (fail open for reliability)
+        sys.exit(0)
+
+    tool_name = event.get("tool_name", "")
+    tool_input = event.get("tool_input", {})
+    cwd = event.get("cwd", os.getcwd())
+
+    # Only intercept Bash tool calls
+    if tool_name != "Bash":
+        sys.exit(0)
+
+    command = tool_input.get("command", "").strip()
+    if not command:
+        sys.exit(0)
+
+    # Check against dangerous patterns
+    normalized = normalize_command(command)
+
+    for pattern, explanation in DANGEROUS_PATTERNS:
+        if re.search(pattern, normalized, re.IGNORECASE):
+            log_blocked(command, explanation, cwd)
+
+            # Print a clear blocking message that Claude will see
+            print(json.dumps({
+                "decision": "block",
+                "reason": explanation,
+                "blocked_command": command,
+                "suggestion": (
+                    "This command was blocked by the destructive-command-guard hook. "
+                    "If you're sure this is safe, explain why and I'll help you run it manually, "
+                    "or temporarily disable the hook at ~/.claude/hooks/pre-tool-use."
+                )
+            }))
+            sys.exit(2)  # Exit code 2 = block the tool call
+
+    # Safe command — allow
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

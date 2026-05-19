@@ -1,53 +1,61 @@
-# Claude Builders Bounty 🤖
+# Destructive Command Guard — Claude Code Pre-Tool-Use Hook
 
-> A community bounty board for Claude Code builders.
+Blocks dangerous bash commands before Claude Code executes them.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Install (2 commands)
 
----
+```bash
+mkdir -p ~/.claude/hooks && cp pre-tool-use ~/.claude/hooks && chmod +x ~/.claude/hooks/pre-tool-use
+```
+
+Or install from this repo:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/18060910075zx-coder/claude-builders-bounty/destructive-guard/pre-tool-use -o ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+```
+
+## What it blocks
+
+| Pattern | Example blocked commands |
+|---------|-------------------------|
+| `rm -rf` | `rm -rf /tmp/build`, `rm -fr node_modules` |
+| `DROP TABLE` | `DROP TABLE users`, `DROP DATABASE prod` |
+| `TRUNCATE` | `TRUNCATE logs`, `TRUNCATE TABLE sessions` |
+| `git push --force` | `git push --force origin main`, `git push -f` |
+| `DELETE FROM` without `WHERE` | `DELETE FROM users` |
+
+## What it DOESN'T block
+
+- `rm file.txt` (single file, no force flag)
+- `DELETE FROM users WHERE id = 42` (has WHERE clause)
+- `git push origin main` (no force flag)
+- `SELECT`, `INSERT`, `UPDATE` statements
+- All non-Bash tools (Read, Write, Grep, etc.)
+
+## Logs
+
+All blocked attempts are logged to `~/.claude/hooks/blocked.log`:
+
+```json
+{"timestamp": "2026-05-19T15:30:00Z", "command": "rm -rf node_modules", "reason": "rm -rf — Recursive force removal...", "cwd": "/home/user/project"}
+```
+
+## Uninstall
+
+```bash
+rm ~/.claude/hooks/pre-tool-use
+```
 
 ## How it works
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Claude Code fires a pre-tool-use event before every Bash command. This hook:
+1. Reads the event from stdin
+2. Checks if the tool is `Bash`
+3. Normalizes the command (strips comments, collapses whitespace)
+4. Checks against 5 dangerous patterns (case-insensitive)
+5. If dangerous → logs to `blocked.log`, returns exit code 2 (block)
+6. If safe → returns exit code 0 (allow)
 
 ---
 
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+Part of the [Claude Builders Bounty](https://github.com/claude-builders-bounty) program · Issue #3
