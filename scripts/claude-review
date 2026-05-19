@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# PR Review Agent CLI
+# Usage: ./scripts/claude-review --pr <PR_URL>
+#        ./scripts/claude-review --pr <PR_URL> --ai  (uses Claude API)
+set -euo pipefail
+
+PR_URL=""
+USE_AI=false
+
+# Parse args
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="$2"; shift 2 ;;
+    --ai) USE_AI=true; shift ;;
+    --help|-h)
+      echo "Usage: claude-review --pr <PR_URL> [--ai]"
+      echo ""
+      echo "  --pr <URL>   GitHub PR URL to review"
+      echo "  --ai         Use Claude API to generate the review (requires ANTHROPIC_API_KEY)"
+      echo ""
+      echo "Examples:"
+      echo "  claude-review --pr https://github.com/owner/repo/pull/123"
+      echo "  claude-review --pr https://github.com/owner/repo/pull/123 --ai"
+      exit 0
+      ;;
+    *) echo "Unknown arg: $1"; exit 1 ;;
+  esac
+done
+
+if [[ -z "$PR_URL" ]]; then
+  echo "Error: --pr <URL> is required"
+  echo "Usage: claude-review --pr <PR_URL> [--ai]"
+  exit 1
+fi
+
+# Extract owner/repo/number from URL
+# Supports: https://github.com/owner/repo/pull/123
+REPO=$(echo "$PR_URL" | sed -n 's|https://github.com/\([^/]*/[^/]*\)/pull/[0-9]*|\1|p')
+PR_NUM=$(echo "$PR_URL" | sed -n 's|.*/pull/\([0-9]*\).*|\1|p')
+
+if [[ -z "$REPO" || -z "$PR_NUM" ]]; then
+  echo "Error: Could not parse PR URL: $PR_URL"
+  echo "Expected format: https://github.com/owner/repo/pull/123"
+  exit 1
+fi
+
+echo "🔍 Reviewing $REPO#$PR_NUM..."
+
+# Fetch PR metadata
+PR_DATA=$(gh pr view "$PR_URL" --json title,body,author,additions,deletions,files,state,mergedBy,reviews 2>/dev/null)
+if [[ -z "$PR_DATA" ]]; then
+  echo "Error: Could not fetch PR data. Is gh CLI authenticated?"
+  echo "Run: gh auth login"
+  exit 1
+fi
+
+TITLE=$(echo "$PR_DATA" | jq -r '.title')
+AUTHOR=$(echo "$PR_DATA" | jq -r '.author.login')
+ADDITIONS=$(echo "$PR_DATA" | jq -r '.additions')
+DELETIONS=$(echo "$PR_DATA" | jq -r '.deletions')
+FILE_COUNT=$(echo "$PR_DATA" | jq -r '.files | length')
+STATE=$(echo "$PR_DATA" | jq -r '.state')
+BODY=$(echo "$PR_DATA" | jq -r '.body // "No description provided."')
+
+# Fetch diff
+DIFF=$(gh pr diff "$PR_URL" 2>/dev/null)
+DIFF_LENGTH=$(echo "$DIFF" | wc -l)
+
+echo ""
+echo "  PR:     $TITLE"
+echo "  Author: $AUTHOR"
+echo "  State:  $STATE"
+echo "  Files:  $FILE_COUNT (+$ADDITIONS / -$DELETIONS)"
+echo "  Diff:   $DIFF_LENGTH lines"
+echo ""
+
+# Build the review context
+REVIEW_CONTEXT=$(cat <<EOF
+## PR Information
+
+- **Title:** $TITLE
+- **Author:** @$AUTHOR
+- **State:** $STATE
+- **Changes:** +$ADDITIONS / -$DELETIONS across $FILE_COUNT files
+
+## PR Description
+
+$BODY
+
+## Changed Files
+
+$(echo "$PR_DATA" | jq -r '.files[] | "- `\(.path)` (+\(.additions) / -\(.deletions))"')
+
+## Diff
+
+\`\`\`diff
+$DIFF
+\`\`\`
+EOF
+)
+
+if $USE_AI && [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "🤖 Generating AI review via Claude API..."
+
+  PROMPT=$(cat <<PROMPT
+You are a code review agent. Review the following PR and output a structured Markdown review.
+
+Rules:
+1. Provide a 2-3 sentence summary of what this PR does
+2. List identified risks (security, breaking changes, missing tests, error handling gaps)
+3. List specific, actionable improvement suggestions
+4. Assign a confidence score: Low / Medium / High with a brief rationale
+5. Do NOT flag: personal style preferences, minor formatting, issues already addressed
+
+Output format:
+# PR Review: <TITLE>
+**PR:** $PR_URL
+**Author:** @$AUTHOR
+**Changes:** +$ADDITIONS / -$DELETIONS lines across $FILE_COUNT files
+
+---
+## Summary
+<2-3 sentences>
+
+## Identified Risks
+- **<Category>:** <description>
+
+## Suggestions
+- <actionable suggestion>
+
+## Confidence Score
+**<Low/Medium/High>** — <rationale>
+---
+
+$REVIEW_CONTEXT
+PROMPT
+)
+
+  REVIEW=$(curl -s https://api.anthropic.com/v1/messages \
+    -H "x-api-key: $ANTHROPIC_API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    -H "content-type: application/json" \
+    -d "$(jq -n --arg prompt "$PROMPT" '{
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2000,
+      messages: [{role: "user", content: $prompt}]
+    }')" 2>/dev/null)
+
+  if echo "$REVIEW" | jq -e '.content[0].text' > /dev/null 2>&1; then
+    echo "$REVIEW" | jq -r '.content[0].text'
+  else
+    echo "Error: Claude API call failed"
+    echo "$REVIEW" | jq -r '.error.message // "Unknown error"'
+    exit 1
+  fi
+else
+  # Output structured template for manual review
+  cat <<OUTPUT
+# PR Review: $TITLE
+
+**PR:** $PR_URL
+**Author:** @$AUTHOR
+**Changes:** +$ADDITIONS / -$DELETIONS lines across $FILE_COUNT files
+
+---
+
+## Summary
+
+<!-- 2-3 sentence summary of what this PR does -->
+
+---
+
+## Identified Risks
+
+<!-- List specific risks found in the diff below -->
+<!-- Categories: Security, Breaking Changes, Error Handling, Missing Tests, Performance -->
+
+---
+
+## Suggestions
+
+<!-- Actionable improvement suggestions -->
+
+---
+
+## Confidence Score
+
+<!-- Low / Medium / High — with rationale -->
+
+---
+
+## Files Changed
+
+$(echo "$PR_DATA" | jq -r '.files[] | "- `\(.path)` (+\(.additions) / -\(.deletions))"')
+
+---
+
+## Raw Diff
+
+<details>
+<summary>$DIFF_LENGTH lines</summary>
+
+\`\`\`diff
+$DIFF
+\`\`\`
+
+</details>
+
+---
+
+*Review template generated by PR Review Agent. Paste into Claude Code to complete.*
+OUTPUT
+fi
