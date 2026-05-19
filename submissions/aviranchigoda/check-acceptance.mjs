@@ -115,6 +115,51 @@ function pngInfo(filePath) {
   };
 }
 
+function realEvidenceInfo(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return { valid: false, evidence: "missing file" };
+  }
+
+  let evidence;
+
+  try {
+    evidence = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    return { valid: false, evidence: `invalid JSON: ${error.message}` };
+  }
+
+  const requiredFields = {
+    status: "passed",
+    importedWorkflow: true,
+    executedWorkflow: true,
+    usedRealPublicGitHubApi: true,
+    usedRealAnthropicApi: true,
+    usedRealSlackWebhook: true,
+    finalStatus: "delivered",
+    destination: "slack",
+  };
+  const mismatches = Object.entries(requiredFields)
+    .filter(([key, expected]) => evidence[key] !== expected)
+    .map(([key, expected]) => `${key} expected ${JSON.stringify(expected)} got ${JSON.stringify(evidence[key])}`);
+
+  if (evidence.claudeRequest?.model !== "claude-sonnet-4-20250514") {
+    mismatches.push(`claudeRequest.model expected "claude-sonnet-4-20250514" got ${JSON.stringify(evidence.claudeRequest?.model)}`);
+  }
+
+  if (typeof evidence.summaryLength !== "number" || evidence.summaryLength <= 0) {
+    mismatches.push(`summaryLength expected positive number got ${JSON.stringify(evidence.summaryLength)}`);
+  }
+
+  if (mismatches.length > 0) {
+    return { valid: false, evidence: mismatches.join("; ") };
+  }
+
+  return {
+    valid: true,
+    evidence: "real execution evidence reports delivered Slack summary from real GitHub, Anthropic, and Slack endpoints",
+  };
+}
+
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 const readme = fs.readFileSync(readmePath, "utf8");
 const configCode = readText("code-nodes/configure-summary.js");
@@ -241,11 +286,12 @@ check(
 
 const realEvidencePath = path.join(evidenceDir, "real-execution-result.json");
 const realScreenshotPath = path.join(evidenceDir, "real-n8n-execution-ui.png");
+const realEvidence = realEvidenceInfo(realEvidencePath);
 const realScreenshot = pngInfo(realScreenshotPath);
 const realEvidenceGate = gate(
   "real Anthropic and Slack execution evidence",
-  fs.existsSync(realEvidencePath),
-  "Run validate-real-execution.mjs with ANTHROPIC_API_KEY and SLACK_WEBHOOK_URL after user approval; see REAL_EVIDENCE.md.",
+  realEvidence.valid,
+  `Run validate-real-execution.mjs with ANTHROPIC_API_KEY and SLACK_WEBHOOK_URL after user approval; see REAL_EVIDENCE.md. Current state: ${realEvidence.evidence}.`,
 );
 const realScreenshotGate = gate(
   "real n8n execution screenshot",

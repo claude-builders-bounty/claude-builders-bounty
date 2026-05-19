@@ -21,6 +21,7 @@ Date: 2026-05-19
 - After `git fetch origin main`, `git diff --name-only origin/main...HEAD` showed that every changed PR file is scoped under `submissions/aviranchigoda/`.
 - `check-acceptance.mjs --no-write` supports final verification without rewriting the committed evidence timestamp.
 - Slack destination-channel configuration is documented as the channel selected by `slackWebhookUrl`, with `slackChannel` kept as an optional compatibility field.
+- Strict real-evidence acceptance now validates the contents of `evidence/real-execution-result.json`, not just that the file exists.
 
 ## Pending Before Public PR
 
