@@ -1,0 +1,389 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "id": "39c95d0a",
+      "name": "Weekly Cron (Fri 5pm)"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus({days: 7}).toFormat('yyyy-MM-dd') }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $now.toFormat('yyyy-MM-dd') }}"
+            },
+            {
+              "name": "repo",
+              "value": "owner/repo"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "41abbc39",
+      "name": "Set Date Range"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits?since={{ $json.since }}&until={{ $json.until }}&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        750,
+        200
+      ],
+      "id": "71e017da",
+      "name": "Fetch Commits"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Set Date Range').item.json.repo }}/issues?state=closed&since={{ $('Set Date Range').item.json.since }}&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        750,
+        400
+      ],
+      "id": "8883c71c",
+      "name": "Fetch Issues"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Set Date Range').item.json.repo }}/pulls?state=closed&sort=updated&direction=desc&per_page=30",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        750,
+        600
+      ],
+      "id": "92822abf",
+      "name": "Fetch PRs"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1000,
+        400
+      ],
+      "id": "fa872aec",
+      "name": "Merge APIs"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build prompt for Claude API\nconst data = $input.all();\n\nconst commits = data[0]?.json || [];\nconst issues = data[1]?.json || [];\nconst prs = (data[2]?.json || []).filter(p => p.merged_at);\n\nconst commitList = commits.slice(0, 15).map(c => \n  `- ${c.commit.message.split('\\n')[0].substring(0, 80)} (${c.commit.author.name})`\n).join('\\n');\n\nconst issueList = issues.filter(i => !i.pull_request).slice(0, 10).map(i =>\n  `- #${i.number} ${i.title}`\n).join('\\n');\n\nconst prList = prs.slice(0, 10).map(p =>\n  `- #${p.number} ${p.title} (by @${p.user.login})`\n).join('\\n');\n\nconst prompt = `Write a concise weekly development summary for this GitHub repo.\n\n## Activity from ${$('Set Date Range').item.json.since} to ${$('Set Date Range').item.json.until}\n\n### Commits (${commits.length})\n${commitList || '(none)'}\n\n### Issues Closed (${issues.filter(i => !i.pull_request).length})\n${issueList || '(none)'}\n\n### PRs Merged (${prs.length})\n${prList || '(none)'}\n\nFormat as:\n## Weekly Dev Summary \u2014 [DATE]\n\n### Highlights\n[2-3 sentence narrative of the week's biggest changes]\n\n### By the Numbers\n- Commits: X\n- Issues Closed: Y\n- PRs Merged: Z\n\n### Key Changes\n[List the 3-5 most important changes]\n\n### Community\n[Mention notable new contributors or community activity]`;\n\nreturn { prompt, repo: $('Set Date Range').item.json.repo };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        400
+      ],
+      "id": "1a9c8b02",
+      "name": "Build Claude Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1024
+            },
+            {
+              "name": "messages[0][role]",
+              "value": "user"
+            },
+            {
+              "name": "messages[0][content]",
+              "value": "={{ $json.prompt }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1500,
+        400
+      ],
+      "id": "e03411fd",
+      "name": "Claude API"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst summary = response.content?.[0]?.text || JSON.stringify(response);\n\nreturn {\n  summary,\n  repo: $('Set Date Range').item.json.repo,\n  week: `${$('Set Date Range').item.json.since} \u2192 ${$('Set Date Range').item.json.until}`\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        400
+      ],
+      "id": "92b32bb1",
+      "name": "Format Summary"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.summary }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2000,
+        400
+      ],
+      "id": "035e8fc8",
+      "name": "Deliver (Discord)"
+    }
+  ],
+  "connections": {
+    "39c95d0a": {
+      "main": [
+        [
+          {
+            "node": "41abbc39",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "41abbc39": {
+      "main": [
+        [
+          {
+            "node": "71e017da",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "8883c71c",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "92822abf",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "71e017da": {
+      "main": [
+        [
+          {
+            "node": "fa872aec",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8883c71c": {
+      "main": [
+        [
+          {
+            "node": "fa872aec",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "92822abf": {
+      "main": [
+        [
+          {
+            "node": "fa872aec",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "fa872aec": {
+      "main": [
+        [
+          {
+            "node": "1a9c8b02",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1a9c8b02": {
+      "main": [
+        [
+          {
+            "node": "e03411fd",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "e03411fd": {
+      "main": [
+        [
+          {
+            "node": "92b32bb1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "92b32bb1": {
+      "main": [
+        [
+          {
+            "node": "035e8fc8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "pinData": {},
+  "versionId": "1.0.0",
+  "active": true,
+  "id": "weekly-github-summary"
+}
