@@ -1,19 +1,21 @@
-# Generate Changelog Skill
+# Skill: Generate Structured CHANGELOG
 
-Automatically generate a structured `CHANGELOG.md` from your git history.
+Automatically generates a beautiful, categorized `CHANGELOG.md` from your git history.
 
-## Setup Instructions
+## Setup in 3 Steps
+1. **Copy the script**: Place `scripts/generate_changelog.py` in your project.
+2. **Install dependencies**: Ensure you have Python 3 installed (no external libs required).
+3. **Run it**:
+   ```bash
+   python3 generate_changelog.py --tag v1.0.0
+   ```
 
-1. Copy the `generate-changelog` folder to your project.
-2. Ensure Python 3 is installed.
-3. Run `bash generate-changelog/scripts/changelog.sh` to generate your changelog.
+## Features
+- **Auto-categorization**: Automatically groups commits into Added, Fixed, Breaking Changes, etc.
+- **Conventional Commits**: Fully supports conventional commit prefixes (feat, fix, docs, etc.).
+- **Breaking Changes**: Identifies breaking changes using `!` or `BREAKING CHANGE` keyword.
+- **GitHub Links**: Automatically links commit hashes to their GitHub URLs if the remote origin is set.
+- **Custom Tags**: Specify the new version tag for the header.
 
----
-
-### Acceptance Criteria Checklist
-- [x] Works via bash script
-- [x] Fetches commits since last git tag
-- [x] Auto-categorizes into Added / Fixed / Changed / Removed
-- [x] Outputs properly formatted CHANGELOG.md
-- [x] Tested on real repo
-- [x] Setup in 3 steps
+## Sample Output
+See `sample_CHANGELOG.md` in this directory.

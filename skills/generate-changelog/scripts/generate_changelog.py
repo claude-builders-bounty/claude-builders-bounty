@@ -27,6 +27,7 @@ def get_commits(since_tag=None):
 
 def categorize_commits(commits):
     categories = {
+        "Breaking Changes": [],
         "Added": [],
         "Fixed": [],
         "Changed": [],
@@ -46,6 +47,11 @@ def categorize_commits(commits):
         h, subject = parts
         lower_subject = subject.lower()
         
+        # Check for breaking changes
+        if '!' in subject.split(':')[0] or 'breaking change' in lower_subject:
+            categories["Breaking Changes"].append((h, subject))
+            continue
+            
         # Strip conventional commit scope if present, e.g., feat(auth): -> feat:
         subject_for_prefix = re.sub(r'\(.*?\)', '', lower_subject)
         
@@ -105,6 +111,7 @@ def generate_markdown(categories, repo_url=None, new_tag=None):
 def main():
     parser = argparse.ArgumentParser(description="Generate a CHANGELOG.md from git history.")
     parser.add_argument("--tag", help="New tag for this version (e.g., v1.0.0)")
+    parser.add_argument("--output", default="CHANGELOG.md", help="Output file name")
     args = parser.parse_args()
 
     last_tag = get_last_tag()
@@ -118,10 +125,10 @@ def main():
     categories = categorize_commits(commits)
     markdown = generate_markdown(categories, repo_url, args.tag)
     
-    with open("CHANGELOG.md", "w") as f:
+    with open(args.output, "w") as f:
         f.write(markdown)
     
-    print("CHANGELOG.md generated successfully.")
+    print(f"{args.output} generated successfully.")
 
 if __name__ == "__main__":
     main()
