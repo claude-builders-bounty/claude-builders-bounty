@@ -50,4 +50,11 @@ You're in the right place.
 
 ---
 
+## Utilities
+
+- [`changelog.sh`](./changelog.sh): generate categorized `CHANGELOG.md` from git history.
+- [`README_CHANGELOG.md`](./README_CHANGELOG.md): setup, usage, and tested sample references.
+
+---
+
 *Started by the Claude builder community · March 2026 · MIT License*
