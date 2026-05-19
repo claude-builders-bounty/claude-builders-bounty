@@ -7,6 +7,7 @@ const workflowPath = path.join(root, "weekly-dev-summary.workflow.json");
 const readmePath = path.join(root, "README.md");
 const acceptanceMatrixPath = path.join(root, "ACCEPTANCE_MATRIX.md");
 const publicSubmissionDraftPath = path.join(root, "PUBLIC_SUBMISSION_DRAFT.md");
+const approvalPacketPath = path.join(root, "APPROVAL_PACKET.md");
 const evidenceDir = path.join(root, "evidence");
 const resultPath = path.join(evidenceDir, "acceptance-check-result.json");
 const requireRealEvidence = process.argv.includes("--require-real-evidence");
@@ -177,6 +178,9 @@ const acceptanceMatrix = fs.existsSync(acceptanceMatrixPath)
   : "";
 const publicSubmissionDraft = fs.existsSync(publicSubmissionDraftPath)
   ? fs.readFileSync(publicSubmissionDraftPath, "utf8")
+  : "";
+const approvalPacket = fs.existsSync(approvalPacketPath)
+  ? fs.readFileSync(approvalPacketPath, "utf8")
   : "";
 const configCode = readText("code-nodes/configure-summary.js");
 const buildUrlsCode = readText("code-nodes/build-github-api-urls.js");
@@ -367,6 +371,18 @@ check(
   publicSubmissionDraft
     ? "PUBLIC_SUBMISSION_DRAFT.md records the exact approval-gated claim comment, PR metadata, strict audit command, and stop conditions"
     : "missing PUBLIC_SUBMISSION_DRAFT.md",
+);
+check(
+  "approval packet",
+  approvalPacket.includes("Approval 1: Real Endpoint Evidence")
+    && approvalPacket.includes("Approval 2: Public Claim And PR")
+    && approvalPacket.includes("validate-real-execution.mjs --check-env-only")
+    && approvalPacket.includes("pre-submit-audit.mjs --require-real-evidence")
+    && approvalPacket.includes("does not cover")
+    && approvalPacket.includes("Stop before Phase 2"),
+  approvalPacket
+    ? "APPROVAL_PACKET.md separates real endpoint evidence approval from public submission approval and records credential handling and stop conditions"
+    : "missing APPROVAL_PACKET.md",
 );
 check(
   "local mock n8n UI screenshot",

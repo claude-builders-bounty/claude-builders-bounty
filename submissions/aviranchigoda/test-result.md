@@ -12,6 +12,7 @@ Date: 2026-05-19
 - Slack webhook response handling is configured as text with full response enabled.
 - `node submissions/aviranchigoda/check-acceptance.mjs` passed all local acceptance-coverage checks, validated the mock screenshot PNG, and recorded the remaining approval-gated real evidence items.
 - `node submissions/aviranchigoda/pre-submit-audit.mjs` passed with approval gates, confirming local no-write checks, live issue status, branch scope, secret scan, and remaining real-evidence gates.
+- `APPROVAL_PACKET.md` records the exact two-step approval contract for real endpoint evidence first and public submission later.
 - `PUBLIC_SUBMISSION_DRAFT.md` records the exact approval-gated `/opire try` issue comment and PR metadata without posting anything publicly.
 - `npm exec --yes --package n8n@2.20.11 -- n8n import:workflow --input=submissions/aviranchigoda/weekly-dev-summary.workflow.json` successfully imported 1 workflow using a temporary `N8N_USER_FOLDER`.
 - `node submissions/aviranchigoda/validate-mock-execution.mjs` imported and executed the workflow end to end in n8n 2.20.11 with mocked Claude and Slack endpoints. It verified the Claude request model, Slack payload, final `delivered` status, and quiet-week behavior with zero commits/issues/PRs.

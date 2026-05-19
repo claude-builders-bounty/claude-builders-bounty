@@ -8,6 +8,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - `code-nodes/` - readable source for the embedded n8n Code nodes.
 - `generate-workflow.mjs` - regenerates the workflow JSON from readable Code-node files.
 - `ACCEPTANCE_MATRIX.md` - maps each issue #5 requirement to implementation artifacts and evidence.
+- `APPROVAL_PACKET.md` - exact approval contract for real endpoint evidence and later public submission.
 - `REAL_EVIDENCE.md` - approval-gated runbook for real endpoint validation and screenshot capture.
 - `SUBMISSION_CHECKLIST.md` - final checklist for evidence, `/opire try`, and PR submission.
 - `PUBLIC_SUBMISSION_DRAFT.md` - approval-gated public claim and PR metadata handoff.

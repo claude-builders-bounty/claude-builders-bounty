@@ -7,6 +7,7 @@ Use this checklist immediately before public submission for issue #5.
 - Branch: `bounty/issue-5-weekly-dev-summary`
 - Submission directory: `submissions/aviranchigoda/`
 - Destination: Slack incoming webhook
+- Approval packet: `APPROVAL_PACKET.md`
 - Public submission draft: `PUBLIC_SUBMISSION_DRAFT.md`
 - Pre-submit local audit: `node submissions/aviranchigoda/pre-submit-audit.mjs`
 - Local acceptance check: `node submissions/aviranchigoda/check-acceptance.mjs`
@@ -20,6 +21,7 @@ Use this checklist immediately before public submission for issue #5.
 - `weekly-dev-summary.workflow.json` is importable workflow JSON.
 - `README.md` has setup instructions in five steps.
 - `ACCEPTANCE_MATRIX.md` maps each issue #5 requirement to artifacts and evidence.
+- `APPROVAL_PACKET.md` separates real endpoint evidence approval from later public claim/PR approval.
 - `PUBLIC_SUBMISSION_DRAFT.md` records the exact approval-gated `/opire try` comment, PR title, PR body source, final audit command, and stop conditions.
 - `pre-submit-audit.mjs` runs the no-write local audit and reports approval-gated real evidence separately.
 - `evidence/acceptance-check-result.json` records local acceptance coverage.
@@ -30,6 +32,7 @@ Use this checklist immediately before public submission for issue #5.
 ## Required Before Public PR
 
 - User approval to run real Anthropic/Slack validation.
+- Approval text and scope should match `APPROVAL_PACKET.md`.
 - `ANTHROPIC_API_KEY` supplied as an environment variable, not committed.
 - `SLACK_WEBHOOK_URL` supplied as an environment variable, not committed.
 - `node submissions/aviranchigoda/validate-real-execution.mjs --check-env-only` passes with the approved environment variables.
