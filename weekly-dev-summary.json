@@ -1,0 +1,175 @@
+{
+  "name": "Weekly Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "week",
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Weekly Trigger (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/commits",
+        "options": {
+          "qs": {
+            "since": "={{ $dateOffset(-7, 'DD') }}",
+            "until": "={{ $now }}",
+            "per_page": 100
+          },
+          "headers": {
+            "Authorization": "token =={{ $vars.GITHUB_TOKEN }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 150]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/issues?state=closed",
+        "options": {
+          "qs": {
+            "since": "={{ $dateOffset(-7, 'DD') }}",
+            "per_page": 50
+          },
+          "headers": {
+            "Authorization": "token =={{ $vars.GITHUB_TOKEN }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/={{ $vars.GITHUB_REPO }}/pulls?state=closed&per_page=50",
+        "options": {
+          "qs": {
+            "merged_base_sha": "HEAD",
+            "per_page": 50
+          },
+          "headers": {
+            "Authorization": "token =={{ $vars.GITHUB_TOKEN }}",
+            "Accept": "application/vnd.github.v3+json"
+          }
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count and summarize\nconst commits = $input.first().json;\nconst issues = $('Fetch Closed Issues').first().json;\nconst prs = $('Fetch Merged PRs').first().json;\n\n// Filter merged PRs from last 7 days\nconst sevenDaysAgo = new Date();\nsevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);\nconst mergedPRs = prs.filter(pr => \n  pr.merged_at && new Date(pr.merged_at) > sevenDaysAgo\n);\nconst closedIssues = issues.filter(iss => \n  iss.closed_at && new Date(iss.closed_at) > sevenDaysAgo\n);\n\nreturn {\n  json: {\n    commit_count: commits.length,\n    pr_count: mergedPRs.length,\n    issue_count: closedIssues.length,\n    commits: commits.slice(0, 20).map(c => ({sha: c.sha.slice(0,7), msg: c.commit.message.split('\\n')[0], author: c.commit.author.name})),\n    issues: closedIssues.map(i => ({num: i.number, title: i.title, labels: i.labels.map(l=>l.name)})),\n    prs: mergedPRs.map(p => ({num: p.number, title: p.title, author: p.user.login}))\n  }\n};"
+      },
+      "id": "aggregate",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $vars.ANTHROPIC_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "content-type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "model", "value": "=claude-sonnet-4-20250514"},
+            {"name": "max_tokens", "value": 2000},
+            {"name": "messages", "value": "=[{\"role\":\"user\",\"content\":\"{{ $json.pr_count }} PRs merged, {{ $json.issue_count }} issues closed, {{ $json.commit_count }} commits in the last week for {{ $vars.GITHUB_REPO }}.\\n\\nPRs:\\n{{ JSON.stringify($json.prs) }}\\n\\nIssues:\\n{{ JSON.stringify($json.issues) }}\\n\\nCommits:\\n{{ JSON.stringify($json.commits) }}\\n\\nWrite a 3-paragraph narrative summary (technical, professional). In {{ $vars.LANGUAGE }}.\" }}]"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-summary",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.WEBHOOK_URL }}",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "content", "value": "={{ $json.content[0].text }}"},
+            {"name": "repo", "value": "={{ $vars.GITHUB_REPO }}"},
+            {"name": "week", "value": "={{ $now.format('YYYY-MM-DD') }}"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-webhook",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5pm)": {
+      "main": [
+        [{"node": "Fetch Commits", "type": "main", "index": 0}],
+        [{"node": "Fetch Closed Issues", "type": "main", "index": 0}],
+        [{"node": "Fetch Merged PRs", "type": "main", "index": 0}]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [{"node": "Claude Summary", "type": "main", "index": 0}]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [{"node": "Send to Discord/Slack", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "variables": {
+    "GITHUB_REPO": "owner/repo",
+    "GITHUB_TOKEN": "ghp_xxxx",
+    "ANTHROPIC_API_KEY": "sk-ant-xxxx",
+    "LANGUAGE": "EN",
+    "WEBHOOK_URL": "https://discord.com/api/webhooks/xxx"
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "templateId": "weekly-dev-summary"
+  }
+}
