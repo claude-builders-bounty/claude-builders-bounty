@@ -155,7 +155,9 @@ function extractExecutionResult(rawOutput) {
   return rawOutput?.json ?? rawOutput;
 }
 
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "n8n-weekly-summary-"));
+const providedUserFolder = process.env.N8N_EVIDENCE_USER_FOLDER;
+const tempDir = providedUserFolder || fs.mkdtempSync(path.join(os.tmpdir(), "n8n-weekly-summary-"));
+const shouldRemoveTempDir = !providedUserFolder && process.env.N8N_KEEP_EVIDENCE_USER_FOLDER !== "true";
 const server = await startMockServer();
 
 try {
@@ -244,5 +246,7 @@ try {
   console.log(JSON.stringify(evidence, null, 2));
 } finally {
   await server.close();
-  fs.rmSync(tempDir, { recursive: true, force: true });
+  if (shouldRemoveTempDir) {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }

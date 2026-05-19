@@ -9,6 +9,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - `generate-workflow.mjs` - regenerates the workflow JSON from readable Code-node files.
 - `validate-mock-execution.mjs` - imports and executes the workflow in n8n 2.20.11 with mocked Claude and Slack endpoints.
 - `evidence/mock-execution-result.json` - sanitized output from the successful mock n8n execution.
+- `evidence/mock-n8n-execution-ui.png` - n8n UI screenshot of the successful local mock execution.
 - `README.md` - setup instructions in five steps.
 - `example-summary.md` - example Slack-ready summary output.
 
@@ -21,6 +22,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - Sends formatted weekly summary: posts Claude output to a Slack incoming webhook.
 - Configurable target: `Configure Summary` controls GitHub owner/repo, language, lookback window, Slack webhook, and optional Slack channel.
 - Test evidence: `evidence/mock-execution-result.json` shows successful n8n import and execution with mocked Claude/Slack endpoints and real public GitHub API calls.
+- UI evidence: `evidence/mock-n8n-execution-ui.png` shows the same local n8n execution succeeded in the Executions tab.
 
 ## Local Validation
 

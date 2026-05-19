@@ -9,6 +9,7 @@ Submission for issue #5. The workflow runs every Friday at 5pm, fetches weekly G
 - `generate-workflow.mjs` - local generator used to keep readable Code node files in sync with the workflow export.
 - `validate-mock-execution.mjs` - local validation harness that imports and runs the workflow with mocked Claude and Slack endpoints.
 - `evidence/mock-execution-result.json` - sanitized evidence from the latest successful mock n8n execution.
+- `evidence/mock-n8n-execution-ui.png` - screenshot of the successful local n8n execution using mocked Claude and Slack endpoints.
 - `PR_DESCRIPTION.md` - PR-ready submission notes for issue #5.
 - `example-summary.md` - sample Slack-ready output format.
 

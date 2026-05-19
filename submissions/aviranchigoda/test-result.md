@@ -13,9 +13,10 @@ Date: 2026-05-19
 - `npm exec --yes --package n8n@2.20.11 -- n8n import:workflow --input=submissions/aviranchigoda/weekly-dev-summary.workflow.json` successfully imported 1 workflow using a temporary `N8N_USER_FOLDER`.
 - `node submissions/aviranchigoda/validate-mock-execution.mjs` imported and executed the workflow end to end in n8n 2.20.11 with mocked Claude and Slack endpoints. It verified the Claude request model, Slack payload, final `delivered` status, and quiet-week behavior with zero commits/issues/PRs.
 - The latest sanitized mock execution evidence is stored at `evidence/mock-execution-result.json`.
+- `evidence/mock-n8n-execution-ui.png` captures the n8n Executions tab for the same local mock run showing execution `ID#1` succeeded.
 
 ## Pending Before Public PR
 
-- A real n8n execution screenshot is still required by the bounty acceptance criteria.
-- Real execution was not attempted because `anthropicApiKey` and `slackWebhookUrl` must be supplied by the user before running.
+- An acceptance-level n8n execution screenshot using real Anthropic and Slack endpoints is still pending.
+- Real Anthropic/Slack execution was not attempted because `anthropicApiKey` and `slackWebhookUrl` must be supplied by the user before running.
 - Public bounty claim and PR submission require user approval.
