@@ -4,7 +4,9 @@ const config = {
   summaryLanguage: "EN",
   lookbackDays: 7,
   anthropicApiKey: "REPLACE_ME_ANTHROPIC_API_KEY",
+  // The Slack webhook URL selects the destination channel for modern Slack apps.
   slackWebhookUrl: "https://hooks.slack.com/services/REPLACE_ME",
+  // Optional payload channel for compatible legacy/custom webhook setups.
   slackChannel: "",
 };
 

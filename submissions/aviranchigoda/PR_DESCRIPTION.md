@@ -25,7 +25,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - Connects to GitHub API: fetches commits, closed issues, and merged PRs for the configured lookback window.
 - Connects to Claude API: calls `claude-sonnet-4-20250514` through an n8n HTTP Request node.
 - Sends formatted weekly summary: posts Claude output to a Slack incoming webhook.
-- Configurable target: `Configure Summary` controls GitHub owner/repo, language, lookback window, Slack webhook, and optional Slack channel.
+- Configurable target: `Configure Summary` controls GitHub owner/repo, language, lookback window, the Slack webhook for the target channel, and optional `slackChannel` for compatible webhook setups.
 - Test evidence: `evidence/mock-execution-result.json` shows successful n8n import and execution with mocked Claude/Slack endpoints and real public GitHub API calls.
 - UI evidence: `evidence/mock-n8n-execution-ui.png` shows the same local n8n execution succeeded in the Executions tab.
 - Real evidence path: `REAL_EVIDENCE.md` documents how to produce sanitized real Anthropic/Slack evidence and `evidence/real-n8n-execution-ui.png` after approval.
