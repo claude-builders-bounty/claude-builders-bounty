@@ -13,6 +13,8 @@
 - `npm run build`: Build production application
 - `npm run lint`: Run ESLint checks
 - `npm run db:push`: Push schema changes to SQLite (Drizzle)
+- `npm run db:generate`: Generate migration files
+- `npm run db:migrate`: Apply migrations to production
 - `npm run db:studio`: Open Drizzle Studio for DB exploration
 
 ## Project Structure
@@ -22,6 +24,7 @@
   - `features/`: Complex, domain-specific components — *Rationale: Encourages modularity and prevents component bloat.*
 - `lib/`:
   - `db/`: Database client and schema definitions — *Rationale: Single source of truth for persistence logic.*
+  - `actions/`: Shared Server Actions — *Rationale: Reusability across different routes.*
   - `utils.ts`: General helper functions
 - `public/`: Static assets
 - `styles/`: Global CSS
@@ -54,3 +57,9 @@
 - **Icons**: Use `lucide-react` exclusively. — *Rationale: Consistent iconography and tree-shakable assets.*
 - **UI Components**: Use shadcn/ui. — *Rationale: Accessible, customizable, and widely adopted.*
 - Wrap complex components in `ErrorBoundary` and `Suspense`. — *Rationale: Enhances resilience and provides better loading states.*
+
+## Production & Security
+- **Deployment**: Vercel (Frontend) + Turso (Database).
+- **Environment Variables**: Use `.env.local` for development and Vercel dashboard for production. Never commit `.env` files.
+- **Rate Limiting**: Implement at the Middleware layer for API routes and Server Actions.
+- **CSP**: Strict Content Security Policy defined in `next.config.js`.
