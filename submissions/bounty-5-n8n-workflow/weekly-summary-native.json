@@ -1,0 +1,324 @@
+{
+  "name": "Weekly Dev Summary - Native Nodes",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "id": "trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn [{\n  json: {\n    since: lastWeek.toISOString(),\n    until: now.toISOString()\n  }\n}];"
+      },
+      "name": "Calculate Dates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ],
+      "id": "dates"
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getCommits",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "since": "={{ $json.since }}",
+        "returnAll": true
+      },
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        650,
+        200
+      ],
+      "id": "commits",
+      "credentials": {
+        "githubApi": {
+          "id": "github-api",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "filters": {
+          "state": "closed",
+          "since": "={{ $json.since }}"
+        },
+        "returnAll": true
+      },
+      "name": "Get Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "id": "issues",
+      "credentials": {
+        "githubApi": {
+          "id": "github-api",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "filters": {
+          "state": "closed"
+        },
+        "returnAll": true
+      },
+      "name": "Get PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        650,
+        400
+      ],
+      "id": "prs",
+      "credentials": {
+        "githubApi": {
+          "id": "github-api",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all inputs\nconst commits = $input.all()[0]?.json || [];\nconst issues = $input.all()[1]?.json || [];\nconst prs = $input.all()[2]?.json || [];\n\n// Filter merged PRs from last week\nconst sinceDate = new Date($json.since);\nconst mergedPRs = prs.filter(pr => {\n  if (!pr.merged_at) return false;\n  return new Date(pr.merged_at) >= sinceDate;\n});\n\n// Build summary data\nconst data = {\n  repo: $env.GITHUB_REPO,\n  owner: $env.GITHUB_OWNER,\n  language: $env.LANGUAGE || 'EN',\n  weekStart: $json.since,\n  weekEnd: $json.until,\n  commits: {\n    count: commits.length,\n    items: commits.slice(0, 10).map(c => ({\n      message: c.commit?.message?.split('\\n')[0],\n      author: c.commit?.author?.name || c.author?.login\n    }))\n  },\n  issues: {\n    count: issues.length,\n    items: issues.slice(0, 10).map(i => ({\n      number: i.number,\n      title: i.title\n    }))\n  },\n  pullRequests: {\n    count: mergedPRs.length,\n    items: mergedPRs.slice(0, 10).map(p => ({\n      number: p.number,\n      title: p.title,\n      author: p.user?.login\n    }))\n  }\n};\n\nreturn [{ json: data }];"
+      },
+      "name": "Build Summary Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ],
+      "id": "build-data"
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": [
+          {
+            "role": "system",
+            "content": "={{ $json.language === 'FR' ? \n              'Tu es un rédacteur technique. Rédige un résumé hebdomadaire professionnel en Markdown.' :\n              'You are a technical writer. Write a professional weekly summary in Markdown format.' }}"
+          },
+          {
+            "role": "user",
+            "content": "={{ $json.language === 'FR' ?\n              `Résumé pour ${$json.owner}/${$json.repo} (${new Date($json.weekStart).toLocaleDateString('fr-FR')} - ${new Date($json.weekEnd).toLocaleDateString('fr-FR')})\\n\\n` +\n              `Commits: ${$json.commits.count}\\n` +\n              `Issues fermées: ${$json.issues.count}\\n` +\n              `PRs fusionnées: ${$json.pullRequests.count}\\n\\n` +\n              `Détails des commits:\\n${$json.commits.items.map(c => `- ${c.message} (${c.author})`).join('\\n')}\\n\\n` +\n              `Issues fermées:\\n${$json.issues.items.map(i => `- #${i.number}: ${i.title}`).join('\\n')}\\n\\n` +\n              `PRs fusionnées:\\n${$json.pullRequests.items.map(p => `- #${p.number}: ${p.title} par ${p.author}`).join('\\n')}` :\n              `Summary for ${$json.owner}/${$json.repo} (${new Date($json.weekStart).toLocaleDateString('en-US')} - ${new Date($json.weekEnd).toLocaleDateString('en-US')})\\n\\n` +\n              `Commits: ${$json.commits.count}\\n` +\n              `Closed Issues: ${$json.issues.count}\\n` +\n              `Merged PRs: ${$json.pullRequests.count}\\n\\n` +\n              `Commit details:\\n${$json.commits.items.map(c => `- ${c.message} (${c.author})`).join('\\n')}\\n\\n` +\n              `Closed issues:\\n${$json.issues.items.map(i => `- #${i.number}: ${i.title}`).join('\\n')}\\n\\n` +\n              `Merged PRs:\\n${$json.pullRequests.items.map(p => `- #${p.number}: ${p.title} by ${p.author}`).join('\\n')}` }}"
+          }
+        ],
+        "options": {
+          "max_tokens": 1500
+        }
+      },
+      "name": "Generate with Claude",
+      "type": "n8n-nodes-base.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ],
+      "id": "claude",
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-api",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{ $env.DESTINATION_VALUE }}",
+        "subject": "={{ $json.language === 'FR' ? 'Résumé Hebdomadaire' : 'Weekly Summary' }} - {{ $json.owner }}/{{ $json.repo }}",
+        "text": "={{ $json.summary }}",
+        "options": {}
+      },
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1250,
+        200
+      ],
+      "id": "email",
+      "credentials": {
+        "smtp": {
+          "id": "smtp",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "webhookUri": "={{ $env.DESTINATION_VALUE }}",
+        "text": "={{ $json.summary }}"
+      },
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ],
+      "id": "discord"
+    },
+    {
+      "parameters": {
+        "channel": "={{ $env.DESTINATION_VALUE }}",
+        "text": "={{ $json.summary }}"
+      },
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [
+        1250,
+        400
+      ],
+      "id": "slack",
+      "credentials": {
+        "slackApi": {
+          "id": "slack-api",
+          "name": "Slack API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Calculate Dates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Dates": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Build Summary Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Issues": {
+      "main": [
+        [
+          {
+            "node": "Build Summary Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get PRs": {
+      "main": [
+        [
+          {
+            "node": "Build Summary Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary Data": {
+      "main": [
+        [
+          {
+            "node": "Generate with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate with Claude": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

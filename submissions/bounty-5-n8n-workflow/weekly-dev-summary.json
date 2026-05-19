@@ -1,0 +1,379 @@
+{
+  "name": "Weekly Dev Summary Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "id": "trigger-node",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getCommits",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "since": "={{ $json.lastWeekDate }}",
+        "returnAll": true
+      },
+      "id": "github-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        450,
+        200
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "filters": {
+          "state": "closed",
+          "since": "={{ $json.lastWeekDate }}"
+        },
+        "returnAll": true
+      },
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "filters": {
+          "state": "closed"
+        },
+        "returnAll": true
+      },
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        450,
+        400
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate last week's date\nconst now = new Date();\nconst lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst lastWeekDate = lastWeek.toISOString();\n\nreturn [{\n  json: {\n    lastWeekDate: lastWeekDate,\n    currentDate: now.toISOString()\n  }\n}];"
+      },
+      "id": "calculate-dates",
+      "name": "Calculate Dates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate data from GitHub\nconst commits = $input.all()[0]?.json || [];\nconst issues = $input.all()[1]?.json || [];\nconst prs = $input.all()[2]?.json || [];\n\n// Filter PRs merged in last week\nconst mergedPRs = prs.filter(pr => pr.merged_at && new Date(pr.merged_at) > new Date($json.lastWeekDate));\n\n// Format data for Claude\nconst summaryData = {\n  commits: {\n    count: commits.length,\n    items: commits.slice(0, 10).map(c => ({\n      message: c.commit?.message?.split('\\n')[0] || 'No message',\n      author: c.commit?.author?.name || 'Unknown',\n      date: c.commit?.author?.date\n    }))\n  },\n  issues: {\n    count: issues.length,\n    items: issues.slice(0, 10).map(i => ({\n      title: i.title,\n      number: i.number,\n      closed_at: i.closed_at\n    }))\n  },\n  pullRequests: {\n    count: mergedPRs.length,\n    items: mergedPRs.slice(0, 10).map(p => ({\n      title: p.title,\n      number: p.number,\n      merged_at: p.merged_at\n    }))\n  },\n  weekRange: {\n    start: $json.lastWeekDate,\n    end: $json.currentDate\n  }\n};\n\nreturn [{ json: summaryData }];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": [
+          {
+            "role": "system",
+            "content": "={{ $env.LANGUAGE === 'FR' ? \n    'Tu es un assistant qui rédige des résumés hebdomadaires d\\'activité de développement. Sois concis et professionnel.' : \n    'You are an assistant that writes weekly development activity summaries. Be concise and professional.' }}"
+          },
+          {
+            "role": "user",
+            "content": "={{ $env.LANGUAGE === 'FR' ? \n    `Rédige un résumé hebdomadaire de l\\'activité GitHub pour le repo ${$env.GITHUB_OWNER}/${$env.GITHUB_REPO}.\\n\\nDonnées de la semaine (${new Date($json.weekRange.start).toLocaleDateString('fr-FR')} - ${new Date($json.weekRange.end).toLocaleDateString('fr-FR')}):\\n- Commits: ${$json.commits.count}\\n- Issues fermées: ${$json.issues.count}\\n- PRs fusionnées: ${$json.pullRequests.count}\\n\\nCommits récents:\\n${$json.commits.items.map(c => `- ${c.message} (par ${c.author})`).join('\\n')}\\n\\nIssues fermées:\\n${$json.issues.items.map(i => `- #${i.number}: ${i.title}`).join('\\n')}\\n\\nPRs fusionnées:\\n${$json.pullRequests.items.map(p => `- #${p.number}: ${p.title}`).join('\\n')}\\n\\nFormat: Markdown avec titre, sections claires et ton professionnel.` : \n    `Write a weekly summary of GitHub activity for the repo ${$env.GITHUB_OWNER}/${$env.GITHUB_REPO}.\\n\\nWeek data (${new Date($json.weekRange.start).toLocaleDateString('en-US')} - ${new Date($json.weekRange.end).toLocaleDateString('en-US')}):\\n- Commits: ${$json.commits.count}\\n- Closed Issues: ${$json.issues.count}\\n- Merged PRs: ${$json.pullRequests.count}\\n\\nRecent commits:\\n${$json.commits.items.map(c => `- ${c.message} (by ${c.author})`).join('\\n')}\\n\\nClosed issues:\\n${$json.issues.items.map(i => `- #${i.number}: ${i.title}`).join('\\n')}\\n\\nMerged PRs:\\n${$json.pullRequests.items.map(p => `- #${p.number}: ${p.title}`).join('\\n')}\\n\\nFormat: Markdown with title, clear sections, and professional tone.` }}"
+          }
+        ],
+        "options": {
+          "max_tokens": 1500
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "claude-creds",
+          "name": "Claude API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude response\nconst claudeResponse = $input.first().json;\nconst summaryText = claudeResponse.content?.[0]?.text || claudeResponse.choices?.[0]?.message?.content || 'No summary generated';\n\nreturn [{\n  json: {\n    summary: summaryText,\n    weekStart: $input.first().json.weekRange?.start,\n    weekEnd: $input.first().json.weekRange?.end\n  }\n}];"
+      },
+      "id": "parse-response",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.DESTINATION_TYPE }}",
+        "destination": "={{ $env.DESTINATION_VALUE }}",
+        "subject": "={{ $env.LANGUAGE === 'FR' ? 'Résumé Hebdomadaire de Développement' : 'Weekly Development Summary' }}",
+        "text": "={{ $json.summary }}"
+      },
+      "id": "send-notification",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{ $env.DESTINATION_VALUE }}",
+        "subject": "={{ $env.LANGUAGE === 'FR' ? 'Résumé Hebdomadaire de Développement' : 'Weekly Development Summary' }}",
+        "text": "={{ $json.summary }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1500,
+        200
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-creds",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "webhookUri": "={{ $env.DESTINATION_VALUE }}",
+        "text": "={{ $json.summary }}"
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "={{ $env.DESTINATION_VALUE }}",
+        "text": "={{ $json.summary }}"
+      },
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [
+        1500,
+        400
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-creds",
+          "name": "Slack API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Calculate Dates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Dates": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Parse Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Response": {
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Notification": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
