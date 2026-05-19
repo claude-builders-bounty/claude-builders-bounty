@@ -14,6 +14,7 @@ Submission for issue #5. The workflow runs every Friday at 5pm, fetches weekly G
 - `validate-real-execution.mjs` - approval-gated validation harness for real Anthropic and Slack endpoints using environment-provided credentials.
 - `evidence/acceptance-check-result.json` - latest local acceptance-coverage check result.
 - `evidence/mock-execution-result.json` - sanitized evidence from the latest successful mock n8n execution.
+- `evidence/mock-slack-failure-result.json` - sanitized evidence that a failed Slack webhook does not produce a delivered result.
 - `evidence/mock-n8n-execution-ui.png` - screenshot of the successful local n8n execution using mocked Claude and Slack endpoints.
 - `PR_DESCRIPTION.md` - PR-ready submission notes for issue #5.
 - `example-summary.md` - sample Slack-ready output format.
@@ -35,5 +36,6 @@ Submission for issue #5. The workflow runs every Friday at 5pm, fetches weekly G
 - HTTP calls are handled by n8n HTTP Request nodes; Code nodes only configure and transform data.
 - GitHub HTTP nodes preserve empty arrays so quiet weeks still produce a summary instead of stopping the workflow.
 - The final result validates the Slack webhook HTTP response before reporting `delivered`.
+- `validate-mock-execution.mjs --expect-slack-failure` verifies the workflow does not report `delivered` when the Slack webhook fails.
 - `check-acceptance.mjs --require-real-evidence` can be used after real endpoint evidence is captured to enforce the remaining screenshot gate and validate screenshot PNG dimensions.
 - `validate-real-execution.mjs` can generate sanitized real-run evidence from `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` without committing credentials.

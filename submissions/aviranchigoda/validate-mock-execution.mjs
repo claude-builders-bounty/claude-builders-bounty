@@ -7,7 +7,11 @@ import path from "node:path";
 const root = new URL(".", import.meta.url).pathname;
 const workflowPath = path.join(root, "weekly-dev-summary.workflow.json");
 const evidenceDir = path.join(root, "evidence");
-const evidencePath = path.join(evidenceDir, "mock-execution-result.json");
+const expectSlackFailure = process.argv.includes("--expect-slack-failure");
+const evidencePath = path.join(
+  evidenceDir,
+  expectSlackFailure ? "mock-slack-failure-result.json" : "mock-execution-result.json",
+);
 
 function command(command, args, options = {}) {
   return new Promise((resolve) => {
@@ -43,7 +47,7 @@ function readBody(request) {
   });
 }
 
-function startMockServer() {
+function startMockServer({ slackStatusCode = 200, slackResponseBody = "ok" } = {}) {
   const calls = [];
 
   const server = http.createServer(async (request, response) => {
@@ -77,8 +81,8 @@ function startMockServer() {
     }
 
     if (request.method === "POST" && request.url === "/slack") {
-      response.writeHead(200, { "content-type": "text/plain" });
-      response.end("ok");
+      response.writeHead(slackStatusCode, { "content-type": "text/plain" });
+      response.end(slackResponseBody);
       return;
     }
 
@@ -158,7 +162,11 @@ function extractExecutionResult(rawOutput) {
 const providedUserFolder = process.env.N8N_EVIDENCE_USER_FOLDER;
 const tempDir = providedUserFolder || fs.mkdtempSync(path.join(os.tmpdir(), "n8n-weekly-summary-"));
 const shouldRemoveTempDir = !providedUserFolder && process.env.N8N_KEEP_EVIDENCE_USER_FOLDER !== "true";
-const server = await startMockServer();
+const server = await startMockServer(
+  expectSlackFailure
+    ? { slackStatusCode: 500, slackResponseBody: "simulated_slack_failure" }
+    : undefined,
+);
 
 try {
   const mockWorkflowPath = prepareWorkflowForMock(server.baseUrl, tempDir);
@@ -176,83 +184,117 @@ try {
 
   const executeResult = await command("npm", [...n8nArgs, "execute", "--id=weeklyDevSummaryMock", "--rawOutput"], { env });
 
-  if (executeResult.code !== 0) {
+  if (expectSlackFailure) {
+    const slackCall = server.calls.find((call) => call.url === "/slack");
+
+    if (!slackCall) {
+      throw new Error(`Mock Slack endpoint was not called. Calls: ${JSON.stringify(server.calls, null, 2)}\nSTDOUT:\n${executeResult.stdout}`);
+    }
+
+    if (executeResult.code === 0) {
+      const rawOutput = extractRawJson(executeResult.stdout);
+      const result = extractExecutionResult(rawOutput);
+
+      if (result.status === "delivered") {
+        throw new Error(`Workflow reported delivered after Slack failure: ${JSON.stringify(result)}`);
+      }
+    }
+
+    const evidence = {
+      status: "passed",
+      generatedAt: new Date().toISOString(),
+      n8nPackage: "n8n@2.20.11",
+      workflowId: "weeklyDevSummaryMock",
+      importedWorkflow: true,
+      executedWorkflow: true,
+      expectedSlackFailure: true,
+      slackEndpointCalled: true,
+      mockSlackStatusCode: 500,
+      mockSlackResponseBody: "simulated_slack_failure",
+      n8nExitCode: executeResult.code,
+      deliveredResultRejected: true,
+    };
+
+    fs.mkdirSync(evidenceDir, { recursive: true });
+    fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+    console.log(JSON.stringify(evidence, null, 2));
+  } else if (executeResult.code !== 0) {
     throw new Error(`n8n execute failed\nSTDOUT:\n${executeResult.stdout}\nSTDERR:\n${executeResult.stderr}`);
-  }
+  } else {
+    const rawOutput = extractRawJson(executeResult.stdout);
+    const result = extractExecutionResult(rawOutput);
+    const claudeCall = server.calls.find((call) => call.url === "/v1/messages");
+    const slackCall = server.calls.find((call) => call.url === "/slack");
 
-  const rawOutput = extractRawJson(executeResult.stdout);
-  const result = extractExecutionResult(rawOutput);
-  const claudeCall = server.calls.find((call) => call.url === "/v1/messages");
-  const slackCall = server.calls.find((call) => call.url === "/slack");
+    if (!claudeCall) {
+      throw new Error(`Mock Claude endpoint was not called. Calls: ${JSON.stringify(server.calls, null, 2)}\nSTDOUT:\n${executeResult.stdout}`);
+    }
 
-  if (!claudeCall) {
-    throw new Error(`Mock Claude endpoint was not called. Calls: ${JSON.stringify(server.calls, null, 2)}\nSTDOUT:\n${executeResult.stdout}`);
-  }
+    if (!slackCall) {
+      throw new Error(`Mock Slack endpoint was not called. Calls: ${JSON.stringify(server.calls, null, 2)}\nSTDOUT:\n${executeResult.stdout}`);
+    }
 
-  if (!slackCall) {
-    throw new Error(`Mock Slack endpoint was not called. Calls: ${JSON.stringify(server.calls, null, 2)}\nSTDOUT:\n${executeResult.stdout}`);
-  }
+    const claudeBody = JSON.parse(claudeCall.body);
+    const slackBody = JSON.parse(slackCall.body);
 
-  const claudeBody = JSON.parse(claudeCall.body);
-  const slackBody = JSON.parse(slackCall.body);
+    if (claudeBody.model !== "claude-sonnet-4-20250514") {
+      throw new Error(`Unexpected Claude model: ${claudeBody.model}`);
+    }
 
-  if (claudeBody.model !== "claude-sonnet-4-20250514") {
-    throw new Error(`Unexpected Claude model: ${claudeBody.model}`);
-  }
+    if (!slackBody.text?.includes("Mock weekly summary")) {
+      throw new Error(`Unexpected Slack payload: ${slackCall.body}`);
+    }
 
-  if (!slackBody.text?.includes("Mock weekly summary")) {
-    throw new Error(`Unexpected Slack payload: ${slackCall.body}`);
-  }
+    if (result.status !== "delivered" || result.destination !== "slack") {
+      throw new Error(`Unexpected final execution result: ${JSON.stringify(result)}`);
+    }
 
-  if (result.status !== "delivered" || result.destination !== "slack") {
-    throw new Error(`Unexpected final execution result: ${JSON.stringify(result)}`);
-  }
+    if (result.slackStatusCode !== 200 || result.slackResponseBody !== "ok") {
+      throw new Error(`Unexpected Slack delivery response: ${JSON.stringify({
+        slackStatusCode: result.slackStatusCode,
+        slackResponseBody: result.slackResponseBody,
+      })}`);
+    }
 
-  if (result.slackStatusCode !== 200 || result.slackResponseBody !== "ok") {
-    throw new Error(`Unexpected Slack delivery response: ${JSON.stringify({
+    const evidence = {
+      status: "passed",
+      generatedAt: new Date().toISOString(),
+      n8nPackage: "n8n@2.20.11",
+      workflowId: "weeklyDevSummaryMock",
+      importedWorkflow: true,
+      executedWorkflow: true,
+      usedRealPublicGitHubApi: true,
+      claudeEndpointCalled: true,
+      slackEndpointCalled: true,
+      claudeRequest: {
+        model: claudeBody.model,
+        maxTokens: claudeBody.max_tokens,
+        messageCount: claudeBody.messages?.length ?? 0,
+        promptIncludesRepository: claudeBody.messages?.[0]?.content?.includes(result.repository) ?? false,
+      },
+      slackPayload: {
+        text: slackBody.text,
+        mrkdwn: slackBody.mrkdwn === true,
+      },
+      n8nExecution: {
+        status: rawOutput?.status ?? rawOutput?.data?.status,
+        finished: rawOutput?.finished === true || rawOutput?.data?.finished === true,
+        lastNodeExecuted: rawOutput?.data?.resultData?.lastNodeExecuted,
+      },
+      finalStatus: result.status,
+      destination: result.destination,
       slackStatusCode: result.slackStatusCode,
       slackResponseBody: result.slackResponseBody,
-    })}`);
+      repository: result.repository,
+      commitCount: result.commitCount,
+      closedIssueCount: result.closedIssueCount,
+      mergedPullRequestCount: result.mergedPullRequestCount,
+    };
+
+    fs.mkdirSync(evidenceDir, { recursive: true });
+    fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+    console.log(JSON.stringify(evidence, null, 2));
   }
-
-  const evidence = {
-    status: "passed",
-    generatedAt: new Date().toISOString(),
-    n8nPackage: "n8n@2.20.11",
-    workflowId: "weeklyDevSummaryMock",
-    importedWorkflow: true,
-    executedWorkflow: true,
-    usedRealPublicGitHubApi: true,
-    claudeEndpointCalled: true,
-    slackEndpointCalled: true,
-    claudeRequest: {
-      model: claudeBody.model,
-      maxTokens: claudeBody.max_tokens,
-      messageCount: claudeBody.messages?.length ?? 0,
-      promptIncludesRepository: claudeBody.messages?.[0]?.content?.includes(result.repository) ?? false,
-    },
-    slackPayload: {
-      text: slackBody.text,
-      mrkdwn: slackBody.mrkdwn === true,
-    },
-    n8nExecution: {
-      status: rawOutput?.status ?? rawOutput?.data?.status,
-      finished: rawOutput?.finished === true || rawOutput?.data?.finished === true,
-      lastNodeExecuted: rawOutput?.data?.resultData?.lastNodeExecuted,
-    },
-    finalStatus: result.status,
-    destination: result.destination,
-    slackStatusCode: result.slackStatusCode,
-    slackResponseBody: result.slackResponseBody,
-    repository: result.repository,
-    commitCount: result.commitCount,
-    closedIssueCount: result.closedIssueCount,
-    mergedPullRequestCount: result.mergedPullRequestCount,
-  };
-
-  fs.mkdirSync(evidenceDir, { recursive: true });
-  fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(JSON.stringify(evidence, null, 2));
 } finally {
   await server.close();
   if (shouldRemoveTempDir) {

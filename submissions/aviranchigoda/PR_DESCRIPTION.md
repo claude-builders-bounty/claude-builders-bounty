@@ -28,6 +28,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - Delivery result: verifies the Slack webhook response before the workflow reports `delivered`.
 - Configurable target: `Configure Summary` controls GitHub owner/repo, language, lookback window, the Slack webhook for the target channel, and optional `slackChannel` for compatible webhook setups.
 - Test evidence: `evidence/mock-execution-result.json` shows successful n8n import and execution with mocked Claude/Slack endpoints and real public GitHub API calls.
+- Failure evidence: `evidence/mock-slack-failure-result.json` shows a failed Slack webhook does not produce a delivered result.
 - UI evidence: `evidence/mock-n8n-execution-ui.png` shows the same local n8n execution succeeded in the Executions tab.
 - Real evidence path: `REAL_EVIDENCE.md` documents how to produce sanitized real Anthropic/Slack evidence and `evidence/real-n8n-execution-ui.png` after approval.
 

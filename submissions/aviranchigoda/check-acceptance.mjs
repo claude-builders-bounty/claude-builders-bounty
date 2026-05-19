@@ -289,12 +289,26 @@ for (const [nodeName, fileName] of codeNodeSources) {
 }
 
 const mockEvidencePath = path.join(evidenceDir, "mock-execution-result.json");
+const mockSlackFailureEvidencePath = path.join(evidenceDir, "mock-slack-failure-result.json");
 const mockScreenshotPath = path.join(evidenceDir, "mock-n8n-execution-ui.png");
 const mockScreenshot = pngInfo(mockScreenshotPath);
+const mockSlackFailureEvidence = fs.existsSync(mockSlackFailureEvidencePath)
+  ? JSON.parse(fs.readFileSync(mockSlackFailureEvidencePath, "utf8"))
+  : null;
 check(
   "local mock n8n execution evidence",
   fs.existsSync(mockEvidencePath) && JSON.parse(fs.readFileSync(mockEvidencePath, "utf8")).finalStatus === "delivered",
   "mock execution evidence exists and reports delivered",
+);
+check(
+  "local mock Slack failure rejection evidence",
+  mockSlackFailureEvidence?.status === "passed"
+    && mockSlackFailureEvidence.expectedSlackFailure === true
+    && mockSlackFailureEvidence.slackEndpointCalled === true
+    && mockSlackFailureEvidence.deliveredResultRejected === true,
+  mockSlackFailureEvidence
+    ? `Slack failure rejected with n8n exit code ${mockSlackFailureEvidence.n8nExitCode}`
+    : "missing mock Slack failure evidence",
 );
 check(
   "local mock n8n UI screenshot",
