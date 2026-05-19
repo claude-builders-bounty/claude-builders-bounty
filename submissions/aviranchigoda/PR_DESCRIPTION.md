@@ -8,6 +8,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - `code-nodes/` - readable source for the embedded n8n Code nodes.
 - `generate-workflow.mjs` - regenerates the workflow JSON from readable Code-node files.
 - `validate-mock-execution.mjs` - imports and executes the workflow in n8n 2.20.11 with mocked Claude and Slack endpoints.
+- `validate-real-execution.mjs` - approval-gated real endpoint runner that writes sanitized evidence when `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` are supplied.
 - `evidence/mock-execution-result.json` - sanitized output from the successful mock n8n execution.
 - `evidence/mock-n8n-execution-ui.png` - n8n UI screenshot of the successful local mock execution.
 - `README.md` - setup instructions in five steps.
@@ -30,6 +31,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 node submissions/aviranchigoda/generate-workflow.mjs
 jq empty submissions/aviranchigoda/weekly-dev-summary.workflow.json
 node submissions/aviranchigoda/validate-mock-execution.mjs
+node submissions/aviranchigoda/validate-real-execution.mjs # requires ANTHROPIC_API_KEY and SLACK_WEBHOOK_URL
 ```
 
 Latest mock validation result:
