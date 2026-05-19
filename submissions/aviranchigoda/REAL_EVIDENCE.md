@@ -23,6 +23,12 @@ export LOOKBACK_DAYS="7"
 export SLACK_CHANNEL=""
 ```
 
+Local guard self-test, no credentials required:
+
+```bash
+node submissions/aviranchigoda/validate-real-execution.mjs --self-test-secret-guard
+```
+
 ## Run Real Execution
 
 ```bash

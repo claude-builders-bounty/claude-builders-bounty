@@ -25,13 +25,38 @@ function redactSecrets(value) {
   return text;
 }
 
-function assertNoSecretsInEvidence(evidence) {
+function evidenceContainsSecret(evidence, secrets = secretValues) {
   const renderedEvidence = JSON.stringify(evidence);
-  const containsSecret = secretValues.some((secret) => renderedEvidence.includes(secret));
+  return secrets.filter(Boolean).some((secret) => renderedEvidence.includes(secret));
+}
 
-  if (containsSecret) {
+function assertNoSecretsInEvidence(evidence, secrets = secretValues) {
+  if (evidenceContainsSecret(evidence, secrets)) {
     throw new Error("Refusing to write real evidence because it contains an approval-gated secret value.");
   }
+}
+
+function runSecretGuardSelfTest() {
+  const fakeSecrets = [
+    "anthropic-self-test-secret",
+    "slack-webhook-self-test-secret",
+  ];
+
+  assertNoSecretsInEvidence({ status: "passed", summaryLength: 42 }, fakeSecrets);
+
+  let rejected = false;
+
+  try {
+    assertNoSecretsInEvidence({ status: "passed", leaked: fakeSecrets[0] }, fakeSecrets);
+  } catch (error) {
+    rejected = error.message.includes("Refusing to write real evidence");
+  }
+
+  if (!rejected) {
+    throw new Error("Secret guard self-test failed to reject a synthetic secret in evidence.");
+  }
+
+  console.log(JSON.stringify({ status: "passed", check: "real evidence secret-leak guard" }, null, 2));
 }
 
 function command(commandName, args, options = {}) {
@@ -169,6 +194,11 @@ function failClosed(message) {
   console.error(message);
   console.error("Refusing to run a real n8n execution until approval-gated credentials are supplied as environment variables.");
   process.exit(1);
+}
+
+if (process.argv.includes("--self-test-secret-guard")) {
+  runSecretGuardSelfTest();
+  process.exit(0);
 }
 
 const anthropicApiKey = requireEnv("ANTHROPIC_API_KEY");

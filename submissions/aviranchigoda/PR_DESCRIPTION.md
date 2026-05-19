@@ -41,6 +41,7 @@ jq empty submissions/aviranchigoda/weekly-dev-summary.workflow.json
 node submissions/aviranchigoda/check-acceptance.mjs
 node submissions/aviranchigoda/validate-mock-execution.mjs
 node submissions/aviranchigoda/validate-mock-execution.mjs --expect-slack-failure
+node submissions/aviranchigoda/validate-real-execution.mjs --self-test-secret-guard
 node submissions/aviranchigoda/validate-real-execution.mjs # requires ANTHROPIC_API_KEY and SLACK_WEBHOOK_URL
 ```
 

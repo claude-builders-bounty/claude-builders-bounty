@@ -320,9 +320,11 @@ check(
 check(
   "real evidence secret-leak guard",
   realRunnerCode.includes("assertNoSecretsInEvidence")
+    && realRunnerCode.includes("evidenceContainsSecret")
+    && realRunnerCode.includes("--self-test-secret-guard")
     && realRunnerCode.includes("Refusing to write real evidence")
-    && realRunnerCode.includes("secretValues.some"),
-  "validate-real-execution.mjs refuses to write sanitized evidence if an approval-gated secret appears in it",
+    && realRunnerCode.includes("secrets.filter(Boolean).some"),
+  "validate-real-execution.mjs refuses to write sanitized evidence if an approval-gated secret appears in it and exposes a local self-test for the guard",
 );
 
 const realEvidencePath = path.join(evidenceDir, "real-execution-result.json");
