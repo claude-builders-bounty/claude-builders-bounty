@@ -22,6 +22,27 @@ You're in the right place.
 
 ---
 
+## SKILL: Generate CHANGELOG from Git History
+
+Generate a structured CHANGELOG.md from git history using Conventional Commits.
+
+### Installation (3 steps)
+
+```bash
+# 1. Copy changelog.py to your project
+cp changelog.py /your/project/
+
+# 2. Run to generate CHANGELOG.md
+python changelog.py
+
+# 3. Review and commit
+git add CHANGELOG.md && git commit -m "docs: update changelog"
+```
+
+**Full documentation**: See [SKILL.md](SKILL.md)
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
