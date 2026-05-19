@@ -14,6 +14,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - `validate-real-execution.mjs` - approval-gated real endpoint runner that writes sanitized evidence when `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` are supplied.
 - `evidence/acceptance-check-result.json` - latest local acceptance-coverage check result.
 - `evidence/mock-execution-result.json` - sanitized output from the successful mock n8n execution.
+- `evidence/mock-slack-failure-result.json` - sanitized output proving a failed Slack webhook does not produce a delivered result.
 - `evidence/mock-n8n-execution-ui.png` - n8n UI screenshot of the successful local mock execution.
 - `README.md` - setup instructions in five steps.
 - `example-summary.md` - example Slack-ready summary output.
@@ -39,6 +40,7 @@ node submissions/aviranchigoda/generate-workflow.mjs
 jq empty submissions/aviranchigoda/weekly-dev-summary.workflow.json
 node submissions/aviranchigoda/check-acceptance.mjs
 node submissions/aviranchigoda/validate-mock-execution.mjs
+node submissions/aviranchigoda/validate-mock-execution.mjs --expect-slack-failure
 node submissions/aviranchigoda/validate-real-execution.mjs # requires ANTHROPIC_API_KEY and SLACK_WEBHOOK_URL
 ```
 
@@ -53,7 +55,9 @@ Latest mock validation result:
   "claudeEndpointCalled": true,
   "slackEndpointCalled": true,
   "finalStatus": "delivered",
-  "destination": "slack"
+  "destination": "slack",
+  "slackStatusCode": 200,
+  "slackResponseBody": "ok"
 }
 ```
 
