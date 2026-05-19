@@ -15,6 +15,7 @@ Use this checklist immediately before public submission for issue #5.
 
 - `weekly-dev-summary.workflow.json` is importable workflow JSON.
 - `README.md` has setup instructions in five steps.
+- `ACCEPTANCE_MATRIX.md` maps each issue #5 requirement to artifacts and evidence.
 - `evidence/acceptance-check-result.json` records local acceptance coverage.
 - `evidence/mock-execution-result.json` records a successful n8n 2.20.11 execution with mocked Claude and Slack endpoints.
 - `evidence/mock-slack-failure-result.json` records that a failed Slack webhook does not produce a delivered result.

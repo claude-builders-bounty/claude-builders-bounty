@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = path.dirname(fileURLToPath(import.meta.url));
 const workflowPath = path.join(root, "weekly-dev-summary.workflow.json");
 const readmePath = path.join(root, "README.md");
+const acceptanceMatrixPath = path.join(root, "ACCEPTANCE_MATRIX.md");
 const evidenceDir = path.join(root, "evidence");
 const resultPath = path.join(evidenceDir, "acceptance-check-result.json");
 const requireRealEvidence = process.argv.includes("--require-real-evidence");
@@ -170,6 +171,9 @@ function realEvidenceInfo(filePath) {
 
 const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
 const readme = fs.readFileSync(readmePath, "utf8");
+const acceptanceMatrix = fs.existsSync(acceptanceMatrixPath)
+  ? fs.readFileSync(acceptanceMatrixPath, "utf8")
+  : "";
 const configCode = readText("code-nodes/configure-summary.js");
 const buildUrlsCode = readText("code-nodes/build-github-api-urls.js");
 const prepareClaudeCode = readText("code-nodes/prepare-claude-request.js");
@@ -271,6 +275,24 @@ check(
   "README setup instructions in five steps or fewer",
   countSetupSteps(readme) !== null && countSetupSteps(readme) <= 5,
   `${countSetupSteps(readme) ?? 0} setup steps found`,
+);
+
+check(
+  "reviewer acceptance matrix",
+  [
+    "Weekly Friday 5pm",
+    "GitHub Commits",
+    "GitHub Closed Issues",
+    "GitHub Merged Pull Requests",
+    "claude-sonnet-4-20250514",
+    "Slack delivery",
+    "mock Slack failure",
+    "Real Anthropic and Slack execution evidence",
+    "No committed secrets",
+  ].every((needle) => acceptanceMatrix.includes(needle)),
+  acceptanceMatrix
+    ? "ACCEPTANCE_MATRIX.md maps issue requirements to artifacts, local evidence, and approval gates"
+    : "missing ACCEPTANCE_MATRIX.md",
 );
 
 const codeNodeSources = new Map([

@@ -7,6 +7,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - `weekly-dev-summary.workflow.json` - importable n8n workflow.
 - `code-nodes/` - readable source for the embedded n8n Code nodes.
 - `generate-workflow.mjs` - regenerates the workflow JSON from readable Code-node files.
+- `ACCEPTANCE_MATRIX.md` - maps each issue #5 requirement to implementation artifacts and evidence.
 - `REAL_EVIDENCE.md` - approval-gated runbook for real endpoint validation and screenshot capture.
 - `SUBMISSION_CHECKLIST.md` - final checklist for evidence, `/opire try`, and PR submission.
 - `check-acceptance.mjs` - verifies local coverage of the issue #5 acceptance criteria and records remaining approval-gated real evidence.
@@ -32,6 +33,7 @@ Implements issue #5 with an importable n8n workflow that sends a weekly GitHub a
 - Failure evidence: `evidence/mock-slack-failure-result.json` shows a failed Slack webhook does not produce a delivered result.
 - UI evidence: `evidence/mock-n8n-execution-ui.png` shows the same local n8n execution succeeded in the Executions tab.
 - Real evidence path: `REAL_EVIDENCE.md` documents how to produce sanitized real Anthropic/Slack evidence and `evidence/real-n8n-execution-ui.png` after approval.
+- Reviewer map: `ACCEPTANCE_MATRIX.md` links each requirement to the exact workflow node, helper file, and evidence artifact.
 
 ## Local Validation
 

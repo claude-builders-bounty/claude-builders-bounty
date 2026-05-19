@@ -7,6 +7,7 @@ Submission for issue #5. The workflow runs every Friday at 5pm, fetches weekly G
 - `weekly-dev-summary.workflow.json` - importable n8n workflow.
 - `code-nodes/` - readable copies of the Code node logic embedded in the workflow.
 - `generate-workflow.mjs` - local generator used to keep readable Code node files in sync with the workflow export.
+- `ACCEPTANCE_MATRIX.md` - reviewer-facing map from issue #5 requirements to artifacts and evidence.
 - `REAL_EVIDENCE.md` - approval-gated runbook for producing real Anthropic/Slack evidence and the real n8n screenshot.
 - `SUBMISSION_CHECKLIST.md` - approval-gated checklist for final evidence, claim, and PR submission.
 - `check-acceptance.mjs` - local acceptance-coverage check for the issue #5 requirements.
