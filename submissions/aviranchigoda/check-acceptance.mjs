@@ -1,0 +1,258 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+const workflowPath = path.join(root, "weekly-dev-summary.workflow.json");
+const readmePath = path.join(root, "README.md");
+const evidenceDir = path.join(root, "evidence");
+const resultPath = path.join(evidenceDir, "acceptance-check-result.json");
+const requireRealEvidence = process.argv.includes("--require-real-evidence");
+
+const checks = [];
+const failures = [];
+const approvalGates = [];
+
+function readText(relativePath) {
+  return fs.readFileSync(path.join(root, relativePath), "utf8");
+}
+
+function check(name, passed, evidence) {
+  const entry = { name, passed: Boolean(passed), evidence };
+  checks.push(entry);
+
+  if (!entry.passed) {
+    failures.push({ name, evidence });
+  }
+}
+
+function gate(name, passed, nextAction) {
+  const entry = { name, passed: Boolean(passed), nextAction };
+
+  if (!entry.passed && requireRealEvidence) {
+    failures.push({ name, evidence: nextAction });
+  } else if (!entry.passed) {
+    approvalGates.push(entry);
+  }
+
+  return entry;
+}
+
+function node(workflow, name) {
+  return workflow.nodes.find((candidate) => candidate.name === name);
+}
+
+function headerValue(httpNode, headerName) {
+  return httpNode?.parameters?.headerParameters?.parameters
+    ?.find((header) => header.name.toLowerCase() === headerName.toLowerCase())
+    ?.value;
+}
+
+function responseOption(httpNode, key) {
+  return httpNode?.parameters?.options?.response?.response?.[key];
+}
+
+function countSetupSteps(readme) {
+  const lines = readme.split("\n");
+  const setupIndex = lines.findIndex((line) => line.trim() === "## Setup");
+
+  if (setupIndex === -1) {
+    return null;
+  }
+
+  let count = 0;
+
+  for (let index = setupIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+
+    if (line.startsWith("## ")) {
+      break;
+    }
+
+    if (/^\d+\.\s/.test(line)) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function walkFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = path.join(directory, entry.name);
+
+    if (entry.isDirectory()) {
+      return walkFiles(fullPath);
+    }
+
+    return fullPath;
+  });
+}
+
+const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
+const readme = fs.readFileSync(readmePath, "utf8");
+const configCode = readText("code-nodes/configure-summary.js");
+const buildUrlsCode = readText("code-nodes/build-github-api-urls.js");
+const prepareClaudeCode = readText("code-nodes/prepare-claude-request.js");
+const prepareSlackCode = readText("code-nodes/prepare-slack-message.js");
+
+check(
+  "exportable n8n workflow JSON",
+  workflow.id && workflow.name && Array.isArray(workflow.nodes) && workflow.connections,
+  `workflow ${workflow.id || "(missing id)"} has ${workflow.nodes?.length ?? 0} nodes`,
+);
+
+const schedule = node(workflow, "Weekly Friday 5pm");
+check(
+  "weekly Friday 5pm schedule trigger",
+  schedule?.type === "n8n-nodes-base.scheduleTrigger"
+    && schedule.parameters?.rule?.interval?.[0]?.expression === "0 17 * * 5",
+  schedule?.parameters?.rule?.interval?.[0]?.expression ?? "missing schedule expression",
+);
+
+check(
+  "manual test trigger",
+  node(workflow, "Manual Test Trigger")?.type === "n8n-nodes-base.manualTrigger",
+  "Manual Test Trigger node exists for reviewer execution",
+);
+
+const githubNodes = ["GitHub Commits", "GitHub Closed Issues", "GitHub Merged Pull Requests"].map((name) => node(workflow, name));
+check(
+  "GitHub HTTP Request nodes",
+  githubNodes.every((githubNode) => githubNode?.type === "n8n-nodes-base.httpRequest"),
+  githubNodes.map((githubNode) => githubNode?.name ?? "missing").join(", "),
+);
+
+check(
+  "GitHub activity coverage",
+  buildUrlsCode.includes("/commits")
+    && buildUrlsCode.includes("type:issue is:closed")
+    && buildUrlsCode.includes("type:pr is:merged"),
+  "Build GitHub API URLs covers commits, closed issues, and merged PRs",
+);
+
+check(
+  "GitHub empty-array preservation",
+  githubNodes.every((githubNode) => responseOption(githubNode, "fullResponse") === true),
+  "GitHub HTTP nodes use fullResponse so quiet weeks continue downstream",
+);
+
+const claudeNode = node(workflow, "Claude Summary");
+check(
+  "Claude HTTP Request node",
+  claudeNode?.type === "n8n-nodes-base.httpRequest"
+    && claudeNode.parameters?.method === "POST"
+    && claudeNode.parameters?.url === "https://api.anthropic.com/v1/messages",
+  claudeNode?.parameters?.url ?? "missing Claude URL",
+);
+
+check(
+  "Claude model",
+  prepareClaudeCode.includes('model: "claude-sonnet-4-20250514"'),
+  "Prepare Claude Request uses claude-sonnet-4-20250514",
+);
+
+check(
+  "Claude API headers",
+  headerValue(claudeNode, "x-api-key") === "={{ $json.anthropicApiKey }}"
+    && headerValue(claudeNode, "anthropic-version") === "2023-06-01",
+  "Claude request reads API key from workflow config and sets anthropic-version",
+);
+
+const slackNode = node(workflow, "Send Slack Summary");
+check(
+  "Slack webhook delivery",
+  slackNode?.type === "n8n-nodes-base.httpRequest"
+    && slackNode.parameters?.method === "POST"
+    && slackNode.parameters?.url === "={{ $json.slackWebhookUrl }}"
+    && prepareSlackCode.includes("slackPayload")
+    && prepareSlackCode.includes("mrkdwn: true"),
+  slackNode?.parameters?.url ?? "missing Slack URL",
+);
+
+check(
+  "configurable repo, destination, and language",
+  ["githubOwner", "githubRepo", "summaryLanguage", "slackWebhookUrl", "slackChannel"].every((key) => configCode.includes(key))
+    && configCode.includes('["EN", "FR"]'),
+  "Configure Summary exposes GitHub repo, Slack destination, and EN/FR language",
+);
+
+check(
+  "README setup instructions in five steps or fewer",
+  countSetupSteps(readme) !== null && countSetupSteps(readme) <= 5,
+  `${countSetupSteps(readme) ?? 0} setup steps found`,
+);
+
+const codeNodeSources = new Map([
+  ["Configure Summary", "configure-summary.js"],
+  ["Build GitHub API URLs", "build-github-api-urls.js"],
+  ["Prepare Claude Request", "prepare-claude-request.js"],
+  ["Prepare Slack Message", "prepare-slack-message.js"],
+  ["Execution Result", "execution-result.js"],
+]);
+
+for (const [nodeName, fileName] of codeNodeSources) {
+  check(
+    `embedded Code node matches ${fileName}`,
+    node(workflow, nodeName)?.parameters?.jsCode === readText(path.join("code-nodes", fileName)),
+    `${nodeName} is synchronized with code-nodes/${fileName}`,
+  );
+}
+
+const mockEvidencePath = path.join(evidenceDir, "mock-execution-result.json");
+const mockScreenshotPath = path.join(evidenceDir, "mock-n8n-execution-ui.png");
+check(
+  "local mock n8n execution evidence",
+  fs.existsSync(mockEvidencePath) && JSON.parse(fs.readFileSync(mockEvidencePath, "utf8")).finalStatus === "delivered",
+  "mock execution evidence exists and reports delivered",
+);
+check(
+  "local mock n8n UI screenshot",
+  fs.existsSync(mockScreenshotPath) && fs.statSync(mockScreenshotPath).size > 0,
+  "mock n8n execution screenshot exists",
+);
+
+const realEvidenceGate = gate(
+  "real Anthropic and Slack execution evidence",
+  fs.existsSync(path.join(evidenceDir, "real-execution-result.json")),
+  "Run validate-real-execution.mjs with ANTHROPIC_API_KEY and SLACK_WEBHOOK_URL after user approval.",
+);
+const realScreenshotGate = gate(
+  "real n8n execution screenshot",
+  fs.existsSync(path.join(evidenceDir, "real-n8n-execution-ui.png")),
+  "Capture evidence/real-n8n-execution-ui.png from the real n8n execution after credentials are supplied.",
+);
+
+const secretPattern = new RegExp([
+  "sk-" + "ant-",
+  "xox" + "[baprs]-",
+  "gh" + "p_",
+  "github" + "_pat_",
+  "hooks\\.slack\\.com\\/services\\/[A-Z0-9]+\\/[A-Z0-9]+\\/[A-Za-z0-9]+",
+].join("|"));
+const filesWithSecrets = walkFiles(root)
+  .filter((filePath) => !filePath.includes(`${path.sep}.git${path.sep}`))
+  .filter((filePath) => secretPattern.test(fs.readFileSync(filePath, "utf8")));
+
+check(
+  "no committed API keys or real webhook tokens",
+  filesWithSecrets.length === 0,
+  filesWithSecrets.map((filePath) => path.relative(root, filePath)).join(", ") || "no matching secret patterns",
+);
+
+const result = {
+  status: failures.length === 0 ? "passed" : "failed",
+  generatedAt: new Date().toISOString(),
+  requireRealEvidence,
+  checks,
+  approvalGates: [realEvidenceGate, realScreenshotGate].filter((entry) => !entry.passed),
+  failures,
+};
+
+fs.mkdirSync(evidenceDir, { recursive: true });
+fs.writeFileSync(resultPath, `${JSON.stringify(result, null, 2)}\n`);
+console.log(JSON.stringify(result, null, 2));
+
+if (failures.length > 0) {
+  process.exit(1);
+}
