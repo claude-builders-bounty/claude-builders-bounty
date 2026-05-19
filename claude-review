@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""
+Claude Code PR Reviewer — analyzes a GitHub PR and returns structured Markdown review.
+
+Usage: python3 claude-review --pr https://github.com/owner/repo/pull/123
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+
+GITHUB_TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
+
+
+def parse_pr_url(url: str):
+    pattern = r"github\.com/([^/]+)/([^/]+)/pull/(\d+)"
+    match = re.search(pattern, url)
+    if not match:
+        print(f"Error: Invalid GitHub PR URL: {url}", file=sys.stderr)
+        sys.exit(1)
+    return match.group(1), match.group(2), int(match.group(3))
+
+
+def gh_api(path: str):
+    headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "claude-review/1.0"}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+    req = Request(f"https://api.github.com{path}", headers=headers)
+    try:
+        with urlopen(req) as resp:
+            return json.loads(resp.read())
+    except HTTPError as e:
+        print(f"GitHub API error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def get_pr_diff(owner: str, repo: str, pr_number: int) -> str:
+    headers = {"Accept": "application/vnd.github.v3.diff", "User-Agent": "claude-review/1.0"}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+    req = Request(f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}", headers=headers)
+    try:
+        with urlopen(req) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except HTTPError as e:
+        print(f"Failed to fetch PR diff: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def analyze_diff(pr_title: str, diff: str):
+    additions = len(re.findall(r"^\+(?!\+\+)", diff, re.MULTILINE))
+    deletions = len(re.findall(r"^-(?!---)", diff, re.MULTILINE))
+    files_changed = len(re.findall(r"^diff --git", diff, re.MULTILINE))
+
+    risks = []
+    risk_score = 0
+
+    if re.search(r"(?i)secret|password|token|api.?key", diff) and not re.search(r"(?i)\.env\.example|placeholder|your-", diff):
+        risks.append("- ⚠️ **Credentials**: File contains strings matching 'secret', 'password', or 'token'. Verify these are not real credentials.")
+        risk_score += 3
+
+    if re.search(r"(?i)DROP\s+TABLE|DROP\s+DATABASE|TRUNCATE", diff):
+        risks.append("- ⚠️ **Destructive SQL**: Contains DROP TABLE / DROP DATABASE / TRUNCATE. Ensure rollback plan exists.")
+        risk_score += 3
+
+    if re.search(r"rm\s+-rf", diff):
+        risks.append("- ⚠️ **Dangerous command**: Contains recursive force delete. Verify context.")
+        risk_score += 3
+
+    if re.search(r"console\.(log|warn|error)", diff):
+        risks.append("- 🔶 **Debug logs**: Console statements detected. Remove before production merge.")
+        risk_score += 1
+
+    if re.search(r"TODO|FIXME|HACK|XXX", diff):
+        risks.append("- 🔶 **Unresolved markers**: TODO/FIXME/HACK comments present.")
+        risk_score += 1
+
+    if files_changed > 15:
+        risks.append(f"- 🔶 **Large PR**: {files_changed} files changed. Consider splitting.")
+        risk_score += 2
+
+    if additions > 500:
+        risks.append(f"- 🔶 **Large diff**: {additions}+ lines. May benefit from architecture review.")
+        risk_score += 1
+
+    if not risks:
+        risks.append("- ✅ No obvious risks detected.")
+
+    if risk_score == 0:
+        confidence = "High"
+        conf_reason = "No risky patterns detected. Changes appear focused and well-scoped."
+    elif risk_score <= 2:
+        confidence = "Medium"
+        conf_reason = f"Minor concerns ({risk_score} risk points). Review flagged items."
+    else:
+        confidence = "Low"
+        conf_reason = f"Significant concerns ({risk_score} risk points). Manual review strongly recommended."
+
+    suggestions = []
+    has_tests = bool(re.search(r"(test|spec|__tests__)", diff, re.IGNORECASE))
+    if not has_tests and additions > 20:
+        suggestions.append("- Consider adding tests for the new/changed functionality. No test files detected.")
+
+    has_deps = bool(re.search(r"requirements\.txt|pyproject\.toml|package\.json|Cargo\.toml|go\.mod|Gemfile", diff))
+    if has_deps and "import " in diff.lower():
+        suggestions.append("- Dependencies changed — verify version compatibility and transitive deps.")
+
+    if not suggestions:
+        suggestions.append("- Looks clean! Consider edge cases: empty inputs, error states, rate limits.")
+
+    return risks, risk_score, confidence, conf_reason, suggestions, files_changed, additions, deletions
+
+
+def test_on_pr(owner: str, repo: str, pr_number: int):
+    """Run review on a real PR and return Markdown."""
+    pr = gh_api(f"/repos/{owner}/{repo}/pulls/{pr_number}")
+    pr_title = pr.get("title", "Unknown")
+    diff = get_pr_diff(owner, repo, pr_number)
+    risks, _, confidence, conf_reason, suggestions, files, adds, dels = analyze_diff(pr_title, diff)
+
+    lines = []
+    lines.append(f"## Test: [{pr_title}](https://github.com/{owner}/{repo}/pull/{pr_number})")
+    lines.append("")
+    for r in risks:
+        lines.append(r)
+    lines.append("")
+    lines.append(f"**Confidence: {confidence}** — {conf_reason}")
+    lines.append("")
+    for s in suggestions:
+        lines.append(s)
+    lines.append("")
+    return "\n".join(lines)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Reviewer")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    args = parser.parse_args()
+
+    owner, repo, pr_number = parse_pr_url(args.pr)
+    pr = gh_api(f"/repos/{owner}/{repo}/pulls/{pr_number}")
+    diff = get_pr_diff(owner, repo, pr_number)
+    risks, risk_score, confidence, conf_reason, suggestions, files, adds, dels = analyze_diff(pr.get("title", ""), diff)
+
+    review = f"""# PR Review: {pr.get('title', 'Unknown')}
+
+**PR:** [{owner}/{repo}#{pr_number}]({args.pr})
+**Summary:** Adds {adds} lines, removes {dels} lines across {files} file(s).
+
+---
+
+## Identified Risks
+{chr(10).join(risks)}
+
+## Improvement Suggestions
+{chr(10).join(suggestions)}
+
+## Assessment
+
+| Metric | Value |
+|--------|-------|
+| Confidence | **{confidence}** |
+| Files changed | {files} |
+| Lines added | +{adds} |
+| Lines removed | -{dels} |
+
+> {conf_reason}
+
+---
+*Review generated by claude-review*
+"""
+    print(review)
+
+
+if __name__ == "__main__":
+    main()
