@@ -34,6 +34,33 @@ You're in the right place.
 
 ---
 
+## Generate Changelog
+
+This repository includes a Claude Code command, a Claude Code skill, and a standalone Bash script for bounty [#1](../../issues/1).
+
+**Setup in 3 steps**
+1. Copy `changelog.sh` and the `.claude/` directory into the target git repository.
+2. Run `/generate-changelog` in Claude Code, or run `bash changelog.sh` in the terminal.
+3. Review the generated `CHANGELOG.md` before committing it.
+
+The script reads commits since the latest git tag, categorizes them into `Added`, `Fixed`, `Changed`, and `Removed`, and writes a formatted `CHANGELOG.md`. If the repository has no tags, it uses the full commit history.
+
+Example:
+
+```bash
+bash changelog.sh --output CHANGELOG.md
+```
+
+Development check:
+
+```bash
+tests/test_changelog.sh
+```
+
+See [`examples/sample-output.md`](examples/sample-output.md) for output from a real GitHub repository.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
