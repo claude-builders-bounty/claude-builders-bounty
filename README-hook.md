@@ -39,6 +39,12 @@ The hook reads the Claude Code hook JSON payload from `stdin`, finds the attempt
 
 ## Quick local test
 
+Run the committed test suite:
+
+```bash
+python3 -m unittest tests/test_pre_tool_use_blocker.py
+```
+
 ```bash
 printf '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/example"}}' | python3 hooks/pre_tool_use_blocker.py
 ```
