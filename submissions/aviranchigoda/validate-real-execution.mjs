@@ -249,11 +249,12 @@ function safeConfigSummary(config) {
 function replaceConfigValue(jsCode, key, value) {
   const renderedValue = typeof value === "number" ? String(value) : JSON.stringify(value);
   const pattern = new RegExp(`(${key}: )[^,\\n]+`);
-  const next = jsCode.replace(pattern, (_match, prefix) => `${prefix}${renderedValue}`);
 
-  if (next === jsCode) {
-    throw new Error(`Could not update Configure Summary value for ${key}.`);
+  if (!pattern.test(jsCode)) {
+    throw new Error(`Could not find Configure Summary value for ${key}.`);
   }
+
+  const next = jsCode.replace(pattern, (_match, prefix) => `${prefix}${renderedValue}`);
 
   return next;
 }
