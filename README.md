@@ -1,53 +1,97 @@
-# Claude Builders Bounty 🤖
+# claude-review
 
-> A community bounty board for Claude Code builders.
+A Claude Code sub-agent that reviews a GitHub pull request and produces a structured Markdown review with **Summary**, **Identified Risks**, **Improvement Suggestions**, and **Confidence score**.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
 
----
+```bash
+# 1. Install (single file, no dependencies beyond curl/jq/claude)
+sudo cp claude-review /usr/local/bin/claude-review && sudo chmod +x /usr/local/bin/claude-review
 
-## How it works
+# 2. (Optional) Customise the review prompt
+cp review-prompt.txt ~/.config/claude-review/review-prompt.txt
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+# 3. Review a PR
+claude-review --pr https://github.com/owner/repo/pull/123
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+# 4. Or review + post as a PR comment
+claude-review --pr https://github.com/owner/repo/pull/123 --post
+```
 
----
+## Requirements
 
-## Active Bounties
+- **curl** — fetches PR diffs via GitHub API (pre-installed on macOS/Linux)
+- **jq** — parses PR metadata (`brew install jq` / `apt install jq`)
+- **claude** — Claude Code CLI (`npm install -g @anthropic-ai/claude-code`)
+- **gh** (optional) — GitHub CLI for authenticated private repos and `--post` mode
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Output Structure
 
----
+Every review follows the same structured format:
 
-## Rules
+```markdown
+## 🤖 Claude Code Review
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+> **PR:** [owner/repo#N](url) — title
+> **Author:** @username
+> **Stats:** +X / -Y, N file(s)
 
----
+## Summary
+2-3 sentences describing what the PR changes and why.
 
-## Community
+## Identified Risks
+- Category — explanation
+- ...
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Improvement Suggestions
+- Actionable suggestion
+- ...
 
----
+## Confidence
+High / Medium / Low — one-sentence justification.
+```
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## Sample Outputs
+
+See the `sample-outputs/` directory for reviews generated from real PRs:
+
+- [PR #1772 — safe-bash hook](sample-outputs/pr-1772-safe-bash.md) (+529 lines, 5 files)
+- [PR #1768 — CLAUDE.md template](sample-outputs/pr-1768-claude-md.md) (+176 lines, 1 file)
+
+Both were produced by running `claude-review --pr <url>` and pasting the output verbatim.
+
+## Customising the Review Prompt
+
+The review prompt lives at `review-prompt.txt` (sibling to the script). To override:
+
+```bash
+mkdir -p ~/.config/claude-review
+cp review-prompt.txt ~/.config/claude-review/review-prompt.txt
+# edit ~/.config/claude-review/review-prompt.txt
+```
+
+The script loads `$SCRIPT_DIR/review-prompt.txt` first, then falls back to a built-in default if the file is missing.
+
+## How It Works
+
+1. **Parse** — extracts `owner/repo/number` from the PR URL
+2. **Fetch** — uses `gh pr diff` (if authenticated) or `curl` against the GitHub API (for public repos) to get the diff and metadata
+3. **Truncate** — diffs over 64 KB are truncated to avoid token exhaustion
+4. **Prompt** — builds a structured prompt with the diff + review template
+5. **Review** — pipes the prompt to `claude --print --output-format markdown`
+6. **Output** — wraps the review in a consistent `🤖 Claude Code Review` header with PR metadata
+7. **Post** — optionally posts the review as a GitHub PR comment via `gh pr comment`
+
+## Design Decisions
+
+- **gh-first, curl-fallback.** Uses `gh` when authenticated (private repos, `--post` mode) and falls back to curl for public repo diffs — no API key required.
+- **64 KB diff cap.** Large diffs are truncated to avoid exhausting Claude's context window. The truncation is noted in the output so the reviewer knows the review is partial.
+- **No pip deps.** The script is pure bash. The prompt template is plain text. Zero install-time surprises.
+- **Structured output, not unstructured prose.** Every review has the same four sections so the reader knows what they're getting.
+
+## Uninstall
+
+```bash
+sudo rm /usr/local/bin/claude-review
+rm -rf ~/.config/claude-review
+```
