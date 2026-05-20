@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Claude PR Review Agent — AI-powered structured code review for GitHub PRs.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr https://github.com/owner/repo/pull/123 --api-key $ANTHROPIC_API_KEY
+
+Output: Structured Markdown review with summary, risks, suggestions, and confidence score.
+"""
+
+import sys, os, json, re, argparse, subprocess
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+
+ANTHROPIC_API = "https://api.anthropic.com/v1/messages"
+MODEL = "claude-sonnet-4-20250514"
+
+def parse_pr_url(url: str) -> tuple:
+    """Extract owner, repo, pr_number from GitHub PR URL."""
+    m = re.match(r'https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)', url.rstrip('/'))
+    if not m:
+        raise ValueError(f"Invalid GitHub PR URL: {url}")
+    return m.group(1), m.group(2), int(m.group(3))
+
+def fetch_pr(owner: str, repo: str, pr_num: int, token: str = None) -> dict:
+    """Fetch PR metadata from GitHub API."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}"
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "Claude-Review-Agent"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    req = Request(url, headers=headers)
+    with urlopen(req) as resp:
+        return json.loads(resp.read())
+
+def fetch_diff(pr: dict, token: str = None) -> str:
+    """Fetch the PR diff."""
+    url = pr.get("diff_url")
+    headers = {"Accept": "application/vnd.github.v3.diff", "User-Agent": "Claude-Review-Agent"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    req = Request(url, headers=headers)
+    with urlopen(req) as resp:
+        diff = resp.read().decode('utf-8', errors='replace')
+    # Truncate very large diffs
+    if len(diff) > 80000:
+        diff = diff[:80000] + "\n... (diff truncated, showing first 80K chars)"
+    return diff
+
+def call_claude(prompt: str, api_key: str) -> str:
+    """Call Claude API with the review prompt."""
+    body = json.dumps({
+        "model": MODEL,
+        "max_tokens": 2048,
+        "messages": [{"role": "user", "content": prompt}]
+    }).encode()
+    
+    req = Request(ANTHROPIC_API, data=body, headers={
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json"
+    })
+    
+    with urlopen(req) as resp:
+        result = json.loads(resp.read())
+    
+    return result["content"][0]["text"]
+
+def build_prompt(diff: str, pr_title: str, pr_body: str, files_changed: int, 
+                 additions: int, deletions: int) -> str:
+    """Build the Claude review prompt."""
+    return f"""You are a senior code reviewer. Analyze this GitHub PR diff and produce a structured review.
+
+PR Title: {pr_title}
+PR Description: {pr_body[:500] if pr_body else '(none)'}
+Files Changed: {files_changed} | +{additions} -{deletions}
+
+## PR Diff:
+```diff
+{diff}
+```
+
+## Output Format — use EXACTLY this Markdown structure:
+
+### 📋 Change Summary
+(2-3 sentence summary of what this PR changes)
+
+### ⚠️ Identified Risks
+- (list each risk with brief explanation)
+- (if none found, say "No significant risks identified")
+
+### 💡 Improvement Suggestions
+- (list actionable suggestions)
+- (if none, say "No improvements needed — LGTM!")
+
+### 🎯 Confidence Score
+**{choose one: Low / Medium / High}** — (one-line rationale)
+
+---
+
+Important: Be constructive, specific, and brief. Focus on logic errors, security issues, performance concerns, and missing edge cases. Ignore formatting/style unless it affects readability."""
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude PR Review Agent")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--api-key", help="Anthropic API key (or set ANTHROPIC_API_KEY env)")
+    parser.add_argument("--github-token", help="GitHub token for private repos (or set GITHUB_TOKEN env)")
+    args = parser.parse_args()
+    
+    api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY required (--api-key or env)", file=sys.stderr)
+        sys.exit(1)
+    
+    github_token = args.github_token or os.environ.get("GITHUB_TOKEN")
+    
+    try:
+        owner, repo, pr_num = parse_pr_url(args.pr)
+        print(f"🔍 Fetching PR #{pr_num} from {owner}/{repo}...", file=sys.stderr)
+        
+        pr = fetch_pr(owner, repo, pr_num, github_token)
+        diff = fetch_diff(pr, github_token)
+        
+        print(f"📊 Diff: {len(diff)} chars, {pr['changed_files']} files (+{pr['additions']} -{pr['deletions']})",
+              file=sys.stderr)
+        
+        prompt = build_prompt(diff, pr['title'], pr.get('body', ''),
+                             pr['changed_files'], pr['additions'], pr['deletions'])
+        
+        print("🤖 Analyzing with Claude...", file=sys.stderr)
+        review = call_claude(prompt, api_key)
+        
+        # Output final review
+        print(f"\n## 🔍 Code Review: {pr['title']}")
+        print(f"**PR:** {args.pr}  \n**Author:** @{pr['user']['login']}  \n")
+        print(review)
+        
+    except HTTPError as e:
+        body = e.read().decode()
+        print(f"❌ HTTP {e.code}: {body[:200]}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
