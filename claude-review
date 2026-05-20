@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+#
+# claude-review — Claude Code sub-agent: review a GitHub PR and produce a
+# structured Markdown review with summary, risks, suggestions, and confidence.
+#
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --pr owner/repo 123
+#
+# Optionally post the review as a GitHub PR comment:
+#   claude-review --pr https://github.com/owner/repo/pull/123 --post
+#
+# Requires: curl, jq, and a Claude Code installation (`claude` on PATH).
+# GitHub CLI (`gh`) is optional — falls back to curl for the PR metadata.
+#
+# Install:
+#   cp claude-review /usr/local/bin/claude-review && chmod +x /usr/local/bin/claude-review
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REVIEW_PROMPT="${SCRIPT_DIR}/review-prompt.txt"
+
+# ── helpers ────────────────────────────────────────────────────────────────
+usage() {
+    cat <<'EOF'
+claude-review — Claude Code sub-agent that reviews a PR.
+
+USAGE
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr owner/repo 123
+  claude-review --pr https://github.com/owner/repo/pull/123 --post
+
+OPTIONS
+  --pr <url|owner/repo num>  PR to review (required)
+  --post                     Also post the review as a GitHub PR comment
+  --help                     Show this message
+EOF
+    exit "${1:-0}"
+}
+
+die() { echo "claude-review: $*" >&2; exit 1; }
+info() { echo "claude-review: $*" >&2; }
+
+# ── argument parsing ───────────────────────────────────────────────────────
+PR_URL=""
+DO_POST=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --pr) PR_URL="$2"; shift 2 ;;
+        --post) DO_POST=true; shift ;;
+        --help|-h) usage 0 ;;
+        *) usage 1 ;;
+    esac
+done
+
+[[ -z "$PR_URL" ]] && usage 1
+
+# Parse owner / repo / number from PR URL or shorthand
+if [[ "$PR_URL" =~ ^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    OWNER="${BASH_REMATCH[1]}"
+    REPO="${BASH_REMATCH[2]}"
+    PR_NUM="${BASH_REMATCH[3]}"
+elif [[ "$PR_URL" =~ ^([^/]+)/([^/]+)[[:space:]]+([0-9]+) ]]; then
+    OWNER="${BASH_REMATCH[1]}"
+    REPO="${BASH_REMATCH[2]}"
+    PR_NUM="${BASH_REMATCH[3]}"
+elif [[ "$PR_URL" =~ ^([^/]+)/([^/]+)[[:space:]]*$ ]]; then
+    OWNER="${BASH_REMATCH[1]}"
+    REPO="${BASH_REMATCH[2]}"
+    PR_NUM="${3:-}"
+    [[ -z "$PR_NUM" ]] && die "PR number required: claude-review --pr owner/repo <num>"
+else
+    die "cannot parse PR: $PR_URL (expected https://github.com/owner/repo/pull/NN or owner/repo NN)"
+fi
+
+REPO_FULL="$OWNER/$REPO"
+
+info "Fetching PR #$PR_NUM from $REPO_FULL …"
+
+# ── fetch PR metadata + diff ───────────────────────────────────────────────
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+# Prefer `gh` when authenticated (faster, works for private repos)
+if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
+    gh pr diff "$PR_URL" > "$TMPDIR/diff.patch" 2>/dev/null || true
+    gh pr view "$PR_URL" --json title,body,author,additions,deletions,changedFiles,state,createdAt > "$TMPDIR/meta.json" 2>/dev/null || true
+fi
+
+# Fallback: public API via curl (no auth needed for public repos)
+if [[ ! -s "$TMPDIR/diff.patch" ]]; then
+    info "gh not available; using GitHub public API …"
+    curl -fsS \
+        -H "Accept: application/vnd.github.v3.diff" \
+        "https://api.github.com/repos/$REPO_FULL/pulls/$PR_NUM" \
+        -o "$TMPDIR/diff.patch"
+fi
+
+if [[ ! -s "$TMPDIR/meta.json" ]]; then
+    curl -fsS \
+        "https://api.github.com/repos/$REPO_FULL/pulls/$PR_NUM" \
+        > "$TMPDIR/meta.json"
+fi
+
+if [[ ! -s "$TMPDIR/diff.patch" ]]; then
+    die "could not fetch PR diff from $REPO_FULL/pull/$PR_NUM"
+fi
+
+DIFF_SIZE=$(wc -c < "$TMPDIR/diff.patch")
+info "Fetched diff ($DIFF_SIZE bytes)."
+
+# ── build Claude Code prompt ───────────────────────────────────────────────
+META_JSON=$(cat "$TMPDIR/meta.json")
+DIFF_PATCH=$(cat "$TMPDIR/diff.patch")
+
+# Truncate very large diffs to avoid token exhaustion (keep first 64 KB)
+MAX_DIFF=$((64 * 1024))
+if [[ $DIFF_SIZE -gt $MAX_DIFF ]]; then
+    DIFF_PATCH=$(head -c "$MAX_DIFF" "$TMPDIR/diff.patch")
+    DIFF_PATCH="$DIFF_PATCH
+
+…
+⚠️  Diff truncated at ${MAX_DIFF} bytes (original was ${DIFF_SIZE} bytes)."
+fi
+
+# Load review prompt template
+REVIEW_SYSTEM_PROMPT=""
+if [[ -f "$REVIEW_PROMPT" ]]; then
+    REVIEW_SYSTEM_PROMPT=$(cat "$REVIEW_PROMPT")
+else
+    REVIEW_SYSTEM_PROMPT=$(cat <<'PROMPT'
+You are a senior code reviewer. Analyze the PR diff and metadata below,
+then produce a structured Markdown review with exactly four sections:
+
+## Summary
+2-3 sentences describing what this PR changes and why.
+
+## Identified Risks
+Bullet list. Each entry names a concrete risk (security, correctness,
+performance, maintainability). If nothing concerning, write "None identified."
+
+## Improvement Suggestions
+Bullet list. Actionable, specific. If nothing to suggest, write "None."
+
+## Confidence
+One of: High / Medium / Low — followed by a one-sentence justification.
+
+Be concise. Do not repeat the diff back. Focus on what matters.
+PROMPT
+)
+fi
+
+# ── Extract metadata fields from JSON ──────────────────────────────────────
+PR_TITLE=$(echo "$META_JSON" | jq -r '.title // "unknown"' 2>/dev/null || echo "unknown")
+PR_AUTHOR=$(echo "$META_JSON" | jq -r '.user.login // "unknown"' 2>/dev/null || echo "unknown")
+PR_ADDITIONS=$(echo "$META_JSON" | jq -r '.additions // "?"' 2>/dev/null || echo "?")
+PR_DELETIONS=$(echo "$META_JSON" | jq -r '.deletions // "?"' 2>/dev/null || echo "?")
+PR_FILES=$(echo "$META_JSON" | jq -r '.changed_files // "?"' 2>/dev/null || echo "?")
+
+# ── invoke Claude Code ─────────────────────────────────────────────────────
+REVIEW_PROMPT_MSG="Here is the PR to review:
+
+**Repository:** $REPO_FULL
+**PR:** #$PR_NUM — $PR_TITLE
+**Author:** @$PR_AUTHOR
+**Stats:** +$PR_ADDITIONS / -$PR_DELETIONS across $PR_FILES file(s)
+
+## Diff
+
+\`\`\`diff
+$DIFF_PATCH
+\`\`\`
+
+$REVIEW_SYSTEM_PROMPT"
+
+REVIEW_OUTPUT="$TMPDIR/review.md"
+
+if command -v claude &>/dev/null; then
+    info "Invoking Claude Code for review …"
+    echo "$REVIEW_PROMPT_MSG" | claude --print --output-format markdown \
+        > "$REVIEW_OUTPUT" 2>/dev/null || {
+        info "Claude Code failed; see raw output in $TMPDIR"
+        exit 1
+    }
+else
+    die "claude not found on PATH. Install Claude Code: https://docs.anthropic.com/en/docs/claude-code"
+fi
+
+# ── output ─────────────────────────────────────────────────────────────────
+REVIEW_BODY=$(cat "$REVIEW_OUTPUT")
+
+cat <<MARKDOWN
+## 🤖 Claude Code Review
+
+> **PR:** [$REPO_FULL#$PR_NUM]($PR_URL) — $PR_TITLE
+> **Author:** @$PR_AUTHOR
+> **Stats:** +$PR_ADDITIONS / -$PR_DELETIONS, $PR_FILES file(s)
+
+$REVIEW_BODY
+
+---
+*Review generated by [claude-review](https://github.com/graeme-coder/claude-builders-bounty) — a Claude Code sub-agent.*
+MARKDOWN
+
+# ── optionally post as PR comment ──────────────────────────────────────────
+if $DO_POST; then
+    REVIEW_MD=$(cat "$REVIEW_OUTPUT")
+    if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
+        echo "$REVIEW_MD" | gh pr comment "$PR_URL" --body-file -
+        info "Review posted as comment on $REPO_FULL#$PR_NUM"
+    else
+        info "Cannot post: gh CLI not authenticated. Review printed above."
+    fi
+fi
