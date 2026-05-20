@@ -1,0 +1,81 @@
+name: Claude Code PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_url:
+        description: 'GitHub PR URL to review'
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    # Only run on PR open/sync/reopen, or when a comment contains exactly "/review"
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && 
+       github.event.comment.body == '/review' &&
+       github.event.issue.pull_request != null)
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout agent code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install anthropic requests
+
+      - name: Determine PR URL
+        id: pr
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "url=${{ github.event.pull_request.html_url }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "url=${{ github.event.inputs.pr_url }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "issue_comment" ]; then
+            echo "url=${{ github.event.issue.pull_request.html_url }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run claude-review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REVIEW_FILE=$(mktemp)
+          python claude_review.py --pr "${{ steps.pr.outputs.url }}" -o "$REVIEW_FILE"
+          echo "file=$REVIEW_FILE" >> $GITHUB_OUTPUT
+          cat "$REVIEW_FILE" >> $GITHUB_STEP_SUMMARY
+
+      - name: Post review as PR comment
+        if: always() && steps.review.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          elif [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PR_NUMBER="${{ github.event.issue.number }}"
+          else
+            echo "::warning::Cannot determine PR number for comment"
+            exit 0
+          fi
+
+          cat "${{ steps.review.outputs.file }}" | \
+            gh pr comment "$PR_NUMBER" --body-file -
