@@ -408,6 +408,29 @@ npm run test
 npm run build
 ```
 
+### Greenfield Validation / Smoke Test
+
+When adding this file to a new project, verify that Claude Code can use it without extra architectural clarification:
+
+1. Create a fresh Next.js 15 App Router project with TypeScript.
+2. Add SQLite using either `better-sqlite3` or Turso/libSQL.
+3. Place this file at the repository root as `CLAUDE.md`.
+4. Ask Claude Code:
+
+```text
+Add a workspace invite feature with SQLite migrations, server actions, authorization checks, and tests.
+```
+
+Expected behavior:
+
+- Claude identifies the involved route, Server Action, mutation, query, schema, migration, and test files before editing.
+- Claude keeps database access in `lib/db/`, `server/queries/`, or `server/mutations/`.
+- Claude adds a numbered SQL migration instead of editing historical migrations.
+- Claude validates input with Zod and checks workspace membership server-side.
+- Claude proposes or runs `typecheck`, `lint`, `test`, and `build` before summarizing the change.
+
+Reason: this smoke test confirms the file is actionable as Claude Code context, not just a static style guide.
+
 Reason: SQLite integration tests are cheap and catch schema drift before deployment.
 
 ---
