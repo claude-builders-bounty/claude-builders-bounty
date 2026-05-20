@@ -2,7 +2,7 @@
 
 Implements issue #5 with an importable n8n workflow that sends a weekly GitHub activity summary to Slack using Claude Sonnet 4.
 
-Closes #5.
+Addresses #5.
 
 ## Deliverables
 
