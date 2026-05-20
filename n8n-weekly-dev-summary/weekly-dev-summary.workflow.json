@@ -1,0 +1,187 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b0c2fe9b-6d92-4ea2-b4a5-4ca9b6ef4e01",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "a42b39a7-d697-43a8-9500-675cc0935c77",
+      "name": "Weekly Friday 5 PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repo = process.env.GITHUB_REPO;\nconst token = process.env.GITHUB_TOKEN;\nconst language = (process.env.SUMMARY_LANGUAGE || 'EN').toUpperCase();\n\nif (!repo || !repo.includes('/')) {\n  throw new Error('Set GITHUB_REPO as owner/repo.');\n}\nif (!token) {\n  throw new Error('Set GITHUB_TOKEN with read access to the repository.');\n}\n\nconst now = new Date();\nconst until = now.toISOString();\nconst sinceDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst since = sinceDate.toISOString();\nconst sinceDay = since.slice(0, 10);\nconst untilDay = until.slice(0, 10);\n\nconst headers = {\n  Accept: 'application/vnd.github+json',\n  Authorization: `Bearer ${token}`,\n  'X-GitHub-Api-Version': '2022-11-28',\n  'User-Agent': 'n8n-weekly-dev-summary'\n};\n\nasync function getJson(url) {\n  const response = await fetch(url, { headers });\n  if (!response.ok) {\n    const body = await response.text();\n    throw new Error(`GitHub API ${response.status} for ${url}: ${body}`);\n  }\n  return response.json();\n}\n\nconst commitsUrl = `https://api.github.com/repos/${repo}/commits?since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}&per_page=100`;\nconst issuesQuery = encodeURIComponent(`repo:${repo} is:issue is:closed closed:${sinceDay}..${untilDay}`);\nconst prsQuery = encodeURIComponent(`repo:${repo} is:pr is:merged merged:${sinceDay}..${untilDay}`);\n\nconst [commits, closedIssuesResult, mergedPrsResult] = await Promise.all([\n  getJson(commitsUrl),\n  getJson(`https://api.github.com/search/issues?q=${issuesQuery}&per_page=100`),\n  getJson(`https://api.github.com/search/issues?q=${prsQuery}&per_page=100`)\n]);\n\nconst closedIssues = closedIssuesResult.items || [];\nconst mergedPrs = mergedPrsResult.items || [];\n\nconst activity = {\n  repo,\n  period: { since, until },\n  counts: {\n    commits: commits.length,\n    closedIssues: closedIssues.length,\n    mergedPrs: mergedPrs.length\n  },\n  commits: commits.slice(0, 40).map((commit) => ({\n    sha: commit.sha?.slice(0, 7),\n    message: commit.commit?.message?.split('\\n')[0],\n    author: commit.commit?.author?.name,\n    url: commit.html_url\n  })),\n  closedIssues: closedIssues.slice(0, 40).map((issue) => ({\n    number: issue.number,\n    title: issue.title,\n    url: issue.html_url,\n    closedAt: issue.closed_at\n  })),\n  mergedPrs: mergedPrs.slice(0, 40).map((pr) => ({\n    number: pr.number,\n    title: pr.title,\n    url: pr.html_url,\n    mergedAt: pr.closed_at\n  }))\n};\n\nconst promptLanguage = language === 'FR' ? 'French' : 'English';\nconst prompt = `Write a concise weekly narrative development summary in ${promptLanguage} for ${repo}.\\n\\nRequirements:\\n- Start with a one-paragraph executive summary.\\n- Include sections: Highlights, Completed Work, Risk or Follow-up, Links.\\n- Mention commit, closed issue, and merged PR counts.\\n- Prefer user-facing impact over raw commit listing.\\n- Keep it under 900 words.\\n\\nActivity JSON:\\n${JSON.stringify(activity, null, 2)}`;\n\nreturn [{ json: { repo, language, activity, prompt } }];"
+      },
+      "id": "f0d9ad22-3f37-4f12-ae7c-5db00eed6214",
+      "name": "Collect GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -420,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'claude-sonnet-4-20250514', max_tokens: 1600, system: 'You turn GitHub activity into accurate weekly engineering summaries. Do not invent work that is not in the activity JSON.', messages: [{ role: 'user', content: $json.prompt }] } }}",
+        "options": {}
+      },
+      "id": "e9490e6c-3347-4f0c-9b12-54792e88bf92",
+      "name": "Generate Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -120,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $json.content?.find((part) => part.type === 'text')?.text || 'Claude returned no text summary.';\nconst limited = text.length > 1900 ? `${text.slice(0, 1890)}...` : text;\nreturn [{ json: { discordPayload: { content: limited }, summary: text } }];"
+      },
+      "id": "d43159ce-5173-47f2-a7bc-a43656ff2d2d",
+      "name": "Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.discordPayload }}",
+        "options": {}
+      },
+      "id": "d8b62440-7fd4-4f1d-a91f-dd744f6f8a0e",
+      "name": "Send Discord Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        20
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Collect GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Friday 5 PM": {
+      "main": [
+        [
+          {
+            "node": "Collect GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect GitHub Activity": {
+      "main": [
+        [
+          {
+            "node": "Generate Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Discord Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Discord Message": {
+      "main": [
+        [
+          {
+            "node": "Send Discord Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-05-20T00:00:00.000Z",
+  "versionId": "b50a4694-7fa4-4280-a57e-9f131c4dc06e"
+}
