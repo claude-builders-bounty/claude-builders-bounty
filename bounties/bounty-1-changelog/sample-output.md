@@ -1,0 +1,496 @@
+# Changelog
+
+## [v2026.5.7] → Unreleased — 2026-05-21
+
+### Added
+
+- per-turn file-mutation verifier footer (#24498)
+- supply-chain advisory checker + lazy-install framework + tiered install fallback (#24220)
+- refresh cua-driver on `hermes update` + add `install --upgrade` (#24063)
+- resolve markdown links to readable page titles (#24013)
+- expose HERMES_SESSION_ID to agent tools via ContextVar + env (#23847)
+- cross-session 1h prefix cache for Claude on Anthropic / OpenRouter / Nous Portal (#23828)
+- add extraDependencyGroups for sealed venv extras (#21817)
+- add hindsight-client as optional dependency (#21818)
+- docker_extra_args + display.timestamps
+- add stocks & finance skill (Yahoo Finance, no API key)
+- add api-testing optional skill (#1800)
+- stranded_in_ready diagnostic for unclaimed tasks (#23578)
+- dashboard batch QOL upgrade
+- add reclaim_first support to bulk reassign endpoint
+- native draft streaming via sendMessageDraft (Bot API 9.5+)
+- /goal checklist + /subgoal user controls (#23456)
+- make /handoff actually transfer the session live
+- add /handoff command for cross-platform session transfer
+- per-platform admin/user split for slash commands (salvage of #4443) (#23373)
+- shutdown forensics — non-blocking diag, per-phase timing, stale-unit warning (#23285)
+- aggregate all toolset-name typos in skills before raising
+- native <details> collapse + skip empty metadata
+- localize all gateway commands + web dashboard, add 8 new locales (16 total) (#22914)
+- run any LLM call from inside a plugin via ctx.llm (#23194)
+- hint at `hermes curator pin` in the rename block (#23212)
+- add LINE Messaging API platform plugin (#23197)
+- add orchestrator board tools
+- add gpt-5.3-codex-spark model
+- add upstream + timing diagnostics to drop log (#23005)
+- vision_analyze returns pixels to vision-capable models, not aux text (#22955)
+- show rename map in user-visible summary (#22910)
+- richer info panels on the Skills Hub for built-in + optional skills (#22905)
+- wire Pareto Code router with min_coding_score knob (#22838)
+- add Telegram notification mode to suppress intermediate push notifications
+- pass reasoning.effort to xAI Responses API
+- add Telegram guest mention mode
+- add codex preset for built-in MCP server discovery
+- show user's actual concurrency / spawn-depth limits in tool description (#22694)
+- HERMES_PLUGINS_DEBUG=1 surfaces plugin discovery logs (#22684)
+- confirm prompt for destructive slash commands (#4069) (#22687)
+- stream Telegram edits safely
+- add standalone_sender_fn for out-of-process cron delivery
+- add native update prompt cards
+- recognise Shift+Enter as a newline key
+- clean up User env, PATH, Scheduled Task, and portable tooling
+- psutil for PID/process management + Windows footgun checker
+- gateway as a Scheduled Task + Startup-folder fallback
+- declare platforms frontmatter for all 79 undeclared built-in skills
+- declare platforms frontmatter for all 63 undeclared skills
+- gate 7 Linux/macOS-only skills from Windows via platforms frontmatter
+- Ctrl+Enter inserts newline on Windows Terminal
+- enrich system-prompt environment hints with host + terminal-backend info
+- close remaining POSIX-only landmines — TUI crash, kanban waitpid, AF_UNIX sandbox, /bin/bash, npm .cmd shims, cwd tracking, detach flags
+- bundle portable MinGit instead of relying on winget
+- close native-Windows install gaps — crash-free startup, UTF-8 stdio, tzdata dep, docs
+- support attaching to an existing gateway (#21978)
+- add pipeline outbound delivery via existing adapter
+- add plugin runtime and operator cli
+- background focus-safe backend — set_value, structured windows, MIME detection
+- cua-driver backend, universal any-model schema
+- add webhook listener platform
+- shareable profile distributions via git (#20831)
+- add auth and client foundation
+- watchers skill — poll RSS / HTTP JSON / GitHub via cron no-agent (#21881)
+- expose run approval events
+- Drive write ops + Docs/Sheets create/append (#21895)
+- bootstrap auth.json from env on first boot
+- segment turns with rule above non-first user msgs; trim ticker dead space (#21846)
+- routing intent — deliver=all fans out to every connected channel (#21495)
+- add tooltips and docs link across dashboard (#21541)
+- add `specify` — auxiliary LLM fleshes out triage tasks (#21435)
+- add termux doctor fallback guidance for blocked extras
+- add Brave Search (free tier) and DDGS search providers
+- pass image file attachments through as image_url parts
+- add /sessions slash command for browsing and resuming previous sessions
+
+### Fixed
+
+- surface uv install + uv.lock sync errors instead of silently hanging (#24504)
+- unbreak [all] install — drop mistralai while PyPI quarantined (#24205)
+- repair Voice & TTS provider table
+- harden OAuth dashboard and runtime
+- route Nous Portal Qwen through Portal-Claude cache pathway (#24151)
+- skip native safety net on OSC52-capable terminals (#20954)
+- surface Portal-flagged free models in picker even when curated list is stale (#24082)
+- MiniMax 'Login' button launched Claude OAuth (#22832)
+- vertical fallback for markdown tables wider than terminal (#23948)
+- skip OpenRouter for known providers, add kimi/moonshot to PROVIDER_TO_MODELS_DEV
+- correct context-length resolution for kimi-k2.6 on Ollama Cloud and Kimi Coding
+- evict async wrappers on poisoned client (follow-up to #23482)
+- align CJK / wide-char markdown tables (#23863)
+- surface Nous Portal models from remote catalog manifest (#23912)
+- defensive _slash_confirm_state access + AUTHOR_MAP
+- use TUI modal for slash confirmations
+- validate dist exists when --skip-build is set
+- fallback to stale dist, retry build, add --skip-build flag
+- make web UI build output decoding robust on Windows
+- catch ChatGPT-account Codex data-URL rejection so images are stripped instead of cascading to compression (#23602)
+- catch sudo with stdin/askpass/shell privilege flags
+- block sudo -S password guessing when SUDO_PASSWORD is not set
+- guard resolve_profile_env against missing profile dirs
+- treat archived parent tasks as terminal for dependency resolution
+- use localized column label in select-all aria label
+- allow kanban workers to call send_message
+- inject HERMES_HOME into worker subprocess env
+- restore HERMES_KANBAN_BOARD after scoped slash override
+- call kanban_block on iteration-budget exhaustion to prevent protocol violation
+- route gateway create auto-subscribe to explicit board
+- replace chown -R with targeted find in container entrypoint (#23633)
+- cache 402'd providers as unhealthy with TTL to stop per-call retry storms (#23597)
+- typing indicator task not cleaned up after API error
+- warn loudly on YAML parse failure instead of silent default fallback (#23585)
+- three small defensive fixes from PR #1974
+- sanitize env and redact output in quick commands + remove write-only _pending_messages
+- split-and-deliver oversized edits instead of silent truncation
+- merge dashboard batch QOL with i18n + collapse + assignee-casing
+- force judge to use tool calls instead of JSON-text replies (#23547)
+- forward standing /goal state on auto-compression session rotation (#23530)
+- keep '--created-by' default as 'user'
+- route kanban notifications to creator profile
+- use canonical X-Hermes-Session-Token header
+- inject Authorization header in plugin API calls
+- evict cached client on timeout/connection error (#23482)
+- normalize dm threads and retry control sends
+- use UTF-16 length for Telegram stream consumer message splitting
+- drive _prompt_text_input directly when off main thread (#23454)
+- clarify kanban_complete phantom-card retry guidance
+- pass source.thread_id explicitly on auto-reset notice (carve-out of #7404)
+- right-click copies selection, only pastes when no selection
+- extend stale claim instead of killing live worker
+- omit reasoning.effort for grok models that reject it (#23435)
+- preserve thread routing on overflow first-send path
+- stream consumer first message drops thread context
+- only mark final response sent when split-overflow chunks actually land (#23420)
+- deduplicate kanban notifications for blocked/gave_up states
+- align fallback delete with sibling style + add regression tests
+- delete partial message after fallback send on flood control
+- dedupe kanban notifier delivery claims
+- unbreak install + update on Windows (#23394)
+- drop models being retired May 15, 2026 from pickers (#23291)
+- cap dispatch by running workers
+- reject toolset names in task skills
+- tone down completed-run metadata panel (#19548)
+- preserve assignee casing in dashboard
+- guard task_age against corrupt created_at values like '%s'
+- correct dispatcher spawn module name + PATH-first lookup
+- use sys.executable -m hermes for dispatcher spawn
+- require dashboard auth for plugin API routes
+- restrict board routing tools to orchestrators
+- parse triage flag explicitly
+- parse include_archived explicitly
+- defensive 128k entry in DEFAULT_CONTEXT_LENGTHS + clarify validation test docstring
+- surface Codex CLI-only models
+- set codex-spark fallback context to 128k
+- restore gpt-5.3-codex-spark fallback context
+- tell background reviewer not to capture transient env failures as skills (#23004)
+- /kanban slash command emits argparse garbage instead of help
+- drop redundant init_db() in gateway watchers (#21378)
+- collapse two-line drop status, name provider, and let agent.log capture diagnostics (#22993)
+- remove blocked kind from unsub
+- request default board explicitly (#21819)
+- persist via stdin to bypass 128 KB exec-arg cap (#22913)
+- preserve config comments on setting writes
+- use credential_pool for custom endpoint model listing probes
+- pass max_total_size_mb and max_file_size_mb to CheckpointManager
+- detect gateway process via /proc in Docker without procps
+- stop run_gateway() tests from rewriting the dev's installed systemd unit (#22900)
+- classify generic-typed timeout messages as transient (carve-out of #22664)
+- resolve api_key_env in fallback chain entries (carve-out of #22665)
+- degrade gracefully when all platform adapters are missing
+- bridge docker_env config to TERMINAL_DOCKER_ENV
+- kill orphaned Popen on post-spawn setup failure
+- also patch psutil on Termux fresh-install path
+- use termux-all uv fallback path on Termux
+- prebuild psutil on Termux Android via Linux path shim
+- guard _touch_project against non-dict project metadata
+- route OR-combined short CJK tokens to LIKE fallback (#20494)
+- treat streaming premature-close as transient error
+- cover remaining SSRF fetch paths after #10029
+- finalize final stream edit on done
+- preserve reasoning_content, codex_message_items, finish_reason on transcript replay (#22839)
+- honor task cwd for foreground terminal commands
+- make session search initialize session db
+- preserve Ctrl+C for Windows foreground runs
+- add x-grok-conv-id header for Grok models to improve prompt cache hit rates (carve-out of #22708)
+- adopt unit's HERMES_HOME for --system CLI ops
+- default notifications to 'important' (silence intermediate)
+- add explicit do-not-use guidance to acp_command/acp_args schema (carve-out of #22680)
+- align hy3-preview static fallback + delete change-detector test (#22805)
+- use valid zsh _arguments exclusion-group syntax
+- normalize provider name and aliases before dedicated-skip check
+- skip pluggable provider profiles when a dedicated check exists (#22346)
+- make _migrate_add_optional_columns idempotent on concurrent open
+- extract thinking from content-list blocks for DeepSeek V4 Pro
+- declare youtube-transcript-api in pyproject.toml [youtube] extra
+- use real hermes version in IMAP ID command
+- send IMAP ID extension to support 163/NetEase mailbox
+- fall through to autodetect on config read failure
+- do not cache transient None cloud provider resolution
+- rotate pooled auth after quota failures
+- send correct resolution param to xAI image generation API
+- install cua-driver when Computer Use is enabled via 'hermes tools' (#22765)
+- tighten MEMORY_GUIDANCE against ephemeral PR/issue/SHA notes (#22781)
+- skip chain entries matching current provider/model/base_url (#22780)
+- make Ctrl+Enter insert newline on WSL/SSH/Windows Terminal (#22777)
+- emit length/error finish_reason for truncation/failure (#22775)
+- hydrate memory-nudge counters from conversation_history (#22774)
+- sanitize comment author rendering in build_worker_context (#22769)
+- harden run_tests.sh — uv-aware bootstrap + scrub HERMES_CRON_SESSION (#22767)
+- notify context engine on commit_memory_session (#22764)
+- follow-up for salvaged PR #22263
+- move pytest.importorskip below pytest import in skip-guarded tests
+- allow quoted URL in github auth-header allowlist
+- keep auth-header exfiltration blocked
+- avoid github skill false positives in scanner
+- align override signatures with base + guard Optional[error] in tests
+- clarify webhook media behavior
+- honour active_profile when HERMES_HOME points to hermes root
+- honor message.quote for partial-quote reply context
+- resolve Git binary for installs under minimal PATH
+- refresh runtime argv metadata
+- expand composite toolset when mixed with configurables in platform_toolsets
+- gate claim + unblock on parent completion
+- call recompute_ready after unlink_tasks removes a dependency
+- exclude row-label column from bullet items in table rendering
+- clear slash-confirm state during session boundary cleanup
+- resolve update-check repo from running code, not profile-scoped path
+- exclude infrastructure artifacts when cloning with --clone-all
+- pin UTF-8 encoding when reading source files on Windows
+- replace get_event_loop() with get_running_loop() in async contexts
+- drop caller-controlled author override in kanban_comment
+- honor relay-declared sender_type in Google Chat adapter to prevent BOT filter bypass
+- use PEP 604 annotation for ToolCall.extra_content
+- clarify MEDIA absolute-path hint
+- add platform hint for MEDIA rendering
+- log warnings for failed JSON-array coercion
+- accept JSON string batch tasks
+- fall back to journal_mode=DELETE on NFS/SMB/FUSE (#22043)
+- map Telegram General topic id to None for forum groups (#22423)
+- always send tenant headers in OpenViking _headers() when account/user are set
+- handle JSON decode errors in compression — salvage of #22248 (#22416)
+- skip send_chat_action for DM topic reply-fallback lanes
+- preserve DM topic routing via reply fallback
+- use getJobState helper in handlePauseResume
+- normalize partial job records
+- avoid delivery origin as sender identity
+- trim markdown wrap spaces (#22062)
+- also catch restart TimeoutExpired; friendly message
+- cap adapter disconnect during stop
+- enable writable app home DMs in manifest
+- advertise per-mode required params in schema descriptions
+- harden termux update path with uv bootstrap and env guard
+- keep tui /quit behavior aligned with cli exit flow
+- repair setup prompt imports
+- bypass systemd RestartSec after graceful drain (#22101)
+- update uv.lock
+- offer gateway service install on Windows (#22099)
+- guard hermes_bootstrap import so partial updates don't brick hermes (#22091)
+- move platforms key out of folded description: > scalars
+- strip UTF-8 BOM that broke [scriptblock]::Create
+- gateway status dedup + install.ps1 platform-SDK bootstrap
+- os.kill(pid, 0) is NOT a no-op on Windows — route through new _pid_exists helper
+- UTF-8 BOM, tiered extras, skip tinker-atropos by default
+- browser tool + spurious SIGINT from subprocess spawning
+- auto-install Playwright Chromium + surface it in doctor
+- prefer npm.cmd over npm.ps1, skip .py argv0 in relaunch
+- enable execute_code — stale AF_UNIX gate was blocking the tool
+- %1 install error, patch CRLF false-negative, SOUL.md BOM
+- step out of $InstallDir before touching it + harden repo probe
+- validate existing repo via git itself + clean up broken stubs
+- quote cache paths in bash + augment PATH so rg/bash resolve on first launch
+- use PortableGit (not MinGit), fix relaunch os.execvp crash, surface npm errors
+- default EDITOR=notepad so /edit and Ctrl+X Ctrl+E work
+- pass encoding=utf-8 to distribution.yaml open (#22083)
+- add skill asset and fix async test env
+- fill in missing delivery URL in adapter-reuse test
+- drop-scheduler fallback + test wiring for enablement gate
+- harden image-rejection fallback + AUTHOR_MAP
+- unwrap _multimodal tool results to content list for non-Anthropic providers
+- harden auth surface + IP allowlisting + response hygiene
+- normalize webhook dedupe and resource matching
+- bound webhook receipt dedupe cache
+- stream download_to_file body instead of buffering
+- cron jobs must not be treated as gateway context
+- Ctrl+C during /goal loop auto-pauses the goal (#21888)
+- clean up job output dir in remove_job
+- include terminal backend in quick setup wizard (#21842)
+- cleanup for --check-live salvage
+- correct docstring syntax error in check_auth_live
+- detect disabled_client in --check and add --check-live
+- send Nous refresh token via header
+- prevent stale Ollama credentials after provider switch (#21703)
+- auto-pause when judge model returns unparseable output
+- defer goal status notices until after response delivery
+- set UV_NO_CONFIG=1 to avoid permission denied under sudo -u
+- unwrap platforms key in channels_list
+- prevent silent token loss and add Claude 4.5–4.7 pricing (#21455)
+- keep Nous GPT-5 fallback on chat completions
+- add termux-all install profile and safe fallbacks
+- strengthen termux install network prerequisites
+- add heartbeat during dependency install
+- inline file attachment resources
+- preserve session when switching personality
+- refresh hermes-tui npmDepsHash for ui-tui lockfile
+- pluralization
+- update README
+- don't hardcode /home/bb
+- update comments
+- refresh npm lockfile hashes
+
+### Changed
+
+- remove public advisory page (handle community comms separately) (#24253)
+- add AUTHOR_MAP entry for ahmedbadr3
+- simplify TUI build logic, remove stale staleness checks
+- add nicoechaniz to AUTHOR_MAP
+- ruff auto-fix C401, C416, C408, PLR1722 (#23940)
+- ruff auto-fix PLR6201 — tuple → set in membership tests (#23937)
+- add AUTHOR_MAP entry for wuli666
+- ruff auto-fixes — collapsible-else-if, if-stmt-min-max, dict.fromkeys (#23926)
+- AUTHOR_MAP entry for VinceZcrikl noreply (#23647)
+- AUTHOR_MAP entries for sudo-hardening salvage contributors
+- remove unused sentinel in test_send_message_tool
+- add salvage contributors to AUTHOR_MAP
+- cover _check_send_message gating paths
+- AUTHOR_MAP entry for Mibayy clawhub email
+- tighten SKILL.md to modern format
+- relocate to optional-skills/finance/stocks/
+- AUTHOR_MAP entry for wilsen0
+- cover env-clamped helper + adaptive text-batch tiers
+- tune Telegram cadence + adaptive fast-path for short replies
+- AUTHOR_MAP entry for Hugo-SEQUIER
+- tighten SKILL.md to modern format
+- stabilize quick-command redaction test against xdist ordering
+- AUTHOR_MAP entry for kjames2001 (James Huang)
+- regression coverage for edit overflow split-and-deliver
+- map @eloklam tailnet email
+- remove stale t.summary assertion from search test
+- AUTHOR_MAP entry for NivOO5
+- native-draft transport coverage + docs
+- plug every gateway-kill leak path (#23486)
+- worker lane contract page + review-required convention
+- AUTHOR_MAP entry for rahimsais
+- AUTHOR_MAP entry for Freeman-Consulting
+- add UTF-16 overflow regression tests for #11170
+- AUTHOR_MAP entry for konsisumer noreply (#23071)
+- add 116 stories from the Hermes Discord archive (#23436)
+- AUTHOR_MAP entry for hrygo (黄飞虹)
+- handle both lark-SDK-present and absent paths
+- AUTHOR_MAP entry for jelrod27 (#21398)
+- cover redeliver-on-cycle + flip stale unsub-on-abnormal-event tests
+- AUTHOR_MAP entry for HuangYuChuh
+- block tests from killing the live hermes-gateway (#23397)
+- skip lint comment on fork PRs
+- cover send-exception rewind + drop noisy success log to debug
+- document /handoff cross-platform session transfer (#23400)
+- drop hardcoded specialist roster, add Step-0 profile discovery
+- AUTHOR_MAP entry for guglielmofonda (#21505)
+- document max_spawn as live concurrency cap (not per-tick budget)
+- route browser_console eval through supervisor's persistent CDP WS (180x faster) (#23226)
+- pin assignee-casing static-asset regressions + AUTHOR_MAP
+- cover task_age safe-int guards + AUTHOR_MAP entry
+- broaden plugin API auth coverage + correct stale docstring
+- explain auxiliary-model summarization for web_extract (#23211)
+- add 4 entries from @emmagine79 thread (#23204)
+- AUTHOR_MAP entry for kallidean (#20568)
+- add live-API regression and make picker test deterministic
+- document ChatGPT Pro entitlement gating
+- add codex-spark salvage contributors to AUTHOR_MAP
+- AUTHOR_MAP entry for tymrtn (#21794)
+- refresh OpenRouter + Nous fallback lists (#23001)
+- AUTHOR_MAP entry for li0near gmail (#21378)
+- add 18 verified social entries (99 → 117) (#22920)
+- comment of test case rewrite to english
+- assert re-block notification is delivered after unblock cycle
+- AUTHOR_MAP entry for eloklam (#22898)
+- clarify kanban fan-out decomposition
+- move heavy training skills + outlines to optional-skills (#22912)
+- skip welcome banner on `chat -q` single-query mode (#22904)
+- add ming1523 to AUTHOR_MAP
+- add v1b3coder to AUTHOR_MAP
+- add DanielLSM to AUTHOR_MAP
+- stub /proc unavailability in find_gateway_pids fallback test
+- add kidonng to AUTHOR_MAP
+- defer fal_client import to first generation request (#22859)
+- round 2 audit — messaging, developer-guide, guides, integrations (#22858)
+- document auxiliary.<task>.extra_body for OR routing and Pareto (#22844)
+- defer httpx import to first webhook call (#22831)
+- add Ninso112 to AUTHOR_MAP
+- add mbac to AUTHOR_MAP
+- add CalmProton to AUTHOR_MAP
+- add Qwinty to AUTHOR_MAP
+- cache-first lookup, skip network when disk cache is fresh (#22808)
+- deep audit — fix stale config keys, missing commands, and registry drift (#22784)
+- defer QQAdapter and YuanbaoAdapter imports via PEP 562 (#22790)
+- regression-guard literal '1k'/'2k' resolution payload
+- add A-kamal to AUTHOR_MAP for PR #18678
+- parallelize API connectivity checks and disable IMDS (#22766)
+- add wali-reheman to AUTHOR_MAP
+- add xieNniu to AUTHOR_MAP
+- add SiliconID to AUTHOR_MAP
+- defer heavy google-cloud imports to first adapter use (#22681)
+- add wesleysimplicio to AUTHOR_MAP
+- add nik1t7n to AUTHOR_MAP
+- add KvnGz to AUTHOR_MAP (#22458)
+- add Zhekinmaksim to AUTHOR_MAP (#22449)
+- cover kanban_comment author hardening + cross-task policy
+- add heathley email to AUTHOR_MAP for PR #21911 salvage (#22446)
+- cover relay-declared sender_type honoring
+- add uzunkuyruk to AUTHOR_MAP (#22434)
+- add leehack to AUTHOR_MAP for PR #22053 salvage (#22409)
+- add oferlaor to AUTHOR_MAP for PR #22356 salvage
+- add dandacompany to AUTHOR_MAP for salvaged PR #20503
+- collapse 9 schema-shape tests into 2 invariants
+- cut ~19s from 'hermes' cold start (skills cache + lazy Feishu + no Nous HTTP) (#22138)
+- call out Ctrl+Enter for Windows Terminal users
+- skip eager plugin discovery on known built-in subcommands (#22120)
+- label native Windows support as early beta (#22115)
+- run docker build on PRs + smoke test arm64
+- add blocking uv.lock check
+- split docker-publish into per-arch native runners
+- remove 50 stale/broken tests to unblock CI (#22098)
+- add native Windows guide + install one-liner on landing page (#22089)
+- add blocking ruff-check + windows-footguns jobs to lint.yml
+- migrate stale os.kill monkeypatches to gateway.status._pid_exists
+- add Windows-Specific Quirks section to hermes-agent skill + keystroke diagnostic
+- cron renewal recipe, sidebar wiring, skill rewrite
+- split meetings setup from operator runbook
+- meeting summary delivery section + env var reference
+- remove redundant delivery-mode branch
+- full user guide for profile distributions (#22017)
+- add to sidebar nav under Media and Web
+- webhook listener setup page + env var reference
+- add Azure app registration walkthrough + env var reference
+- cover concurrent token cache reuse
+- assert Nous refresh rotation payload
+- move User-Agent to profile.default_headers
+- fix SearXNG env configuration
+- add BennetYrWang to AUTHOR_MAP
+- add hllqkb to AUTHOR_MAP for PR #21288 salvage
+- register triage_specifier in the aux-models enumerations (#21494)
+- fix AUTHOR_MAP for johnsonblake1@gmail.com → voteblake
+- cover parse_reasoning_effort()
+- rewrite policy around OS-level isolation as the boundary
+- drop manual @hermes/ink build, rely on esbuild bundle
+- bundle with esbuild, drop runtime node_modules
+
+### Other
+
+- union paid recs from nous portal with static list (#24509)
+- Use nous portal as model metadata authority (#24502)
+- add client marker tag on aux inference requests
+- fix comment
+- remove comments
+- fix guard
+- fix kimi
+- Merge pull request #18036 from NousResearch/fix/bundle-size
+- Merge remote-tracking branch 'origin/main' into fix/bundle-size
+- rebuild model catalog
+- revert: roll back /goal checklist + /subgoal feature stack (#23813)
+- Merge pull request #20317 from NousResearch/meta/security-policy
+- rename(skills): api-testing -> rest-graphql-debug (#23589)
+- Add unit tests for hyperliquid skill functionality
+- kanban dashboard: fix shift-click range selection, column select-all toggle, and bulk action optimistic UI
+- kanban dashboard: remove redundant t.summary from search haystack
+- kanban dashboard: multi-card drag visual feedback
+- kanban dashboard: fix batch QOL oracle blockers
+- tests: add Windows skip guards for UNIX-only stdlib imports
+- Merge pull request #22510 from novax635/fix/gateway-slash-confirm-boundary-cleanup
+- Merge pull request #22610 from uzunkuyruk/fix/telegram-table-row-label-duplicate-bullet
+- Fix cron dashboard rendering for partial jobs
+- Merge pull request #22080 from NousResearch/fix/faster-docker
+- docker: split python dep install into cached layer above COPY . .
+- auth: use get_default_hermes_root() for shared nous_auth.json path
+- lint: enable PLW1514 as a blocking ruff rule
+- codebase: add encoding='utf-8' to all bare open() calls (PLW1514)
+- hermes_bootstrap: Windows-only UTF-8 stdio shim for all entry points
+- execute_code: set PYTHONIOENCODING=utf-8 + PYTHONUTF8=1 in child env
+- tests: skip POSIX-venv-layout tests on Windows
+- execute_code: write sandbox files as UTF-8 on Windows
+- tests: lock in POSIX-equivalence guard for execute_code env scrubber
+- execute_code: pass through Windows OS-essential env vars
+- Merge pull request #19830 from NousResearch/austin/fix/pluralization
+- Add AUTHOR_MAP entry for Isaac Huang
+- Serialize Hermes config access
+- Merge origin/main and resolve conflict in nix/tui.nix
+- Merge pull request #20942 from NousResearch/austin/fix/personality
+- Merge pull request #20805 from NousResearch/austin-feat-sessions-skills-menu
+- changes from feedback
+
