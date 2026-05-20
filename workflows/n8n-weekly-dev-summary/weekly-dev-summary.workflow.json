@@ -1,0 +1,230 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "5b09291c-5d30-40e3-8903-77b4a3e21bf0",
+      "name": "CLI Verification Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "7a80af1b-2ad8-4e4e-8b4f-4fbbdf1edb10",
+      "name": "Weekly Friday 5pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -900,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst until = now.toISOString();\nconst sinceDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst since = sinceDate.toISOString();\nconst owner = $env.GITHUB_OWNER || 'claude-builders-bounty';\nconst repo = $env.GITHUB_REPO || 'claude-builders-bounty';\nconst language = ($env.SUMMARY_LANGUAGE || 'EN').toUpperCase();\nconst destinationWebhookUrl = $env.SUMMARY_WEBHOOK_URL || '';\nconst githubToken = $env.GITHUB_TOKEN || '';\nconst anthropicApiKey = $env.ANTHROPIC_API_KEY || '';\nconst anthropicBaseUrl = $env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1/messages';\nif (!destinationWebhookUrl) {\n  throw new Error('SUMMARY_WEBHOOK_URL is required. Use a Discord incoming webhook URL.');\n}\nif (!anthropicApiKey) {\n  throw new Error('ANTHROPIC_API_KEY is required to call Claude.');\n}\nreturn [{ json: { owner, repo, language, destinationWebhookUrl, githubToken, anthropicApiKey, anthropicBaseUrl, since, until } }];"
+      },
+      "id": "0e6248c3-9507-4659-bc47-32b0db313b0c",
+      "name": "Build Config and Weekly Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -680,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $json;\nconst sinceMs = Date.parse(config.since);\nconst untilMs = Date.parse(config.until);\nconst withinWindow = (value) => {\n  const time = Date.parse(value || '');\n  return Number.isFinite(time) && time >= sinceMs && time <= untilMs;\n};\nconst commits = (config.rawActivity.commits || []).slice(0, 100).map((commit) => ({\n  sha: String(commit.sha || '').slice(0, 7),\n  message: commit.commit?.message?.split('\\n')[0] || '(no message)',\n  author: commit.commit?.author?.name || commit.author?.login || 'unknown',\n  url: commit.html_url\n}));\nconst closedIssues = (config.rawActivity.closedIssues || [])\n  .filter((issue) => !issue.pull_request && withinWindow(issue.closed_at))\n  .map((issue) => ({ number: issue.number, title: issue.title, user: issue.user?.login || 'unknown', url: issue.html_url }));\nconst mergedPullRequests = (config.rawActivity.closedPullRequests || [])\n  .filter((pr) => pr.merged_at && withinWindow(pr.merged_at))\n  .map((pr) => ({ number: pr.number, title: pr.title, author: pr.user?.login || 'unknown', mergedAt: pr.merged_at, url: pr.html_url }));\nconst languageInstruction = config.language === 'FR'\n  ? 'Write the summary in French.'\n  : 'Write the summary in English.';\nconst prompt = `You are preparing a weekly engineering activity narrative for ${config.owner}/${config.repo}. ${languageInstruction}\\n\\nWindow: ${config.since} to ${config.until}\\n\\nCommits (${commits.length}):\\n${commits.map((c) => `- ${c.sha} ${c.message} by ${c.author}`).join('\\n') || '- None'}\\n\\nClosed issues (${closedIssues.length}):\\n${closedIssues.map((issue) => `- #${issue.number} ${issue.title} by ${issue.user}`).join('\\n') || '- None'}\\n\\nMerged PRs (${mergedPullRequests.length}):\\n${mergedPullRequests.map((pr) => `- #${pr.number} ${pr.title} by ${pr.author}`).join('\\n') || '- None'}\\n\\nReturn a concise narrative with these sections: Highlights, Shipped Work, Maintenance/Risk, Suggested Follow-ups.`;\nreturn [{ json: {\n  ...config,\n  activity: { commits, closedIssues, mergedPullRequests },\n  claudeRequest: {\n    model: 'claude-sonnet-4-20250514',\n    max_tokens: 1200,\n    messages: [{ role: 'user', content: prompt }]\n  }\n}}];"
+      },
+      "id": "1453a4ce-9025-4f12-a14a-e8c4bb832311",
+      "name": "Build Claude Summary Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.anthropicBaseUrl}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{$json.anthropicApiKey}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.claudeRequest}}",
+        "options": {}
+      },
+      "id": "d8dc8d58-33b9-4a0d-a661-933f6f7d06c2",
+      "name": "Call Claude Sonnet 4 API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $items('Build Claude Summary Request')[0].json;\nconst response = $json;\nconst summary = Array.isArray(response.content)\n  ? response.content.map((part) => part.text || '').filter(Boolean).join('\\n\\n')\n  : JSON.stringify(response, null, 2);\nconst commits = config.activity.commits.length;\nconst issues = config.activity.closedIssues.length;\nconst prs = config.activity.mergedPullRequests.length;\nconst title = `Weekly dev summary for ${config.owner}/${config.repo}`;\nconst content = `**${title}**\\nWindow: ${config.since} → ${config.until}\\nActivity: ${commits} commits, ${issues} closed issues, ${prs} merged PRs\\n\\n${summary}`;\nreturn [{ json: { destinationWebhookUrl: config.destinationWebhookUrl, content, summary } }];"
+      },
+      "id": "03309f5f-b189-4542-a349-51bf01ed5387",
+      "name": "Build Discord Webhook Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.destinationWebhookUrl}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { content: $json.content } }}",
+        "options": {}
+      },
+      "id": "1b99f07f-c3f2-4bb3-b6f1-b8e527237aef",
+      "name": "Deliver Summary to Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $json;\nconst helpers = this.helpers;\nconst headers = {\n  Accept: 'application/vnd.github+json',\n  'X-GitHub-Api-Version': '2022-11-28',\n  'User-Agent': 'n8n-weekly-dev-summary'\n};\nif (config.githubToken) {\n  headers.Authorization = `Bearer ${config.githubToken}`;\n}\nfunction buildQuery(query = {}) {\n  return Object.entries(query)\n    .filter(([, value]) => value !== undefined && value !== null && value !== '')\n    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)\n    .join('&');\n}\nasync function githubGet(path, query = {}) {\n  const baseUrl = `https://api.github.com/repos/${config.owner}/${config.repo}${path}`;\n  const queryString = buildQuery(query);\n  const url = queryString ? `${baseUrl}?${queryString}` : baseUrl;\n  return await helpers.httpRequest({ method: 'GET', url, headers, json: true });\n}\nconst commits = await githubGet('/commits', { since: config.since, until: config.until, per_page: 100 });\nconst closedIssues = await githubGet('/issues', { state: 'closed', since: config.since, per_page: 100 });\nconst closedPullRequests = await githubGet('/pulls', { state: 'closed', sort: 'updated', direction: 'desc', per_page: 100 });\nreturn [{ json: { ...config, rawActivity: { commits, closedIssues, closedPullRequests } } }];"
+      },
+      "id": "ec5b7b13-4f82-4673-93ce-f1e6b53f1405",
+      "name": "Fetch Weekly Activity from GitHub API",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -440,
+        360
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Weekly Friday 5pm Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Config and Weekly Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CLI Verification Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Config and Weekly Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Config and Weekly Window": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Activity from GitHub API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Summary Request": {
+      "main": [
+        [
+          {
+            "node": "Call Claude Sonnet 4 API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude Sonnet 4 API": {
+      "main": [
+        [
+          {
+            "node": "Build Discord Webhook Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Discord Webhook Payload": {
+      "main": [
+        [
+          {
+            "node": "Deliver Summary to Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Activity from GitHub API": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Summary Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f88821b2-88a9-4ea9-87d3-a2307ce67613",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
