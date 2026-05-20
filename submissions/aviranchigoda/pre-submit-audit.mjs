@@ -74,6 +74,40 @@ function run(command, args, options = {}) {
   });
 }
 
+async function githubApiJson(pathOrUrl) {
+  const headers = {
+    accept: "application/vnd.github+json",
+    "user-agent": "n8n-weekly-dev-summary-pre-submit-audit",
+  };
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+
+  if (token) {
+    headers.authorization = `Bearer ${token}`;
+  }
+
+  const url = pathOrUrl.startsWith("https://")
+    ? pathOrUrl
+    : `https://api.github.com/${pathOrUrl.replace(/^\/+/, "")}`;
+  const response = await fetch(url, { headers });
+
+  if (response.ok) {
+    return await response.json();
+  }
+
+  const ghPath = pathOrUrl.startsWith("https://api.github.com/")
+    ? pathOrUrl.slice("https://api.github.com/".length)
+    : pathOrUrl.replace(/^\/+/, "");
+  const ghResult = await run("gh", ["api", ghPath]);
+
+  if (ghResult.code === 0) {
+    return JSON.parse(ghResult.stdout);
+  }
+
+  throw new Error(
+    `GitHub API request failed with fetch ${response.status}; gh fallback exited ${ghResult.code}: ${(ghResult.stderr || ghResult.stdout).trim()}`,
+  );
+}
+
 async function runPassingCommand(name, args) {
   const result = await run(process.execPath, args);
 
@@ -174,29 +208,19 @@ async function remoteIssueCheck() {
   }
 
   try {
-    const [issueResponse, prSearchResponse] = await Promise.all([
-      fetch("https://api.github.com/repos/claude-builders-bounty/claude-builders-bounty/issues/5"),
-      fetch("https://api.github.com/search/issues?q=repo:claude-builders-bounty/claude-builders-bounty+is:pr+is:open+%22weekly+dev+summary%22&per_page=1"),
+    const [issue, search] = await Promise.all([
+      githubApiJson("repos/claude-builders-bounty/claude-builders-bounty/issues/5"),
+      githubApiJson("search/issues?q=repo:claude-builders-bounty/claude-builders-bounty+is:pr+is:open+%22weekly+dev+summary%22&per_page=1"),
     ]);
-
-    if (!issueResponse.ok) {
-      record("remote issue state", "failed", `GitHub issue request returned ${issueResponse.status}`);
-      return;
-    }
-
-    const issue = await issueResponse.json();
 
     if (issue.state !== "open") {
       record("remote issue state", "failed", `issue #5 is ${issue.state}`);
       return;
     }
 
-    let competition = "unknown open PR count";
-
-    if (prSearchResponse.ok) {
-      const search = await prSearchResponse.json();
-      competition = `${search.total_count} open matching PRs`;
-    }
+    const competition = typeof search.total_count === "number"
+      ? `${search.total_count} open matching PRs`
+      : "unknown open PR count";
 
     record("remote issue state", "passed", `issue #5 is open; ${competition}`);
   } catch (error) {

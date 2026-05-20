@@ -18,7 +18,7 @@ current verification evidence.
 | Configurable destination | `Configure Summary` node and `README.md` | `check-acceptance.mjs` verifies `slackWebhookUrl`; README documents that the webhook URL selects the Slack channel for modern Slack apps. | Covered locally |
 | Configurable language | `Configure Summary` node and `code-nodes/configure-summary.js` | `check-acceptance.mjs` verifies `summaryLanguage` supports `EN` and `FR`. | Covered locally |
 | README setup in five steps or fewer | `README.md` | `check-acceptance.mjs` counts setup steps and verifies the total is five or fewer. | Covered locally |
-| n8n execution evidence | `validate-mock-execution.mjs`, `evidence/mock-execution-result.json`, `evidence/mock-n8n-execution-ui.png` | Mock execution imports and runs the workflow in n8n 2.20.11 with real public GitHub API and mocked Claude/Slack endpoints. | Covered locally |
+| n8n execution evidence | `validate-mock-execution.mjs`, `evidence/mock-execution-result.json`, `evidence/mock-n8n-execution-ui.png` | Mock execution imports and runs the workflow in n8n 2.20.11 with mocked GitHub, Claude, and Slack endpoints. | Covered locally |
 | Real Anthropic and Slack execution evidence | `validate-real-execution.mjs`, `REAL_EVIDENCE.md`, future `evidence/real-execution-result.json`, future `evidence/real-n8n-execution-ui.png` | `check-acceptance.mjs --require-real-evidence` enforces this gate after user-supplied credentials and approval. | Approval-gated |
 | No committed secrets | `validate-real-execution.mjs` and `check-acceptance.mjs` | The real runner refuses to write evidence if approval-gated secrets appear in the sanitized payload; `check-acceptance.mjs` scans the submission for known secret patterns. | Covered locally |
 

@@ -54,12 +54,64 @@ function startMockServer({ slackStatusCode = 200, slackResponseBody = "ok" } = {
 
   const server = http.createServer(async (request, response) => {
     const body = await readBody(request);
+    const url = new URL(request.url, "http://127.0.0.1");
     calls.push({
       method: request.method,
       url: request.url,
       headers: request.headers,
       body,
     });
+
+    if (request.method === "GET" && /^\/repos\/[^/]+\/[^/]+\/commits$/.test(url.pathname)) {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify([
+        {
+          sha: "1111111111111111111111111111111111111111",
+          html_url: "https://github.com/example/repo/commit/1111111",
+          commit: {
+            message: "Ship weekly summary workflow",
+            author: {
+              name: "Mock Developer",
+              date: "2026-05-18T10:00:00Z",
+            },
+            committer: {
+              date: "2026-05-18T10:00:00Z",
+            },
+          },
+          author: {
+            login: "mock-dev",
+          },
+        },
+      ]));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/search/issues") {
+      const query = url.searchParams.get("q") || "";
+      const isPullRequestSearch = query.includes("type:pr");
+      const number = isPullRequestSearch ? 42 : 17;
+      const title = isPullRequestSearch
+        ? "Merge weekly reporting workflow"
+        : "Close weekly reporting setup issue";
+
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        total_count: 1,
+        incomplete_results: false,
+        items: [
+          {
+            number,
+            title,
+            user: {
+              login: isPullRequestSearch ? "mock-reviewer" : "mock-reporter",
+            },
+            closed_at: "2026-05-19T12:00:00Z",
+            html_url: `https://github.com/example/repo/${isPullRequestSearch ? "pull" : "issues"}/${number}`,
+          },
+        ],
+      }));
+      return;
+    }
 
     if (request.method === "POST" && request.url === "/v1/messages") {
       response.writeHead(200, { "content-type": "application/json" });
@@ -123,15 +175,18 @@ function prepareWorkflowForMock(baseUrl, tempDir) {
   workflow.name = "Weekly GitHub Activity Summary with Claude - Mock Execution";
 
   const configNode = workflow.nodes.find((node) => node.name === "Configure Summary");
+  const githubUrlNode = workflow.nodes.find((node) => node.name === "Build GitHub API URLs");
   const claudeNode = workflow.nodes.find((node) => node.name === "Claude Summary");
 
-  if (!configNode || !claudeNode) {
-    throw new Error("Workflow is missing required Configure Summary or Claude Summary nodes.");
+  if (!configNode || !githubUrlNode || !claudeNode) {
+    throw new Error("Workflow is missing required Configure Summary, Build GitHub API URLs, or Claude Summary nodes.");
   }
 
   configNode.parameters.jsCode = configNode.parameters.jsCode
     .replace('anthropicApiKey: "REPLACE_ME_ANTHROPIC_API_KEY"', 'anthropicApiKey: "mock-anthropic-key"')
     .replace('slackWebhookUrl: "https://hooks.slack.com/services/REPLACE_ME"', `slackWebhookUrl: "${baseUrl}/slack"`);
+  githubUrlNode.parameters.jsCode = githubUrlNode.parameters.jsCode
+    .replace("https://api.github.com", baseUrl);
   claudeNode.parameters.url = `${baseUrl}/v1/messages`;
 
   const mockWorkflowPath = path.join(tempDir, "weekly-dev-summary.mock.workflow.json");
@@ -287,7 +342,7 @@ try {
       workflowId: "weeklyDevSummaryMock",
       importedWorkflow: true,
       executedWorkflow: true,
-      usedRealPublicGitHubApi: true,
+      usedMockGitHubApi: true,
       claudeEndpointCalled: true,
       slackEndpointCalled: true,
       claudeRequest: {

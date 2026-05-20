@@ -348,8 +348,9 @@ check(
   mockRunnerCode.includes("--no-write")
     && mockRunnerCode.includes("writeEvidence")
     && mockRunnerCode.includes("writeAndPrintEvidence")
-    && mockRunnerCode.includes("N8N_RUNNERS_BROKER_PORT"),
-  "validate-mock-execution.mjs can rerun mock success and failure validation without rewriting evidence files or colliding on n8n's task-broker port",
+    && mockRunnerCode.includes("N8N_RUNNERS_BROKER_PORT")
+    && mockRunnerCode.includes("usedMockGitHubApi"),
+  "validate-mock-execution.mjs can rerun mock success and failure validation without rewriting evidence files, colliding on n8n's task-broker port, or consuming live GitHub API quota",
 );
 check(
   "pre-submit audit command",
