@@ -72,6 +72,12 @@ Latest mock validation result:
 }
 ```
 
+## Reviewer Notes
+
+- Merged pull requests are fetched with the GitHub Search API query `type:pr is:merged merged:<start>..<end>`, not by treating all closed pull requests as merged.
+- GitHub HTTP Request nodes use full responses, so empty commit, issue, or PR weeks still continue to Claude and Slack instead of short-circuiting the workflow.
+- The final result node verifies Slack webhook status and body before reporting `delivered`.
+
 ## Notes
 
 The workflow keeps external API calls in n8n HTTP Request nodes. Code nodes only configure, shape, and summarize data. GitHub HTTP nodes preserve empty arrays so quiet weeks still produce and deliver a summary.
