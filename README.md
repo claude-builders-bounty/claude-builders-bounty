@@ -22,6 +22,24 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+Use the included script to create a structured `CHANGELOG.md` from git commits since the latest tag.
+
+```bash
+./changelog.sh
+```
+
+Three-step setup:
+
+1. Copy `changelog.sh` into any git repository.
+2. Run `chmod +x changelog.sh` if needed.
+3. Run `./changelog.sh` to write `CHANGELOG.md`.
+
+The script groups commits into `Added`, `Fixed`, `Changed`, and `Removed`. It uses the latest git tag as the starting point when one exists, otherwise it reads the full history.
+
+See `SAMPLE_CHANGELOG.md` for example output generated from this repository.
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
