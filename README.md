@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Generate A Changelog
+
+This repository includes a Claude Code skill and Bash script for bounty [#1](../../issues/1).
+
+1. Run `bash changelog.sh` inside any git repository.
+2. Optionally use `--stdout`, `--output FILE`, or `--since REF`.
+3. Review and commit the generated `CHANGELOG.md`.
+
+Sample output from a real repository is included in `samples/CHANGELOG.circuit-json-to-readable-netlist.md`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
