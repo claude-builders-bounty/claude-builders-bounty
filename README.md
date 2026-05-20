@@ -1,3 +1,14 @@
+# Generate Changelog Bounty Submission
+
+## Setup
+1. Copy `changelog.sh` into any git repo.
+2. Run `bash changelog.sh` from the repo root.
+3. Commit the generated `CHANGELOG.md`.
+
+## Notes
+- Uses commits since the latest git tag; if no tag exists, uses all history.
+- Categorizes commits into Added, Fixed, Changed, Removed.
+- See `examples/sample-output.md` for sample output.
 # Claude Builders Bounty 🤖
 
 > A community bounty board for Claude Code builders.
