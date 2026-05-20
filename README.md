@@ -43,6 +43,28 @@ You're in the right place.
 
 ---
 
+## Generate A Changelog
+
+This repository includes a dependency-free changelog generator that builds a structured `CHANGELOG.md` from git history.
+
+1. Run `bash changelog.sh`.
+2. Review the generated `CHANGELOG.md`.
+3. Commit the changelog with your release or PR.
+
+By default, the script fetches tags, finds the latest git tag, reads commits since that tag, and groups them into `Added`, `Fixed`, `Changed`, and `Removed`. If the repository has no tags, it uses the full available history.
+
+Useful options:
+
+```bash
+python generate_changelog.py --dry-run
+python generate_changelog.py --since v1.0.0
+python generate_changelog.py --output docs/CHANGELOG.md
+python generate_changelog.py --no-fetch
+bash changelog.sh --dry-run
+```
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
