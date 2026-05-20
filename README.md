@@ -43,6 +43,22 @@ You're in the right place.
 
 ---
 
+## CHANGELOG Generator
+
+Generate a structured `CHANGELOG.md` from git history with commits since the latest tag grouped into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+### Setup in 3 steps
+
+1. Copy `changelog.sh` into any git repository.
+2. Run `bash changelog.sh` from the repository root.
+3. Review the generated `CHANGELOG.md` and commit it when ready.
+
+Optional: pass a custom output path with `bash changelog.sh docs/CHANGELOG.md`.
+
+A sample generated output is included in [`SAMPLE_CHANGELOG.md`](SAMPLE_CHANGELOG.md).
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
