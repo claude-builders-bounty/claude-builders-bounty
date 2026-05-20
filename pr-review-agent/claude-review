@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Fetch a GitHub PR diff and emit a structured Markdown review."""
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+import urllib.request
+from dataclasses import dataclass
+from urllib.parse import urlparse
+
+
+@dataclass
+class DiffStats:
+    files: set[str]
+    added: int
+    removed: int
+    tests_touched: bool
+    workflows_touched: bool
+    db_touched: bool
+    deps_touched: bool
+    deletes: int
+
+
+def parse_pr_url(url: str) -> tuple[str, str, str]:
+    parsed = urlparse(url)
+    parts = [part for part in parsed.path.split("/") if part]
+    if parsed.netloc != "github.com" or len(parts) < 4 or parts[2] != "pull":
+        raise SystemExit("--pr must be a GitHub PR URL like https://github.com/owner/repo/pull/123")
+    return parts[0], parts[1], parts[3]
+
+
+def fetch_diff(owner: str, repo: str, number: str) -> str:
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}",
+        headers={
+            "Accept": "application/vnd.github.v3.diff",
+            "User-Agent": "claude-review-agent",
+            **({"Authorization": f"token {os.environ['GITHUB_TOKEN']}"} if os.environ.get("GITHUB_TOKEN") else {}),
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def analyze(diff: str) -> DiffStats:
+    files: set[str] = set()
+    added = removed = deletes = 0
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            match = re.search(r" b/(.+)$", line)
+            if match:
+                files.add(match.group(1))
+        elif line.startswith("+") and not line.startswith("+++"):
+            added += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            removed += 1
+            if re.search(r"\b(delete|remove|drop|truncate)\b", line, re.I):
+                deletes += 1
+
+    lowered = [path.lower() for path in files]
+    return DiffStats(
+        files=files,
+        added=added,
+        removed=removed,
+        tests_touched=any("test" in path or "spec" in path for path in lowered),
+        workflows_touched=any(path.startswith(".github/workflows/") for path in lowered),
+        db_touched=any(path.startswith(("db/", "migrations/")) or "migration" in path for path in lowered),
+        deps_touched=any(path.endswith(("package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "requirements.txt")) for path in lowered),
+        deletes=deletes,
+    )
+
+
+def confidence(stats: DiffStats) -> str:
+    if len(stats.files) > 20 or stats.added + stats.removed > 1000:
+        return "Low"
+    if stats.tests_touched and len(stats.files) <= 10:
+        return "High"
+    return "Medium"
+
+
+def render(owner: str, repo: str, number: str, stats: DiffStats) -> str:
+    risks: list[str] = []
+    suggestions: list[str] = []
+
+    if not stats.tests_touched:
+        risks.append("No test files were changed; regressions may be harder to catch.")
+        suggestions.append("Add or update focused tests for the changed behavior, or document why tests are not practical.")
+    if stats.workflows_touched:
+        risks.append("GitHub Actions workflow files changed; CI permissions and secret exposure should be reviewed carefully.")
+    if stats.db_touched:
+        risks.append("Database or migration files changed; rollback and data compatibility need explicit verification.")
+    if stats.deps_touched:
+        risks.append("Dependency files changed; check lockfile integrity and supply-chain risk.")
+    if stats.deletes:
+        risks.append("The diff removes destructive-operation-related code or SQL; verify no safety checks were weakened.")
+    if not risks:
+        risks.append("No obvious structural risks detected from the diff alone.")
+
+    if stats.added + stats.removed > 400:
+        suggestions.append("Consider splitting large changes into smaller PRs or adding a high-level design note.")
+    suggestions.append("Confirm the PR description explains user-visible behavior and verification steps.")
+    suggestions.append("Run the repository's lint, typecheck, and test commands before merge.")
+
+    changed = ", ".join(sorted(stats.files)[:8])
+    if len(stats.files) > 8:
+        changed += f", and {len(stats.files) - 8} more"
+
+    return f"""## Claude Review: {owner}/{repo}#{number}
+
+### Summary of changes
+This PR changes {len(stats.files)} file(s), with approximately {stats.added} added line(s) and {stats.removed} removed line(s). The touched files include: {changed or 'no files detected'}.
+
+### Identified risks
+{chr(10).join(f'- {risk}' for risk in risks)}
+
+### Improvement suggestions
+{chr(10).join(f'- {suggestion}' for suggestion in suggestions)}
+
+### Confidence score
+**{confidence(stats)}**
+"""
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR diff.")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    args = parser.parse_args()
+    owner, repo, number = parse_pr_url(args.pr)
+    diff = fetch_diff(owner, repo, number)
+    print(render(owner, repo, number, analyze(diff)))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
