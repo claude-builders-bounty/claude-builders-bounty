@@ -62,7 +62,7 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 if git remote get-url origin >/dev/null 2>&1; then
-    git fetch --tags --quiet >/dev/null 2>&1 || true
+    GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true git fetch --tags --quiet >/dev/null 2>&1 || true
 fi
 
 if [[ -n "$base_ref" ]]; then
@@ -149,7 +149,7 @@ fixed=""
 changed=""
 removed=""
 
-if ! git_output="$(git log --pretty=format:'%H%x1f%s' "$range")"; then
+if ! git rev-list --quiet "$range" >/dev/null 2>&1; then
     echo "error: failed to read git history for range: $range" >&2
     exit 1
 fi
@@ -166,7 +166,7 @@ while IFS=$'\x1f' read -r hash subject || [[ -n "${hash:-}" ]]; do
         Changed) changed+="$entry" ;;
         Removed) removed+="$entry" ;;
     esac
-done <<< "$git_output"
+done < <(git log --pretty=format:'%H%x1f%s' "$range")
 
 print_category() {
     local title="$1"

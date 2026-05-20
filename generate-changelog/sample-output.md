@@ -1,6 +1,6 @@
 # Sample Output
 
-Generated with `bash changelog.sh --stdout` on the public `claude-builders-bounty/claude-builders-bounty` repository's `origin/main` history before this PR.
+Generated with `bash changelog.sh --stdout` on the public `claude-builders-bounty/claude-builders-bounty` repository's `origin/main` history at the time of writing. The `Unreleased` date reflects the day the command is run.
 
 ```markdown
 # Changelog
