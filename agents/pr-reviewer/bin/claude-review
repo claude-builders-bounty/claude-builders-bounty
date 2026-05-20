@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request and print a structured Markdown comment."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import ssl
+import subprocess
+import sys
+import textwrap
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Iterable
+
+PR_RE = re.compile(r"https://github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)")
+
+
+@dataclass(frozen=True)
+class PullRequestRef:
+    owner: str
+    repo: str
+    number: int
+
+
+@dataclass
+class DiffStats:
+    files: list[str]
+    additions: int
+    deletions: int
+    test_files: list[str]
+    workflow_files: list[str]
+    dependency_files: list[str]
+    migration_files: list[str]
+    auth_files: list[str]
+
+
+def parse_pr_url(url: str) -> PullRequestRef:
+    match = PR_RE.fullmatch(url.strip())
+    if not match:
+        raise ValueError("Expected PR URL like https://github.com/owner/repo/pull/123")
+    owner, repo, number = match.groups()
+    return PullRequestRef(owner=owner, repo=repo, number=int(number))
+
+
+def fetch_url(url: str, token: str | None = None, insecure_ssl: bool = False) -> str:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "claude-review-agent",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
+    context = ssl._create_unverified_context() if insecure_ssl else None
+    try:
+        with urllib.request.urlopen(request, timeout=30, context=context) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub request failed with HTTP {exc.code}: {body}") from exc
+    except urllib.error.URLError as exc:
+        if "CERTIFICATE_VERIFY_FAILED" in str(exc):
+            raise RuntimeError(
+                "TLS certificate verification failed. Fix the local Python certificate store, "
+                "or rerun with --insecure-skip-verify only in a trusted network."
+            ) from exc
+        raise
+
+
+def fetch_pr_metadata(ref: PullRequestRef, token: str | None = None, insecure_ssl: bool = False) -> dict[str, object]:
+    url = f"https://api.github.com/repos/{ref.owner}/{ref.repo}/pulls/{ref.number}"
+    return json.loads(fetch_url(url, token=token, insecure_ssl=insecure_ssl))
+
+
+def fetch_pr_diff(ref: PullRequestRef, token: str | None = None, insecure_ssl: bool = False) -> str:
+    url = f"https://patch-diff.githubusercontent.com/raw/{ref.owner}/{ref.repo}/pull/{ref.number}.diff"
+    return fetch_url(url, token=token, insecure_ssl=insecure_ssl)
+
+
+def changed_files(diff: str) -> list[str]:
+    files: list[str] = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                files.append(parts[3][2:])
+    return files
+
+
+def count_changed_lines(diff: str) -> tuple[int, int]:
+    additions = 0
+    deletions = 0
+    for line in diff.splitlines():
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            additions += 1
+        elif line.startswith("-"):
+            deletions += 1
+    return additions, deletions
+
+
+def classify_files(files: Iterable[str], additions: int, deletions: int) -> DiffStats:
+    file_list = list(files)
+    lower_files = [(path, path.lower()) for path in file_list]
+    return DiffStats(
+        files=file_list,
+        additions=additions,
+        deletions=deletions,
+        test_files=[path for path, lower in lower_files if "test" in lower or "spec" in lower],
+        workflow_files=[path for path, lower in lower_files if lower.startswith(".github/workflows/") or lower.endswith((".yml", ".yaml"))],
+        dependency_files=[path for path, lower in lower_files if lower in {"package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "requirements.txt", "pyproject.toml", "go.mod", "cargo.toml"}],
+        migration_files=[path for path, lower in lower_files if "migration" in lower or lower.endswith(".sql")],
+        auth_files=[path for path, lower in lower_files if any(token in lower for token in ("auth", "permission", "security", "token", "session"))],
+    )
+
+
+def markdown_list(items: list[str]) -> str:
+    if not items:
+        return "- None identified from the diff."
+    return "\n".join(f"- {item}" for item in items)
+
+
+def make_prompt(metadata: dict[str, object], diff: str) -> str:
+    title = metadata.get("title", "Untitled PR")
+    body = metadata.get("body") or ""
+    clipped_diff = diff[:45000]
+    return textwrap.dedent(
+        f"""
+        You are a senior code reviewer. Review the pull request below and return only Markdown with these exact sections:
+
+        ## Summary
+        2-3 sentences.
+
+        ## Identified risks
+        Bullet list.
+
+        ## Improvement suggestions
+        Bullet list.
+
+        ## Confidence
+        Low, Medium, or High, followed by one sentence.
+
+        PR title:
+        {title}
+
+        PR body:
+        {body}
+
+        Diff:
+        {clipped_diff}
+        """
+    ).strip()
+
+
+def run_claude_review(prompt: str) -> str | None:
+    claude = shutil.which("claude")
+    if not claude:
+        return None
+    result = subprocess.run(
+        [claude, "-p", prompt],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=180,
+    )
+    if result.returncode != 0:
+        return None
+    output = result.stdout.strip()
+    return output or None
+
+
+def offline_review(metadata: dict[str, object], stats: DiffStats) -> str:
+    title = str(metadata.get("title") or "this pull request")
+    summary = (
+        f"This pull request updates {len(stats.files)} file(s) with "
+        f"{stats.additions} additions and {stats.deletions} deletions. "
+        f"The main change appears to be: {title}."
+    )
+    if stats.files:
+        preview = ", ".join(stats.files[:4])
+        if len(stats.files) > 4:
+            preview += f", and {len(stats.files) - 4} more"
+        summary += f" Changed paths include {preview}."
+
+    risks: list[str] = []
+    suggestions: list[str] = []
+
+    if stats.dependency_files:
+        risks.append(f"Dependency files changed: {', '.join(stats.dependency_files)}. Verify lockfiles and install behavior.")
+        suggestions.append("Run a clean dependency install and at least one production build before merging.")
+    if stats.workflow_files:
+        risks.append(f"Workflow or YAML files changed: {', '.join(stats.workflow_files)}. Syntax errors can block CI unexpectedly.")
+        suggestions.append("Validate workflow syntax and confirm required secrets are documented.")
+    if stats.migration_files:
+        risks.append(f"Migration or SQL files changed: {', '.join(stats.migration_files)}. Data changes may be hard to roll back.")
+        suggestions.append("Add rollback or recovery notes for schema/data changes.")
+    if stats.auth_files:
+        risks.append(f"Auth or permission-related paths changed: {', '.join(stats.auth_files)}. Access-control regressions need focused review.")
+        suggestions.append("Add tests for authorized, unauthorized, and cross-tenant access paths.")
+    if not stats.test_files and stats.files:
+        risks.append("No test files were changed, so behavior may rely on manual verification.")
+        suggestions.append("Add or update tests around the highest-risk changed behavior.")
+    if stats.additions + stats.deletions > 500:
+        risks.append("The diff is large enough that unrelated concerns may be mixed together.")
+        suggestions.append("Consider splitting mechanical changes from behavioral changes if review becomes difficult.")
+
+    if not risks:
+        risks.append("None identified from file-level analysis; the diff appears focused.")
+    if not suggestions:
+        suggestions.append("Document the validation commands used locally so reviewers can reproduce the checks.")
+
+    confidence = "Medium"
+    if stats.additions + stats.deletions < 120 and len(stats.files) <= 4:
+        confidence = "High"
+    elif stats.additions + stats.deletions > 800 or len(stats.files) > 12:
+        confidence = "Low"
+
+    return "\n\n".join(
+        [
+            "## Summary\n\n" + summary,
+            "## Identified risks\n\n" + markdown_list(risks),
+            "## Improvement suggestions\n\n" + markdown_list(suggestions),
+            f"## Confidence\n\n{confidence} - Based on file-level and diff-size analysis.",
+        ]
+    )
+
+
+def build_review(pr_url: str, offline: bool = False, token: str | None = None, insecure_ssl: bool = False) -> str:
+    ref = parse_pr_url(pr_url)
+    metadata = fetch_pr_metadata(ref, token=token, insecure_ssl=insecure_ssl)
+    diff = fetch_pr_diff(ref, token=token, insecure_ssl=insecure_ssl)
+    files = changed_files(diff)
+    additions, deletions = count_changed_lines(diff)
+    stats = classify_files(files, additions, deletions)
+
+    if not offline:
+        claude_output = run_claude_review(make_prompt(metadata, diff))
+        if claude_output:
+            return claude_output
+
+    return offline_review(metadata, stats)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL.")
+    parser.add_argument("--offline", action="store_true", help="Use deterministic local analysis instead of invoking Claude CLI.")
+    parser.add_argument("--output", help="Write the review to this file instead of stdout.")
+    parser.add_argument(
+        "--insecure-skip-verify",
+        action="store_true",
+        help="Skip TLS verification. Use only when the local Python certificate store is broken.",
+    )
+    args = parser.parse_args()
+
+    token = os.environ.get("GITHUB_TOKEN")
+    review = build_review(args.pr, offline=args.offline, token=token, insecure_ssl=args.insecure_skip_verify)
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as output_file:
+            output_file.write(review.rstrip() + "\n")
+    else:
+        print(review)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
