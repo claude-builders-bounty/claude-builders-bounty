@@ -15,7 +15,7 @@ Date: 2026-05-19
 - `APPROVAL_PACKET.md` records the exact two-step approval contract for real endpoint evidence first and public submission later.
 - `PUBLIC_SUBMISSION_DRAFT.md` records the exact approval-gated `/opire try` issue comment and PR metadata without posting anything publicly.
 - `npm exec --yes --package n8n@2.20.11 -- n8n import:workflow --input=submissions/aviranchigoda/weekly-dev-summary.workflow.json` successfully imported 1 workflow using a temporary `N8N_USER_FOLDER`.
-- `node submissions/aviranchigoda/validate-mock-execution.mjs` imported and executed the workflow end to end in n8n 2.20.11 with mocked Claude and Slack endpoints. It verified the Claude request model, Slack payload, final `delivered` status, and quiet-week behavior with zero commits/issues/PRs.
+- `node submissions/aviranchigoda/validate-mock-execution.mjs` imported and executed the workflow end to end in n8n 2.20.11 with mocked GitHub, Claude, and Slack endpoints. It verified the GitHub activity fixtures, Claude request model, Slack payload, and final `delivered` status.
 - `node submissions/aviranchigoda/validate-mock-execution.mjs --expect-slack-failure` imported and executed the workflow with a mocked failing Slack endpoint, and verified that no `delivered` result is produced.
 - `node submissions/aviranchigoda/validate-mock-execution.mjs --no-write` and `--expect-slack-failure --no-write` rerun mock validation without rewriting committed evidence files.
 - `node submissions/aviranchigoda/validate-real-execution.mjs` fails closed when `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` are absent, so real endpoint evidence can be produced later without storing credentials in the repository.

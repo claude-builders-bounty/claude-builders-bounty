@@ -25,7 +25,7 @@ Use this checklist immediately before public submission for issue #5.
 - `PUBLIC_SUBMISSION_DRAFT.md` records the exact approval-gated `/opire try` comment, PR title, PR body source, final audit command, and stop conditions.
 - `pre-submit-audit.mjs` runs the no-write local audit and reports approval-gated real evidence separately.
 - `evidence/acceptance-check-result.json` records local acceptance coverage.
-- `evidence/mock-execution-result.json` records a successful n8n 2.20.11 execution with mocked Claude and Slack endpoints.
+- `evidence/mock-execution-result.json` records a successful n8n 2.20.11 execution with mocked GitHub, Claude, and Slack endpoints.
 - `evidence/mock-slack-failure-result.json` records that a failed Slack webhook does not produce a delivered result.
 - `evidence/mock-n8n-execution-ui.png` is a validated 1200x953 PNG screenshot of a successful local n8n execution.
 

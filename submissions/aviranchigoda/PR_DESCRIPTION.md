@@ -16,7 +16,7 @@ Closes #5.
 - `PUBLIC_SUBMISSION_DRAFT.md` - approval-gated public claim and PR metadata handoff.
 - `check-acceptance.mjs` - verifies local coverage of the issue #5 acceptance criteria and records remaining approval-gated real evidence.
 - `pre-submit-audit.mjs` - runs the no-write local pre-submit audit and reports approval-gated real evidence separately.
-- `validate-mock-execution.mjs` - imports and executes the workflow in n8n 2.20.11 with mocked Claude and Slack endpoints.
+- `validate-mock-execution.mjs` - imports and executes the workflow in n8n 2.20.11 with mocked GitHub, Claude, and Slack endpoints.
 - `validate-real-execution.mjs` - approval-gated real endpoint runner that writes sanitized evidence when `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` are supplied, and refuses to write evidence if a secret value appears in the sanitized payload.
 - `evidence/acceptance-check-result.json` - latest local acceptance-coverage check result.
 - `evidence/mock-execution-result.json` - sanitized output from the successful mock n8n execution.
@@ -34,7 +34,7 @@ Closes #5.
 - Sends formatted weekly summary: posts Claude output to a Slack incoming webhook.
 - Delivery result: verifies the Slack webhook response before the workflow reports `delivered`.
 - Configurable target: `Configure Summary` controls GitHub owner/repo, language, lookback window, the Slack webhook for the target channel, and optional `slackChannel` for compatible webhook setups.
-- Test evidence: `evidence/mock-execution-result.json` shows successful n8n import and execution with mocked Claude/Slack endpoints and real public GitHub API calls.
+- Test evidence: `evidence/mock-execution-result.json` shows successful n8n import and execution with mocked GitHub, Claude, and Slack endpoints.
 - Failure evidence: `evidence/mock-slack-failure-result.json` shows a failed Slack webhook does not produce a delivered result.
 - UI evidence: `evidence/mock-n8n-execution-ui.png` shows the same local n8n execution succeeded in the Executions tab.
 - Real evidence path: `REAL_EVIDENCE.md` documents how to produce sanitized real Anthropic/Slack evidence and `evidence/real-n8n-execution-ui.png` after approval.
@@ -65,6 +65,7 @@ Latest mock validation result:
   "n8nPackage": "n8n@2.20.11",
   "importedWorkflow": true,
   "executedWorkflow": true,
+  "usedMockGitHubApi": true,
   "claudeEndpointCalled": true,
   "slackEndpointCalled": true,
   "finalStatus": "delivered",
@@ -79,6 +80,9 @@ Latest mock validation result:
 - Merged pull requests are fetched with the GitHub Search API query `type:pr is:merged merged:<start>..<end>`, not by treating all closed pull requests as merged.
 - GitHub HTTP Request nodes use full responses, so empty commit, issue, or PR weeks still continue to Claude and Slack instead of short-circuiting the workflow.
 - The final result node verifies Slack webhook status and body before reporting `delivered`.
+- The mock validator uses local GitHub, Claude, and Slack fixtures so reviewers can rerun success and Slack-failure checks without API credentials, live GitHub rate-limit dependency, or evidence timestamp churn.
+- The real-evidence runner is separate and approval-gated: it reads credentials only from environment variables, writes sanitized evidence, and refuses to write evidence if a secret value appears in the output.
+- The acceptance matrix gives reviewers a direct requirement-to-artifact map, which should make this submission quicker to audit than a bare workflow JSON plus README.
 
 ## Notes
 

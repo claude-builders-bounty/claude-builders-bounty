@@ -16,7 +16,7 @@ Submission for issue #5. The workflow runs every Friday at 5pm, fetches weekly G
 - `evidence/acceptance-check-result.json` - latest local acceptance-coverage check result.
 - `evidence/mock-execution-result.json` - sanitized evidence from the latest successful mock n8n execution.
 - `evidence/mock-slack-failure-result.json` - sanitized evidence that a failed Slack webhook does not produce a delivered result.
-- `evidence/mock-n8n-execution-ui.png` - screenshot of the successful local n8n execution using mocked Claude and Slack endpoints.
+- `evidence/mock-n8n-execution-ui.png` - screenshot of the successful local n8n execution using mocked GitHub, Claude, and Slack endpoints.
 - `PR_DESCRIPTION.md` - PR-ready submission notes for issue #5.
 - `example-summary.md` - sample Slack-ready output format.
 
