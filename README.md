@@ -1,53 +1,82 @@
-# Claude Builders Bounty 🤖
+# CHANGELOG Skill — Setup Instructions
 
-> A community bounty board for Claude Code builders.
+## Quick Start (3 steps)
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+### Step 1: Download
+```bash
+curl -O https://raw.githubusercontent.com/jiangyj545/claude-builders-bounty/feat/changelog-skill/changelog.sh
+chmod +x changelog.sh
+```
 
----
+### Step 2: Run
+```bash
+bash changelog.sh
+```
 
-## How it works
+### Step 3: Done
+A `CHANGELOG.md` file is generated in your project root.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Advanced Usage
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+# Generate since a specific tag
+bash changelog.sh -t v1.2.0
 
----
+# Generate full changelog (all tags)
+bash changelog.sh --all
 
-## Active Bounties
+# Output to a different file
+bash changelog.sh -o docs/CHANGES.md
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# Preview without writing
+bash changelog.sh --dry-run
 
----
+# Run on a different repo
+bash changelog.sh -r /path/to/repo
+```
 
-## Rules
+## Requirements
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+- **git** (any recent version)
+- **bash** (4.0+)
+- No other dependencies
 
----
+## How Commits Are Categorized
 
-## Community
+| Pattern | Category | Example |
+|---------|----------|---------|
+| `feat: ...` | Added | `feat: add user authentication` |
+| `fix: ...` | Fixed | `fix: resolve timeout issue` |
+| `refactor: ...` | Changed | `refactor: simplify query logic` |
+| `chore: remove ...` | Removed | `chore: remove deprecated API` |
+| Keywords: add/create/new | Added | `add login button` |
+| Keywords: fix/resolve/patch | Fixed | `fix crash on startup` |
+| Keywords: update/improve | Changed | `update dependencies` |
+| Keywords: remove/delete | Removed | `delete unused files` |
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Sample Output
 
----
+```markdown
+# Changelog
 
-*Started by the Claude builder community · March 2026 · MIT License*
+All notable changes to this project will be documented in this file.
+
+## v2.1.0 (2026-05-20)
+
+### Added
+- User authentication with OAuth2 ([a1b2c3d](https://github.com/user/repo/commit/a1b2c3d))
+- Dark mode support ([e4f5g6h](https://github.com/user/repo/commit/e4f5g6h))
+
+### Fixed
+- Resolve timeout on large file uploads ([i7j8k9l](https://github.com/user/repo/commit/i7j8k9l))
+
+### Changed
+- Improve error messages for API failures ([m0n1o2p](https://github.com/user/repo/commit/m0n1o2p))
+
+### Removed
+- Deprecated v1 API endpoints ([q3r4s5t](https://github.com/user/repo/commit/q3r4s5t))
+```
+
+## As a Claude Code Skill
+
+Copy `SKILL.md` to your project's `.claude/skills/` directory. Then use `/generate-changelog` in Claude Code.
