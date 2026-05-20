@@ -1,0 +1,423 @@
+{
+  "id": "weeklyDevSummaryAviranchigoda",
+  "name": "Weekly GitHub Activity Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "6a2f984d-8177-4d23-9458-11973555fd44",
+      "name": "Weekly Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -820,
+        -160
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "79dbd128-20a6-4547-92fe-c82cb7097e44",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -820,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = {\n  githubOwner: \"claude-builders-bounty\",\n  githubRepo: \"claude-builders-bounty\",\n  summaryLanguage: \"EN\",\n  lookbackDays: 7,\n  anthropicApiKey: \"REPLACE_ME_ANTHROPIC_API_KEY\",\n  // The Slack webhook URL selects the destination channel for modern Slack apps.\n  slackWebhookUrl: \"https://hooks.slack.com/services/REPLACE_ME\",\n  // Optional payload channel for compatible legacy/custom webhook setups.\n  slackChannel: \"\",\n};\n\nfunction requireConfigured(value, name) {\n  if (!value || String(value).includes(\"REPLACE_ME\")) {\n    throw new Error(`${name} must be configured before running the workflow.`);\n  }\n}\n\nif (![\"EN\", \"FR\"].includes(config.summaryLanguage)) {\n  throw new Error(\"summaryLanguage must be EN or FR.\");\n}\n\nif (!Number.isFinite(config.lookbackDays) || config.lookbackDays < 1 || config.lookbackDays > 31) {\n  throw new Error(\"lookbackDays must be a number from 1 to 31.\");\n}\n\nrequireConfigured(config.githubOwner, \"githubOwner\");\nrequireConfigured(config.githubRepo, \"githubRepo\");\nrequireConfigured(config.anthropicApiKey, \"anthropicApiKey\");\nrequireConfigured(config.slackWebhookUrl, \"slackWebhookUrl\");\n\nreturn [{ json: config }];\n"
+      },
+      "id": "56b01d5e-367f-4f8f-ac83-aac56f331243",
+      "name": "Configure Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $input.first().json;\nconst DAY_MS = 24 * 60 * 60 * 1000;\n\nconst end = new Date();\nconst start = new Date(end.getTime() - config.lookbackDays * DAY_MS);\nconst startDate = start.toISOString().slice(0, 10);\nconst endDate = end.toISOString().slice(0, 10);\nconst repository = `${config.githubOwner}/${config.githubRepo}`;\n\nfunction githubUrl(path, params) {\n  const query = Object.entries(params)\n    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)\n    .join(\"&\");\n  return `https://api.github.com${path}?${query}`;\n}\n\nreturn [\n  {\n    json: {\n      ...config,\n      repository,\n      periodStart: start.toISOString(),\n      periodEnd: end.toISOString(),\n      periodStartDate: startDate,\n      periodEndDate: endDate,\n      commitsUrl: githubUrl(`/repos/${repository}/commits`, {\n        since: start.toISOString(),\n        until: end.toISOString(),\n        per_page: 100,\n      }),\n      closedIssuesUrl: githubUrl(\"/search/issues\", {\n        q: `repo:${repository} type:issue is:closed closed:${startDate}..${endDate}`,\n        per_page: 50,\n      }),\n      mergedPullRequestsUrl: githubUrl(\"/search/issues\", {\n        q: `repo:${repository} type:pr is:merged merged:${startDate}..${endDate}`,\n        per_page: 50,\n      }),\n    },\n  },\n];\n"
+      },
+      "id": "8bc244f0-fd32-4264-b54d-83046979ee30",
+      "name": "Build GitHub API URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.commitsUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "e56e5f70-15c7-4bb6-b8d4-3761a782f2b7",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -20,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $(\"Build GitHub API URLs\").first().json.closedIssuesUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "7f7965d7-f165-4c2f-b4f4-a318f071da0b",
+      "name": "GitHub Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        260,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $(\"Build GitHub API URLs\").first().json.mergedPullRequestsUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "104a986d-3e93-471d-970f-7d67c7c88530",
+      "name": "GitHub Merged Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        540,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function nodeJson(nodeName) {\n  const items = $(nodeName).all();\n\n  if (items.length === 0) {\n    return null;\n  }\n\n  if (items.length === 1) {\n    return items[0].json;\n  }\n\n  return items.map((item) => item.json);\n}\n\nfunction asArray(value) {\n  if (Array.isArray(value)) {\n    return value;\n  }\n\n  if (value && Array.isArray(value.body)) {\n    return value.body;\n  }\n\n  if (value && Array.isArray(value.items)) {\n    return value.items;\n  }\n\n  if (value && value.body && Array.isArray(value.body.items)) {\n    return value.body.items;\n  }\n\n  if (value && typeof value === \"object\" && Object.keys(value).every((key) => /^\\d+$/.test(key))) {\n    return Object.keys(value)\n      .sort((a, b) => Number(a) - Number(b))\n      .map((key) => value[key]);\n  }\n\n  return [];\n}\n\nconst config = $(\"Build GitHub API URLs\").first().json;\nconst commits = asArray(nodeJson(\"GitHub Commits\"));\nconst closedIssues = asArray(nodeJson(\"GitHub Closed Issues\"));\nconst mergedPullRequests = asArray(nodeJson(\"GitHub Merged Pull Requests\"));\n\nconst activity = {\n  repository: config.repository,\n  period: {\n    start: config.periodStart,\n    end: config.periodEnd,\n  },\n  commits: commits.map((commit) => ({\n    sha: commit.sha,\n    title: commit.commit?.message?.split(\"\\n\")[0] || \"\",\n    author: commit.commit?.author?.name || commit.author?.login || \"unknown\",\n    date: commit.commit?.author?.date || commit.commit?.committer?.date || \"\",\n    url: commit.html_url,\n  })),\n  closedIssues: closedIssues.map((issue) => ({\n    number: issue.number,\n    title: issue.title,\n    author: issue.user?.login || \"unknown\",\n    closedAt: issue.closed_at,\n    url: issue.html_url,\n  })),\n  mergedPullRequests: mergedPullRequests.map((pullRequest) => ({\n    number: pullRequest.number,\n    title: pullRequest.title,\n    author: pullRequest.user?.login || \"unknown\",\n    mergedAt: pullRequest.closed_at,\n    url: pullRequest.html_url,\n  })),\n};\n\nconst outputLanguage = config.summaryLanguage === \"FR\" ? \"French\" : \"English\";\nconst prompt = [\n  `Write a weekly engineering narrative summary in ${outputLanguage}.`,\n  `Repository: ${config.repository}`,\n  `Period: ${config.periodStartDate} through ${config.periodEndDate}`,\n  \"\",\n  \"Use this structure:\",\n  \"1. Headline\",\n  \"2. What changed\",\n  \"3. Notable issues closed\",\n  \"4. Merged pull requests\",\n  \"5. Suggested follow-ups\",\n  \"\",\n  \"Keep it concise, useful for a development team, and cite issue or PR numbers when present.\",\n  \"\",\n  \"GitHub activity JSON:\",\n  JSON.stringify(activity, null, 2),\n].join(\"\\n\");\n\nreturn [\n  {\n    json: {\n      ...config,\n      commitCount: activity.commits.length,\n      closedIssueCount: activity.closedIssues.length,\n      mergedPullRequestCount: activity.mergedPullRequests.length,\n      activity,\n      claudeBody: {\n        model: \"claude-sonnet-4-20250514\",\n        max_tokens: 1200,\n        system: \"You write clear weekly software development updates from GitHub activity data.\",\n        messages: [\n          {\n            role: \"user\",\n            content: prompt,\n          },\n        ],\n      },\n    },\n  },\n];\n"
+      },
+      "id": "f517054c-53a8-4fa6-8f19-52c3fdbab630",
+      "name": "Prepare Claude Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.anthropicApiKey }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.claudeBody) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "ac0a88b9-bf03-4808-aec4-a59e0f33afdc",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1100,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $(\"Prepare Claude Request\").first().json;\nconst claudeResponse = $(\"Claude Summary\").first().json;\n\nconst summary = (claudeResponse.content || [])\n  .filter((part) => part.type === \"text\")\n  .map((part) => part.text)\n  .join(\"\\n\")\n  .trim();\n\nif (!summary) {\n  throw new Error(\"Claude API returned no text summary.\");\n}\n\nconst slackPayload = {\n  text: summary,\n  mrkdwn: true,\n};\n\nif (config.slackChannel) {\n  slackPayload.channel = config.slackChannel;\n}\n\nreturn [\n  {\n    json: {\n      repository: config.repository,\n      periodStart: config.periodStart,\n      periodEnd: config.periodEnd,\n      language: config.summaryLanguage,\n      commitCount: config.commitCount,\n      closedIssueCount: config.closedIssueCount,\n      mergedPullRequestCount: config.mergedPullRequestCount,\n      slackWebhookUrl: config.slackWebhookUrl,\n      slackChannel: config.slackChannel || \"webhook default\",\n      slackPayload,\n      summary,\n      generatedAt: new Date().toISOString(),\n    },\n  },\n];\n"
+      },
+      "id": "245ae83f-174c-4a73-91fc-3fc5ff95f15a",
+      "name": "Prepare Slack Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.slackWebhookUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.slackPayload) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "5346fe3c-cd55-4079-9619-a51a7d8ec78d",
+      "name": "Send Slack Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1660,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const preparedMessage = $(\"Prepare Slack Message\").first().json;\nconst slackResponse = $(\"Send Slack Summary\").first().json;\nconst slackStatusCode = Number(slackResponse.statusCode ?? slackResponse.status ?? 0);\nconst slackResponseBody = String(slackResponse.body ?? slackResponse.data ?? \"\").trim();\n\nif (!Number.isInteger(slackStatusCode) || slackStatusCode < 200 || slackStatusCode >= 300) {\n  throw new Error(`Slack webhook returned unexpected status code: ${slackStatusCode || \"missing\"}.`);\n}\n\nif (slackResponseBody && slackResponseBody !== \"ok\") {\n  throw new Error(`Slack webhook returned unexpected body: ${slackResponseBody}.`);\n}\n\nreturn [\n  {\n    json: {\n      status: \"delivered\",\n      destination: \"slack\",\n      repository: preparedMessage.repository,\n      periodStart: preparedMessage.periodStart,\n      periodEnd: preparedMessage.periodEnd,\n      language: preparedMessage.language,\n      commitCount: preparedMessage.commitCount,\n      closedIssueCount: preparedMessage.closedIssueCount,\n      mergedPullRequestCount: preparedMessage.mergedPullRequestCount,\n      slackChannel: preparedMessage.slackChannel,\n      slackStatusCode,\n      slackResponseBody: slackResponseBody || \"empty\",\n      summary: preparedMessage.summary,\n      deliveredAt: new Date().toISOString(),\n    },\n  },\n];\n"
+      },
+      "id": "39b2f60a-30a5-4a78-b334-94e28e77f70e",
+      "name": "Execution Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1940,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Configure Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Configure Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure Summary": {
+      "main": [
+        [
+          {
+            "node": "Build GitHub API URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build GitHub API URLs": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "GitHub Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "GitHub Merged Pull Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Merged Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Claude Request": {
+      "main": [
+        [
+          {
+            "node": "Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Prepare Slack Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Slack Message": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Slack Summary": {
+      "main": [
+        [
+          {
+            "node": "Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-05-19T00:00:00.000Z",
+  "versionId": "4f19ebaf-7f09-4773-a857-a29368b0b226"
+}
