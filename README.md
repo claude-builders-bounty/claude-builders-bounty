@@ -51,3 +51,68 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Bounty #3: Destructive Bash Guard Hook
+
+This repository includes a Claude Code `PreToolUse` hook that blocks dangerous
+Bash commands before they run.
+
+### Install
+
+From this repository:
+
+```bash
+./install.sh
+```
+
+The installer copies the hook to `~/.claude/hooks/destructive-bash-guard.py` and
+adds it to `~/.claude/settings.json` for the `Bash` tool.
+
+### What It Blocks
+
+- `rm -rf`
+- `DROP TABLE`
+- `git push --force` and `git push --force-with-lease`
+- `TRUNCATE`
+- `DELETE FROM ...` statements without a `WHERE` clause
+
+Safe commands continue normally. For example, `npm test`, normal `git push`,
+`rm -r build`, and scoped SQL deletes with `WHERE` are allowed.
+
+### Blocked Command Output
+
+When a destructive command is detected, the hook denies the tool call and
+returns a clear reason to Claude Code:
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "Blocked destructive Bash command: rm -rf. Reason: recursive forced removal is blocked. Rewrite the command to be scoped, reversible, or ask the user for explicit confirmation."
+  }
+}
+```
+
+### Logging
+
+Blocked attempts are appended to:
+
+```text
+~/.claude/hooks/blocked.log
+```
+
+Each log entry includes:
+
+- UTC timestamp
+- project path
+- blocked pattern
+- attempted command
+
+### Test
+
+```bash
+python3 -m unittest discover -s tests
+```
