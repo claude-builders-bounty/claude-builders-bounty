@@ -1,53 +1,60 @@
-# Claude Builders Bounty 🤖
+# Claude PR Review Agent
 
-> A community bounty board for Claude Code builders.
-
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
-
----
+AI-powered automated code review that analyzes GitHub PR diffs and produces structured Markdown feedback — summary, risks, suggestions, and confidence score.
 
 ## How it works
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+1. Takes a GitHub PR URL as input
+2. Fetches the PR diff via GitHub API
+3. Sends the diff to Claude (claude-sonnet-4-20250514) with a structured review prompt
+4. Outputs a Markdown code review you can post directly as a PR comment
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Setup
 
----
+### 1. Install
+```bash
+chmod +x claude-review
+# Optional: add to PATH
+cp claude-review /usr/local/bin/
+```
 
-## Active Bounties
+### 2. Get API keys
+- **Anthropic API key**: https://console.anthropic.com/
+- **GitHub token** (optional, for private repos): https://github.com/settings/tokens
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### 3. Set environment
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+export GITHUB_TOKEN="ghp_..."  # optional
+```
 
----
+### 4. Run
+```bash
+./claude-review --pr https://github.com/owner/repo/pull/123
+```
 
-## Rules
+### 5. (Optional) GitHub Action
+See `.github/workflows/claude-review.yml` included for CI integration.
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Usage
 
----
+```bash
+# Basic usage
+claude-review --pr https://github.com/expressjs/express/pull/6000
 
-## Community
+# With explicit API key
+claude-review --pr https://github.com/owner/repo/pull/1 --api-key sk-ant-xxx
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+# Save to file
+claude-review --pr https://github.com/owner/repo/pull/1 > review.md
+```
 
----
+## Example Output
 
-*Started by the Claude builder community · March 2026 · MIT License*
+See [EXAMPLE-OUTPUT.md](EXAMPLE-OUTPUT.md) for a sample review generated from a real PR.
+
+## Requirements
+
+- Python 3.8+
+- Anthropic API key (Claude access)
+- Internet access (for GitHub + Anthropic APIs)
