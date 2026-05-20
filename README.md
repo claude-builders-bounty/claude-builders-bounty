@@ -50,4 +50,20 @@ You're in the right place.
 
 ---
 
+---
+
+## New Skills
+
+### 🤖 PR Review Agent (#4)
+Automated PR analysis using Claude 3.5 Sonnet.
+- **CLI:** `python3 claude_review.py --pr <url>`
+- **GitHub Action:** Included in `.github/workflows/claude-review.yml`
+- **Output:** Structured Markdown with Risks, Suggestions, and Confidence score.
+
+### 📄 CHANGELOG Generator (#1)
+Generate a structured `CHANGELOG.md` from git history.
+- **Command:** `python3 generate_changelog.py`
+- **Features:** Auto-categorization (Added, Fixed, Changed, etc.)
+- **Claude Integration:** Use `/generate-changelog` via `SKILL.md`.
+
 *Started by the Claude builder community · March 2026 · MIT License*
