@@ -1,0 +1,122 @@
+#!/bin/bash
+# claude-review — Claude Code PR review sub-agent
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+
+set -e
+
+PR_URL=""
+OUTPUT_FORMAT="markdown"
+
+usage() {
+    echo "claude-review — Claude Code PR review sub-agent"
+    echo ""
+    echo "Usage: claude-review --pr <pr-url>"
+    echo ""
+    echo "Options:"
+    echo "  --pr <url>    GitHub PR URL (required)"
+    echo "  --json        Output JSON instead of Markdown"
+    echo "  --help        Show this help message"
+    exit 1
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --pr)
+            PR_URL="$2"
+            shift 2
+            ;;
+        --json)
+            OUTPUT_FORMAT="json"
+            shift
+            ;;
+        --help)
+            usage
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            ;;
+    esac
+done
+
+if [ -z "$PR_URL" ]; then
+    echo "Error: --pr is required"
+    usage
+fi
+
+# Validate PR URL format
+if [[ ! "$PR_URL" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    echo "Error: Invalid GitHub PR URL format"
+    echo "Expected: https://github.com/owner/repo/pull/123"
+    exit 1
+fi
+
+OWNER="${BASH_REMATCH[1]}"
+REPO="${BASH_REMATCH[2]}"
+PR_NUM="${BASH_REMATCH[3]}"
+
+echo "Fetching PR #$PR_NUM from $OWNER/$REPO..."
+
+# Fetch PR details using GitHub CLI
+if ! command -v gh &> /dev/null; then
+    echo "Error: GitHub CLI (gh) is not installed"
+    echo "Install: https://cli.github.com/"
+    exit 1
+fi
+
+# Get PR diff
+PR_DIFF=$(gh pr diff "$OWNER/$REPO" "$PR_NUM" 2>/dev/null)
+
+if [ -z "$PR_DIFF" ]; then
+    echo "Error: Could not fetch PR diff. Check if you have access to this repository."
+    exit 1
+fi
+
+# Get PR metadata
+PR_TITLE=$(gh pr view "$OWNER/$REPO" "$PR_NUM" --json title --jq '.title')
+PR_BODY=$(gh pr view "$OWNER/$REPO" "$PR_NUM" --json body --jq '.body // ""')
+PR_AUTHOR=$(gh pr view "$OWNER/$REPO" "$PR_NUM" --json author --jq '.author.login')
+PR_FILES=$(gh pr view "$OWNER/$REPO" "$PR_NUM" --json files --jq '[.files[].path] | join(", ")')
+
+# Build analysis prompt
+ANALYSIS_PROMPT="You are a code review assistant. Analyze the following PR diff and provide a structured review.
+
+## PR Information
+- Title: $PR_TITLE
+- Author: @$PR_AUTHOR
+- Files changed: $PR_FILES
+
+## Diff
+\`\`\`diff
+$PR_DIFF
+\`\`\`
+
+## Your Task
+Provide a structured code review with:
+1. **Summary**: 2-3 sentence overview of what this PR does
+2. **Risks**: Potential issues, bugs, security concerns, or problems
+3. **Improvements**: Suggestions for making the code better
+4. **Confidence**: Low/Medium/High assessment of the review quality
+
+Be specific, constructive, and focus on actionable feedback. Format your response as Markdown."
+
+# Output the prompt for Claude Code to process
+if [ "$OUTPUT_FORMAT" = "json" ]; then
+    echo "{\"pr_url\": \"$PR_URL\", \"pr_title\": \"$PR_TITLE\", \"pr_author\": \"$PR_AUTHOR\", \"files\": \"$PR_FILES\", \"diff_length\": $(echo "$PR_DIFF" | wc -l), \"prompt\": $(echo "$ANALYSIS_PROMPT" | base64)}"
+else
+    echo "=== CLAUDE CODE PR REVIEW ==="
+    echo ""
+    echo "PR: $PR_URL"
+    echo "Title: $PR_TITLE"
+    echo "Author: @$PR_AUTHOR"
+    echo "Files: $PR_FILES"
+    echo ""
+    echo "--- DIFF PREVIEW (first 50 lines) ---"
+    echo "$PR_DIFF" | head -50
+    echo "..."
+    echo "--- END DIFF ---"
+    echo ""
+    echo "Run with Claude Code to get full review:"
+    echo "claude --print '$ANALYSIS_PROMPT'"
+fi
