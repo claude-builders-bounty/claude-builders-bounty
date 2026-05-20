@@ -2,6 +2,8 @@
 
 Implements issue #5 with an importable n8n workflow that sends a weekly GitHub activity summary to Slack using Claude Sonnet 4.
 
+Closes #5.
+
 ## Deliverables
 
 - `weekly-dev-summary.workflow.json` - importable n8n workflow.
