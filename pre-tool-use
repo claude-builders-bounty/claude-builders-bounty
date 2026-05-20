@@ -1,0 +1,140 @@
+#!/bin/bash
+# Pre-tool-use hook: blocks destructive bash commands
+# Installed at: ~/.claude/hooks/pre-tool-use
+# Claude Code invokes this before each tool use with JSON via stdin
+
+set -euo pipefail
+
+# Read Claude's tool request from stdin
+read -r input
+
+# Extract tool name from the JSON input
+TOOL_NAME=$(echo "$input" | python3 -c "
+import sys, json
+try:
+    data = json.loads(sys.stdin.read())
+    # Handle different Claude response formats
+    if 'tool' in data:
+        print(data['tool'])
+    elif 'type' in data:
+        print(data['type'])
+    else:
+        print('')
+except:
+    print('')
+" 2>/dev/null || echo "")
+
+# Only intercept bash tools
+if [[ "$TOOL_NAME" != "bash" && "$TOOL_NAME" != "cli" ]]; then
+    echo "$input"
+    exit 0
+fi
+
+# Extract the bash command from the input
+BASH_CMD=$(echo "$input" | python3 -c "
+import sys, json, re
+try:
+    data = json.loads(sys.stdin.read())
+    # Extract command from various possible locations
+    cmd = ''
+    if 'command' in data:
+        cmd = data['command']
+    elif 'prompt' in data:
+        # Look for bash -c \"...\" or backtick commands
+        prompt = data['prompt']
+        # Try to extract the actual command
+        match = re.search(r'bash\s+-c\s+\"([^\"]+)\"', prompt)
+        if match:
+            cmd = match.group(1)
+        else:
+            # Try simpler extraction
+            match = re.search(r'\$(bash|sh)\s+[-c]?\s*[\"\']([^\"\']+)[\"\']', prompt)
+            if match:
+                cmd = match.group(2)
+    print(cmd)
+except:
+    print('')
+" 2>/dev/null || echo "")
+
+# If we couldn't extract a command, let it pass
+if [[ -z "$BASH_CMD" ]]; then
+    echo "$input"
+    exit 0
+fi
+
+# Normalize command: lowercase, strip, remove dangerous options
+NORMALIZED=$(echo "$BASH_CMD" | tr '[:upper:]' '[:lower:]' | sed 's/[[:space:]]\+/ /g' | xargs)
+
+# Blocked patterns with explanations
+declare -A BLOCK_PATTERNS
+BLOCK_PATTERNS["rm -rf /"]="Attempting to delete entire root filesystem"
+BLOCK_PATTERNS["rm -rf /*"]="Attempting to delete entire root filesystem"
+BLOCK_PATTERNS["rm -rf ~"]="Attempting to recursively delete home directory"
+BLOCK_PATTERNS["rm -rf \$home"]="Attempting to delete home directory"
+BLOCK_PATTERNS["rm -rf \$home_dir"]="Attempting to delete home directory"
+BLOCK_PATTERNS["drop table"]="SQL DROP TABLE command detected"
+BLOCK_PATTERNS["drop table*"]="SQL DROP TABLE command detected"
+BLOCK_PATTERNS["truncate"]="SQL TRUNCATE command detected"
+BLOCK_PATTERNS["git push --force"]="Force push to remote repository"
+BLOCK_PATTERNS["git push -f"]="Force push to remote repository"
+BLOCK_PATTERNS["DELETE FROM"]="SQL DELETE without WHERE clause"
+
+# Additional patterns for dangerous operations
+BLOCK_EXTENDED=true
+
+# Get current project path (if available)
+PROJECT_PATH="${PWD:-unknown}"
+
+# Check each blocked pattern
+BLOCKED=false
+BLOCK_REASON=""
+
+for pattern in "${!BLOCK_PATTERNS[@]}"; do
+    if echo "$NORMALIZED" | grep -qE "$pattern"; then
+        BLOCKED=true
+        BLOCK_REASON="${BLOCK_PATTERNS[$pattern]}"
+        break
+    fi
+done
+
+# Additional safety: check for DELETE FROM without WHERE
+if [[ "$NORMALIZED" == *"delete from"* ]]; then
+    # Check if WHERE is present (case-insensitive)
+    if ! echo "$NORMALIZED" | grep -qi "where"; then
+        BLOCKED=true
+        BLOCK_REASON="SQL DELETE FROM without WHERE clause"
+    fi
+fi
+
+# Check for multiple consecutive rm -rf (force flag stacking)
+if echo "$NORMALIZED" | grep -qE "rm\s+.*-.*-.*rf"; then
+    BLOCKED=true
+    BLOCK_REASON="Stacked force flags in rm command"
+fi
+
+# Check for dangerous git operations with force
+if echo "$NORMALIZED" | grep -qE "git\s+(push|merge|rebase)\s+.*(-f|--force)"; then
+    BLOCKED=true
+    BLOCK_REASON="Git operation with --force flag"
+fi
+
+if [[ "$BLOCKED" == "true" ]]; then
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+    LOG_LINE="[$TIMESTAMP] BLOCKED: $BLOCK_REASON | Command: $BASH_CMD | Path: $PROJECT_PATH"
+    
+    # Append to blocked log
+    echo "$LOG_LINE" >> ~/.claude/hooks/blocked.log 2>/dev/null || true
+    
+    # Build error response in Claude's expected format
+    # Return empty to block the tool call, and print message to stderr
+    echo "ERROR: Blocked destructive command: $BLOCK_REASON" >&2
+    echo "Command attempted: $BASH_CMD" >&2
+    echo "Log entry written to: ~/.claude/hooks/blocked.log" >&2
+    
+    # Exit with error to block the command
+    exit 1
+fi
+
+# Command is safe - pass through the original input
+echo "$input"
+exit 0
