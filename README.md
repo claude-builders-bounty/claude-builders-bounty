@@ -34,6 +34,13 @@ You're in the right place.
 
 ---
 
+## Bounty Submissions
+
+- `changelog.sh`: Bash changelog generator for [#1](../../issues/1).
+- `generate-changelog/`: usage notes, Claude Code skill instructions, and sample output.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
