@@ -34,6 +34,20 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+This repository includes `changelog.sh`, a dependency-free Bash script that creates a structured `CHANGELOG.md` from git commits since the latest tag. If the repository has no tags, it uses the full commit history.
+
+Setup and usage:
+
+1. Run `chmod +x changelog.sh`
+2. Run `./changelog.sh` or `bash changelog.sh CUSTOM_CHANGELOG.md`
+3. Review the generated `CHANGELOG.md`
+
+The script auto-categorizes commit subjects into `Added`, `Fixed`, `Changed`, and `Removed`. A tested example from this repository is available in [`SAMPLE_CHANGELOG.md`](SAMPLE_CHANGELOG.md).
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
