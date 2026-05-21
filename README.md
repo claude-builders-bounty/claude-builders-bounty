@@ -8,6 +8,29 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+This repository includes `changelog.sh`, a small bash utility that generates a structured `CHANGELOG.md` from git history.
+
+### Usage
+
+```bash
+chmod +x changelog.sh
+./changelog.sh
+./changelog.sh --since v1.2.0 --to HEAD --output CHANGELOG.md
+```
+
+The script:
+
+- reads commits since the latest git tag by default
+- categorizes entries into Added / Fixed / Changed / Removed
+- writes a properly formatted `CHANGELOG.md`
+- supports custom refs with `--since` and `--to`
+
+See `SAMPLE_CHANGELOG.md` for example output from a real-world style git history.
+
+---
+
 ## How it works
 
 **To post a bounty**
