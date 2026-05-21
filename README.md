@@ -43,6 +43,34 @@ You're in the right place.
 
 ---
 
+## Bash Safety Hook (Issue #3) 🛡️
+
+A Pre-Tool-Use hook for Claude Code to intercept and block destructive commands before they are executed.
+
+### Features
+- Intercepts and blocks hazardous operations:
+  - `rm -rf` (including all variants/order of recursive and force flags, e.g. `rm -r -f`, `rm -fr`, `rm --recursive --force`)
+  - `git push --force` (including `--force-with-lease` and short flag `-f` variants)
+  - SQL `DROP TABLE`
+  - SQL `TRUNCATE`
+  - SQL `DELETE FROM` without a `WHERE` clause (evaluates multiple statements correctly)
+- Automatically logs all blocked attempts to `~/.claude/hooks/blocked.log` with timestamps and full command details.
+- Returns exit status `2` to halt execution safely and reports the block reason on `stderr`.
+
+### Installation
+Run the self-contained installer to copy the hook and register it in `~/.claude/settings.json`:
+```bash
+python3 install_hook.py
+```
+
+### Verification & Testing
+To run the automated test suite confirming correct behavior across safe and destructive commands:
+```bash
+python3 test_hook.py
+```
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
@@ -51,3 +79,4 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
