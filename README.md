@@ -43,6 +43,28 @@ You're in the right place.
 
 ---
 
+## Git Changelog Generator (Issue #1) 📝
+
+An automated, self-contained shell script that extracts git history since the last release tag (or repo inception) and generates a beautifully categorized `CHANGELOG.md`.
+
+### Features
+- **Auto-Categorization**: Intelligently parses and groups commits into `Added`, `Fixed`, `Changed`, and `Removed` based on standard prefixes.
+- **GitHub Links**: Automatically resolves the remote repository path and generates hyperlinked commit hashes to GitHub.
+- **Tag-Aware**: Seamlessly detects the most recent git tag and fetches history since that tag. Fallbacks to full history if no tags exist.
+
+### How to Install and Use (3 Steps)
+1. Copy `changelog.sh` to the root of your Git repository.
+2. Make it executable:
+   ```bash
+   chmod +x changelog.sh
+   ```
+3. Run the generator:
+   ```bash
+   ./changelog.sh
+   ```
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
@@ -51,3 +73,4 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
