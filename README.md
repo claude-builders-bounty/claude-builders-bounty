@@ -34,6 +34,26 @@ You're in the right place.
 
 ---
 
+## Bounty #3 Artifact
+
+The destructive Bash command guard is implemented in [`hooks/block_destructive_bash.py`](hooks/block_destructive_bash.py).
+
+Install in one command:
+
+```sh
+python3 hooks/install_block_destructive_hook.py
+```
+
+Windows:
+
+```powershell
+py hooks\install_block_destructive_hook.py
+```
+
+Full usage notes are in [`hooks/README.md`](hooks/README.md).
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
