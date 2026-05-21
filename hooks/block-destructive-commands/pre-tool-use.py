@@ -6,16 +6,22 @@ from datetime import datetime
 
 # Patterns to block (Case-insensitive)
 BLOCK_PATTERNS = [
-    r"rm\s+-r?[fF]?\s+/",                 # rm -rf /
-    r"rm\s+-r?[fF]?\s+\.",                # rm -rf .
-    r"DROP\s+TABLE\s+",                   # SQL DROP TABLE
-    r"git\s+push\s+.*--force",            # git push --force
-    r"git\s+push\s+.*-f(\s|$)",           # git push -f
-    r"TRUNCATE\s+",                       # SQL TRUNCATE
-    r"DELETE\s+FROM\s+(?!.*\s+WHERE\s+)", # SQL DELETE FROM without WHERE
-    r"mkfs\..*",                          # Formatting disks
-    r"dd\s+if=.*of=/dev/.*",              # Direct disk writes
-    r"chmod\s+777\s+",                    # Dangerous permissions
+    r"rm\s+-r?[fF]?\s+/",                     # rm -rf /
+    r"rm\s+-r?[fF]?\s+\.",                    # rm -rf .
+    r"rm\s+-r?[fF]?\s+\*",                    # rm -rf *
+    r"DROP\s+TABLE\s+",                       # SQL DROP TABLE
+    r"git\s+push\s+.*--force",                # git push --force
+    r"git\s+push\s+.*-f(\s|$)",               # git push -f
+    r"git\s+push\s+.*--delete",               # git push --delete
+    r"git\s+reset\s+--hard",                  # git reset --hard
+    r"git\s+branch\s+-D",                     # git branch -D (Force delete)
+    r"TRUNCATE\s+",                           # SQL TRUNCATE
+    r"DELETE\s+FROM\s+(?!.*\s+WHERE\s+)",     # SQL DELETE FROM without WHERE
+    r"mkfs\..*",                              # Formatting disks
+    r"dd\s+if=.*of=/dev/.*",                  # Direct disk writes
+    r"chmod\s+777\s+",                        # Dangerous permissions
+    r"shred\s+",                              # Secure file deletion
+    r"history\s+-c",                          # Clear history
 ]
 
 def log_blocked(command):
@@ -50,7 +56,7 @@ def main():
                     # Return blocking decision
                     print(json.dumps({
                         "approved": False,
-                        "reason": f"🛑 Command blocked by Security Hook!\nCommand: {command}\nMatched Pattern: {pattern}\nThis command is considered destructive and is blocked for your safety."
+                        "reason": f"🛑 SECURITY ALERT: Destructive command detected!\n\nCommand: {command}\nMatched Rule: {pattern}\n\nThis command has been blocked to prevent accidental data loss or security breaches. If you are SURE you want to run this, please execute it manually in your terminal outside of the AI environment."
                     }))
                     return
 
