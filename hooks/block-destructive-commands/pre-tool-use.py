@@ -20,7 +20,7 @@ BLOCK_PATTERNS = [
     r"mkfs\..*",                              # Formatting disks
     r"dd\s+if=.*of=/dev/.*",                  # Direct disk writes
     r"chmod\s+777\s+",                        # Dangerous permissions
-    r"shred\s+",                              # Secure file deletion
+    r"shred\s+",                              # Shredding files
     r"history\s+-c",                          # Clear history
 ]
 
@@ -38,38 +38,42 @@ def log_blocked(command):
 def main():
     try:
         # Claude Code sends JSON to stdin
-        # Format: { "tool": "Bash", "arguments": { "command": "..." } }
+        # Format: { "tool_name": "Bash", "tool_input": { "command": "..." }, ... }
         input_data = sys.stdin.read()
         if not input_data:
-            print(json.dumps({"approved": True}))
-            return
+            print(json.dumps({"decision": "allow"}))
+            sys.exit(0)
 
         data = json.loads(input_data)
-        tool = data.get("tool")
-        args = data.get("arguments", {})
-        command = args.get("command", "")
+        tool_name = data.get("tool_name")
+        tool_input = data.get("tool_input", {})
+        command = tool_input.get("command", "")
 
-        if tool == "Bash" and command:
+        if tool_name == "Bash" and command:
             for pattern in BLOCK_PATTERNS:
                 if re.search(pattern, command, re.IGNORECASE):
                     log_blocked(command)
-                    # Return blocking decision
+                    # Return blocking decision to stdout
                     print(json.dumps({
-                        "approved": False,
+                        "decision": "deny",
                         "reason": f"🛑 SECURITY ALERT: Destructive command detected!\n\nCommand: {command}\nMatched Rule: {pattern}\n\nThis command has been blocked to prevent accidental data loss or security breaches. If you are SURE you want to run this, please execute it manually in your terminal outside of the AI environment."
                     }))
-                    return
+                    # Exit 2 to signal blocking to Claude Code
+                    sys.exit(2)
 
         # If no dangerous patterns found
-        print(json.dumps({"approved": True}))
+        print(json.dumps({"decision": "allow"}))
+        sys.exit(0)
         
     except json.JSONDecodeError:
-        # Fallback for non-JSON input (if any)
-        print(json.dumps({"approved": True}))
+        # Fallback for non-JSON input
+        print(json.dumps({"decision": "allow"}))
+        sys.exit(0)
     except Exception as e:
         # Safety fallback
         sys.stderr.write(f"Hook error: {str(e)}\n")
-        print(json.dumps({"approved": True}))
+        print(json.dumps({"decision": "allow"}))
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()
