@@ -45,8 +45,14 @@ def _has_rm_rf(command: str) -> bool:
         for flag in flags:
             if not flag.startswith("-") or flag == "--":
                 break
-            has_recursive = has_recursive or "r" in flag.lower() or "R" in flag
-            has_force = has_force or "f" in flag.lower()
+            if flag.startswith("--"):
+                has_recursive = has_recursive or flag == "--recursive"
+                has_force = has_force or flag == "--force"
+                continue
+
+            short_options = flag[1:]
+            has_recursive = has_recursive or "r" in short_options or "R" in short_options
+            has_force = has_force or "f" in short_options
 
         if has_recursive and has_force:
             return True

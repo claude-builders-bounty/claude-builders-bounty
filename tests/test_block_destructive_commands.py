@@ -54,6 +54,7 @@ def main() -> int:
     blocked = [
         "rm -rf build",
         "sudo rm -fr /tmp/demo",
+        "rm --recursive --force build",
         "psql -c 'DROP TABLE users'",
         "git push --force origin main",
         "sqlite3 app.db 'TRUNCATE sessions'",
@@ -63,6 +64,9 @@ def main() -> int:
         "ls -la",
         "git status --short",
         "rm build/output.txt",
+        "rm --preserve-root -f file.txt",
+        "rm --one-file-system -f file.txt",
+        "rm --force file.txt",
         "git push origin main",
         "psql -c 'DELETE FROM users WHERE id = 1;'",
     ]
