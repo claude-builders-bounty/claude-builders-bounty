@@ -1,0 +1,190 @@
+{
+  "name": "Weekly Dev Summary — Claude AI",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "0 17 * * 5"}]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Friday 5pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getMany",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "since": "={{ $now.minus({days: 7}).toFormat(\"yyyy-MM-dd'T'HH:mm:ss'Z'\") }}",
+        "additionalFields": {}
+      },
+      "id": "github-commits",
+      "name": "Fetch Week's Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 250],
+      "credentials": {"githubApi": "GitHub Account"}
+    },
+    {
+      "parameters": {
+        "operation": "getMany",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "state": "closed",
+        "since": "={{ $now.minus({days: 7}).toFormat(\"yyyy-MM-dd'T'HH:mm:ss'Z'\") }}"
+      },
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 400],
+      "credentials": {"githubApi": "GitHub Account"}
+    },
+    {
+      "parameters": {
+        "operation": "getMany",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "state": "closed",
+        "additionalFields": {
+          "sort": "updated",
+          "direction": "desc"
+        }
+      },
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 550],
+      "credentials": {"githubApi": "GitHub Account"}
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate GitHub data into structured context for Claude\nconst commits = $input.first().json;\nconst allInputs = $input.all();\nconst issues = allInputs[1]?.json || [];\nconst prs = allInputs[2]?.json || [];\n\n// Filter PRs to only merged (not just closed)\nconst mergedPRs = Array.isArray(prs) ? prs.filter(p => p.merged_at) : [];\nconst closedIssues = Array.isArray(issues) ? issues.filter(i => !i.pull_request) : [];\n\n// Build commit summary\nconst commitMessages = Array.isArray(commits) \n  ? commits.slice(0, 50).map(c => `- ${c.commit?.message?.split('\\n')[0] || 'unknown'} (${c.sha?.slice(0,7)})`).join('\\n')\n  : 'No commits';\n\n// Build PR summary\nconst prSummary = mergedPRs.map(p => \n  `- #${p.number} ${p.title} by @${p.user?.login}`\n).join('\\n') || 'No merged PRs';\n\n// Build issue summary  \nconst issueSummary = closedIssues.map(i =>\n  `- #${i.number} ${i.title}`\n).join('\\n') || 'No closed issues';\n\nconst stats = {\n  commitCount: Array.isArray(commits) ? commits.length : 0,\n  mergedPRCount: mergedPRs.length,\n  closedIssueCount: closedIssues.length\n};\n\nreturn {\n  commits: commitMessages,\n  pullRequests: prSummary,\n  issues: issueSummary,\n  stats,\n  repo: `${$env.GITHUB_OWNER}/${$env.GITHUB_REPO}`,\n  week: `${$now.minus({days: 7}).toFormat('yyyy-MM-dd')} to ${$now.toFormat('yyyy-MM-dd')}`\n};"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Claude API prompt from aggregated data\nconst data = $input.first().json;\n\nconst prompt = `You are a technical project manager writing a weekly development summary. \nWrite a concise but informative narrative summary of this week's activity.\n\nRepository: ${data.repo}\nPeriod: ${data.week}\n\nStats: ${data.stats.commitCount} commits, ${data.stats.mergedPRCount} merged PRs, ${data.stats.closedIssueCount} closed issues.\n\n## Commits this week:\n${data.commits}\n\n## Merged Pull Requests:\n${data.pullRequests}\n\n## Closed Issues:\n${data.issues}\n\nWrite a summary with these sections:\n1. **Overview** — 2-3 sentences summarizing the week\n2. **Highlights** — Most important changes or milestones\n3. **Pull Requests** — Key PRs merged and their impact\n4. **Issues Resolved** — Notable closed issues\n5. **What's Next** — Based on activity patterns, what to expect next week\n\nFormat in Markdown. Be specific, reference actual PR numbers and commit messages. Keep under 500 words.`;\n\nreturn { prompt };"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $env.CLAUDE_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "content-type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "model", "value": "claude-sonnet-4-20250514"},
+            {"name": "max_tokens", "value": 1024},
+            {"name": "messages[0].role", "value": "user"},
+            {"name": "messages[0].content", "value": "={{ $json.prompt }}"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "call-claude-api",
+      "name": "Call Claude API (Sonnet)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1100, 300],
+      "credentials": {"httpHeaderAuth": "Claude API Key"}
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Claude's response and format final output\nconst response = $input.first().json;\nconst summary = response.content?.[0]?.text || 'No summary generated';\n\nconst header = `# Weekly Dev Summary\\n\\n**Repo:** ${$('Aggregate GitHub Data').first().json.repo}\\n**Period:** ${$('Aggregate GitHub Data').first().json.week}\\n\\n---\\n`;\n\nconst markdown = header + summary;\n\nreturn {\n  markdown,\n  summary,\n  timestamp: new Date().toISOString(),\n  week: $('Aggregate GitHub Data').first().json.week\n};"
+      },
+      "id": "format-output",
+      "name": "Format Markdown Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "fileName": "=/weekly-summaries/summary-{{ $now.toFormat('yyyy-MM-dd') }}.md",
+        "content": "={{ $json.markdown }}",
+        "additionalFields": {}
+      },
+      "id": "save-to-file",
+      "name": "Save Summary to File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [1500, 250]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "title": "=Weekly Dev Summary: {{ $('Aggregate GitHub Data').first().json.week }}",
+        "body": "={{ $json.markdown }}",
+        "additionalFields": {
+          "labels": ["weekly-summary", "automated"]
+        }
+      },
+      "id": "create-github-issue",
+      "name": "Post as GitHub Issue",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [1500, 400],
+      "credentials": {"githubApi": "GitHub Account"}
+    },
+    {
+      "parameters": {
+        "jsCode": "const str = $input.first().json.markdown;\nconst len = str.length;\nconst words = str.split(/\\s+/).length;\nreturn { success: true, summaryLength: len, wordCount: words };"
+      },
+      "id": "log-result",
+      "name": "Log Completion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, 250]
+    }
+  ],
+  "connections": {
+    "Friday 5pm Trigger": {"main": [[{"node": "Fetch Week's Commits", "type": "main", "index": 0}]]},
+    "Fetch Week's Commits": {"main": [[{"node": "Fetch Closed Issues", "type": "main", "index": 0}]]},
+    "Fetch Closed Issues": {"main": [[{"node": "Fetch Merged PRs", "type": "main", "index": 0}]]},
+    "Fetch Merged PRs": {"main": [[{"node": "Aggregate GitHub Data", "type": "main", "index": 0}]]},
+    "Aggregate GitHub Data": {"main": [[{"node": "Build Claude Prompt", "type": "main", "index": 0}]]},
+    "Build Claude Prompt": {"main": [[{"node": "Call Claude API (Sonnet)", "type": "main", "index": 0}]]},
+    "Call Claude API (Sonnet)": {"main": [[{"node": "Format Markdown Output", "type": "main", "index": 0}]]},
+    "Format Markdown Output": {"main": [
+      [{"node": "Save Summary to File", "type": "main", "index": 0}],
+      [{"node": "Post as GitHub Issue", "type": "main", "index": 0}],
+      [{"node": "Log Completion", "type": "main", "index": 0}]
+    ]}
+  },
+  "settings": {
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [{"name": "dev-summary"}, {"name": "claude-ai"}, {"name": "automation"}],
+  "pinData": {},
+  "versionId": "1.0.0"
+}
