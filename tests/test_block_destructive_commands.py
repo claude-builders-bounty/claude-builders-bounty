@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -36,13 +37,16 @@ def run_hook(command: str, home: Path) -> subprocess.CompletedProcess[str]:
         "tool_input": {"command": command},
         "cwd": str(ROOT),
     }
+    env = os.environ.copy()
+    env.update({"HOME": str(home), "USERPROFILE": str(home)})
+
     return subprocess.run(
         [sys.executable, str(HOOK)],
         input=json.dumps(payload),
         text=True,
         capture_output=True,
         check=False,
-        env={"HOME": str(home), "USERPROFILE": str(home)},
+        env=env,
     )
 
 
