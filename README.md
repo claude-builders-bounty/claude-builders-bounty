@@ -43,6 +43,19 @@ You're in the right place.
 
 ---
 
+## Next.js + SQLite CLAUDE.md Template (Issue #2) 📋
+
+An opinionated, production-ready developer guidelines template (`templates/nextjs-sqlite/CLAUDE.md`) tailored to Next.js 15 App Router and SQLite (Drizzle ORM) SaaS projects.
+
+### Features
+- Centralizes all crucial developer directives so Claude Code can align with your local constraints without prompting.
+- Establishes rules for Drizzle schema definitions and nullable properties.
+- Explains Server Components by default vs. explicit `"use client"` interactive boundaries.
+- Documents critical anti-patterns to avoid (e.g. database client caching, raw SQL injection hazards, client-side querying).
+- Defines standardized commands for development, linting, migration generation, and migration application.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
@@ -51,3 +64,4 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
