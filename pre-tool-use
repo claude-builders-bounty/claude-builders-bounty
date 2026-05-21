@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Claude Code pre-tool-use hook — blocks destructive bash commands."""
+
+import json, sys, os, re
+from datetime import datetime, timezone
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+DESTRUCTIVE_PATTERNS = [
+    r"\brm\s+-rf\b",
+    r"\bDROP\s+TABLE\b",
+    r"\bTRUNCATE\b",
+    r"\bDELETE\s+FROM\b(?!\s+\w+\s+WHERE)",
+    r"\bgit\s+push\s+--force\b",
+    r"\bgit\s+push\s+-f\b",
+    r"\bgit\s+push\s+--force-with-lease\b",
+    r"\bdd\s+if=",
+    r"\bmkfs\b", r"\bmkswap\b",
+    r"\bchmod\s+-R\s*0{1,3}\b",
+    r"\bchown\s+-R\b",
+    r">\s+/dev/",
+    r"\bkillall\b", r"\bpkill\s+-9\b",
+]
+
+
+def check_command(command: str) -> dict:
+    for pattern in DESTRUCTIVE_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return {"is_blocked": True, "reason": f"matched pattern: {pattern}"}
+    return {"is_blocked": False, "reason": ""}
+
+
+def log_blocked(command: str, project_path: str, reason: str):
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    with open(LOG_FILE, "a") as f:
+        f.write(f"[{timestamp}] BLOCKED | {reason} | project={project_path} | cmd={command[:200]}\n")
+
+
+def main():
+    try:
+        payload = json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, IndexError):
+        print(json.dumps({"is_error": False}))
+        return
+    command = payload.get("tool_use", {}).get("input", {}).get("command", "")
+    project_path = payload.get("project_path", os.getcwd())
+    result = check_command(command)
+    if result["is_blocked"]:
+        log_blocked(command, project_path, result["reason"])
+        print(json.dumps({
+            "is_error": True, "error_type": "blocked",
+            "error_message": f"[BLOCKED] {result['reason']}\n\nThis command was blocked. Run it manually if intentional.\nAudit: ~/.claude/hooks/blocked.log",
+        }))
+    else:
+        print(json.dumps({"is_error": False}))
+
+
+if __name__ == "__main__":
+    main()
