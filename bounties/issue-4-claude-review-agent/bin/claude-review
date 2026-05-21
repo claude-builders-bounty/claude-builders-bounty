@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+import argparse, json, os, re, subprocess, sys
+
+def run(cmd):
+    return subprocess.run(cmd, text=True, capture_output=True, check=False)
+
+def pr_parts(url):
+    m=re.search(r'github\.com/([^/]+)/([^/]+)/pull/(\d+)', url)
+    if not m: raise SystemExit('expected GitHub PR URL like https://github.com/owner/repo/pull/123')
+    return m.group(1), m.group(2), m.group(3)
+
+def changed_files(diff):
+    return re.findall(r'^diff --git a/(.*?) b/', diff, re.M)
+
+def risk_for_file(f):
+    low=f.lower()
+    if any(x in low for x in ['auth','security','secret','token','payment','billing']): return f'`{f}` touches sensitive surface; verify validation, permissions, secret handling.'
+    if any(x in low for x in ['migration','schema','database','sql']): return f'`{f}` changes data layer; verify rollback, indexes, compatibility.'
+    if any(x in low for x in ['workflow','action','.github']): return f'`{f}` changes CI automation; verify token scopes and command injection boundaries.'
+    if any(x in low for x in ['package.json','requirements','lock']): return f'`{f}` changes dependencies; verify supply-chain risk and version compatibility.'
+    return None
+
+def main():
+    ap=argparse.ArgumentParser(description='Generate structured Claude-style PR review markdown')
+    ap.add_argument('--pr', required=True, help='GitHub PR URL')
+    ap.add_argument('--post', action='store_true', help='post comment with gh pr comment')
+    args=ap.parse_args()
+    owner, repo, num = pr_parts(args.pr)
+    view=run(['gh','pr','view',args.pr,'--json','title,body,additions,deletions,changedFiles,author'])
+    diff=run(['gh','pr','diff',args.pr,'--patch'])
+    if view.returncode or diff.returncode:
+        sys.exit((view.stderr or diff.stderr).strip())
+    meta=json.loads(view.stdout)
+    files=changed_files(diff.stdout)
+    risks=[r for f in files for r in [risk_for_file(f)] if r]
+    if not risks: risks=['No obvious high-risk file paths detected; still verify runtime behavior and edge cases manually.']
+    suggestions=[]
+    if meta.get('changedFiles',0)>10: suggestions.append('Split or document large review surface so future reviewers can isolate risk quickly.')
+    if not re.search(r'test|spec|__tests__', '\n'.join(files), re.I): suggestions.append('Add/mention tests or a manual verification note for changed behavior.')
+    suggestions.append('Confirm README/usage docs match the final CLI/API behavior.')
+    confidence='High' if meta.get('changedFiles',0)<=5 and meta.get('additions',0)<400 else 'Medium'
+    out=f'''## Claude Review\n\n### Summary\nPR #{num} (`{owner}/{repo}`) updates {meta.get('changedFiles')} file(s) with +{meta.get('additions')}/-{meta.get('deletions')}. The main review surface is: {', '.join('`'+f+'`' for f in files[:8]) or 'no files detected'}.\n\n### Identified risks\n'''
+    out+='\n'.join(f'- {x}' for x in risks)
+    out+='\n\n### Improvement suggestions\n'+'\n'.join(f'- {x}' for x in suggestions)
+    out+=f'\n\n### Confidence score\n{confidence}\n'
+    print(out)
+    if args.post:
+        p=run(['gh','pr','comment',args.pr,'--body',out])
+        if p.returncode: sys.exit(p.stderr.strip())
+        print(p.stdout.strip(), file=sys.stderr)
+if __name__=='__main__': main()
