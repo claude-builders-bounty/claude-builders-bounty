@@ -1,0 +1,148 @@
+{
+  "name": "GitHub Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weekday",
+              "operator": "eq",
+              "value": "5"
+            },
+            {
+              "field": "hour",
+              "operator": "eq",
+              "value": "17"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const since = new Date();\nsince.setDate(since.getDate() - 7);\nreturn {\n  since: since.toISOString(),\n  owner: process.env.GITHUB_OWNER,\n  repo: process.env.GITHUB_REPO\n};"
+      },
+      "id": "set-date",
+      "name": "Set Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits?since={{ $json.since }}",
+        "sendQuery": false,
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/issues?state=closed&since={{ $json.since }}",
+        "sendQuery": false,
+        "options": {}
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/pulls?state=closed&since={{ $json.since }}",
+        "sendQuery": false,
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a technical writer creating weekly development summaries. Write in the user's preferred language."
+          },
+          {
+            "role": "user",
+            "content": "=Create a weekly dev summary:\n\nRepo: {{ $env.GITHUB_OWNER }}/{{ $env.GITHUB_REPO }}\nWeek: {{ $json.since }} to now\n\nCommits ({{ $json.commits.length }}): {{ JSON.stringify($json.commits.map(c => c.commit.message)) }}\nClosed Issues ({{ $json.issues.length }}): {{ JSON.stringify($json.issues.map(i => i.title)) }}\nMerged PRs ({{ $json.prs.length }}): {{ JSON.stringify($json.prs.map(p => p.title)) }}"
+          }
+        ]
+      },
+      "id": "claude-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.anthropicChatModel",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "webhookUri": "={{ $env.DISCORD_WEBHOOK || $env.SLACK_WEBHOOK }}",
+        "text": "=📊 **Weekly Dev Summary**\n\n{{ $json.content }}"
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [1050, 250]
+    },
+    {
+      "parameters": {
+        "sendTo": "channel",
+        "channel": "={{ $env.SLACK_CHANNEL }}",
+        "text": "=📊 *Weekly Dev Summary*\n\n{{ $json.content }}"
+      },
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [1050, 350]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Friday 5PM)": {
+      "main": [[{"node":"Set Date Range","type":"main","index":0}]]
+    },
+    "Set Date Range": {
+      "main": [
+        [{"node":"Fetch Commits","type":"main","index":0}],
+        [{"node":"Fetch Closed Issues","type":"main","index":0}],
+        [{"node":"Fetch Merged PRs","type":"main","index":0}]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [[{"node":"Generate Summary","type":"main","index":0}]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{"node":"Generate Summary","type":"main","index":0}]]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{"node":"Generate Summary","type":"main","index":0}]]
+    },
+    "Generate Summary": {
+      "main": [
+        [{"node":"Send to Discord","type":"main","index":0}],
+        [{"node":"Send to Slack","type":"main","index":0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true
+  }
+}
