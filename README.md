@@ -22,6 +22,20 @@ You're in the right place.
 
 ---
 
+## Destructive Bash Command Hook
+
+Use `hooks/block-dangerous-bash.py` as a Claude Code PreToolUse hook to stop destructive Bash commands before they run.
+
+```bash
+python hooks/install.py
+```
+
+It blocks `rm -rf`, force pushes, destructive table operations, and `DELETE FROM` SQL without a `WHERE` clause. Blocked attempts are logged to `~/.claude/hooks/blocked.log`.
+
+See [hooks/README.md](hooks/README.md) for details.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
