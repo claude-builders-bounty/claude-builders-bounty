@@ -1,0 +1,50 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install anthropic
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} --repo ${{ github.repository }} > pr_diff.txt
+          echo "diff_lines=$(wc -l < pr_diff.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude review
+        if: steps.diff.outputs.diff_lines != '0'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python claude-review.py \
+            --pr "https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}" \
+            --output review_output.md
+
+      - name: Post review as PR comment
+        if: steps.diff.outputs.diff_lines != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --body-file review_output.md
