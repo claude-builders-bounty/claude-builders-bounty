@@ -34,6 +34,14 @@ You're in the right place.
 
 ---
 
+## Submission: PR Review Agent
+
+This repository now includes a claude-review CLI, a Claude Code sub-agent prompt, and a GitHub Action example for bounty #4.
+
+See CLAUDE_REVIEW_AGENT.md for setup, usage, posting comments, output shape, and smoke-test instructions.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
