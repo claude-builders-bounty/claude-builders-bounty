@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown review for a GitHub pull request diff."""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, List, Sequence, Tuple
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:\b.*)?$")
+
+
+@dataclass
+class DiffStats:
+    files: List[str]
+    additions: int
+    deletions: int
+    test_files: List[str]
+    risky_lines: List[str]
+
+
+def parse_pr_url(url: str) -> Tuple[str, str, str]:
+    match = PR_RE.match(url.strip())
+    if not match:
+        raise ValueError("expected PR URL like https://github.com/owner/repo/pull/123")
+    return match.group(1), match.group(2), match.group(3)
+
+
+def fetch_diff(pr_url: str) -> str:
+    owner, repo, number = parse_pr_url(pr_url)
+    diff_url = f"https://github.com/{owner}/{repo}/pull/{number}.diff"
+    request = urllib.request.Request(
+        diff_url,
+        headers={"User-Agent": "claude-review-local-agent"},
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def read_diff(args: argparse.Namespace) -> str:
+    if args.diff_file:
+        return Path(args.diff_file).read_text(encoding="utf-8")
+    if not args.pr:
+        raise ValueError("provide --pr or --diff-file")
+    return fetch_diff(args.pr)
+
+
+def is_test_path(path: str) -> bool:
+    lowered = path.lower()
+    return any(
+        marker in lowered
+        for marker in ("/test", "/tests", "__tests__", ".test.", ".spec.", "spec/")
+    )
+
+
+def analyze_diff(diff_text: str) -> DiffStats:
+    files: List[str] = []
+    additions = 0
+    deletions = 0
+    risky_lines: List[str] = []
+
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                files.append(parts[3][2:])
+            continue
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            additions += 1
+            lowered = line.lower()
+            if any(
+                token in lowered
+                for token in (
+                    "eval(",
+                    "exec(",
+                    "innerhtml",
+                    "delete from",
+                    "drop table",
+                    "rm -rf",
+                    "disable csrf",
+                    "verify=false",
+                    "password",
+                    "secret",
+                    "token",
+                )
+            ):
+                risky_lines.append(line[1:].strip())
+        elif line.startswith("-"):
+            deletions += 1
+
+    test_files = [path for path in files if is_test_path(path)]
+    return DiffStats(files, additions, deletions, test_files, risky_lines[:8])
+
+
+def classify_files(files: Sequence[str]) -> List[str]:
+    touched = []
+    checks = [
+        ("database or migration files", ("migration", "schema", ".sql", "sqlite", "db/")),
+        ("authentication or authorization files", ("auth", "login", "session", "permission")),
+        ("API or server routes", ("api/", "routes", "server", "controller")),
+        ("frontend components", ("components/", "app/", "pages/", ".tsx", ".jsx")),
+        ("CI or deployment configuration", (".github/", "docker", "deploy", "workflow")),
+    ]
+    lowered_files = [path.lower() for path in files]
+    for label, markers in checks:
+        if any(any(marker in path for marker in markers) for path in lowered_files):
+            touched.append(label)
+    return touched
+
+
+def build_risks(stats: DiffStats) -> List[str]:
+    risks: List[str] = []
+    total_changes = stats.additions + stats.deletions
+    touched = classify_files(stats.files)
+
+    if not stats.test_files:
+        risks.append("No test files were changed, so behavior may be under-verified.")
+    if total_changes > 500:
+        risks.append(f"The diff is large ({total_changes} changed lines), increasing review risk.")
+    if stats.risky_lines:
+        risks.append("Potentially sensitive or destructive added lines need manual inspection.")
+    if any("database" in area for area in touched):
+        risks.append("Database or migration changes need rollback and data-shape review.")
+    if any("authentication" in area for area in touched):
+        risks.append("Authentication or authorization paths need abuse-case testing.")
+
+    return risks or ["No obvious high-risk pattern was detected from the diff heuristics."]
+
+
+def build_suggestions(stats: DiffStats) -> List[str]:
+    suggestions: List[str] = []
+    total_changes = stats.additions + stats.deletions
+
+    if not stats.test_files:
+        suggestions.append("Add focused regression tests for the changed behavior.")
+    if total_changes > 500:
+        suggestions.append("Consider splitting unrelated changes into smaller PRs.")
+    if stats.risky_lines:
+        suggestions.append("Review sensitive lines for secret handling, destructive SQL, or unsafe execution.")
+    if stats.test_files:
+        suggestions.append("Confirm the changed tests fail without the implementation change.")
+
+    suggestions.append("Run the repository's formatter, lint, typecheck, and test suite before merge.")
+    return suggestions
+
+
+def confidence(stats: DiffStats) -> str:
+    total_changes = stats.additions + stats.deletions
+    if total_changes > 1000 or (stats.risky_lines and not stats.test_files):
+        return "Low"
+    if stats.test_files and total_changes <= 350 and not stats.risky_lines:
+        return "High"
+    return "Medium"
+
+
+def bullet_list(items: Iterable[str]) -> str:
+    return "\n".join(f"- {item}" for item in items)
+
+
+def render_review(pr_url: str, diff_text: str) -> str:
+    stats = analyze_diff(diff_text)
+    files_count = len(stats.files)
+    total_changes = stats.additions + stats.deletions
+    touched = classify_files(stats.files)
+    area_text = ", ".join(touched) if touched else "general project files"
+
+    summary = (
+        f"This PR changes {files_count} file(s) with {stats.additions} additions "
+        f"and {stats.deletions} deletions across {area_text}. "
+        f"The diff includes {len(stats.test_files)} test-related file(s), "
+        f"for a total of {total_changes} changed lines."
+    )
+
+    return "\n".join(
+        [
+            "## PR Review",
+            "",
+            f"Source: {pr_url or 'local diff'}",
+            "",
+            "### Summary",
+            "",
+            summary,
+            "",
+            "### Identified Risks",
+            "",
+            bullet_list(build_risks(stats)),
+            "",
+            "### Improvement Suggestions",
+            "",
+            bullet_list(build_suggestions(stats)),
+            "",
+            "### Confidence",
+            "",
+            confidence(stats),
+            "",
+        ]
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pr", help="GitHub PR URL to review")
+    parser.add_argument("--diff-file", help="Read a local .diff file instead of fetching GitHub")
+    args = parser.parse_args(argv)
+
+    try:
+        diff_text = read_diff(args)
+        print(render_review(args.pr or "", diff_text))
+    except Exception as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
