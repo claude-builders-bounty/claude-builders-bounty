@@ -1,0 +1,206 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "trigger-cron",
+      "name": "Every Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "1", "name": "GITHUB_OWNER",   "value": "anthropics",                          "type": "string" },
+            { "id": "2", "name": "GITHUB_REPO",    "value": "anthropic-cookbook",                  "type": "string" },
+            { "id": "3", "name": "GITHUB_TOKEN",   "value": "ghp_YOUR_GITHUB_PERSONAL_ACCESS_TOKEN", "type": "string" },
+            { "id": "4", "name": "SUMMARY_EMAIL",  "value": "you@example.com",                     "type": "string" },
+            { "id": "5", "name": "LANGUAGE",       "value": "EN",                                  "type": "string" },
+            { "id": "6", "name": "CLAUDE_BASE_URL","value": "https://api.anthropic.com",           "type": "string" },
+            { "id": "7", "name": "CLAUDE_API_KEY", "value": "sk-ant-YOUR_CLAUDE_API_KEY",          "type": "string" },
+            { "id": "8", "name": "CLAUDE_MODEL",   "value": "claude-sonnet-4-20250514",            "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Config (edit these)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn [{ json: {\n  since: weekAgo.toISOString(),\n  until: now.toISOString(),\n  weekLabel: weekAgo.toISOString().slice(0,10) + ' to ' + now.toISOString().slice(0,10)\n} }];"
+      },
+      "id": "date-range",
+      "name": "Calc Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config (edit these)').item.json.GITHUB_OWNER }}/{{ $('Config (edit these)').item.json.GITHUB_REPO }}/commits?since={{ $json.since }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $('Config (edit these)').item.json.GITHUB_TOKEN }}" },
+            { "name": "Accept",        "value": "application/vnd.github+json" },
+            { "name": "User-Agent",    "value": "n8n-weekly-summary" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config (edit these)').item.json.GITHUB_OWNER }}/{{ $('Config (edit these)').item.json.GITHUB_REPO }}/pulls?state=closed&sort=updated&direction=desc&per_page=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $('Config (edit these)').item.json.GITHUB_TOKEN }}" },
+            { "name": "Accept",        "value": "application/vnd.github+json" },
+            { "name": "User-Agent",    "value": "n8n-weekly-summary" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config (edit these)').item.json.GITHUB_OWNER }}/{{ $('Config (edit these)').item.json.GITHUB_REPO }}/issues?state=closed&since={{ $('Calc Date Range').item.json.since }}&per_page=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $('Config (edit these)').item.json.GITHUB_TOKEN }}" },
+            { "name": "Accept",        "value": "application/vnd.github+json" },
+            { "name": "User-Agent",    "value": "n8n-weekly-summary" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge GitHub Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1140, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate raw GitHub data into a compact digest for Claude.\nconst since = $('Calc Date Range').item.json.since;\nconst sinceTs = new Date(since).getTime();\nconst language = $('Config (edit these)').item.json.LANGUAGE;\n\n// Inputs from the three Fetch nodes (each is an array of GitHub objects)\nconst commits = $('Fetch Commits').all().map(i => i.json).flat();\nconst pulls = $('Fetch Merged PRs').all().map(i => i.json).flat();\nconst issues = $('Fetch Closed Issues').all().map(i => i.json).flat();\n\n// Keep only PRs merged within the last 7 days\nconst recentMerged = pulls.filter(p => p && p.merged_at && new Date(p.merged_at).getTime() >= sinceTs);\n// Skip pull_request-typed issues (GitHub returns PRs as issues too)\nconst realIssues = issues.filter(i => i && !i.pull_request);\n\nconst commitLines = commits.slice(0, 30).map(c => {\n  const msg = (c.commit && c.commit.message || '').split('\\n')[0];\n  const author = (c.author && c.author.login) || (c.commit && c.commit.author && c.commit.author.name) || 'unknown';\n  return `- ${c.sha.slice(0,7)} ${msg} (@${author})`;\n}).join('\\n');\n\nconst prLines = recentMerged.slice(0, 20).map(p => {\n  const labels = (p.labels || []).map(l => l.name).join(', ');\n  return `- #${p.number} ${p.title} (@${p.user && p.user.login}) [${labels}]`;\n}).join('\\n');\n\nconst issueLines = realIssues.slice(0, 20).map(i => `- #${i.number} ${i.title} (@${i.user && i.user.login})`).join('\\n');\n\nconst langInstruction = language === 'FR'\n  ? 'Rédigez le résumé entièrement en français. Utilisez un ton clair et professionnel.'\n  : 'Write the summary entirely in English. Use a clear, professional tone.';\n\nconst prompt = `You are a technical writer summarizing one week of activity for an open-source project.\\n\\n${langInstruction}\\n\\nRepository: ${$('Config (edit these)').item.json.GITHUB_OWNER}/${$('Config (edit these)').item.json.GITHUB_REPO}\\nWeek: ${$('Calc Date Range').item.json.weekLabel}\\n\\nCommits (${commits.length} total, showing up to 30):\\n${commitLines || '(none)'}\\n\\nMerged PRs (${recentMerged.length}):\\n${prLines || '(none)'}\\n\\nClosed issues (${realIssues.length}):\\n${issueLines || '(none)'}\\n\\nWrite a markdown summary with these sections:\\n## Highlights — 3 to 5 most important changes, framed narratively (not a bullet list of commits).\\n## Features Shipped — bullet list of new functionality.\\n## Bug Fixes — bullet list of fixes that landed.\\n## Issues Closed — short summary of closed issues.\\n## Contributors — list active contributors this week.\\n\\nDo not invent details that are not in the data. Keep the total under 500 words.`;\n\nreturn [{ json: {\n  prompt,\n  stats: {\n    commitCount: commits.length,\n    mergedPrCount: recentMerged.length,\n    closedIssueCount: realIssues.length\n  },\n  weekLabel: $('Calc Date Range').item.json.weekLabel\n} }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config (edit these)').item.json.CLAUDE_BASE_URL }}/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key",         "value": "={{ $('Config (edit these)').item.json.CLAUDE_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type",      "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $('Config (edit these)').item.json.CLAUDE_MODEL }}\",\n  \"max_tokens\": 2000,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": {{ JSON.stringify($json.prompt) }} }\n  ]\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1580, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.item.json;\nconst summary = (resp.content && resp.content[0] && resp.content[0].text) || '(Claude returned no text)';\nconst stats = $('Build Claude Prompt').item.json.stats;\nconst weekLabel = $('Build Claude Prompt').item.json.weekLabel;\nconst repo = `${$('Config (edit these)').item.json.GITHUB_OWNER}/${$('Config (edit these)').item.json.GITHUB_REPO}`;\nconst lang = $('Config (edit these)').item.json.LANGUAGE;\n\nconst subject = lang === 'FR'\n  ? `Résumé hebdomadaire — ${repo} — ${weekLabel}`\n  : `Weekly Dev Summary — ${repo} — ${weekLabel}`;\n\nconst footer = lang === 'FR'\n  ? `\\n\\n---\\nGénéré par n8n + Claude. Période : ${weekLabel}. ${stats.commitCount} commits · ${stats.mergedPrCount} PRs fusionnées · ${stats.closedIssueCount} issues clôturées.`\n  : `\\n\\n---\\nGenerated by n8n + Claude. Period: ${weekLabel}. ${stats.commitCount} commits · ${stats.mergedPrCount} merged PRs · ${stats.closedIssueCount} closed issues.`;\n\nreturn [{ json: { subject, body: summary + footer } }];"
+      },
+      "id": "format-email",
+      "name": "Format Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1800, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "n8n-bot@example.com",
+        "toEmail": "={{ $('Config (edit these)').item.json.SUMMARY_EMAIL }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email (SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2020, 300],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Friday 5pm":    { "main": [[{ "node": "Config (edit these)", "type": "main", "index": 0 }]] },
+    "Config (edit these)": { "main": [[{ "node": "Calc Date Range",    "type": "main", "index": 0 }]] },
+    "Calc Date Range":     { "main": [[{ "node": "Fetch Commits",      "type": "main", "index": 0 },
+                                       { "node": "Fetch Merged PRs",   "type": "main", "index": 0 },
+                                       { "node": "Fetch Closed Issues","type": "main", "index": 0 }]] },
+    "Fetch Commits":       { "main": [[{ "node": "Merge GitHub Data",  "type": "main", "index": 0 }]] },
+    "Fetch Merged PRs":    { "main": [[{ "node": "Merge GitHub Data",  "type": "main", "index": 1 }]] },
+    "Fetch Closed Issues": { "main": [[{ "node": "Merge GitHub Data",  "type": "main", "index": 2 }]] },
+    "Merge GitHub Data":   { "main": [[{ "node": "Build Claude Prompt","type": "main", "index": 0 }]] },
+    "Build Claude Prompt": { "main": [[{ "node": "Call Claude API",    "type": "main", "index": 0 }]] },
+    "Call Claude API":     { "main": [[{ "node": "Format Email",       "type": "main", "index": 0 }]] },
+    "Format Email":        { "main": [[{ "node": "Send Email (SMTP)",  "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": []
+}
