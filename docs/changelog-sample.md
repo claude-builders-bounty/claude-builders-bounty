@@ -3,7 +3,7 @@
 This sample was generated against the public `octocat/Hello-World` repository:
 
 ```bash
-bash scripts/generate-changelog.sh --repo ../Hello-World --stdout
+bash changelog.sh --repo ../Hello-World --stdout
 ```
 
 ```markdown

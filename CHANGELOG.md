@@ -2,7 +2,7 @@
 
 ## 2026-05-21
 
-Generated from `initial history..HEAD` with 2 commit(s).
+Generated from `initial history..HEAD` with 3 commit(s).
 
 ### Added
 
@@ -15,6 +15,7 @@ Generated from `initial history..HEAD` with 2 commit(s).
 ### Changed
 
 - Initial commit (a80a580)
+- Add git history changelog generator (c1af246)
 
 ### Removed
 
