@@ -51,3 +51,39 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Generate Changelog Tool
+
+A small bash tool that generates a structured `CHANGELOG.md` from git history.
+
+### Setup
+
+1. Copy `changelog.sh` into any git repository.
+2. Run `bash changelog.sh`.
+3. Open `CHANGELOG.md`.
+
+### Sample output
+
+```markdown
+# Changelog
+
+Changes from the full git history (no tags found).
+
+## Added
+
+- initial README with bounty board
+
+## Fixed
+
+- No changes.
+
+## Changed
+
+- No changes.
+
+## Removed
+
+- No changes.
+```
