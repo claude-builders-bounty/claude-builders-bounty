@@ -34,6 +34,14 @@ You're in the right place.
 
 ---
 
+## Submission: Destructive Command Blocker Hook
+
+This repository includes a Claude Code pre-tool-use Bash hook for bounty #3.
+
+See DESTRUCTIVE_COMMAND_HOOK.md for the two-command install, blocked command patterns, logging format, and validation command.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
