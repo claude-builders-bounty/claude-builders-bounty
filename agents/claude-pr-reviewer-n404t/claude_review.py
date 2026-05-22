@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Offline Claude Code-style PR review CLI.
+
+Fetches a GitHub PR diff and emits a structured Markdown review comment.
+Optionally posts the comment when GITHUB_TOKEN and --post are provided.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from typing import Iterable
+
+PR_RE = re.compile(r"https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)")
+
+
+@dataclass
+class Finding:
+    file: str
+    risk: str
+    suggestion: str
+
+
+def github_get(url: str, accept: str = "application/vnd.github+json") -> bytes:
+    headers = {"Accept": accept, "User-Agent": "claude-pr-reviewer-n404t"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
+        return response.read()
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    match = PR_RE.fullmatch(url.strip())
+    if not match:
+        raise SystemExit("--pr must be a GitHub pull request URL like https://github.com/owner/repo/pull/123")
+    return match.group("owner"), match.group("repo"), int(match.group("number"))
+
+
+def fetch_pr(owner: str, repo: str, number: int) -> tuple[dict, str]:
+    api = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    pr = json.loads(github_get(api).decode())
+    diff = github_get(api, accept="application/vnd.github.v3.diff").decode("utf-8", "replace")
+    return pr, diff
+
+
+def changed_files(diff: str) -> list[str]:
+    return re.findall(r"^\+\+\+ b/(.+)$", diff, flags=re.MULTILINE)
+
+
+def added_lines_by_file(diff: str) -> Iterable[tuple[str, list[str]]]:
+    current = "unknown"
+    added: list[str] = []
+    for line in diff.splitlines():
+        if line.startswith("+++ b/"):
+            if added:
+                yield current, added
+            current = line[6:]
+            added = []
+        elif line.startswith("+") and not line.startswith("+++"):
+            added.append(line[1:])
+    if added:
+        yield current, added
+
+
+def analyze(diff: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for file, lines in added_lines_by_file(diff):
+        text = "\n".join(lines)
+        lowered = text.lower()
+        if "todo" in lowered or "fixme" in lowered:
+            findings.append(Finding(file, "New TODO/FIXME left in changed code.", "Either resolve it now or link an issue with owner and deadline."))
+        if "console.log" in text or "print(" in text:
+            findings.append(Finding(file, "Debug output may leak into production logs.", "Use structured logging or remove debug prints before merge."))
+        if re.search(r"delete\s+from\s+[^;\n]+(?:;|$)", text, re.I) and not re.search(r"where\b", text, re.I):
+            findings.append(Finding(file, "SQL DELETE appears to lack a WHERE clause.", "Add a WHERE clause or guard to prevent broad data loss."))
+        if re.search(r"subprocess\.|shell=True|exec\(|eval\(", text):
+            findings.append(Finding(file, "Dynamic execution or shell invocation increases injection risk.", "Validate inputs and avoid shell=True/eval unless strictly necessary."))
+        if re.search(r"password|secret|api[_-]?key|token", lowered):
+            findings.append(Finding(file, "Sensitive-looking names appear in changed lines.", "Confirm secrets are read from env/secret manager and never committed."))
+    return findings[:8]
+
+
+def confidence(diff: str, findings: list[Finding]) -> str:
+    size = len(diff.splitlines())
+    if size > 2500:
+        return "Low"
+    if findings or size > 600:
+        return "Medium"
+    return "High"
+
+
+def render(pr: dict, diff: str, findings: list[Finding]) -> str:
+    files = changed_files(diff)
+    title = pr.get("title", "PR")
+    additions = pr.get("additions", 0)
+    deletions = pr.get("deletions", 0)
+    conf = confidence(diff, findings)
+    risk_lines = [f"- `{f.file}` — {f.risk}" for f in findings] or ["- No blocking risks detected from static diff heuristics."]
+    suggestion_lines = [f"- `{f.file}` — {f.suggestion}" for f in findings] or ["- Keep CI green and ensure reviewer-specific domain checks still pass."]
+    files_preview = ", ".join(f"`{f}`" for f in files[:6]) or "no files detected"
+    if len(files) > 6:
+        files_preview += f", and {len(files) - 6} more"
+    return f"""## Claude PR Review
+
+### Summary
+This PR, **{title}**, changes {len(files)} file(s): {files_preview}.
+The diff contains **+{additions} / -{deletions}** lines, so the review below focuses on changed-code risk patterns and merge-readiness signals.
+
+### Identified risks
+{chr(10).join(risk_lines)}
+
+### Improvement suggestions
+{chr(10).join(suggestion_lines)}
+
+### Confidence score
+**{conf}**
+
+---
+Generated by `claude-review`.
+"""
+
+
+def post_comment(owner: str, repo: str, number: int, body: str) -> str:
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise SystemExit("GITHUB_TOKEN required for --post")
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments"
+    data = json.dumps({"body": body}).encode()
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json", "Content-Type": "application/json"}
+    with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers, method="POST"), timeout=30) as response:
+        return json.loads(response.read().decode())["html_url"]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="claude-review")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--post", action="store_true", help="Post review comment to the PR")
+    args = parser.parse_args()
+    owner, repo, number = parse_pr_url(args.pr)
+    pr, diff = fetch_pr(owner, repo, number)
+    body = render(pr, diff, analyze(diff))
+    print(body)
+    if args.post:
+        print(f"Posted: {post_comment(owner, repo, number, body)}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
