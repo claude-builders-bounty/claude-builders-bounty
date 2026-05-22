@@ -1,53 +1,76 @@
-# Claude Builders Bounty 🤖
+# block-destructive
 
-> A community bounty board for Claude Code builders.
+A Claude Code `pre-tool-use` hook that intercepts and blocks dangerous bash commands before execution.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## What It Blocks
 
----
+| Pattern | Example |
+|---------|---------|
+| `rm -rf` / `rm -r` | `rm -rf /` |
+| `DROP TABLE` | `DROP TABLE users;` |
+| `TRUNCATE` | `TRUNCATE TABLE logs;` |
+| `DELETE FROM` without `WHERE` | `DELETE FROM users;` |
+| `git push --force` | `git push --force origin main` |
+| `git push -f` | `git push -f` |
+| `git push --force-with-lease` | `git push --force-with-lease` |
 
-## How it works
+All blocked attempts are logged to `~/.claude/hooks/blocked.log` with timestamp, attempted command, and project path.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Installation
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+# 1. Copy the hook script
+mkdir -p ~/.claude/hooks && cp block-destructive.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/block-destructive.py
 
----
+# 2. Add to your Claude Code settings (~/.claude/settings.json)
+# Add this to the "hooks" section:
+```
 
-## Active Bounties
+Add to `~/.claude/settings.json`:
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```json
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "command": "python3 ~/.claude/hooks/block-destructive.py",
+        "matcher": "Bash"
+      }
+    ]
+  }
+}
+```
 
----
+That's it! Claude Code will now block destructive commands and log attempts.
 
-## Rules
+## How It Works
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+1. Claude Code triggers the hook before every `Bash` tool use
+2. The hook reads the command from stdin (JSON format)
+3. It checks the command against a list of dangerous patterns (regex)
+4. If matched, it outputs a block decision with an explanation
+5. Blocked attempts are logged with timestamp, command, and project path
 
----
+## Log Format
 
-## Community
+```
+[2026-05-22T12:00:00.000000Z] BLOCKED: rm -rf: Recursive force delete is blocked
+  Command: rm -rf /var/log/*
+  Project: /home/user/my-project
+```
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Testing
 
----
+```bash
+# Test the hook manually
+echo '{"tool_input":{"command":"rm -rf /"}}' | python3 block-destructive.py
+# Output: {"decision":"block","reason":"⛔ Blocked: rm -rf: Recursive force delete is blocked..."}
 
-*Started by the Claude builder community · March 2026 · MIT License*
+echo '{"tool_input":{"command":"ls -la"}}' | python3 block-destructive.py
+# No output, exit 0 = allowed
+```
+
+## License
+
+MIT
