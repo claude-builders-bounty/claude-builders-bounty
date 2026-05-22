@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Submission: Generate Changelog Skill
+
+This repository includes a Claude Code /generate-changelog command and a bash changelog.sh script for bounty #1.
+
+See GENERATE_CHANGELOG.md for setup, usage, behavior, and validation.
+
+Validate the included smoke output with:
+
+    node scripts/verify-changelog-output.mjs generated-changelog-smoke.md
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
