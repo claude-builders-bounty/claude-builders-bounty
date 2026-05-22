@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+import argparse, json, os, re, subprocess, sys, textwrap, urllib.request
+
+def run(cmd):
+    return subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT).strip()
+
+def parse_pr(url):
+    m = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url.rstrip('/'))
+    if not m:
+        raise SystemExit("PR URL must be https://github.com/owner/repo/pull/123")
+    return m.group(1), m.group(2), m.group(3)
+
+def gh_json(owner, repo, num):
+    try:
+        data = run(["gh", "pr", "view", num, "--repo", f"{owner}/{repo}", "--json", "title,body,additions,deletions,changedFiles,files"])
+        return json.loads(data)
+    except Exception as e:
+        raise SystemExit("gh CLI required + authenticated. Error: " + str(e))
+
+def diff(owner, repo, num):
+    try:
+        return run(["gh", "pr", "diff", num, "--repo", f"{owner}/{repo}"])[:120000]
+    except Exception:
+        return ""
+
+def risks(files, d):
+    out=[]; names="\n".join(f.get('path','') for f in files)
+    if re.search(r"package-lock|yarn.lock|pnpm-lock|requirements|Cargo.lock", names): out.append("Dependency/lockfile changes may alter runtime supply chain.")
+    if re.search(r"auth|token|secret|password|key", d, re.I): out.append("Security-sensitive code/strings touched; verify no secrets or auth regressions.")
+    if re.search(r"delete|drop table|rm -rf|truncate", d, re.I): out.append("Destructive operation pattern present; confirm guardrails and backups.")
+    if len(files) > 20: out.append("Large surface area; review may need extra module-owner attention.")
+    if not out: out.append("No obvious high-risk pattern found from diff heuristics.")
+    return out[:5]
+
+def suggestions(files, d):
+    out=[]
+    if "test" not in "\n".join(f.get('path','').lower() for f in files): out.append("Add/confirm tests covering the changed behavior.")
+    if re.search(r"TODO|FIXME", d): out.append("Resolve or track TODO/FIXME markers before merge.")
+    if re.search(r"except Exception|catch \(.*\)", d): out.append("Narrow broad error handling where possible.")
+    if not out: out.append("Keep PR description updated with verification commands and screenshots/logs if relevant.")
+    return out[:5]
+
+def main():
+    p=argparse.ArgumentParser(description="Generate structured Markdown review for a GitHub PR")
+    p.add_argument("--pr", required=True, help="https://github.com/owner/repo/pull/123")
+    args=p.parse_args(); owner,repo,num=parse_pr(args.pr)
+    pr=gh_json(owner,repo,num); d=diff(owner,repo,num); files=pr.get('files') or []
+    rs=risks(files,d); sug=suggestions(files,d)
+    confidence="High" if d and len(files)<=15 else ("Medium" if d else "Low")
+    paths=[f.get('path','') for f in files[:8]]
+    print(f"# PR Review: {pr.get('title','(untitled)')}\n")
+    print("## Summary")
+    print(f"This PR changes {pr.get('changedFiles', len(files))} files with +{pr.get('additions',0)}/-{pr.get('deletions',0)} lines. Main touched files: " + (", ".join(paths) if paths else "not available") + ".")
+    print("The review below is generated from GitHub PR metadata and diff heuristics; use it as a first-pass reviewer note.\n")
+    print("## Identified risks")
+    for x in rs: print(f"- {x}")
+    print("\n## Improvement suggestions")
+    for x in sug: print(f"- {x}")
+    print(f"\n## Confidence score: {confidence}")
+if __name__ == "__main__": main()
