@@ -1,0 +1,93 @@
+name: PR Review Agent
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_url:
+        description: "PR URL to review"
+        required: true
+        type: string
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, '/review') &&
+       github.event.issue.pull_request) ||
+      github.event_name == 'workflow_dispatch'
+
+    permissions:
+      pull-requests: write
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Determine PR URL
+        id: pr
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "url=${{ inputs.pr_url }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=${{ github.event.issue.pull_request.html_url }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch PR info and diff
+        id: fetch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL="${{ steps.pr.outputs.url }}"
+          TITLE=$(gh pr view "$PR_URL" --json title -q '.title')
+          BODY=$(gh pr view "$PR_URL" --json body -q '.body')
+          FILES=$(gh pr view "$PR_URL" --json files -q '.files | length')
+          ADDITIONS=$(gh pr view "$PR_URL" --json additions -q '.additions')
+          DELETIONS=$(gh pr view "$PR_URL" --json deletions -q '.deletions')
+          DIFF=$(gh pr diff "$PR_URL")
+
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+          echo "body<<BODY_EOF" >> "$GITHUB_OUTPUT"
+          echo "$BODY" >> "$GITHUB_OUTPUT"
+          echo "BODY_EOF" >> "$GITHUB_OUTPUT"
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          echo "additions=$ADDITIONS" >> "$GITHUB_OUTPUT"
+          echo "deletions=$DELETIONS" >> "$GITHUB_OUTPUT"
+          echo "diff<<DIFF_EOF" >> "$GITHUB_OUTPUT"
+          echo "$DIFF" >> "$GITHUB_OUTPUT"
+          echo "DIFF_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Review with Claude
+        id: review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are a senior code reviewer. Review the following pull request and produce a structured Markdown review comment.
+
+            ## PR: ${{ steps.fetch.outputs.title }}
+
+            ${{ steps.fetch.outputs.body }}
+
+            ## Changed Files: ${{ steps.fetch.outputs.files }} (+${{ steps.fetch.outputs.additions }}, -${{ steps.fetch.outputs.deletions }})
+
+            ## Diff
+            ```
+            ${{ steps.fetch.outputs.diff }}
+            ```
+
+            Produce a structured review with:
+            1. **Summary** (2-3 sentences of what this PR does)
+            2. **Risks** (list of identified risks — security, correctness, performance)
+            3. **Improvement Suggestions** (list of suggestions)
+            4. **Verdict** (APPROVE / REQUEST_CHANGES / COMMENT with brief justification)
+
+            Output ONLY the Markdown review, no preamble or explanation.
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ steps.pr.outputs.url }}" \
+            --body "${{ steps.review.outputs.result }}"
