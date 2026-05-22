@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## PR Reviewer Agent
+
+Issue #4 is implemented in `agents/pr-reviewer`.
+
+```bash
+python agents/pr-reviewer/claude-review.py --pr https://github.com/owner/repo/pull/123
+```
+
+The Claude Code sub-agent definition is in `.claude/agents/pr-reviewer.md`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
