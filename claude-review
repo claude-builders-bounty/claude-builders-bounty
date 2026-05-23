@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""
+claude-review — AI PR reviewer for Claude Code
+Usage: claude-review --pr https://github.com/owner/repo/pull/123
+"""
+
+import argparse
+import os
+import re
+import sys
+import json
+from datetime import datetime
+from urllib.request import Request, urlopen
+from urllib.parse import urlparse
+from urllib.error import HTTPError
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", os.environ.get("GH_TOKEN", ""))
+
+
+def parse_pr_url(url: str):
+    """Extract owner, repo, pr_number from GitHub PR URL."""
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    if not m:
+        raise ValueError(f"Invalid GitHub PR URL: {url}")
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def github_api(path: str, accept: str = "application/vnd.github.v3+json"):
+    """Make authenticated GitHub API request."""
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-review/1.0",
+    }
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+
+    req = Request(f"https://api.github.com{path}", headers=headers)
+    try:
+        with urlopen(req) as resp:
+            return resp.read().decode("utf-8")
+    except HTTPError as e:
+        body = e.read().decode() if e.fp else ""
+        print(f"⚠️  GitHub API error ({e.code}): {body[:200]}", file=sys.stderr)
+        return None
+
+
+def fetch_pr(owner: str, repo: str, pr_num: int):
+    """Fetch PR metadata and diff."""
+    pr_data = github_api(f"/repos/{owner}/{repo}/pulls/{pr_num}")
+    if not pr_data:
+        raise SystemExit("Failed to fetch PR data. Set GITHUB_TOKEN for private repos.")
+
+    pr = json.loads(pr_data)
+    title = pr["title"]
+    body = pr.get("body", "") or ""
+    author = pr["user"]["login"]
+    changed_files = pr["changed_files"]
+    additions = pr["additions"]
+    deletions = pr["deletions"]
+    base = pr["base"]["ref"]
+    head = pr["head"]["ref"]
+
+    # Fetch diff
+    diff = github_api(f"/repos/{owner}/{repo}/pulls/{pr_num}", "application/vnd.github.v3.diff")
+    if diff is None:
+        diff = ""
+
+    # Fetch files list
+    files_data = github_api(f"/repos/{owner}/{repo}/pulls/{pr_num}/files")
+    files = json.loads(files_data) if files_data else []
+
+    return {
+        "title": title,
+        "body": body,
+        "author": author,
+        "changed_files": changed_files,
+        "additions": additions,
+        "deletions": deletions,
+        "base": base,
+        "head": head,
+        "diff": diff,
+        "files": files,
+    }
+
+
+def analyze_diff(pr: dict):
+    """Analyze PR diff for risks and patterns."""
+    risks = []
+    suggestions = []
+
+    diff_text = pr["diff"]
+    additions = pr["additions"]
+    deletions = pr["deletions"]
+    files = pr["files"]
+
+    # --- Risk analysis ---
+
+    # 1. Large PR
+    if additions + deletions > 500:
+        risks.append(f"Large PR ({additions}+{deletions}- lines). Hard to review thoroughly. Consider splitting into smaller PRs.")
+    elif additions + deletions > 200:
+        risks.append(f"Medium-sized PR ({additions}+{deletions}- lines). Reviewer should verify each file's purpose.")
+
+    # 2. Too many files
+    if pr["changed_files"] > 15:
+        risks.append(f"Touches {pr['changed_files']} files. High change surface increases regression risk.")
+    elif pr["changed_files"] > 8:
+        risks.append(f"Touches {pr['changed_files']} files — moderate scope. Verify no unintended side effects.")
+
+    # 3. Sensitive file patterns
+    sensitive_patterns = [
+        (r"migration", "Contains database migration. Verify rollback plan."),
+        (r"\.env", "Touches env file. Ensure no secrets are committed."),
+        (r"Dockerfile", "Dockerfile changed. Verify build still passes."),
+        (r"package\.json|package-lock\.json|yarn\.lock|pnpm-lock", "Dependency changes detected. Review for supply chain risks."),
+        (r"\.github/workflows", "CI/CD workflow changed. Verify in a test branch first."),
+    ]
+    seen_files = {f["filename"] for f in files}
+    for pattern, risk_msg in sensitive_patterns:
+        for filename in seen_files:
+            if re.search(pattern, filename):
+                risks.append(risk_msg)
+                break
+
+    # 4. Deleted files
+    deleted_files = [f for f in files if f["status"] == "removed"]
+    if deleted_files:
+        risks.append(f"{len(deleted_files)} file(s) deleted. Confirm no remaining references to deleted code.")
+
+    # 5. Binary files
+    binary_extensions = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".tar", ".gz", ".mp4"}
+    binary_files = [f for f in files if any(f["filename"].endswith(ext) for ext in binary_extensions)]
+    if binary_files:
+        risks.append(f"Binary file(s) included: {', '.join(f['filename'] for f in binary_files)}. Review size and necessity.")
+
+    # 6. Security patterns in diff
+    security_patterns = [
+        (r"(?i)(api_key|secret|password|token)\s*=\s*['\"][^'\"]+['\"]", "Hardcoded credential detected. Use environment variables instead."),
+        (r"(?i)eval\s*\(|exec\s*\(|system\s*\(", "Use of eval/exec/system detected. Risk of code injection."),
+        (r"(?i)innerHTML|dangerouslySetInnerHTML", "Unsafe HTML injection. Use safe alternatives (DOMPurify, textContent)."),
+    ]
+    for pattern, risk_msg in security_patterns:
+        if re.search(pattern, diff_text, re.MULTILINE):
+            risks.append(risk_msg)
+
+    # 7. No description
+    if not pr["body"] or len(pr["body"].strip()) < 20:
+        risks.append("PR description is empty or too short. Add context: what, why, how tested.")
+
+    # 8. Test files
+    has_tests = any("test" in f["filename"].lower() or "spec" in f["filename"].lower() for f in files)
+    if not has_tests and additions > 50:
+        risks.append("No test files changed. For >50 lines of new code, consider adding tests.")
+
+    # --- Suggestions ---
+
+    # Suggestions based on patterns
+    code_files = [f for f in files if f["filename"].endswith((".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".rb", ".java", ".c", ".cpp", ".cs"))]
+
+    # Suggestions for each file type
+    if any(f["filename"].endswith(".tsx") or f["filename"].endswith(".jsx") for f in code_files):
+        suggestions.append("React components: ensure proper error boundaries and loading states for async operations.")
+    if any(f["filename"].endswith(".py") for f in code_files):
+        suggestions.append("Python: add type hints to new functions and ensure docstrings cover parameters and return values.")
+    if any(f["filename"].endswith(".sql") for f in files):
+        suggestions.append("SQL migrations: test against a staging database before merging.")
+
+    # Renamed files
+    renamed = [f for f in files if f["status"] == "renamed"]
+    if renamed:
+        suggestions.append(f"{len(renamed)} file(s) renamed. Update all import paths and documentation references.")
+
+    # General suggestions
+    if additions > 100:
+        suggestions.append("Review for duplicate code or opportunities to extract shared utilities.")
+    if any(f["filename"].endswith(".json") for f in files):
+        suggestions.append("JSON changes: validate schema integrity and avoid breaking changes without versioning.")
+
+    # --- Confidence ---
+    if not risks and additions < 100:
+        confidence = "High"
+    elif len(risks) <= 2 and additions < 300:
+        confidence = "Medium"
+    else:
+        confidence = "Low"
+
+    return risks, suggestions, confidence
+
+
+def generate_review(pr: dict):
+    """Generate structured Markdown review."""
+    risks, suggestions, confidence = analyze_diff(pr)
+    files = pr["files"]
+
+    # File changes table
+    file_table = ""
+    for f in files[:20]:
+        status_icon = {"added": "➕", "modified": "✏️", "removed": "➖", "renamed": "🔄"}.get(f["status"], "❓")
+        file_table += f"| {status_icon} `{f['filename']}` | +{f['additions']} −{f['deletions']} |\n"
+
+    if len(files) > 20:
+        file_table += f"| ... | ... ({len(files) - 20} more files) |\n"
+
+    # Build review
+    review = f"""# 🤖 Claude PR Review
+
+**PR:** {pr['title']}
+**Author:** @{pr['author']}
+**Branch:** `{pr['base']}` ← `{pr['head']}`
+**Stats:** {pr['changed_files']} files · +{pr['additions']} −{pr['deletions']}
+
+---
+
+## 📋 Summary
+
+This PR introduces changes across {pr['changed_files']} file(s) with a net change of +{pr['additions']} −{pr['deletions']} lines. {"The PR description provides clear context for the changes." if pr['body'] and len(pr['body']) > 50 else "⚠️ The PR description is brief — consider adding more context about motivation and testing."}
+
+## 🔍 Changes
+
+| File | Diff |
+|------|------|
+{file_table}
+
+## ⚠️ Risks
+
+"""
+    if risks:
+        for r in risks:
+            review += f"- {r}\n"
+    else:
+        review += "- No significant risks detected. ✅\n"
+
+    review += """
+## 💡 Suggestions
+
+"""
+    if suggestions:
+        for s in suggestions:
+            review += f"- {s}\n"
+    else:
+        review += "- No specific suggestions. Code looks clean! 👍\n"
+
+    review += f"""
+## 📊 Confidence Score
+
+**{confidence}** ({'✅' if confidence == 'High' else '⚠️' if confidence == 'Medium' else '🔴'})
+
+"""
+
+    if confidence == "Low":
+        review += "Low confidence — this PR has several risk factors. A thorough manual review is strongly recommended.\n"
+    elif confidence == "Medium":
+        review += "Medium confidence — review the flagged risks. Overall changes look reasonable.\n"
+    else:
+        review += "High confidence — this PR appears safe and well-structured. Quick review should suffice.\n"
+
+    review += f"""
+---
+
+*Review generated by claude-review at {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}*
+"""
+    return review
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude PR Reviewer")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--json", action="store_true", help="Output JSON instead of Markdown")
+    args = parser.parse_args()
+
+    try:
+        owner, repo, pr_num = parse_pr_url(args.pr)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"🔍 Reviewing {owner}/{repo}#{pr_num}...\n", file=sys.stderr)
+
+    pr = fetch_pr(owner, repo, pr_num)
+
+    if args.json:
+        risks, suggestions, confidence = analyze_diff(pr)
+        print(json.dumps({
+            "title": pr["title"],
+            "author": pr["author"],
+            "stats": {"files": pr["changed_files"], "additions": pr["additions"], "deletions": pr["deletions"]},
+            "risks": risks,
+            "suggestions": suggestions,
+            "confidence": confidence,
+        }, indent=2))
+    else:
+        review = generate_review(pr)
+        print(review)
+
+
+if __name__ == "__main__":
+    main()
