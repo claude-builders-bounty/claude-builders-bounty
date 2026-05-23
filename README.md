@@ -51,3 +51,61 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Bounty #4 submission: Claude PR Reviewer
+
+This repository now includes a Claude Code PR-review sub-agent plus a `claude-review` CLI that turns a GitHub pull-request diff into a structured Markdown review comment.
+
+Highlights:
+
+- Works from the command line with `claude-review --pr https://github.com/owner/repo/pull/123`.
+- Can post the review back to GitHub with `--post` when `GITHUB_TOKEN` is available.
+- Includes a Claude Code sub-agent definition at `.claude/agents/pr-reviewer.md`.
+- Falls back to a deterministic heuristic reviewer when the local `claude` CLI is unavailable, which keeps the tool testable in CI.
+
+Setup:
+
+```bash
+npm install
+npm link
+```
+
+Run directly from the repository:
+
+```bash
+node ./bin/claude-review.js --pr https://github.com/owner/repo/pull/123
+```
+
+Force deterministic heuristic mode:
+
+```bash
+node ./bin/claude-review.js --pr https://github.com/owner/repo/pull/123 --mode heuristic
+```
+
+Post the generated review as a PR comment:
+
+```bash
+GITHUB_TOKEN=<your-token> node ./bin/claude-review.js --pr https://github.com/owner/repo/pull/123 --post
+```
+
+The token is read only from the environment and is not written to disk.
+
+Required output sections:
+
+- `## Summary`
+- `## Identified risks`
+- `## Improvement suggestions`
+- `## Confidence`
+
+Tested sample outputs are committed under `samples/`:
+
+- `samples/octocat-hello-world-pr-6.md`
+- `samples/octocat-spoon-knife-pr-31666.md`
+
+Tests:
+
+```bash
+npm test
+```
