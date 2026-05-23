@@ -43,6 +43,24 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+This repository includes a Claude Code skill and script for bounty [#1](../../issues/1).
+
+### Setup in 3 steps
+
+1. Copy or keep `changelog.sh` and `scripts/changelog.sh` in a git repository.
+2. Run `bash changelog.sh`.
+3. Review the generated `CHANGELOG.md` before committing it.
+
+Claude Code users can also run `/generate-changelog`, which calls the same script and asks for a quick review of the output.
+
+The generator uses commits since the latest git tag. If no tag exists, it uses the full history. Commit subjects are grouped into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+Sample output is available in [`examples/CHANGELOG.sample.md`](examples/CHANGELOG.sample.md).
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
