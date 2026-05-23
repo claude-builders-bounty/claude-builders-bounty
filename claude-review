@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+"""claude-review — AI-powered PR review agent that posts structured comments.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+
+Environment variables:
+    LLM_API_KEY       — API key for the LLM (required)
+    LLM_API_BASE      — API base URL (default: https://api.deepseek.com/v1)
+    LLM_MODEL         — Model name (default: deepseek-chat)
+    GITHUB_TOKEN      — GitHub token for API access (required)
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import textwrap
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    """Parse a GitHub PR URL into (owner, repo, pr_number)."""
+    m = re.match(
+        r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)",
+        url.rstrip("/"),
+    )
+    if not m:
+        sys.exit(f"Error: Invalid PR URL — {url}")
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def github_api(path: str, token: str) -> dict:
+    """GET a GitHub API v3 endpoint."""
+    req = Request(
+        f"https://api.github.com{path}",
+        headers={
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "claude-review/1.0",
+        },
+    )
+    try:
+        with urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+    except HTTPError as e:
+        sys.exit(f"GitHub API error: {e.code} {e.reason}")
+
+
+def fetch_pr_diff(owner: str, repo: str, pr: int, token: str) -> str:
+    """Fetch the unified diff of a PR."""
+    req = Request(
+        f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr}",
+        headers={
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3.diff",
+            "User-Agent": "claude-review/1.0",
+        },
+    )
+    try:
+        with urlopen(req) as resp:
+            diff = resp.read().decode()
+        if not diff.strip():
+            sys.exit("Error: Empty diff — PR may have no file changes.")
+        return diff
+    except HTTPError as e:
+        sys.exit(f"GitHub API error: {e.code} {e.reason}")
+
+
+def fetch_pr_info(owner: str, repo: str, pr: int, token: str) -> dict:
+    """Fetch PR metadata."""
+    return github_api(f"/repos/{owner}/{repo}/pulls/{pr}", token)
+
+
+def build_prompt(pr_info: dict, diff: str) -> str:
+    """Build the LLM prompt for PR review."""
+    title = pr_info.get("title", "Unknown")
+    body = pr_info.get("body", "") or "No description provided."
+    additions = pr_info.get("additions", "?")
+    deletions = pr_info.get("deletions", "?")
+    files = pr_info.get("changed_files", "?")
+
+    # Truncate very long diffs
+    max_diff_chars = 15000
+    if len(diff) > max_diff_chars:
+        diff = diff[:max_diff_chars] + "\n\n... (diff truncated, too large)"
+
+    return textwrap.dedent(f"""\
+        You are a senior code reviewer. Review the following pull request and
+        produce a structured Markdown review comment.
+
+        ## PR Info
+        - Title: {title}
+        - Files changed: {files}
+        - +{additions} / -{deletions}
+
+        ## PR Description
+        {body[:2000]}
+
+        ## Diff
+        ```diff
+        {diff[:max_diff_chars]}
+        ```
+
+        ## Instructions
+        Analyze the diff and produce a structured review in this exact format:
+
+        ### Summary
+        (2–3 sentences summarizing what this PR does)
+
+        ### Identified Risks
+        - Risk 1 (explain why)
+        - Risk 2 (explain why)
+        (List all risks found, if none: "No significant risks identified.")
+
+        ### Improvement Suggestions
+        - Suggestion 1
+        - Suggestion 2
+        (List concrete, actionable suggestions. If none: "No improvements needed — LGTM!")
+
+        ### Confidence Score
+        Low / Medium / High (how confident are you in this review given the diff size and complexity?)
+
+        ---
+        Output ONLY the review. No preamble, no "Here is my review", just the structured markdown.
+    """)
+
+
+def call_llm(prompt: str) -> str:
+    """Call the LLM API (OpenAI-compatible)."""
+    api_key = os.environ.get("LLM_API_KEY")
+    api_base = os.environ.get("LLM_API_BASE", "https://api.deepseek.com/v1")
+    model = os.environ.get("LLM_MODEL", "deepseek-chat")
+
+    if not api_key:
+        sys.exit("Error: LLM_API_KEY environment variable is required.")
+
+    req = Request(
+        f"{api_base.rstrip('/')}/chat/completions",
+        data=json.dumps({
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+            "max_tokens": 2048,
+        }).encode(),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    try:
+        with urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+        return data["choices"][0]["message"]["content"].strip()
+    except HTTPError as e:
+        body = e.read().decode()[:500]
+        sys.exit(f"LLM API error {e.code}: {body}")
+    except (KeyError, IndexError) as e:
+        sys.exit(f"Unexpected LLM response format: {e}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="AI-powered PR review agent",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent("""\
+            Examples:
+              claude-review --pr https://github.com/owner/repo/pull/123
+              claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+              claude-review --pr https://github.com/owner/repo/pull/123 | gh pr comment 123 -F -
+        """),
+    )
+    parser.add_argument(
+        "--pr",
+        required=True,
+        help="GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)",
+    )
+    parser.add_argument(
+        "--output", "-o",
+        help="Save review to file instead of stdout",
+    )
+    args = parser.parse_args()
+
+    github_token = os.environ.get("GITHUB_TOKEN")
+    if not github_token:
+        sys.exit("Error: GITHUB_TOKEN environment variable is required.")
+
+    # Parse
+    owner, repo, pr_num = parse_pr_url(args.pr)
+
+    # Fetch
+    print(f"📡 Fetching PR #{pr_num} from {owner}/{repo}...", file=sys.stderr)
+    pr_info = fetch_pr_info(owner, repo, pr_num, github_token)
+    diff = fetch_pr_diff(owner, repo, pr_num, github_token)
+    print(f"   Got {len(diff)} chars of diff", file=sys.stderr)
+
+    # Review
+    print("🤖 Analyzing with LLM...", file=sys.stderr)
+    prompt = build_prompt(pr_info, diff)
+    review = call_llm(prompt)
+
+    # Output
+    header = (
+        f"## 🤖 AI Code Review\n\n"
+        f"**PR:** [{pr_info['title']}]({args.pr})\n"
+        f"**Files:** {pr_info['changed_files']} — "
+        f"+{pr_info['additions']} / -{pr_info['deletions']}\n"
+        f"**Reviewed by:** claude-review agent\n\n"
+        f"---\n\n"
+    )
+
+    result = header + review
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(result)
+        print(f"✅ Saved to {args.output}", file=sys.stderr)
+    else:
+        print(result)
+
+
+if __name__ == "__main__":
+    main()
