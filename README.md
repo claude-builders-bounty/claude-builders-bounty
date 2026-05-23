@@ -1,53 +1,40 @@
-# Claude Builders Bounty 🤖
+# Pre-tool-use hook: block destructive bash commands
 
-> A community bounty board for Claude Code builders.
+This hook blocks dangerous bash commands before execution and logs every blocked attempt.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Install (2 commands)
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/pre-tool-use-block.py ~/.claude/hooks/
+python - <<'PY'
+import json, pathlib
+p=pathlib.Path.home()/'.claude'/'settings.json'
+p.parent.mkdir(parents=True, exist_ok=True)
+cfg={}
+if p.exists():
+    cfg=json.loads(p.read_text() or '{}')
+cfg.setdefault('hooks',{})['PreToolUse']=[{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/pre-tool-use-block.py"}]}]
+p.write_text(json.dumps(cfg,indent=2))
+print('updated',p)
+PY
+```
 
----
+## What it blocks
+- `rm -rf`
+- `DROP TABLE`
+- `git push --force`
+- `TRUNCATE`
+- `DELETE FROM` without a `WHERE` clause
 
-## How it works
+## Log format
+Blocked events are appended to:
+`~/.claude/hooks/blocked.log`
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+Each line contains:
+- timestamp (UTC ISO-8601)
+- project path
+- attempted command
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## Behavior
+- Returns exit code `2` for blocked commands (prevents tool execution)
+- Prints a clear blocking reason to stderr
+- Returns `0` for normal commands (no interference)
