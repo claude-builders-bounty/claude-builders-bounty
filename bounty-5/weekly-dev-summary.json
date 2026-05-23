@@ -1,0 +1,324 @@
+{
+ "name": "Weekly Dev Summary",
+ "nodes": [
+ {
+ "parameters": {
+ "rule": {
+ "interval": [
+ {
+ "field": "cron",
+ "hour": 17,
+ "minute": 0,
+ "weekday": "5"
+ }
+ ]
+ }
+ },
+ "id": "node-cron-trigger",
+ "name": "Cron Trigger",
+ "type": "n8n-nodes-base.cronTrigger",
+ "typeVersion": 1,
+ "position": [250, 300]
+ },
+ {
+ "parameters": {
+ "values": {
+ "string": [
+ {
+ "name": "githubOwner",
+ "value": "claude-builders-bounty"
+ },
+ {
+ "name": "githubRepo",
+ "value": "claude-builders-bounty"
+ },
+ {
+ "name": "discordWebhookUrl",
+ "value": ""
+ },
+ {
+ "name": "claudeApiKey",
+ "value": ""
+ },
+ {
+ "name": "language",
+ "value": "EN"
+ }
+ ]
+ },
+ "options": {}
+ },
+ "id": "node-set-config",
+ "name": "Set Config Variables",
+ "type": "n8n-nodes-base.set",
+ "typeVersion": 1,
+ "position": [450, 300]
+ },
+ {
+ "parameters": {
+ "url": "=https://api.github.com/repos/{{ $json.githubOwner }}/{{ $json.githubRepo }}/commits?since={{ $now.minus({weeks:1}).toISO() }}&per_page=100",
+ "method": "GET",
+ "sendHeaders": true,
+ "headerParameters": {
+ "parameters": [
+ {
+ "name": "Accept",
+ "value": "application/vnd.github.v3+json"
+ },
+ {
+ "name": "Authorization",
+ "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+ }
+ ]
+ },
+ "options": {}
+ },
+ "id": "node-github-commits",
+ "name": "GitHub Commits API",
+ "type": "n8n-nodes-base.httpRequest",
+ "typeVersion": 3,
+ "position": [650, 150]
+ },
+ {
+ "parameters": {
+ "url": "=https://api.github.com/repos/{{ $('Set Config Variables').item.json.githubOwner }}/{{ $('Set Config Variables').item.json.githubRepo }}/issues?state=closed&since={{ $now.minus({weeks:1}).toISO() }}&per_page=100",
+ "method": "GET",
+ "sendHeaders": true,
+ "headerParameters": {
+ "parameters": [
+ {
+ "name": "Accept",
+ "value": "application/vnd.github.v3+json"
+ },
+ {
+ "name": "Authorization",
+ "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+ }
+ ]
+ },
+ "options": {}
+ },
+ "id": "node-github-issues",
+ "name": "GitHub Issues API (Closed)",
+ "type": "n8n-nodes-base.httpRequest",
+ "typeVersion": 3,
+ "position": [650, 300]
+ },
+ {
+ "parameters": {
+ "url": "=https://api.github.com/repos/{{ $('Set Config Variables').item.json.githubOwner }}/{{ $('Set Config Variables').item.json.githubRepo }}/pulls?state=closed&since={{ $now.minus({weeks:1}).toISO() }}&per_page=100",
+ "method": "GET",
+ "sendHeaders": true,
+ "headerParameters": {
+ "parameters": [
+ {
+ "name": "Accept",
+ "value": "application/vnd.github.v3+json"
+ },
+ {
+ "name": "Authorization",
+ "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+ }
+ ]
+ },
+ "options": {}
+ },
+ "id": "node-github-prs",
+ "name": "GitHub PRs API (Merged)",
+ "type": "n8n-nodes-base.httpRequest",
+ "typeVersion": 3,
+ "position": [650, 450]
+ },
+ {
+ "parameters": {
+ "mode": "combine",
+ "combinationMode": "mergeByPosition",
+ "options": {}
+ },
+ "id": "node-merge-data",
+ "name": "Merge GitHub Data",
+ "type": "n8n-nodes-base.merge",
+ "typeVersion": 3,
+ "position": [850, 300]
+ },
+ {
+ "parameters": {
+ "values": {
+ "string": [
+ {
+ "name": "systemPrompt",
+ "value": "=You are a development summary generator. Create a concise weekly summary in {{ $('Set Config Variables').item.json.language }} language from the provided GitHub data."
+ },
+ {
+ "name": "userPrompt",
+ "value": "=Generate a weekly development summary from this week's GitHub activity:\n\nCommits:\n{{ JSON.stringify($json.commits) }}\n\nClosed Issues:\n{{ JSON.stringify($json.issues) }}\n\nMerged PRs:\n{{ JSON.stringify($json.prs) }}\n\nInclude: number of commits, key changes, closed issues summary, merged PRs overview. Format as a clear, readable weekly report."
+ }
+ ]
+ },
+ "options": {}
+ },
+ "id": "node-format-prompt",
+ "name": "Format Prompt for Claude",
+ "type": "n8n-nodes-base.set",
+ "typeVersion": 1,
+ "position": [1050, 300]
+ },
+ {
+ "parameters": {
+ "url": "https://api.anthropic.com/v1/messages",
+ "method": "POST",
+ "sendHeaders": true,
+ "headerParameters": {
+ "parameters": [
+ {
+ "name": "x-api-key",
+ "value": "={{ $('Set Config Variables').item.json.claudeApiKey }}"
+ },
+ {
+ "name": "anthropic-version",
+ "value": "2023-06-01"
+ },
+ {
+ "name": "content-type",
+ "value": "application/json"
+ }
+ ]
+ },
+ "sendBody": true,
+ "specifyBody": "json",
+ "jsonBody": "={\n \"model\": \"claude-sonnet-4-20250514\",\n \"max_tokens\": 2048,\n \"system\": {{ JSON.stringify($json.systemPrompt) }},\n \"messages\": [\n {\n \"role\": \"user\",\n \"content\": {{ JSON.stringify($json.userPrompt) }}\n }\n ]\n}",
+ "options": {}
+ },
+ "id": "node-claude-api",
+ "name": "Claude API",
+ "type": "n8n-nodes-base.httpRequest",
+ "typeVersion": 3,
+ "position": [1250, 300]
+ },
+ {
+ "parameters": {
+ "url": "={{ $('Set Config Variables').item.json.discordWebhookUrl }}",
+ "method": "POST",
+ "sendBody": true,
+ "specifyBody": "json",
+ "jsonBody": "={\n \"content\": \":boom: **Weekly Development Summary** :boom:\\n\\n\" + $json.content[0].text\n}",
+ "options": {}
+ },
+ "id": "node-discord-webhook",
+ "name": "Discord Webhook",
+ "type": "n8n-nodes-base.httpRequest",
+ "typeVersion": 3,
+ "position": [1450, 300]
+ }
+ ],
+ "connections": {
+ "Cron Trigger": {
+ "main": [
+ [
+ {
+ "node": "Set Config Variables",
+ "type": "main",
+ "index": 0
+ }
+ ]
+ ]
+ },
+ "Set Config Variables": {
+ "main": [
+ [
+ {
+ "node": "GitHub Commits API",
+ "type": "main",
+ "index": 0
+ },
+ {
+ "node": "GitHub Issues API (Closed)",
+ "type": "main",
+ "index": 0
+ },
+ {
+ "node": "GitHub PRs API (Merged)",
+ "type": "main",
+ "index": 0
+ }
+ ]
+ ]
+ },
+ "GitHub Commits API": {
+ "main": [
+ [
+ {
+ "node": "Merge GitHub Data",
+ "type": "main",
+ "index": 0
+ }
+ ]
+ ]
+ },
+ "GitHub Issues API (Closed)": {
+ "main": [
+ [
+ {
+ "node": "Merge GitHub Data",
+ "type": "main",
+ "index": 1
+ }
+ ]
+ ]
+ },
+ "GitHub PRs API (Merged)": {
+ "main": [
+ [
+ {
+ "node": "Merge GitHub Data",
+ "type": "main",
+ "index": 2
+ }
+ ]
+ ]
+ },
+ "Merge GitHub Data": {
+ "main": [
+ [
+ {
+ "node": "Format Prompt for Claude",
+ "type": "main",
+ "index": 0
+ }
+ ]
+ ]
+ },
+ "Format Prompt for Claude": {
+ "main": [
+ [
+ {
+ "node": "Claude API",
+ "type": "main",
+ "index": 0
+ }
+ ]
+ ]
+ },
+ "Claude API": {
+ "main": [
+ [
+ {
+ "node": "Discord Webhook",
+ "type": "main",
+ "index": 0
+ }
+ ]
+ ]
+ }
+ },
+ "settings": {
+ "executionOrder": "v2"
+ },
+ "staticData": null,
+ "tags": ["github", "claude", "discord", "weekly-summary"],
+ "meta": {
+ "templateCredsSetupCompleted": true,
+ "templateIdCreatedFrom": "default",
+ "versionId": "1.0"
+ }
+}
