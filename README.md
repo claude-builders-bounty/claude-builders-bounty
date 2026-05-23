@@ -43,6 +43,25 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+Generate a structured `CHANGELOG.md` from git history:
+
+1. Run `bash changelog.sh` from a git repository, or pass `--repo path/to/repo`.
+2. Review the generated `CHANGELOG.md`.
+3. Commit the changelog when the output looks correct.
+
+The script reads commits since the latest git tag, falls back to all commits when a repo has no tags, and groups entries into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+Validation:
+
+```bash
+bash test-changelog.sh
+bash changelog.sh --repo . --output examples/sample-output.md
+```
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
