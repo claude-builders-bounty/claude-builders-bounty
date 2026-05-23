@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""claude-review - AI-powered code review sub-agent."""
+
+import argparse, json, os, re, sys, urllib.request, urllib.error
+
+def parse_pr_url(url):
+    m = re.search(r"(?:github\.com/)?([^/]+)/([^/]+)/pull/(\d+)", url.rstrip("/"))
+    if not m:
+        raise ValueError(f"Invalid PR URL: {url}")
+    return m.group(1), m.group(2), int(m.group(3))
+
+def gh_api(path, token):
+    url = f"https://api.github.com{path}"
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "claude-review-bot",
+    })
+    try:
+        with urllib.request.urlopen(req) as resp:
+            body = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode(errors="replace")[:500]
+        sys.exit(f"GitHub API error {e.code}: {err_body}")
+    ct = resp.headers.get("Content-Type", "")
+    return json.loads(body) if "application/json" in ct else body
+
+def fetch_pr(owner, repo, num, token):
+    pr = gh_api(f"/repos/{owner}/{repo}/pulls/{num}", token)
+    files = gh_api(f"/repos/{owner}/{repo}/pulls/{num}/files?per_page=100", token)
+    diff = "\n".join(f.get("patch","") for f in files if f.get("patch"))
+    return {
+        "title": pr.get("title",""), "body": pr.get("body","") or "",
+        "state": pr.get("state",""), "draft": pr.get("draft",False),
+        "user": pr.get("user",{}).get("login","unknown"),
+        "base_ref": pr.get("base",{}).get("ref",""),
+        "head_ref": pr.get("head",{}).get("ref",""),
+        "additions": pr.get("additions",0), "deletions": pr.get("deletions",0),
+        "changed_files": pr.get("changed_files",0),
+        "labels": [lb["name"] for lb in pr.get("labels",[])],
+        "files": files, "diff": diff,
+    }
+
+def analyze(pr):
+    files, adds, dels = pr["files"], pr["additions"], pr["deletions"]
+    nf = len(files)
+    risks, sugs, parts = [], [], []
+
+    parts.append(
+        f"Introduces **{adds} additions** and **{dels} deletions** "
+        f"across **{nf} file(s)**. Author: @{pr['user']}. "
+        f"Merge: `{pr['base_ref']}` <-- `{pr['head_ref']}`."
+    )
+    if pr.get("draft"):
+        parts.append("Note: This PR is marked as **draft**.")
+
+    for f in files:
+        fn, patch = f["filename"], f.get("patch","")
+        fa, fd = f["additions"], f["deletions"]
+
+        secrets = [
+            (r'(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|private[_-]?key)\s*[:=]\s*["\'][^"\']+["\']',
+             "Hardcoded secret/credential"),
+            (r'ghp_[a-zA-Z0-9]{36}', "GitHub PAT exposed"),
+            (r'eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+', "JWT token exposed"),
+            (r'-----BEGIN (?:RSA|EC|DSA|OPENSSH) PRIVATE KEY-----', "Private key in code"),
+            (r'(?:eval|exec|system|os\.system|subprocess)\s*\([^)]*\$', "Potential command injection"),
+        ]
+        for pat, desc in secrets:
+            if re.search(pat, patch, re.I):
+                risks.append({"severity":"HIGH","file":fn,"description":desc})
+
+        if (fa + fd) > 500:
+            risks.append({"severity":"MEDIUM","file":fn,
+                "description":f"Large change ({fa}+, {fd}- lines); consider splitting"})
+
+        if f.get("status") == "removed":
+            sugs.append(f"Deleted `{fn}` - verify no other code depends on it")
+
+        todos = re.findall(r"(?i)(TODO|FIXME|HACK|XXX)\s*:?\s*(.*?)$", patch, re.M)
+        for tag, rest in todos[:3]:
+            rc = rest.strip(" :,-*").strip()[:80] or "(no comment)"
+            sugs.append(f"`{tag}` in `{fn}`: {rc}")
+
+        added = [l[1:] for l in patch.split("\n") if l.startswith("+") and not l.startswith("+++")]
+        for line in added:
+            if re.search(r'\bconsole\.(log|debug|info|warn)\s*\(', line):
+                sugs.append(f"Leftover console.log in `{fn}`"); break
+            if re.search(r'\bprint\s*\(', line):
+                sugs.append(f"Leftover print() in `{fn}`"); break
+            if re.search(r'\bdebugger\b', line):
+                sugs.append(f"debugger statement in `{fn}`"); break
+
+        if re.search(r'catch\s*\([^)]*\)\s*\{\s*\}', patch):
+            risks.append({"severity":"MEDIUM","file":fn,"description":"Empty catch block swallowing errors"})
+        if re.search(r'(?:except|rescue)\s*:', patch):
+            risks.append({"severity":"LOW","file":fn,"description":"Bare except/rescue catches too broadly"})
+
+    if adds > 800:
+        risks.append({"severity":"MEDIUM","file":"(PR)","description":f"Large PR: {adds} additions"})
+    if nf > 15:
+        risks.append({"severity":"LOW","file":"(PR)","description":f"Touches {nf} files - wide blast radius"})
+    if not pr.get("body") or len(pr["body"].strip()) < 20:
+        sugs.append("PR description is brief - add more context")
+
+    hi = sum(1 for r in risks if r["severity"]=="HIGH")
+    med = sum(1 for r in risks if r["severity"]=="MEDIUM")
+    ded = hi*20 + med*10 + min(adds//200,20) + (10 if not pr["body"].strip() else 0)
+    conf = max(30, 95 - ded)
+
+    return {"summary":" ".join(parts),"risks":risks,"suggestions":sugs[:15],
+            "confidence":conf,"stats":{"files":nf,"adds":adds,"dels":dels}}
+
+def render(pr, a):
+    o = ["# Code Review\n",
+         f"**PR:** {pr['title']}  \n",
+         f"**Author:** @{pr['user']}  \n",
+         f"**Branch:** `{pr['head_ref']}` -> `{pr['base_ref']}`  \n",
+         f"**State:** {pr['state']}{' (draft)' if pr.get('draft') else ''}\n\n",
+         "## Summary\n\n", a["summary"]+"\n\n",
+         f"## Risks ({len(a['risks'])} found)\n\n"]
+    if a["risks"]:
+        o.append("| Severity | File | Description |\n")
+        o.append("|----------|------|-------------|\n")
+        for r in a["risks"]:
+            o.append(f"| **{r['severity']}** | `{r['file']}` | {r['description']} |\n")
+        o.append("\n")
+    else:
+        o.append("No significant risks detected.\n\n")
+    o.append(f"## Suggestions ({len(a['suggestions'])} items)\n\n")
+    if a["suggestions"]:
+        for i,s in enumerate(a["suggestions"],1):
+            o.append(f"{i}. {s}\n")
+        o.append("\n")
+    else:
+        o.append("No suggestions - code looks clean!\n\n")
+    c = a["confidence"]
+    desc = "High" if c>=80 else ("Moderate" if c>=60 else "Low")
+    o.append(f"## Confidence Score\n\n**{c}/100** - {desc} confidence\n\n---\n")
+    o.append(f"*Generated by `claude-review` * {pr['changed_files']} file(s)")
+    return "".join(o)
+
+def main():
+    p = argparse.ArgumentParser(description="claude-review")
+    p.add_argument("--pr", required=True, help="GitHub PR URL")
+    p.add_argument("--token", help="GitHub PAT")
+    p.add_argument("--json", action="store_true", help="JSON output")
+    args = p.parse_args()
+    token = args.token or os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        sys.exit("ERROR: No token. Use --token or GH_TOKEN/GITHUB_TOKEN")
+    owner, repo, num = parse_pr_url(args.pr)
+    print(f"Fetching PR #{num} from {owner}/{repo}...", file=sys.stderr)
+    pr = fetch_pr(owner, repo, num, token)
+    an = analyze(pr)
+    if args.json:
+        print(json.dumps({"pr":{"title":pr["title"],"author":pr["user"]},"review":an},indent=2))
+    else:
+        print(render(pr, an))
+    hi = sum(1 for r in an["risks"] if r["severity"]=="HIGH")
+    if hi:
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

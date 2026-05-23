@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""
+Pre-tool-use hook for Claude Code: Blocks destructive bash commands
+Install: cp hooks/pre-tool-use ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use
+"""
+import os
+import sys
+import json
+import re
+from datetime import datetime
+from pathlib import Path
+
+# Dangerous patterns to block
+DANGEROUS_PATTERNS = [
+    (r'rm\s+-rf\s+/', "Root directory deletion"),
+    (r'rm\s+-rf\s+(\S+\s+){0,2}(node_modules|\.git|__pycache__|\*)?', "Recursive force delete"),
+    (r'DROP\s+TABLE', "DROP TABLE - Database destruction"),
+    (r'TRUNCATE\s+TABLE', "TRUNCATE TABLE - Database destruction"),
+    (r'git\s+push\s+.*--force', "Forced git push"),
+    (r'git\s+push\s+-f', "Forced git push (-f)"),
+    (r'DELETE\s+FROM\s+\w+\s*(;|$)', "DELETE without WHERE clause"),
+    (r'DELETE\s+FROM\s+\w+\s+WHERE', None, "DELETE with WHERE - allowed if safe"),
+]
+
+# Patterns that need WHERE clause
+DELETE_NO_WHERE_PATTERN = re.compile(r'^\s*DELETE\s+FROM\s+\w+\s*$', re.IGNORECASE)
+
+LOG_FILE = Path.home() / ".claude" / "hooks" / "blocked.log"
+
+def log_blocked(command: str, reason: str, project_path: str):
+    """Log blocked attempt to file"""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().isoformat()
+    with open(LOG_FILE, "a") as f:
+        f.write(f"[{timestamp}] BLOCKED: {command}\n")
+        f.write(f"  Reason: {reason}\n")
+        f.write(f"  Project: {project_path}\n\n")
+
+def is_dangerous(command: str) -> tuple[bool, str]:
+    """Check if command is dangerous. Returns (is_dangerous, reason)"""
+    cmd = command.strip()
+    project_path = os.getcwd()
+    
+    # Check each pattern
+    for pattern in DANGEROUS_PATTERNS:
+        if len(pattern) == 3:
+            regex, block_regex, reason = pattern
+            if re.search(block_regex, cmd, re.IGNORECASE):
+                return True, reason
+        else:
+            regex, reason = pattern
+            if re.search(regex, cmd, re.IGNORECASE):
+                # Special check for DELETE without WHERE
+                if re.match(DELETE_NO_WHERE_PATTERN, cmd):
+                    return True, "DELETE without WHERE clause"
+                return True, reason
+    
+    return False, ""
+
+def main():
+    # Read JSON input from Claude Code
+    try:
+        input_data = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        sys.exit(0)  # Not a valid hook call, allow
+    
+    tool_name = input_data.get("tool", "")
+    
+    # Only block bash tool
+    if tool_name != "Bash":
+        sys.exit(0)
+    
+    command = input_data.get("command", "")
+    project_path = os.getcwd()
+    
+    is_danger, reason = is_dangerous(command)
+    
+    if is_danger:
+        log_blocked(command, reason, project_path)
+        
+        # Return error to Claude Code
+        result = {
+            "error": f"🚫 Command blocked: {reason}\n\nThe command '{command}' was blocked because it matches a dangerous pattern.\n\nIf you're sure you want to proceed, you can:\n1. Add a WHERE clause to DELETE queries\n2. Remove -rf flags for non-critical deletes\n3. Use interactive rm (rm -i) instead of rm -rf\n\nThis incident has been logged to {LOG_FILE}"
+        }
+        print(json.dumps(result))
+        sys.exit(1)
+    
+    # Allow the command
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
