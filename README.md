@@ -34,6 +34,67 @@ You're in the right place.
 
 ---
 
+## PR Reviewer Agent
+
+This repository includes a Claude Code PR reviewer for bounty
+[#4](../../issues/4). It can be used as a local CLI, a Claude Code project
+subagent, or a GitHub Action.
+
+### CLI
+
+Install locally:
+
+```bash
+python -m pip install -e .
+```
+
+Review a GitHub pull request:
+
+```bash
+claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+Write the review to a file:
+
+```bash
+claude-review --pr https://github.com/owner/repo/pull/123 --output pr-review.md
+```
+
+The output is structured Markdown with:
+
+- Summary of changes
+- Identified risks
+- Improvement suggestions
+- Confidence score: Low / Medium / High
+
+Set `GITHUB_TOKEN` if you need higher GitHub rate limits or access to private
+pull requests.
+
+### Claude Code subagent
+
+The project subagent lives at `.claude/agents/pr-reviewer.md`. Claude Code
+discovers project subagents from `.claude/agents/`, so after cloning this repo
+you can ask Claude Code to use the `pr-reviewer` agent on a PR diff.
+
+### GitHub Action
+
+The workflow at `.github/workflows/claude-review.yml` runs on pull requests and
+posts the generated Markdown review as a PR comment. It can also be run manually
+with a `workflow_dispatch` PR URL.
+
+### Sample outputs
+
+See [docs/sample-outputs.md](docs/sample-outputs.md) for two reviews generated
+from real public GitHub pull requests.
+
+### Tests
+
+```bash
+python -m unittest discover -s tests
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
