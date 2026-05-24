@@ -28,8 +28,15 @@ You're in the right place.
 |---|------|--------|--------|
 | [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
 | [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#3](../../issues/3) | HOOK:* **[Block Destructive Bash Commands](hooks/block-destructive/README.md)**: A `PreToolUse` hook that intercepts and prevents dangerous commands like `rm -rf` or `DROP TABLE` from executing.
+
+---
+
+# Claude Code Templates
+
+Check out the `templates/` directory for production-ready `.md` files.
+
+* **[Next.js 15 + SQLite SaaS](templates/nextjs-sqlite-saas/README.md)**: An opinionated `CLAUDE.md` enforcing Server Components, raw SQL with `better-sqlite3`, and strict anti-patterns.th structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
 ---
