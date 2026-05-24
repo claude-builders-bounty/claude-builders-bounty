@@ -43,6 +43,73 @@ You're in the right place.
 
 ---
 
+## Destructive Command Guard Hook
+
+This repository includes a Claude Code `PreToolUse` hook at `.claude/hooks/destructive_command_guard.py`.
+It blocks high-risk Bash commands before execution, logs each blocked attempt to
+`~/.claude/hooks/blocked.log`, and returns a clear denial message to Claude Code.
+
+Blocked patterns:
+
+- `rm` commands using both recursive and force options, including `rm -rf`, `rm -fr`,
+  `rm --recursive --force`, and wrapper forms like `sudo rm -rf` or
+  `env VAR=value rm -rf`.
+- `DROP TABLE`.
+- `TRUNCATE` and `TRUNCATE TABLE`.
+- `DELETE FROM` when the statement has no `WHERE` clause.
+- `git push --force`, `git push --force-with-lease`, and `git push -f`,
+  including common global-option forms like `git -C repo push -f`.
+
+Install in 2 commands:
+
+```bash
+mkdir -p ~/.claude/hooks && cp .claude/hooks/destructive_command_guard.py ~/.claude/hooks/destructive_command_guard.py && chmod +x ~/.claude/hooks/destructive_command_guard.py
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+settings_path = Path.home() / ".claude" / "settings.json"
+settings_path.parent.mkdir(parents=True, exist_ok=True)
+settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+hooks = settings.setdefault("hooks", {})
+pre_tool = hooks.setdefault("PreToolUse", [])
+entry = {
+    "matcher": "Bash",
+    "hooks": [
+        {
+            "type": "command",
+            "command": str(Path.home() / ".claude" / "hooks" / "destructive_command_guard.py"),
+        }
+    ],
+}
+if entry not in pre_tool:
+    pre_tool.append(entry)
+settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+PY
+```
+
+Example blocked event:
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/build"},"cwd":"/project"}' \
+  | ~/.claude/hooks/destructive_command_guard.py
+```
+
+Example allowed event:
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"npm test"},"cwd":"/project"}' \
+  | ~/.claude/hooks/destructive_command_guard.py
+```
+
+Run tests:
+
+```bash
+python3 -m unittest tests/test_destructive_command_guard.py
+```
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
