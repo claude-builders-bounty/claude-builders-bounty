@@ -34,6 +34,61 @@ You're in the right place.
 
 ---
 
+## Tools
+
+### `claude-review`
+
+`claude-review` is a focused local PR review CLI for issue
+[#4](../../issues/4). It does not call the Claude API, does not require API
+secrets, and never posts comments or pushes changes. Instead it fetches pull
+request metadata and a unified diff, runs deterministic heuristics, and prints
+structured Markdown.
+
+Install locally from this repository:
+
+```bash
+python3 -m pip install -e .
+```
+
+Review a pull request:
+
+```bash
+claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+The command prefers the GitHub CLI when `gh` is installed and authenticated:
+
+```bash
+gh pr view https://github.com/owner/repo/pull/123 --json ...
+gh pr diff https://github.com/owner/repo/pull/123
+```
+
+If `gh` is unavailable or fails, it falls back to unauthenticated GitHub REST
+requests for public repositories. Private repositories require working `gh`
+access.
+
+Output sections:
+
+- `Summary of Changes`: PR identity, author, state, branch, line counts, and
+  changed areas.
+- `Risks`: deterministic flags for size, missing tests, security-sensitive
+  paths, migrations, CI/workflow edits, dependency files, binary diffs, and
+  deletions.
+- `Improvement Suggestions`: practical follow-ups based on the detected risks.
+- `Confidence`: `Low`, `Medium`, or `High` based on diff visibility, size, and
+  risk profile.
+
+Sample outputs for real public PRs are in
+[docs/sample-outputs.md](docs/sample-outputs.md).
+
+Run the smoke tests:
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
