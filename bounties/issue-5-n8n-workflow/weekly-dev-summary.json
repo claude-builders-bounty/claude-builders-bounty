@@ -1,0 +1,305 @@
+{
+  "name": "Weekly Dev Summary (n8n + Claude)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300],
+      "parameters": {
+        "language": "javascript",
+        "code": "// ─── CONFIGURATION ──────────────────────────────────────────────\n// Edit these values to match your project and preferences:\n// ───────────────────────────────────────────────────────────────────\nconst config = {\n  repo:           'owner/repo',         // GitHub repository (owner/name)\n  language:       'EN',                 // Summary language: 'EN' or 'FR'\n  claudeApiKey:   'sk-ant-...',         // Anthropic Claude API key\n  discordWebhook: '',                   // Discord webhook URL (leave empty to skip)\n  slackWebhook:   '',                   // OR Slack webhook URL\n};\n// ───────────────────────────────────────────────────────────────────\n\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nreturn [{\n  json: {\n    since:         weekAgo.toISOString(),\n    until:         now.toISOString(),\n    sinceDate:     weekAgo.toISOString().split('T')[0],\n    untilDate:     now.toISOString().split('T')[0],\n    repo:          config.repo,\n    language:      config.language,\n    claudeApiKey:  config.claudeApiKey,\n    discordWebhook: config.discordWebhook,\n    slackWebhook:  config.slackWebhook,\n  }\n}];"
+      }
+    },
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 60],
+      "parameters": {
+        "method": "GET",
+        "url": "= 'https://api.github.com/repos/' + $node['Config'].json['repo'] + '/commits?since=' + $node['Config'].json['since'] + '&per_page=100'",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-github-0000-0000-000000000001",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "name": "GitHub Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 260],
+      "parameters": {
+        "method": "GET",
+        "url": "= 'https://api.github.com/repos/' + $node['Config'].json['repo'] + '/issues?state=closed&since=' + $node['Config'].json['since'] + '&per_page=100&filter=all'",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-github-0000-0000-000000000001",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "name": "GitHub PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 460],
+      "parameters": {
+        "method": "GET",
+        "url": "= 'https://api.github.com/search/issues?q=repo:' + $node['Config'].json['repo'] + '+type:pr+is:merged+merged:>=' + $node['Config'].json['sinceDate'] + '&sort=updated&order=desc&per_page=100'",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-github-0000-0000-000000000001",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "id": "66666666-6666-4666-8666-666666666666",
+      "name": "Merge Commits+Issues",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [800, 180],
+      "parameters": {
+        "mode": "combine"
+      }
+    },
+    {
+      "id": "77777777-7777-4777-8777-777777777777",
+      "name": "Merge All",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [960, 300],
+      "parameters": {
+        "mode": "combine"
+      }
+    },
+    {
+      "id": "88888888-8888-4888-8888-888888888888",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "parameters": {
+        "language": "javascript",
+        "code": "// ─── Classify all items and build a Claude prompt ───\nconst items = $input.all();\nconst config = $node['Config'].json;\n\nconst commits = [];\nconst issues = [];\nconst prs = [];\n\nfor (const item of items) {\n  const d = item.json;\n  if (d.sha && d.commit) {\n    // GitHub commit object\n    commits.push({\n      sha: d.sha.substring(0, 7),\n      author: d.commit?.author?.name || d.author?.login || 'unknown',\n      message: (d.commit?.message || '').split('\\n')[0],\n      date: d.commit?.author?.date?.split('T')[0] || '',\n    });\n  } else if (d.pull_request && d.title) {\n    // PR from search results\n    prs.push({\n      number: d.number,\n      title: d.title,\n      author: d.user?.login || 'unknown',\n      state: d.state,\n      merged: d.pull_request?.merged_at || d.closed_at,\n      html_url: d.html_url,\n      labels: (d.labels || []).map(l => l.name),\n    });\n  } else if (d.html_url && d.title && !d.pull_request) {\n    // Issue (from issues endpoint; PRs also have html_url so we exclude them)\n    issues.push({\n      number: d.number,\n      title: d.title,\n      author: d.user?.login || 'unknown',\n      state: d.state,\n      closed_at: d.closed_at,\n      html_url: d.html_url,\n      labels: (d.labels || []).map(l => l.name),\n    });\n  }\n}\n\n// ── Build prompt ────────────────────────────────────────────\nconst lang = config.language === 'FR' ? 'French' : 'English';\n\nconst prompt = `You are a technical writing assistant. Write a weekly development summary in ${lang} for the GitHub repository **${config.repo}**.\n\nCover the week from ${config.sinceDate} to ${config.untilDate}.\n\nWrite in a clear, engaging, narrative style — not a bullet list. Group related changes thematically. Mention contributors by name.\n\nHere is the raw activity data:\n\n--- COMMITS (${commits.length}) ---\n${JSON.stringify(commits, null, 2)}\n\n--- CLOSED ISSUES (${issues.length}) ---\n${JSON.stringify(issues, null, 2)}\n\n--- MERGED PRs (${prs.length}) ---\n${JSON.stringify(prs, null, 2)}\n\n---\n\nOutput the summary in pure markdown. Start with a heading \"## Weekly Dev Summary — …\" and the date range. End with a section \"## Stats\" that shows: Commits, Issues closed, PRs merged, Unique contributors.`;\n\nreturn [{\n  json: {\n    prompt: prompt,\n    repo: config.repo,\n    sinceDate: config.sinceDate,\n    untilDate: config.untilDate,\n    language: config.language,\n    stats: {\n      commits: commits.length,\n      issues: issues.length,\n      prs: prs.length,\n      uniqueAuthors: new Set([\n        ...commits.map(c => c.author),\n        ...issues.map(i => i.author),\n        ...prs.map(p => p.author),\n      ]).size,\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1280, 300],
+      "parameters": {
+        "language": "javascript",
+        "code": "// ─── Call Claude API to generate the narrative summary ───\nconst inputData = $input.first().json;\nconst apiKey = $node['Config'].json['claudeApiKey'];\n\nif (!apiKey || apiKey === 'sk-ant-...') {\n  throw new Error('Claude API key not configured. Edit the Config node.');\n}\n\nconst body = {\n  model: 'claude-sonnet-4-20250514',\n  max_tokens: 4096,\n  messages: [\n    { role: 'user', content: inputData.prompt }\n  ]\n};\n\nlet response;\ntry {\n  response = await $http.post(\n    'https://api.anthropic.com/v1/messages',\n    body,\n    {\n      headers: {\n        'x-api-key': apiKey,\n        'anthropic-version': '2023-06-01',\n        'content-type': 'application/json',\n      }\n    }\n  );\n} catch (error) {\n  throw new Error(\n    'Claude API call failed: ' +\n    (error.response?.data?.error?.message || error.message || JSON.stringify(error))\n  );\n}\n\nconst summary = response?.data?.content?.[0]?.text;\n\nif (!summary) {\n  throw new Error('Claude returned an empty response.');\n}\n\nreturn [{\n  json: {\n    summary: summary,\n    repo: inputData.repo,\n    sinceDate: inputData.sinceDate,\n    untilDate: inputData.untilDate,\n    stats: inputData.stats,\n  }\n}];"
+      }
+    },
+    {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "= $node['Config'].json['discordWebhook'] || $node['Config'].json['slackWebhook']",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "= $json['summary']"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits+Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits+Issues",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Commits+Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge All",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge All": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "triggerCount": 0,
+  "tags": []
+}
