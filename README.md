@@ -34,6 +34,27 @@ You're in the right place.
 
 ---
 
+## Claude Code Bash Safety Hook
+
+Issue [#3](../../issues/3) provides a `PreToolUse` hook for Claude Code that blocks dangerous Bash commands before they run. The hook blocks `rm -rf`, `DROP TABLE`, `TRUNCATE`, `DELETE FROM` statements without a `WHERE` clause, and `git push --force`, then writes blocked attempts to `~/.claude/hooks/blocked.log` with a timestamp, attempted command, and project path.
+
+Install into a Claude Code project in two commands:
+
+```sh
+cp -R .claude /path/to/your/project/
+chmod +x /path/to/your/project/.claude/hooks/block-dangerous-bash.py
+```
+
+The included `.claude/settings.json` registers `.claude/hooks/block-dangerous-bash.py` as a `PreToolUse` hook for the `Bash` tool.
+
+Run the hook tests:
+
+```sh
+python3 -m unittest
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
