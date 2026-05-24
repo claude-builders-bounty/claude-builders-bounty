@@ -22,6 +22,14 @@ You're in the right place.
 
 ---
 
+# Claude Code Security Hooks
+
+Check out the `hooks/` directory for useful Claude Code PreToolUse and PostToolUse hooks.
+
+* **[Block Destructive Bash Commands](hooks/block-destructive/README.md)**: A `PreToolUse` hook that intercepts and prevents dangerous commands like `rm -rf` or `DROP TABLE` from executing.✅
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
