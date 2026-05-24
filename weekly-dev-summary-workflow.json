@@ -1,0 +1,282 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "e8e81d7d-c2bb-485a-a386-35ab7a7e8e45",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "github_repo",
+              "name": "github_repo",
+              "value": "claude-builders-bounty/claude-builders-bounty",
+              "type": "string"
+            },
+            {
+              "id": "discord_webhook_url",
+              "name": "discord_webhook_url",
+              "value": "https://discord.com/api/webhooks/your_webhook_id/your_webhook_token",
+              "type": "string"
+            },
+            {
+              "id": "language",
+              "name": "language",
+              "value": "EN",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.github_repo + '/commits?since=' + new Date(Date.now() - 7*24*60*60*1000).toISOString() }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-workflow"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/search/issues?q=repo:' + $('Config').item.json.github_repo + '+type:pr+is:merged+closed:>=' + new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0] }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-workflow"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3",
+      "name": "Get PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/search/issues?q=repo:' + $('Config').item.json.github_repo + '+type:issue+is:closed+closed:>=' + new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0] }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-workflow"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4",
+      "name": "Get Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Get Commits').all()[0].json;\nconst prs = $('Get PRs').all()[0].json.items || [];\nconst issues = $('Get Issues').all()[0].json.items || [];\nconst lang = $('Config').item.json.language;\n\nreturn {\n  prompt: `Please write a weekly narrative summary for a dev team in ${lang}. Activity:\\n- Commits: ${commits.length}\\n- Merged PRs: ${prs.length}\\n- Closed Issues: ${issues.length}\\n\\nHere are some PR titles:\\n${prs.slice(0,5).map(p => p.title).join('\\n')}\\n\\nHere are some Issue titles:\\n${issues.slice(0,5).map(i => i.title).join('\\n')}`\n};"
+      },
+      "id": "5",
+      "name": "Format Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.anthropicApiKey }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-3-5-sonnet-20241022"
+            },
+            {
+              "name": "max_tokens",
+              "value": "1000"
+            },
+            {
+              "name": "messages",
+              "value": "={{ [{role: 'user', content: $json.prompt}] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.discord_webhook_url }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.content[0].text }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7",
+      "name": "Send Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get PRs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Format Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Send Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
