@@ -1,0 +1,546 @@
+#!/usr/bin/env python3
+"""
+claude-review — AI-powered PR review agent using Claude (via Claude Code or Anthropic API).
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr https://github.com/owner/repo/pull/123 --model claude-sonnet-4-20250514
+    claude-review --pr https://github.com/owner/repo/pull/123 --fallback
+    claude-review --pr https://github.com/owner/repo/pull/123 --output review.json
+
+Output: Structured JSON review with Summary, Risks, Suggestions, and Confidence score.
+
+Review engines (tried in order):
+  1. Claude Code CLI (`claude -p`)          — if authenticated
+  2. Anthropic API (ANTHROPIC_API_KEY env)  — if key is set
+  3. Template fallback                      — always available
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import textwrap
+from datetime import datetime, timezone
+from typing import Optional
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Constants
+# ──────────────────────────────────────────────────────────────────────
+
+DEFAULT_MODEL = "claude-sonnet-4-20250514"
+MAX_DIFF_CHARS = 100_000
+
+REVIEW_SYSTEM_PROMPT = """You are a world-class senior software engineer performing a thorough code review.
+
+You will be given a GitHub Pull Request including metadata and the full unified diff.
+
+Produce a **structured JSON review** with exactly these fields:
+
+- **summary** (string): A concise 2-5 sentence summary of what this PR does. Focus on the intent and key changes. Be specific.
+
+- **risks** (list of strings): Potential risks, edge cases, or breaking changes. Each entry must be specific and actionable:
+  - Security concerns (injection, auth bypass, exposed secrets, etc.)
+  - Performance regressions (N+1 queries, unnecessary allocations, etc.)
+  - Breaking changes (API contract changes, renamed functions, etc.)
+  - Error handling gaps (missing try/catch, swallowed exceptions, etc.)
+  - Race conditions or concurrency issues
+  - If nothing notable, use: ["No significant risks identified."]
+
+- **suggestions** (list of strings): Specific, constructive improvements prioritized by impact:
+  - Code clarity / maintainability improvements
+  - Testing gaps
+  - Documentation needs
+  - Architectural suggestions
+  - If nothing notable, use: ["No additional suggestions."]
+
+- **confidence** (integer 0-100): Your confidence in this review. Higher = full understanding and high conviction. Lower = complex/ambiguous diff.
+
+CRITICAL RULES:
+- Output ONLY valid JSON. No markdown fences, no preamble, no commentary.
+- Every risk and suggestion must reference specific code from the diff.
+- JSON must be parseable: no trailing commas, properly quoted strings."""
+
+
+# ──────────────────────────────────────────────────────────────────────
+# PR URL parsing
+# ──────────────────────────────────────────────────────────────────────
+
+PR_URL_RE = re.compile(
+    r"^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)/?.*$"
+)
+
+
+def parse_pr_url(url: str) -> dict[str, str]:
+    """Parse a GitHub PR URL into owner, repo, and number."""
+    m = PR_URL_RE.match(url.strip())
+    if not m:
+        raise ValueError(
+            f"Invalid PR URL: {url!r}. "
+            f"Expected format: https://github.com/owner/repo/pull/123"
+        )
+    return {"owner": m.group(1), "repo": m.group(2), "number": m.group(3)}
+
+
+# ──────────────────────────────────────────────────────────────────────
+# CLI tool availability
+# ──────────────────────────────────────────────────────────────────────
+
+def has_tool(name: str) -> bool:
+    """Check whether a CLI tool is available on PATH."""
+    return shutil.which(name) is not None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Fetch PR diff and metadata via gh CLI
+# ──────────────────────────────────────────────────────────────────────
+
+def fetch_pr_diff(pr_url: str, timeout: int = 60) -> str:
+    """Fetch the unified diff of a GitHub PR via `gh pr diff`."""
+    if not has_tool("gh"):
+        raise RuntimeError(
+            "GitHub CLI (`gh`) is not installed or not on PATH. "
+            "Install it from https://cli.github.com/"
+        )
+    result = subprocess.run(
+        ["gh", "pr", "diff", pr_url],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"gh pr diff failed (exit {result.returncode}):\n{result.stderr.strip()}"
+        )
+    diff = result.stdout.strip()
+    if not diff:
+        raise RuntimeError("PR diff is empty — the PR may have no changes.")
+    return diff
+
+
+def fetch_pr_metadata(pr_url: str, timeout: int = 30) -> dict:
+    """Fetch PR title, body, and other metadata via `gh pr view --json`."""
+    if not has_tool("gh"):
+        return {}
+    result = subprocess.run(
+        ["gh", "pr", "view", pr_url, "--json", "title,body,author,files"],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        return {}
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {}
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Prompt builder
+# ──────────────────────────────────────────────────────────────────────
+
+def build_review_prompt(pr_url: str, diff: str, metadata: dict) -> str:
+    """Build the full review prompt."""
+    title = metadata.get("title", "Unknown")
+    body = metadata.get("body", "No description provided.")
+    author = metadata.get("author", {}).get("login", "unknown")
+    files = metadata.get("files", [])
+    files_list = "\n".join(
+        f"  - {f.get('path', '?')} ({f.get('additions', 0)}+/{f.get('deletions', 0)}-)"
+        for f in files
+    )
+
+    # Truncate diff if extremely large
+    truncated_diff = diff
+    if len(diff) > MAX_DIFF_CHARS:
+        truncated_diff = (
+            diff[:MAX_DIFF_CHARS]
+            + f"\n\n[... DIFF TRUNCATED — {len(diff) - MAX_DIFF_CHARS} more characters ...]"
+        )
+
+    return f"""Review the following GitHub Pull Request.
+
+PR URL: {pr_url}
+Title: {title}
+Author: {author}
+Description:
+{body}
+
+Files changed ({len(files)}):
+{files_list if files_list else '  (not available)'}
+
+--- UNIFIED DIFF ---
+{truncated_diff}
+--- END DIFF ---
+
+Provide your structured code review as JSON with fields: summary, risks, suggestions, confidence."""
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Engine 1: Claude Code CLI
+# ──────────────────────────────────────────────────────────────────────
+
+def claude_code_is_authenticated() -> bool:
+    """Check if Claude Code is installed and authenticated."""
+    if not has_tool("claude"):
+        return False
+    try:
+        result = subprocess.run(
+            ["claude", "auth", "status"],
+            capture_output=True, text=True, timeout=10,
+        )
+        status = json.loads(result.stdout)
+        return status.get("loggedIn", False)
+    except Exception:
+        return False
+
+
+def run_claude_code(pr_url: str, diff: str, metadata: dict,
+                    model: Optional[str] = None, timeout: int = 300) -> dict:
+    """Run Claude Code CLI to generate a structured review."""
+    prompt = build_review_prompt(pr_url, diff, metadata)
+
+    cmd = [
+        "claude", "-p",
+        "--output-format", "json",
+        "--permission-mode", "dontAsk",
+        "--max-budget-usd", "1",
+    ]
+    if model:
+        cmd.extend(["--model", model])
+
+    result = subprocess.run(
+        cmd,
+        input=prompt,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Claude Code exited with code {result.returncode}:\n{result.stderr.strip()}"
+        )
+
+    return _parse_llm_output(result.stdout.strip())
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Engine 2: Anthropic API (direct)
+# ──────────────────────────────────────────────────────────────────────
+
+def anthropic_api_available() -> bool:
+    """Check if the Anthropic API key is set and SDK is installed."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return False
+    try:
+        import anthropic  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def run_anthropic_api(pr_url: str, diff: str, metadata: dict,
+                      model: Optional[str] = None, timeout: int = 300) -> dict:
+    """Run review via Anthropic API directly."""
+    import anthropic
+
+    api_key = os.environ["ANTHROPIC_API_KEY"]
+    client = anthropic.Anthropic(api_key=api_key)
+
+    prompt = build_review_prompt(pr_url, diff, metadata)
+    use_model = model or DEFAULT_MODEL
+
+    message = client.messages.create(
+        model=use_model,
+        max_tokens=4096,
+        system=REVIEW_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+        timeout=timeout,
+    )
+
+    raw = message.content[0].text
+    return _parse_llm_output(raw)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# JSON output parser
+# ──────────────────────────────────────────────────────────────────────
+
+def _parse_llm_output(raw: str) -> dict:
+    """Parse LLM output (Claude Code JSON wrapper or raw text) into review dict."""
+    # Claude Code --output-format json wraps in {"result": "..."}
+    try:
+        outer = json.loads(raw)
+        if isinstance(outer, dict):
+            if "result" in outer and isinstance(outer["result"], str):
+                raw = outer["result"]
+            elif all(k in outer for k in ("summary", "risks", "suggestions", "confidence")):
+                return outer
+    except json.JSONDecodeError:
+        pass
+
+    # Try direct JSON parse
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and "summary" in parsed:
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # Try to extract JSON from markdown fences
+    fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
+    if fence_match:
+        try:
+            parsed = json.loads(fence_match.group(1).strip())
+            if isinstance(parsed, dict) and "summary" in parsed:
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    # Try to find a JSON object with braces
+    brace_match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if brace_match:
+        try:
+            parsed = json.loads(brace_match.group(0))
+            if isinstance(parsed, dict) and "summary" in parsed:
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    # Last resort
+    return {
+        "summary": "Failed to parse structured review output from LLM.",
+        "risks": ["Unable to parse review output"],
+        "suggestions": ["Check raw output for details"],
+        "confidence": 0,
+        "_raw_output": raw[:2000],
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Engine 3: Template fallback
+# ──────────────────────────────────────────────────────────────────────
+
+def generate_template(pr_url: str, diff: str, metadata: dict) -> dict:
+    """Generate a structured review template."""
+    title = metadata.get("title", "Unknown PR")
+    author = metadata.get("author", {}).get("login", "unknown")
+    files = metadata.get("files", [])
+    files_count = len(files) if files else "unknown"
+
+    # Count changed files from diff
+    diff_files: set[str] = set()
+    for line in diff.split("\n"):
+        if line.startswith("diff --git "):
+            parts = line.split(" ")
+            if len(parts) >= 4:
+                diff_files.add(parts[3][2:])  # strip b/ prefix
+
+    files_preview = ", ".join(sorted(diff_files)[:10])
+    if len(diff_files) > 10:
+        files_preview += f" and {len(diff_files) - 10} more"
+
+    return {
+        "summary": (
+            f"PR **{title}** by **{author}** modifies {files_count} file(s). "
+            f"This review was generated from a template because no AI review engine "
+            f"(Claude Code or Anthropic API) was available at review time. "
+            f"Manual review is strongly recommended. "
+            f"Files changed: {files_preview}."
+        ),
+        "risks": [
+            "⚠️  AUTOMATED REVIEW UNAVAILABLE — this is a template, not an AI analysis.",
+            "Review the diff manually for security issues, breaking changes, and error handling.",
+            "Verify that all new code paths have appropriate tests.",
+        ],
+        "suggestions": [
+            "Run the full test suite before merging.",
+            "Check for adherence to project coding standards.",
+            "Ensure documentation is updated for any new or changed APIs.",
+            "Consider having a human reviewer look at this PR.",
+        ],
+        "confidence": 0,
+        "_template": True,
+        "_reason": "No AI review engine available — template generated.",
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Main CLI
+# ──────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="claude-review — AI-powered PR review agent using Claude",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent("""\
+            Examples:
+              claude-review --pr https://github.com/owner/repo/pull/123
+              claude-review --pr https://github.com/owner/repo/pull/123 --model claude-sonnet-4-20250514
+              claude-review --pr https://github.com/owner/repo/pull/123 --fallback
+              claude-review --pr https://github.com/owner/repo/pull/123 --output review.json
+
+            Review engines (tried in order):
+              1. Claude Code CLI  — if authenticated
+              2. Anthropic API    — if ANTHROPIC_API_KEY is set
+              3. Template         — always available fallback
+        """),
+    )
+    parser.add_argument(
+        "--pr", required=True,
+        help="GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)",
+    )
+    parser.add_argument(
+        "--model", default=None,
+        help=f"Claude model to use. Default: {DEFAULT_MODEL}",
+    )
+    parser.add_argument(
+        "--fallback", action="store_true",
+        help="Force template mode even if AI engines are available.",
+    )
+    parser.add_argument(
+        "--output", "-o", default=None,
+        help="Write review JSON to file instead of stdout.",
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=300,
+        help="Timeout in seconds for AI engines (default: 300).",
+    )
+    parser.add_argument(
+        "--no-metadata", action="store_true",
+        help="Skip fetching PR metadata from the API.",
+    )
+
+    args = parser.parse_args()
+
+    # Parse PR URL
+    try:
+        pr_info = parse_pr_url(args.pr)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"🔍 PR: {pr_info['owner']}/{pr_info['repo']}#{pr_info['number']}", file=sys.stderr)
+
+    # Fetch PR diff
+    print("📥 Fetching PR diff via gh CLI...", file=sys.stderr)
+    try:
+        diff = fetch_pr_diff(args.pr)
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    lines = diff.count("\n") + 1
+    print(f"   Got {len(diff)} characters ({lines} lines).", file=sys.stderr)
+
+    # Fetch PR metadata
+    metadata: dict = {}
+    if not args.no_metadata:
+        print("📋 Fetching PR metadata...", file=sys.stderr)
+        metadata = fetch_pr_metadata(args.pr)
+        if metadata:
+            print(f"   Title: {metadata.get('title', 'N/A')}", file=sys.stderr)
+
+    # Select review engine
+    review: dict = {}
+    engine_used: str = ""
+
+    if args.fallback:
+        print("📝 Using template mode (--fallback)...", file=sys.stderr)
+        review = generate_template(args.pr, diff, metadata)
+        engine_used = "template (forced)"
+
+    elif claude_code_is_authenticated():
+        print("🤖 Running review via Claude Code CLI...", file=sys.stderr)
+        try:
+            review = run_claude_code(args.pr, diff, metadata, model=args.model, timeout=args.timeout)
+            engine_used = "Claude Code CLI"
+        except RuntimeError as e:
+            print(f"⚠️  Claude Code failed: {e}", file=sys.stderr)
+            # Fall through to API
+            if anthropic_api_available():
+                print("   Trying Anthropic API instead...", file=sys.stderr)
+                try:
+                    review = run_anthropic_api(args.pr, diff, metadata, model=args.model, timeout=args.timeout)
+                    engine_used = "Anthropic API (Claude Code failed)"
+                except Exception as e2:
+                    print(f"⚠️  Anthropic API also failed: {e2}", file=sys.stderr)
+                    review = generate_template(args.pr, diff, metadata)
+                    review["_claude_error"] = str(e)
+                    review["_api_error"] = str(e2)
+                    engine_used = "template (both engines failed)"
+            else:
+                review = generate_template(args.pr, diff, metadata)
+                review["_claude_error"] = str(e)
+                engine_used = "template (Claude Code failed, no API key)"
+
+    elif anthropic_api_available():
+        print("🤖 Running review via Anthropic API...", file=sys.stderr)
+        try:
+            review = run_anthropic_api(args.pr, diff, metadata, model=args.model, timeout=args.timeout)
+            engine_used = "Anthropic API"
+        except Exception as e:
+            print(f"⚠️  Anthropic API failed: {e}", file=sys.stderr)
+            review = generate_template(args.pr, diff, metadata)
+            review["_api_error"] = str(e)
+            engine_used = "template (API failed)"
+
+    else:
+        print("📝 No AI engine available. Using template mode.", file=sys.stderr)
+        review = generate_template(args.pr, diff, metadata)
+        engine_used = "template (no engines)"
+
+    # Normalize review structure
+    review.setdefault("summary", "No summary generated.")
+    review.setdefault("risks", [])
+    review.setdefault("suggestions", [])
+    review.setdefault("confidence", 0)
+
+    # Ensure risks/suggestions are lists of strings
+    if not isinstance(review.get("risks"), list):
+        review["risks"] = [str(review["risks"])]
+    if not isinstance(review.get("suggestions"), list):
+        review["suggestions"] = [str(review["suggestions"])]
+    review["risks"] = [str(r) for r in review["risks"]]
+    review["suggestions"] = [str(s) for s in review["suggestions"]]
+    if not isinstance(review.get("confidence"), (int, float)):
+        review["confidence"] = 0
+
+    # Add metadata
+    review.setdefault("_pr_url", args.pr)
+    review.setdefault("_reviewed_at", datetime.now(timezone.utc).isoformat())
+    review.setdefault("_pr_info", pr_info)
+    review.setdefault("_engine", engine_used)
+    review.setdefault("_model", args.model or DEFAULT_MODEL)
+
+    # Output
+    output_json = json.dumps(review, indent=2, ensure_ascii=False)
+
+    if args.output:
+        out_dir = os.path.dirname(args.output)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(output_json)
+            f.write("\n")
+        print(f"✅ Review saved to {args.output}", file=sys.stderr)
+    else:
+        print(output_json)
+
+    # Status
+    if review.get("_template"):
+        print("⚠️  Review generated from template (no AI engine available).", file=sys.stderr)
+        sys.exit(2)
+
+    confidence = review.get("confidence", 0)
+    print(f"✅ Review complete via {engine_used} (confidence: {confidence}/100).", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
