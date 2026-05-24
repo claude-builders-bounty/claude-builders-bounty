@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""claude-review: structured Markdown PR review CLI.
+
+Fetches a GitHub pull request diff, analyzes it with deterministic heuristics,
+and prints a Claude Code-style structured review comment.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import textwrap
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from typing import Iterable
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
+
+RISK_PATTERNS = [
+    ("Deletes files", re.compile(r"^deleted file mode ", re.M), "Check that removed files are intentionally obsolete."),
+    ("Database/schema change", re.compile(r"\b(migration|schema|ALTER TABLE|DROP TABLE|TRUNCATE|DELETE FROM)\b", re.I), "Verify migration safety, rollback path, and data-loss risk."),
+    ("Auth/security-sensitive code", re.compile(r"\b(auth|token|secret|password|jwt|oauth|permission|role|csrf|xss|sql injection)\b", re.I), "Review access-control and secret-handling behavior carefully."),
+    ("Network/API behavior", re.compile(r"\b(fetch|axios|request\(|http|webhook|api_key|Authorization)\b", re.I), "Confirm error handling, timeouts, and credential boundaries."),
+    ("Shell/process execution", re.compile(r"\b(subprocess|exec\(|spawn\(|shell=True|child_process|os\.system)\b", re.I), "Validate command injection and untrusted input handling."),
+    ("Dependency/config change", re.compile(r"^(\+.*(package-lock|pnpm-lock|yarn.lock|requirements|pyproject|Cargo.toml|go.mod))|^diff --git .*?(package|requirements|pyproject|Cargo|go\.mod)", re.I | re.M), "Inspect dependency trust, lockfile consistency, and version pinning."),
+]
+
+TEST_RE = re.compile(r"(^diff --git .*?(test|spec|__tests__)|\b(pytest|unittest|jest|vitest|npm test|go test|cargo test)\b)", re.I | re.M)
+DOC_RE = re.compile(r"^diff --git .*?(README|\.md|docs/)", re.I | re.M)
+
+@dataclass
+class PRInfo:
+    owner: str
+    repo: str
+    number: str
+    title: str = "Unknown title"
+    author: str = "unknown"
+    additions: int = 0
+    deletions: int = 0
+    changed_files: int = 0
+    diff: str = ""
+
+
+def request(url: str, *, accept: str = "application/vnd.github+json") -> bytes:
+    headers = {"User-Agent": "claude-review", "Accept": accept}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "replace")[:500]
+        raise SystemExit(f"GitHub request failed {exc.code} for {url}: {body}") from exc
+
+
+def parse_pr_url(url: str) -> tuple[str, str, str]:
+    match = PR_RE.match(url)
+    if not match:
+        raise SystemExit("Expected PR URL like https://github.com/owner/repo/pull/123")
+    return match.group(1), match.group(2), match.group(3)
+
+
+def fetch_pr(pr_url: str) -> PRInfo:
+    owner, repo, number = parse_pr_url(pr_url)
+    api = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    data = json.loads(request(api).decode("utf-8"))
+    diff = request(api, accept="application/vnd.github.v3.diff").decode("utf-8", "replace")
+    return PRInfo(
+        owner=owner,
+        repo=repo,
+        number=number,
+        title=data.get("title") or "Unknown title",
+        author=(data.get("user") or {}).get("login") or "unknown",
+        additions=int(data.get("additions") or 0),
+        deletions=int(data.get("deletions") or 0),
+        changed_files=int(data.get("changed_files") or 0),
+        diff=diff,
+    )
+
+
+def changed_paths(diff: str) -> list[str]:
+    return re.findall(r"^diff --git a/[^\n]+ b/([^\n]+)", diff, flags=re.M)
+
+
+def summarize(pr: PRInfo, paths: list[str]) -> str:
+    top = ", ".join(paths[:5]) if paths else "the pull request diff"
+    size = "small" if pr.changed_files <= 3 and pr.additions + pr.deletions < 250 else "moderate" if pr.changed_files <= 12 else "large"
+    return (
+        f"This {size} PR changes {pr.changed_files} file(s) with +{pr.additions}/-{pr.deletions} lines, primarily touching {top}. "
+        f"The review below is based on the fetched GitHub diff for `{pr.owner}/{pr.repo}#{pr.number}` and focuses on merge risk, missing validation, and follow-up checks."
+    )
+
+
+def risks(pr: PRInfo, paths: list[str]) -> list[str]:
+    out: list[str] = []
+    for label, pattern, advice in RISK_PATTERNS:
+        if pattern.search(pr.diff):
+            out.append(f"**{label}:** {advice}")
+    if pr.additions + pr.deletions > 800:
+        out.append("**Large diff:** consider splitting or requesting focused review by subsystem.")
+    if not TEST_RE.search(pr.diff):
+        out.append("**No obvious test updates:** behavior changes may be hard to validate automatically.")
+    if not out:
+        out.append("No major risk signals were detected by the heuristic scan; still verify behavior locally before merge.")
+    return out
+
+
+def suggestions(pr: PRInfo, paths: list[str]) -> list[str]:
+    out = []
+    if not TEST_RE.search(pr.diff):
+        out.append("Add or update tests covering the main changed behavior before merging.")
+    if not DOC_RE.search(pr.diff):
+        out.append("If user-facing behavior changed, add a short README/docs note or changelog entry.")
+    if any(p.endswith((".py", ".js", ".ts", ".tsx", ".go", ".rs")) for p in paths):
+        out.append("Run the project’s formatter/linter and include the exact validation command in the PR description.")
+    if re.search(r"TODO|FIXME|console\.log|print\(", pr.diff):
+        out.append("Remove debug statements or unresolved TODO/FIXME markers unless they are intentional and documented.")
+    if not out:
+        out.append("Document the validation performed and any manual edge cases checked by the author.")
+    return out
+
+
+def confidence(pr: PRInfo) -> str:
+    score = 0
+    if pr.additions + pr.deletions < 300:
+        score += 1
+    if pr.changed_files <= 6:
+        score += 1
+    if TEST_RE.search(pr.diff):
+        score += 1
+    if any(p.search(pr.diff) for _, p, _ in RISK_PATTERNS[:5]):
+        score -= 1
+    return "High" if score >= 3 else "Medium" if score >= 1 else "Low"
+
+
+def markdown_review(pr: PRInfo) -> str:
+    paths = changed_paths(pr.diff)
+    risk_items = "\n".join(f"- {item}" for item in risks(pr, paths))
+    suggestion_items = "\n".join(f"- {item}" for item in suggestions(pr, paths))
+    return (
+        "## Claude Review\n\n"
+        f"**PR:** [{pr.owner}/{pr.repo}#{pr.number}](https://github.com/{pr.owner}/{pr.repo}/pull/{pr.number}) — {pr.title}  \n"
+        f"**Author:** @{pr.author}  \n"
+        f"**Diff size:** {pr.changed_files} files, +{pr.additions}/-{pr.deletions}\n\n"
+        "### Summary of changes\n"
+        f"{summarize(pr, paths)}\n\n"
+        "### Identified risks\n"
+        f"{risk_items}\n\n"
+        "### Improvement suggestions\n"
+        f"{suggestion_items}\n\n"
+        "### Confidence score\n"
+        f"**{confidence(pr)}**\n"
+    )
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    args = parser.parse_args(argv)
+    print(markdown_review(fetch_pr(args.pr)))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
