@@ -1,53 +1,79 @@
-# Claude Builders Bounty 🤖
+# CHANGELOG Generator
 
-> A community bounty board for Claude Code builders.
+A zero-dependency bash script that generates a structured `CHANGELOG.md` from a project's git history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (3 steps)
 
----
+1. **Copy** `changelog.sh` into your repository root
+2. **Make executable**: `chmod +x changelog.sh`
+3. **Run**: `bash changelog.sh`
 
-## How it works
+## Usage
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+```bash
+# Generate CHANGELOG.md (default output)
+bash changelog.sh
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+# Specify custom output file
+bash changelog.sh MY_CHANGELOG.md
+```
 
----
+## Features
 
-## Active Bounties
+- **Tag-aware**: Automatically detects the latest git tag and collects commits since that release
+- **Auto-categorization**: Sorts commits into Added, Fixed, Changed, Removed
+- **Conventional Commits**: Recognizes `feat:`, `fix:`, `refactor:`, `chore:`, `remove:`, `docs:`, etc.
+- **Keyword fallback**: For non-conventional commits, categorizes by keywords (add, fix, update, delete, etc.)
+- **Zero dependencies**: Pure bash — works anywhere with `git` installed
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## How It Works
 
----
+1. Finds the latest git tag (`git describe --tags --abbrev=0`)
+2. Collects all non-merge commits since that tag
+3. Categorizes each commit by conventional prefix or keyword match
+4. Outputs a formatted Markdown changelog with sections per category
 
-## Rules
+## Claude Code Integration
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+See [SKILL.md](SKILL.md) for use as a Claude Code `/generate-changelog` command.
 
----
+## Sample Output
 
-## Community
+Generated from a test repository with conventional commits since `v1.0.0`:
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+```markdown
+# Changelog
 
----
+All notable changes to this project will be documented in this file.
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## [Since v1.0.0] — 2026-05-24
+
+### Added
+
+- feat(auth): add OAuth2 support (`5f179bf`) [2026-05-24]
+- feat: add search functionality (`99acff6`) [2026-05-24]
+
+### Fixed
+
+- fix(api): handle rate limiting gracefully (`d53c2d7`) [2026-05-24]
+- fix(ui): button alignment on mobile (`b31f8fa`) [2026-05-24]
+
+### Changed
+
+- chore: update dependencies (`ffc5b54`) [2026-05-24]
+- refactor: simplify database queries (`2711a7b`) [2026-05-24]
+
+### Removed
+
+- remove: drop support for Node 14 (`1199437`) [2026-05-24]
+```
+
+## Requirements
+
+- `git` installed and in `$PATH`
+- Must be run inside a git repository
+- Bash 4.0+ (uses associative arrays)
+
+## License
+
+MIT
