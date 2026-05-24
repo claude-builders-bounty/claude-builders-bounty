@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+import sys
+import json
+import os
+import datetime
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(0)
+    
+    tool_name = sys.argv[1].lower()
+    
+    # We only care about tools that execute bash commands
+    if tool_name not in ["bash", "run_command", "execute", "shell"]:
+        sys.exit(0)
+
+    try:
+        input_data = sys.stdin.read()
+        tool_input = json.loads(input_data)
+        command = tool_input.get("command", "")
+    except Exception:
+        # Fallback to checking the raw string if JSON parsing fails
+        command = input_data
+
+    blocked = False
+    reason = ""
+
+    command_upper = command.upper()
+    command_lower = command.lower()
+    
+    if "rm -rf" in command_lower:
+        blocked = True
+        reason = "Command contains 'rm -rf'"
+    elif "DROP TABLE" in command_upper:
+        blocked = True
+        reason = "Command contains 'DROP TABLE'"
+    elif "git push --force" in command_lower:
+        blocked = True
+        reason = "Command contains 'git push --force'"
+    elif "TRUNCATE" in command_upper:
+        blocked = True
+        reason = "Command contains 'TRUNCATE'"
+    elif "DELETE FROM" in command_upper and "WHERE" not in command_upper:
+        blocked = True
+        reason = "Command contains 'DELETE FROM' without a 'WHERE' clause"
+
+    if blocked:
+        # Ensure log directory exists
+        log_dir = os.path.expanduser("~/.claude/hooks")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "blocked.log")
+        
+        timestamp = datetime.datetime.now().isoformat()
+        project_path = os.getcwd()
+        
+        # Log the blocked attempt
+        with open(log_file, "a") as f:
+            f.write(f"[{timestamp}] BLOCKED: '{command}' | PROJECT: {project_path} | REASON: {reason}\n")
+        
+        # Display message back to Claude
+        print(f"Error: The pre-tool-use hook blocked this command. Reason: {reason}. Destructive actions are not permitted.")
+        sys.exit(1)
+        
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
