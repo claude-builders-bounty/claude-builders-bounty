@@ -50,3 +50,16 @@ A Python CLI agent that analyzes a GitHub Pull Request diff and generates a stru
    ```bash
    ./claude-review.py --pr https://github.com/owner/repo/pull/123
    ```
+
+---
+
+# n8n Weekly Dev Summary Workflow
+
+An automated n8n workflow that fetches a repository's weekly activity (commits, closed issues, merged PRs) and uses Claude to post a narrative summary to Discord.
+
+## Setup Instructions (4 Steps)
+
+1. **Import the Workflow**: Open your n8n dashboard, click **Add Workflow** -> **Import from File**, and select `weekly-dev-summary-workflow.json`.
+2. **Set Configuration Variables**: Open the `Config` node and update `github_repo` (e.g. `owner/repo`), `discord_webhook_url`, and `language` (e.g. `EN` or `FR`).
+3. **Add Anthropic Credentials**: Open the `Call Claude` HTTP Request node, create a new "Header Auth" credential, and paste your `ANTHROPIC_API_KEY`.
+4. **Activate**: Toggle the workflow switch to **Active**. It will automatically execute every Friday at 5 PM!
