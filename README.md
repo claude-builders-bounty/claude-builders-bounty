@@ -1,53 +1,22 @@
-# Claude Builders Bounty 🤖
+# Claude Code Security Hook
 
-> A community bounty board for Claude Code builders.
+A `pre-tool-use` hook for Claude Code that automatically blocks destructive bash commands before they are executed. 
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+This hook intercepts bash execution and looks for dangerous patterns like `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and unbounded `DELETE FROM` statements. It prevents them from running and logs the attempt.
 
----
+## Installation
 
-## How it works
+Install the hook in just two commands:
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+```bash
+mkdir -p ~/.claude/hooks
+curl -sL https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/pre-tool-use -o ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Features
 
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+- **Intercepts Destructive Commands:** Checks all `bash` and `run_command` tool uses.
+- **Blocks Dangerous Patterns:** Stops `rm -rf`, `git push --force`, `DROP TABLE`, `TRUNCATE`, and `DELETE FROM` (if it lacks a `WHERE` clause).
+- **Audit Logging:** Automatically logs all blocked attempts (with timestamp, attempted command, and project path) to `~/.claude/hooks/blocked.log`.
+- **Seamless:** Allows all regular, safe commands to pass through without interference.
+- **Claude Feedback:** Returns a clear, explanatory message to Claude Code when an action is blocked.
