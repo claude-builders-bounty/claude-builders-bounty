@@ -1,0 +1,129 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "name": "Schedule (Monday 9AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "0 9 * * 1"}]}},
+      "position": [250, 300]
+    },
+    {
+      "name": "Calculate Last Monday",
+      "type": "n8n-nodes-base.set",
+      "parameters": {
+        "values": {
+          "string": [
+            {"name": "lastMonday", "value": "={{ new Date(new Date().setDate(new Date().getDate() - ((new Date().getDay() + 6) % 7))).toISOString().split('T')[0] }}"}
+          ]
+        }
+      },
+      "position": [250, 400]
+    },
+    {
+      "name": "Get GitHub Activity",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$env.GITHUB_REPO}}/commits?since={{$node['Calculate Last Monday'].json.lastMonday}}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {"splitIntoItems": true}
+      },
+      "position": [450, 300]
+    },
+    {
+      "name": "Get Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$env.GITHUB_REPO}}/pulls?state=all&sort=updated&direction=desc&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "position": [450, 450]
+    },
+    {
+      "name": "Get Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$env.GITHUB_REPO}}/issues?state=all&since={{$node['Calculate Last Monday'].json.lastMonday}}&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {"splitIntoItems": true}
+      },
+      "position": [450, 600]
+    },
+    {
+      "name": "Merge Activity Data",
+      "type": "n8n-nodes-base.merge",
+      "parameters": {"mode": "combine", "combinationMode": "mergeByPosition"},
+      "position": [650, 400]
+    },
+    {
+      "name": "Build Summary Prompt",
+      "type": "n8n-nodes-base.set",
+      "parameters": {
+        "values": {
+          "string": [
+            {"name": "prompt", "value": "=You are a developer relations bot. Write a weekly summary from this data:\n\nCommits: {{$node['Get GitHub Activity'].json.length || 0}}\nPRs: {{$node['Get Pull Requests'].json.length || 0}}\nIssues: {{$node['Get Issues'].json.length || 0}}\n\nFormat:\n# Weekly Dev Summary\n## Highlights\n- 3 bullet points of key achievements\n## By the Numbers\n- X commits, Y PRs merged, Z issues closed\n## What's Next\n- 2 items for the coming week\n\nKeep it professional and concise. No markdown tables."}
+          ]
+        }
+      },
+      "position": [850, 400]
+    },
+    {
+      "name": "Generate Summary (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}"},
+          {"name": "anthropic-version", "value": "2023-06-01"}
+        ]},
+        "sendBody": true,
+        "bodyParameters": {"parameters": [
+          {"name": "model", "value": "claude-sonnet-4-6-20250514"},
+          {"name": "max_tokens", "value": 1024},
+          {"name": "messages[0].role", "value": "user"},
+          {"name": "messages[0].content", "value": "={{$json.prompt}}"}
+        ]}
+      },
+      "position": [1050, 400]
+    },
+    {
+      "name": "Extract Summary Text",
+      "type": "n8n-nodes-base.set",
+      "parameters": {
+        "values": {
+          "string": [
+            {"name": "summary", "value": "={{$json.content[0].text}}"}
+          ]
+        }
+      },
+      "position": [1250, 400]
+    },
+    {
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "parameters": {
+        "authentication": "oAuth2",
+        "channel": "={{$env.SLACK_CHANNEL}}",
+        "text": "={{$json.summary}}"
+      },
+      "position": [1450, 400]
+    }
+  ],
+  "connections": {
+    "Schedule (Monday 9AM)": {"main": [[{"node": "Calculate Last Monday", "type": "main", "index": 0}]]},
+    "Calculate Last Monday": {"main": [[{"node": "Get GitHub Activity", "type": "main", "index": 0}]]},
+    "Get GitHub Activity": {"main": [[{"node": "Merge Activity Data", "type": "main", "index": 0}]]},
+    "Get Pull Requests": {"main": [[{"node": "Merge Activity Data", "type": "main", "index": 1}]]},
+    "Get Issues": {"main": [[{"node": "Merge Activity Data", "type": "main", "index": 2}]]},
+    "Merge Activity Data": {"main": [[{"node": "Build Summary Prompt", "type": "main", "index": 0}]]},
+    "Build Summary Prompt": {"main": [[{"node": "Generate Summary (Claude)", "type": "main", "index": 0}]]},
+    "Generate Summary (Claude)": {"main": [[{"node": "Extract Summary Text", "type": "main", "index": 0}]]},
+    "Extract Summary Text": {"main": [[{"node": "Send to Slack", "type": "main", "index": 0}]]}
+  }
+}
