@@ -1,0 +1,789 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased] — 2026-05-24
+
+### Added
+- feat(telegram): edit status messages in place instead of appending (#30864)
+- feat(portal): one-shot setup, status CLI, and Nous-included markers (#30860)
+- feat(ci): use 6-way slicing based on benchmark results
+- feat(ci): 4-way matrix slicing with LPT duration-balanced distribution
+- feat(secrets): label detected credentials with their source (Bitwarden) (#30364)
+- feat(tui): mouse_tracking DEC mode presets (salvage of #26681) (#30084)
+- feat(secrets): Bitwarden Secrets Manager integration with lazy bws install (#30035)
+- feat(agent): allow declaring supports_vision via user config
+- feat(state.db): persist platform_message_id; restore yuanbao exact-id recall
+- feat(sessions): opt-in per-session JSON snapshot writer
+- Add opt-in xAI TTS speech tag pauses
+- feat(cli): hermes migrate xai [--apply] [--no-backup]
+- feat(xai): apply_migration — rewrite config.yaml in-place via ruamel round-trip
+- feat(cli): warn about retired xAI models at chat startup
+- feat(doctor): surface xAI model retirement in hermes doctor
+- feat(xai): detect retired xAI models (May 15, 2026)
+- feat(web): migrate dashboard checkboxes to @nous-research/ui + DS polish (#28814)
+- feat: auto-launch Chromium-family browser for CDP
+- feat(web): add xAI Web Search provider plugin
+- feat: add BrowseShSource adapter for browse.sh skills catalog
+- feat(firecrawl): add integration tag for Hermes usage in browser and web providers
+- feat: show names of user-modified skills in bundled skill sync summary
+- feat(update): syntax-validate critical files post-pull, auto-rollback on failure (#28669)
+- feat(signal): add require_mention filter for group chats
+- feat(telegram): skip-STT audio path + 2GB cap via local Bot API server
+- feat(telegram): pin incoming user message for duration of agent turn
+- feat(telegram): ignore_root_dm with system command lobby
+- feat(telegram): support quick-command-only menus
+- feat(telegram): add disable_topic_auto_rename gateway flag
+- feat(send_message): auto-detect @username mentions and create Telegram entities
+- feat(kanban): drag-to-delete trash zone + bulk delete for task cards
+- feat(kanban): add scheduled status for delayed follow-ups
+- feat(skills): add skill bundles — alias /<name> loads multiple skills (#28373)
+- feat(kanban): configure worktree paths and branches
+- feat(kanban): show dashboard cron jobs across profiles
+- feat(kanban): add respawn guard to block repeat worker storms
+- feat(kanban): filter tasks by workflow fields and runs by status/outcome
+- feat(kanban): stale detection for running tasks in dispatcher
+- feat(kanban): wire dispatcher to dispatch review agents from review column
+- feat(kanban): stamp originating ACP session_id on tasks
+- feat(kanban): add optional board parameter to all MCP tools
+- feat(cli): add kanban swarm topology helper
+- feat(kanban): surface per-task model_override in show + tool output
+- feat(kanban): worker visibility endpoints (workers/active, runs/{id}, inspect)
+- feat(kanban): add --sort option to 'hermes kanban list'
+- feat(kanban): add max_in_progress config to cap concurrent running tasks
+- feat(kanban): add initial-status for human-ops cards
+- feat(kanban): allow trimmed task comments
+- feat(kanban): add board-level default workdir (#25430)
+- feat: per-task model override for kanban workers
+- feat(cli): wire --manual-paste into ``hermes auth add`` and ``hermes model``
+- feat(proxy): add xai upstream adapter for Grok via OAuth
+- feat(kanban): archive --rm to hard-delete archived tasks
+- feat(kanban): add auto_promote_children config toggle
+- feat(bg-review): add bundled/pinned skill protection rules to review prompts (#27644)
+- feat(skills): adapt baoyu-article-illustrator for Hermes
+- feat(skills): add baoyu-article-illustrator skill
+- feat(cli): add /update slash command to CLI and TUI (#23854)
+- feat(install.ps1): strip BOM, add -Commit/-Tag pin params, harden git ops
+- feat(web): mobile dashboard UX polish (#28127)
+- feat(acp): enrich permission request cards
+- feat: add cron job profile support
+- feat(azure-foundry): add Microsoft Entra ID auth
+- feat(dep_ensure): complete Windows bootstrap — dep_ensure + install.ps1 + detection (#27845)
+- feat(config): add install-method stamping + Docker detection (#27843)
+- feat(gateway): deliverable mode — ship artifacts as native uploads from any agent surface (#27813)
+- feat(kanban): make worker log retention configurable
+- feat(acp): add session-scoped edit auto-approval
+- feat(acp): require approval for editor file edits
+- feat(session_search): single-shape tool with discovery, scroll, browse — no LLM (#27590)
+- feat(grok): apply OpenAI execution guidance to xAI Grok / xai-oauth models (#27797)
+- feat(auxiliary): add configurable fallback chains + main-agent safety net
+- feat(kanban): orchestrator-driven auto-decomposition on triage (#27572)
+- feat(status): show xAI OAuth login state in hermes status
+- feat(tools): mirror image_gen plugin-injection in Browser Automation picker
+- feat(browser): browser-use + firecrawl plugins; drop single-eligible shortcut
+- feat(browser): browserbase plugin (spike — first migration)
+- feat(browser): add BrowserProvider ABC mirroring web_search_provider template
+- feat(x_search): auto-enable toolset when xAI OAuth or XAI_API_KEY is configured (#27376)
+- feat: add supports_parallel_tool_calls for MCP servers (#26825) — port to tool_dispatch_helpers
+- feat(nvidia): add NIM billing origin header — port to extracted modules
+- feat(xai-oauth): add xAI Grok OAuth (SuperGrok Subscription) provider — port to extracted modules
+- feat(agent): Added gemma 4 to reasoning allowlist
+- feat(gateway): extract auto-TTS markdown strip into prepare_tts_text() hook
+- feat: inject current time into goal judge prompt
+- feat(install.ps1): stage protocol + Windows clean-VM hardening pass
+- feat(gateway): add .ts/.py/.sh to SUPPORTED_DOCUMENT_TYPES
+- feat(agent): Added gemma 4 to reasoning allowlist
+- feat(discord): allow_any_attachment config to accept arbitrary file types
+- feat(cli): add `hermes send` to pipe script output to any messaging platform (#27188)
+- feat(status): append session recap to /status output (#27176)
+- feat(cli): show ▶ N indicator in status bar when /background tasks are running (#27175)
+- feat(cli): add /exit --delete flag to remove session on quit (#27101)
+
+### Fixed
+- fix(approval): pin 'silence is not consent' contract on timeout/deny (#24912) (#30879)
+- fix(memory): guard against external drift in MEMORY.md/USER.md (#26045) (#30877)
+- fix(xai-oauth): apply WKE disambiguator to recovery-path catch-all (#29344)
+- fix(xai-oauth): honor [WKE=unauthenticated:...] disambiguator in entitlement classifier (#29344)
+- fix(webhook): enforce INSECURE_NO_AUTH safety rail on dynamic route reloads
+- fix(skills_guard): explain why --force is rejected on dangerous verdicts
+- fix(security): update tests for verdict and --force changes
+- fix(security): correct verdict logic and enforce --force limitation in skills_guard
+- fix(tests): allowlist tmp_path for kanban_notify artifact delivery (#30852)
+- fix(api-call): defer client.close() to owning worker thread on interrupt (#29507)
+- fix(force_close_tcp_sockets): shutdown only, do not release FD (#29507)
+- fix(agent): use atomic_json_write for request debug dumps instead of bare write_text
+- fix(gateway-windows): atomic write for .cmd and startup launcher scripts
+- fix(qqbot): fix SILK magic byte detection slice length
+- fix(qqbot): use original attachment filename for cached files
+- fix(qqbot): handle op 7/9 and expand fatal close code set
+- fix(qqbot): add INTERACTION intent and expose video/file cached paths
+- fix(gateway): don't swallow expansion errors in runtime config helper
+- fix(gateway): enforce env variable template expansion on runtime config loaders
+- fix(gateway): honor key_env in auth-failure fallback resolution
+- fix(agent): log warning when fallback model normalization fails instead of silently swallowing
+- fix(opencode-go): emit Kimi reasoning_effort, match KimiProfile shape
+- fix(provider): expose OpenCode Go reasoning controls
+- fix(gateway): preserve WhatsApp pairing approvals across JID/LID alias flips
+- fix(plugins): block plugin-api path traversal + project RCE (#29156)
+- fix(plugins): apply truthy env semantics to project-plugin gate (#29156)
+- Fix unsafe gateway media path delivery
+- fix(gateway): separate observed Telegram group context
+- fix(file-safety): widen read-deny to .env, mcp-tokens/, webhook secrets, root
+- fix(file-safety): block auth.json read via TERMINAL_CWD relative path
+- fix(file-safety): block read_file on HERMES_HOME credential stores (#17656)
+- fix(skills): make content_hash filename-sensitive too (symmetric with bundle_content_hash)
+- fix(skills,pairing): path traversal guard in uninstall, lock list_pending, hash file paths
+- fix(plugins): widen _sanitize_plugin_name for category-namespaced names
+- fix: clean push triggers
+- fix(test): deflake two intermittent CI failures
+- fix(minimax-oauth): refresh short-lived access tokens per request (#30619)
+- fix(ci): supply-chain-audit uses two-dot diff, causing false positives on stale-branch PRs
+- fix(gateway,discord-plugin): _platform_status must respect is_connected=False, not silently fall back to check_fn
+- fix(security): wire Nous URL allowlist into refresh / mint persistence sites
+- fix(security): validate Nous Portal inference_base_url against host allowlist
+- fix(xai): resolve Grok Build context for OAuth
+- fix(file-safety): also write-deny <root>/control-files in profile mode
+- fix(security): protect Hermes control-plane files from prompt injection
+- fix(pairing): handle legacy plaintext pending entries during upgrade
+- fix(security): hash gateway pairing codes instead of storing plaintext
+- fix(aux-picker): drop stale session_search slot
+- fix: add missing aux model slots to model picker
+- fix(security): validate secret in _reload_dynamic_routes to prevent HMAC bypass
+- fix(openviking): target-aware mirror subdir, drop private-attr access, dedupe URI builder
+- fix(openviking): store memories via content/write API instead of session messages
+- fix: run computer use post-setup when enabling tool
+- fix(computer-use): skip capture_after when action failed (ok=False)
+- fix(computer-use): add set_value to ComputerUseBackend ABC and _NoopBackend stub
+- fix(cli): clamp curses color 8 for 8-color terminals (Docker)
+- fix(agent): recover from providers rejecting list-type tool content (#27344) (#30259)
+- fixup: log lazy-install errors at debug + AUTHOR_MAP for CipherFrame
+- fix: wire STT lazy-install into transcription_tools.py
+- fix(agent): fail fast on small Ollama runtime context
+- fix(agent): widen toolset gate to context engine tools (#5544 sibling)
+- fix(agent): gate memory tool injection on enabled_toolsets (#5544)
+- fix(tui): surface verbose tool details (#30225)
+- fix(ssh): keep bulk sync extraction scoped to .hermes
+- fix(cli): pre-check CUA release asset for Intel macOS before install
+- fix(skills): load Linux-tagged skills on Termux (android sys.platform)
+- fix(tui): termux-gate composer rendering tweaks for Ink TUI
+- fix(computer_use): build summary once before aux-vision routing branch
+- fix(computer-use): address Copilot review on max_elements cap
+- fix(computer-use): cap AX `elements` array to prevent context blowup (#22865)
+- fix(tui): preserve scrollback when branching sessions (#30162)
+- fix(computer_use): route SOM/vision captures via auxiliary.vision (#24015)
+- fix(computer_use): add helper to decide capture vision routing
+- fix(termux): resolve packed-refs and worktree refs in skill-sync fingerprint
+- fix(computer-use): surface app=… filter no-match instead of silently using frontmost (#24170 bug 1)
+- fix(computer_use): preserve app context for capture_after; fix element label parsing (#24170 bugs 2 & 5)
+- fix(skills): prune dependency/venv dirs from all skill scanners (#30042)
+- fix(voice): chunk oversized CLI recordings
+- fix(computer_use): correct type_text MCP tool name and implement drag action
+- fix(nix): auto-refresh npm lockfile hashes
+- fix(dashboard): remove country flags from language picker (#29997)
+- fix(tui): also pass --expose-gc on the wheel-bundled launch path
+- fix(tui): pass --expose-gc as node argv instead of NODE_OPTIONS
+- fix(custom): pass custom provider extra body
+- fix(background_review): propagate parent toolset config to keep tools[] cache-stable
+- fix(gateway): extend observe+attribution to location and media handlers
+- fix: handle Discord typing indicator 429 gracefully
+- fix(cli): honour image-routing decision in quiet-mode -q --image path
+- fix(agent): consult supports_vision override in auto-mode routing
+- fix(agent): resolve supports_vision override for named custom providers
+- fix(xai): restore encrypted reasoning replay across turns
+- fix(security): guard os.chmod(parent) against / and top-level dirs
+- fix(security): derive <VENDOR>_API_KEY from host as final credential fallback
+- fix(security): address review feedback from pmos69
+- fix(security): prevent API key leakage to non-authoritative custom endpoints
+- fix(gateway): reorder telegram menu priority — everyday commands first
+- fix(gateway): prioritize Telegram command menu
+- fix(nix): add xclip and wl-copy
+- fix(tui): clipboard copy on linux/wayland
+- fix(skills-hub): widen identifier-dedup to GitHubSource + fix test patch path
+- fix(skills-hub): fix dedup in browse_skills() programmatic API
+- fix(skills-hub): deduplicate search results by identifier, not name
+- fix(gateway): harden kanban and provider cleanup races
+- fix(x_search): surface degraded results + validate dates
+- fix(deps): bump pydantic to 2.13.4 to avoid pydantic-core thread segfault (#29021)
+- fix(tui): anchor splitReasoning unclosed-tag regex to start of input (#29426)
+- fix(ci): stop pushing per-commit SHA tags to Docker Hub
+- fix(xai): align migrate retirement map with docs
+- fix(chat_completions): broaden tool_name strip docstring + AUTHOR_MAP
+- fix(chat_completions): strip tool_name from messages for strict providers
+- fix(lint): skip per-file shell linter when LSP will handle the file (#29054)
+- fix(nix): refresh npm lockfile hashes
+- fix(windows): drop duplicate creationflags kwarg in LocalEnvironment._run_bash
+- fix(dingtalk): transcribe native voice notes
+- fix(discord): transcribe native voice notes
+- fix(kanban): worker-initiated block must not be auto-promoted (#28712)
+- fix(xai-oauth): pin inference base_url to x.ai origin (#28952)
+- fix(model): match custom provider by active base url
+- fix(install.ps1): pin PortableGit instead of hitting rate-limited GitHub API (#28943)
+- fix(runtime): treat 'ollama'/'vllm'/'llamacpp' aliases like 'custom' for base_url trust (#27132)
+- fix(cli): preserve setup config picker writes
+- fix(browse-sh): fetch SKILL.md via /api/skills/{slug}+skillMdUrl
+- fix: register browse-sh in per-source limits and --source choices
+- fix(tui): termux-gate scrollback preservation, touch-friendly defaults
+- fix(agent): set tool_name on tool-result messages at construction time
+- fix(gateway): harden Windows gateway install lifecycle
+- fix(windows): hide local subprocess consoles
+- fix(windows): hide cron script subprocess consoles
+- fix(update): quarantine hermes.exe vs concurrent Windows instance (#26670) (#26677)
+- fix(model-switch): mark bare custom provider as current
+- fix(discord): define view classes after lazy discord.py install
+- fix(kanban): also hoist idx_events_run + drop redundant inner create
+- fix(kanban): migrate task session index after columns
+- fix(web): consume bundled design system assets (#26391)
+- fix(cli): exit prompt_toolkit cleanly on SIGTERM/SIGHUP instead of raising KeyboardInterrupt (#28688)
+- fix(dashboard): add scheduled kanban i18n strings (#28534)
+- fix(kanban): respawn guard defers blocker_auth instead of auto-blocking (#28683)
+- fix(telegram): address post-merge audit follow-ups (#28670, #28672, #28674, #28676, #28678)
+- fix(kanban): stale reclaim must not tick failure counter (#28680)
+- fix(acp): use tempfile.gettempdir() in workspace auto-approve
+- fix(tests): catch up 25 stale tests after recent merges (#28626)
+- fix(doctor): attach codex CLI hint to OpenAI Codex auth warning for #27975
+- fix: guard yaml.safe_load, flock unlock, TOCTOU races, and atomic writes
+- fix: add recovery hints to loop guard warnings
+- fix(skills): add timeout to Google OAuth urlopen calls
+- fix: tolerate unreadable gateway JSONL transcripts
+- fix(cron): allow emoji ZWJ sequences in prompts
+- fix(cli): ignore stale HERMES_TUI_RESUME env
+- fix(dashboard): use browser scrollback for chat wheel
+- fix(tui): preserve dunder identifiers in markdown
+- fix(cli): show active profile in TUI prompt
+- fix(matrix): implement thread_require_mention to prevent multi-agent reply loops
+- fix(gateway): pre-mark sessions as resume_pending before drain to prevent data loss (#27856)
+- fix(web): add scheduled column to i18n type definitions (#28549)
+- fix: ignore Telegram messages for other bots
+- fix(telegram): handle channel post updates
+- fix(telegram): wire gt: callback dispatch for gmail-triage buttons
+- fix(telegram): report cron topic fallback
+- fix(telegram): add DM topic typing fallback when message_thread_id rejected
+- fix(gateway): allow chat-scoped telegram auth without sender user_id
+- fix(gateway): restore Telegram DM topic thread_id after session split (#27166)
+- fix(telegram): preserve topic metadata on overflow edits
+- fix(gateway): prevent Windows Telegram /restart leaving gateway stopped
+- fix(telegram): route image documents (.png/.jpg/.webp/.gif) through vision pipeline
+- fix(cron): route Telegram cron deliveries to a dedicated topic via TELEGRAM_CRON_THREAD_ID
+- fix(telegram): gate profile bots by allowed topics
+- fix(gateway): register Telegram commands for groups
+- fix(send_message): add thread-not-found retry for Telegram forum topic sends
+- fix(gateway): pin Telegram DM-topic routing to user's current topic
+- fix(tts): keep native audio outside Telegram voice delivery
+- fix(telegram): retry wrapped connect timeouts
+- fix(telegram): escape send_slash_confirm preview with format_message
+- fix(gateway): avoid duplicate Telegram text after auto-TTS voice replies
+- fix: avoid Telegram group reply thread session splits
+- fix(gateway): mark final voice reply as notify-worthy so Telegram delivers it audibly
+- fix(telegram): resume typing indicator after inline approval click (#27853)
+- fix(telegram): propagate extra base_url config
+- fix(telegram): reset sticky fallback IP on connect failure, retry primary DNS
+- fix(telegram): fail-closed auth fallback when TELEGRAM_ALLOWED_USERS is empty
+- fix(telegram): enforce TELEGRAM_ALLOWED_USERS allowlist on inbound messages
+- fix(telegram): route resumed DM topic sends directly
+- fix(gateway): route background-process notifications into Telegram DM topics
+- fix(test+release): update conflict retry count for MAX=5; map @CryptoByz
+- fix(telegram): recover from post-update polling conflict without entering limbo
+- fix(telegram): preserve can_edit after transient network errors in progress edits (#27828)
+- fix(gateway): keep tool-progress edits alive after Telegram flood control
+- fix(gateway): scope audio_file_paths outside media_urls guard
+- fix(gateway): roll over Telegram tool progress bubbles
+- fix(kanban-dashboard): restore implementations dropped during salvages (#28481)
+- fix(send_message): route standalone Telegram sends through TELEGRAM_PROXY
+- fix(gateway): route Telegram audio file attachments away from STT pipeline (#24870)
+- fix(telegram): respect reply_to_mode for DM topic reply fallback
+- fix(telegram): default streaming transport to edit
+- fix(telegram): render full clarify choice text in message body, use short button labels
+- fix(tests): catch up six stale tests after compression/aux/kanban changes (#28465)
+- fix(kanban): remove orphan conflict markers from kanban.py (#28459)
+- fix(kanban): remove orphan conflict markers from config.py (#28458)
+- fix(gateway): quiet corrupt kanban dispatcher boards
+- fix: 4 small surgical bugs
+- fix(packaging): ship bundled skills in wheel
+- fix(kanban): honor severity thresholds in diagnostics
+- fix(kanban): release scratch workspace and tmux session on task completion
+- fix(kanban): reject direct running transitions in dashboard bulk updates
+- fix(oneshot): pass fallback_providers from profile config to AIAgent
+- fix(packaging): ship dashboard plugin assets in wheel
+- fix(kanban): don't crash dispatched workers when kanban-worker skill is absent
+- fix(kanban): close sqlite connection on init failure to prevent fd leak
+- fix(kanban-dashboard): make Orchestration mode checkbox label static
+- fix: assign single-task kanban decompositions
+- fix: show scheduled kanban tasks in dashboard
+- fix: harden Kanban worker Hermes command resolution
+- fix(kanban): make legacy task migration idempotent
+- fix(kanban): preserve worker tools with restricted toolsets
+- fix(kanban): pass accept-hooks to worker chat subprocess
+- fix(kanban): make claim ttl configurable
+- fix(kanban): persist worker session metadata on completion
+- Fix Kanban dashboard initial board selection
+- fix(kanban): task_age() tolerates ISO-8601 timestamps
+- fix(kanban): serialize DB initialization
+- fix(kanban): demote ready children when a parent is reopened
+- fix(kanban): align board_exists with board discovery rules
+- fix(kanban): fingerprint crash errors to prevent fleet-wide retry exhaustion
+- fix(kanban): reset failure counters on unblock_task
+- fix(kanban): use 'is not None' check for max_runtime_seconds in create_task
+- fix(kanban): promote blocked tasks when parent dependencies complete
+- fix(kanban): sync slash subcommands with live parser
+- fix(cli): make kanban specify max_tokens configurable
+- fix(kanban): promote dependents when a parent is archived
+- fix(kanban): preserve notifier_profile for dashboard home subscriptions
+- fix(kanban): keep board-management commands independent from board override
+- fix(kanban): ignore stale HERMES_KANBAN_BOARD for removed boards
+- fix(kanban): seed bundled skills (e.g. kanban-worker) on kanban init
+- fix(web): add Cache-Control: no-store to plugin static file serving
+- fix(kanban): clear _INITIALIZED_PATHS in remove_board so recycled DBs re-init schema
+- fix(oauth): add manual-paste fallback for browser-only remote consoles
+- fix(mattermost): resolve thread root_id and route progress to threads
+- fix(cli): preserve cron asterisks in strip mode
+- fix: handle whitespace-only cron responses
+- fix(run-agent): treat any 403 on xai-oauth as entitlement to stop refresh-loop
+- fix(xai-oauth): split 403 (tier/entitlement) from 400/401 in token endpoint
+- fix(gateway): tighten MEDIA extraction regex + silent skip on file-not-found
+- fix(send_message): resolve Slack user IDs to DM channel IDs
+- fix(agent): add qwen and deepseek to TOOL_USE_ENFORCEMENT_MODELS
+- fix(tui): improve charizard completion menu contrast
+- fix: wrap _pool_may_recover_from_rate_limit call through run_agent namespace
+- fix(gateway): bridge gateway_restart_notification from YAML platform sections
+- fix: guard json.loads() against invalid TTS and skill_view responses
+- fix(gateway): exit code 75 on service restart so launchd relaunches
+- fix(web): portal Change Model modal so it renders above the app sidebar
+- fix(xai-oauth): quarantine dead tokens on terminal refresh failure
+- fix(tui): keep x status citation fallbacks link-like
+- fix(aux): remove stale session_search model menu entry
+- fix(windows): handle redirected stdout in _cprint fallback
+- fix: add pre_start() to _IncomingHandler for dingtalk SDK compatibility
+- fix: recognize emoji and caret as natural response endings
+- fix(approval): surface pending-approval state with explicit marker visible to LLM
+- fix(kanban): single-row horizontal scroll for board columns
+- fix(acp): resolve /tmp symlink before workspace auto-approve check on macOS
+- fix: treat inline-shell timeout guard as timeout
+- fix: elevate plugin discovery failures from debug to warning
+- fix(process-registry): detach stdin from background subprocesses to prevent keyboard freeze
+- fix(gateway): align kanban artifact _IMAGE_EXTS with response dispatch
+- fix: include hermes_plugins in gateway.log component filter
+- fix(auth): treat empty credential pool entries as unauthenticated
+- fix(wecom): handle WSMsgType.CLOSING to prevent CPU spin
+- fix(skills): align article-illustrator with real Hermes tool capabilities
+- fix: add default base_url_override for ollama-cloud provider
+- fix(acp): use refresh moment as updated_at on session info push
+- fix(acp): refresh session info after auto-title
+- fix(acp): also mark raised-exception tool results as failed
+- fix(acp): treat polished tool error payloads as failed
+- fix(acp): mark failed tool completions
+- fix(acp): render structured JSON tool output
+- fix(url_safety): block IPv4-mapped IPv6 addresses to prevent SSRF bypass
+- fix(cron): gracefully degrade when runtime profile is deleted
+- fix(cron): use delta-based env restore instead of clear+update
+- fix(cron): isolate profile job env
+- fix: avoid process-wide cron profile home mutation
+- fix(xai-responses): strip enum values containing '/' from tool schemas
+- fix(minimax-oauth): quarantine dead tokens on terminal refresh failure
+- fix(codex-oauth): quarantine terminal refresh errors so dead tokens are not replayed across sessions
+- fix(compress): make abort-on-summary-failure opt-in via config flag (#28117)
+- fix(xai-oauth): quarantine terminal refresh errors so dead tokens are not replayed across sessions
+- fix(auth): improve xAI OAuth SSH hint with visual header and auto-detected host
+- fix(xai-oauth): show "not received" page when loopback callback has no code
+- fix(error_classifier): classify xAI Grok entitlement SSE errors as auth
+- fix: latch xAI OAuth callback result
+- fix: make xAI OAuth callback server threaded
+- fix(security): redact xAI (Grok) API keys in logs
+- fix(tirith): suppress .app lookalike_tld false positives in warn verdicts
+- fix(compress): abort instead of dropping messages when summary LLM fails (#28102)
+- fix(aux): log sanitizer failures instead of silently swallowing them
+- fix(aux): strip pattern/format keywords from tool schemas on xAI Responses path
+- fix(kanban): detect cycles in decompose_triage_task sibling-link pre-validation
+- fix(kanban-dashboard): wire onValueChange on OrchestrationPanel Selects (#27893)
+- fix(anthropic): scope MiniMax beta-strip to MiniMax only
+- fix(auth): send Bearer auth for Azure Foundry anthropic_messages endpoints
+- fix(kanban): use selectChangeHandler for workspace, parent, and bulk-reassign selects (#24547)
+- fix(kanban): stop forcing dashboard text to all caps (#26413)
+- fix(dashboard): constrain theme picker dropdown height so themes are scrollable (#25213) (#25220)
+- fix(web): render object config values structurally (#10949)
+- fix(kanban): surface unusable triage auxiliary model (auto-decompose aware) (#27871)
+- fix(kanban): align failure diagnostics with retry limit
+- fix(kanban): align worker terminal timeout with task runtime
+- fix(acp): use modes for edit auto-approval
+- fix(acp): avoid duplicate edit approval diffs
+- fix(yuanbao): persist message_id on @bot user transcript writes
+- fix(skills): load symlinked skill slash commands
+- fix(auxiliary): detect quota exhaustion as payment error; allow capacity-error fallback for explicit providers
+- fix(auth) fix a few cases where refresh tokens were not rotated.
+- fix(auth): stop replaying invalid Nous refresh tokens
+- fix(mcp): use module-level time so test patches do not race background sleepers
+- fix(xai): wire schema sanitizer into post-refactor build_api_kwargs
+- fix(schema_sanitizer): strip pattern/format from Responses-format tools for xAI compatibility
+- fix(run_agent): scope kimi tool-reasoning trigger to host, not model name substring
+- fix(model_switch): preserve explicit custom-provider model list when no api_key
+- fix(cli): include send in _BUILTIN_SUBCOMMANDS for plugin discovery gating
+- fix(aux): default OpenRouter auxiliary to gemini-3-flash-preview
+- fix(xai-oauth): echo code_challenge in token POST so PKCE exchange succeeds
+- fix(gateway): ignore inaccessible service path dirs
+- fix(tests): stabilize xai env and provider parity
+- fix(doctor): flag missing credentials for active openrouter provider
+- fix(docker): preload messaging gateway deps
+- fix(codex): allow kanban worker board writes
+- fix(mcp): prevent parallel-safe prefix collisions
+- fix(delegation): preserve configured_provider name when runtime returns 'custom'
+- fix(dashboard): respect HERMES_BASE_PATH in WebSocket URLs (#25547)
+- fix(web_server): pass proxy_headers=False to uvicorn.run so the dashboard's loopback gate sees the real connection peer
+- fix(gateway): use service restart path in Docker/Podman containers
+- fix(agent): honor provider timeout config in streaming API calls
+- fix(send_message): preserve Slack and Matrix thread targets resolved from channel directory
+- fix(transports): use monotonic deadlines in codex app-server turn loop
+- fix(doctor): show xAI OAuth login state in hermes doctor Auth Providers section
+- fix(doctor): isolate per-provider OAuth imports to prevent fallback regression
+- fix(doctor): suppress stale XAI_API_KEY issue when xAI OAuth is healthy
+- fix(tui): align composer cursorLayout with wrap-ansi to kill multiline cursor drift
+- fix(plugins/browser): carry forward requests.RequestException wrapping
+- fix(browser): self-review pass — dead-import, log levels, future-proofing
+- fix(browser): ensure plugin discovery before registry lookup; parity harness
+- fix(telegram): re-trigger typing indicator after sending messages
+- fix(doctor): SSH check ignores TERMINAL_SSH_USER, TERMINAL_SSH_PORT, TERMINAL_SSH_KEY
+- fix(security): restore type safety and extract constant in shell hook block handler
+- fix(security): honor shell hook blocks even when message/reason is absent
+- fix(webui): allow native text selection in chat via xterm.js bypass (#25720)
+- fix ACP start events for polished tools
+- fix(cli): sync _skill_commands after /reload-skills so Tab completion picks up new skills
+- fix(metadata): qwen3.6-plus has a 1M context window (#27008)
+- fix(gateway): add codex runtime telegram alias
+- fix(mcp-oauth): print SSH tunnel hint in _redirect_handler
+- fix(tools): run post_setup in _reconfigure_provider() for env-var providers
+- fix(matrix): warn on clock-skew silent message drops (#12614) (#27330)
+- fix: strip image parts for non-vision models with provider profiles + getattr-safe _custom_providers
+- fix(run_agent): guard memory provider init against empty/whitespace string
+- fix(run_agent): isolate background review fork from external memory plugins (#27190)
+- fix(fallback): forward custom_providers to fallback model context-length detection
+- fix(agent): reset _fallback_index at turn start even when no fallback activated
+- fix(xai): surface provider 'error' SSE frame in Codex fallback stream (#27184)
+- fix(codex): rotate pool on usage limit 429 — port to extracted modules
+- fix(copilot): GitHub Models 413 hint — port to extracted conversation_loop
+- fix(agent): retry malformed anthropic stream parser errors — port to extracted modules
+- fix(auxiliary): resolve xai oauth compression from pool — port to conversation_compression
+- fix(xai-oauth): entitlement-403 chain — final state (ce0e189d3 + 9818b9a1a + 6784c8079 + dffb602f3)
+- fix(xai-oauth): recover from prelude SSE errors, gate reasoning replay, surface entitlement 403s
+- fix(langfuse): complete observability fix — port to extracted conversation_loop
+- fix(run_agent): detect kimi models via model name for reasoning pad
+- fix(line): add trust_env=True to all _LineClient aiohttp sessions
+- fix: respect user-configured vision model for OpenRouter
+- fix(auxiliary): resolve api_key_env alias in named custom provider path of resolve_provider_client
+- fix(gateway): preserve underscores in plain-text identifiers
+- fix(gateway): avoid zsh status variable in update wrapper
+- fix(gateway): add trust_env=True to aiohttp sessions in SMS, Slack, Teams, Google Chat adapters
+- fix(scripts): fix UnicodeEncodeError in footgun checker on Windows
+- fix(tests): mock keychain in TestReadClaudeCodeCredentials to prevent credential leakage
+- fix(cron): prevent parallel job result loss on exception
+- fix(model-switch): probe /models for custom providers without api_key
+- fix(windows): suppress console window flash on subprocess spawns
+- fix(gateway): add direct_messages_topic_id for synthetic Telegram DM events
+- fix: strip image parts for non-vision models with provider profiles
+- fix: preserve discover_models in _normalize_custom_provider_entry
+- fix(api_server): coerce stringified booleans in request payloads
+- fix(install.ps1): Stage-Node honest reporting + reject empty -Stage
+- fix(install.ps1): trim completion banner + strip em-dash in test
+- fix(install.ps1): address Copilot review on #27224
+- fix(teams): fall back to default port on invalid port config
+- fix(deepseek): set default_aux_model on profile so aux warning stops firing
+- fix(run_agent): detect kimi models via model name for reasoning pad
+- fix(install): use resolved python variable in setup_open_webui.sh
+- fix(credential_pool): parse ISO-string last_status_at during from_dict rehydration (#25516)
+- fix(delegate): tool_trace false-positive error detection for short outputs
+- fix(windows): make PowerShell installer parse in 5.1
+- fix: add paste collapse logging to aid debugging
+- fix(run_agent): guard memory provider init against empty/whitespace string
+- fix(kanban): --severity filter uses >= comparison per documented behavior (#26379)
+- fix(skills): return None instead of truthy stub when skill load fails
+- fix: remove unused import and hoist module-level constant
+- fix(gateway): add missing logger definition to prevent NameError in _all_platforms
+- fix(review): address Copilot follow-up on sanitizer and file decode errors
+- fix(tui): harden ansi sanitizers for dangling CSI
+- fix(cli): satisfy ruff encoding requirement in send_cmd
+- fix(tui): harden Terminal.app render behavior
+- fix(run_agent): isolate background review fork from external memory plugins (#27190)
+- fix(fallback): forward custom_providers to fallback model context-length detection
+- fix(plugins): remove unreachable hermes tools → Langfuse path
+- fix(plugins): surface category-namespaced plugins in hermes plugins list
+- fix(agent): reset _fallback_index at turn start even when no fallback activated
+- fix(xai): surface provider 'error' SSE frame in Codex fallback stream (#27184)
+- fix(telegram): restore DM topic typing indicator
+- fix(codex): rotate pool on usage limit 429
+- fix(xai): drop stale X Premium+ hint from entitlement 403 surfacing (#27110)
+- fix(mcp): validate remote URLs up-front with a clear error (#27105)
+- fix(moonshot): strip $ref siblings and collapse tuple items in tool schemas (#27104)
+- fix(update): stream npm install output so postinstall progress is visible (#18840)
+- fix(update): make Camofox lazy-installed instead of eager (#27055)
+- fix(signal): read groupV2.id in envelope, fall back to legacy groupInfo (#27051)
+- fix(acp): replay session history before responding to session/load (#12285 follow-up) (#26957)
+- fix(acp): replay assistant reasoning as agent_thought_chunk on session/load (#12285) (#26943)
+
+### Changed
+- docs: surface Nous Portal on pages where it solves a real problem the page describes (#30874)
+- docs: surface 'hermes setup --portal' and 'hermes portal' across user-facing pages (#30869)
+- chore: drop in-repo infographic/ directory; keep PR-body URLs only (#30854)
+- docs(env): clarify HERMES_ENABLE_PROJECT_PLUGINS contract (#29156)
+- chore(release): add AUTHOR_MAP entry for egilewski (PR #30432) (#30833)
+- refactor(web): dashboard typography & contrast pass
+- perf(termux): speed up bare cli prompt startup
+- perf(termux): fast-path cli version startup
+- refactor(gateway): migrate Discord adapter to bundled plugin (full Teams parity)
+- refactor: extract 7 helpers from convert_messages_to_anthropic
+- refactor(image_gen): port FAL backend to plugins/image_gen/fal
+- chore(release): add sgtworkman to AUTHOR_MAP
+- chore(release): add rodrigoeqnit to AUTHOR_MAP
+- chore(release): add AUTHOR_MAP entry for Stark-X
+- perf(termux): speed up non-tui cli startup
+- chore(release): map yichengqiao21 to YarrowQiao
+- chore: trim verbose comments/docstrings, add AUTHOR_MAP entry
+- chore: add nycomar to AUTHOR_MAP
+- style: docstring + whitespace cleanup on secure_parent_dir
+- chore: add Glucksberg to AUTHOR_MAP
+- chore(tui): remove unused Babel build deps
+- refactor(yuanbao): drop dead branch A1 message_id loop + pin missing fixture
+- docs(sessions): state.db is canonical for gateway messages
+- refactor(gateway): drop _append_to_jsonl from mirror
+- refactor(gateway): stop writing JSONL in append_to_transcript / rewrite_transcript
+- refactor(yuanbao): migrate recall to load_transcript()
+- refactor(gateway): drop JSONL fallback in load_transcript
+- docs(skills): clarify external dir mutations
+- chore(deps): bump idna from 3.11 to 3.15 (#28883)
+- chore(deps): bump protobufjs in /scripts/whatsapp-bridge (#28889)
+- chore(deps): bump ws from 8.20.0 to 8.20.1 in /scripts/whatsapp-bridge (#28975)
+- chore(release): correct AUTHOR_MAP for jonny@nousresearch.com
+- refactor(session-log): delete dead _clean_session_content helper
+- docs(session-log): state.db is canonical; ~/.hermes/sessions/ is legacy
+- refactor(session-log): drop branch/compress re-point of session_log_file
+- refactor(session-log): stop initializing session_log_file attribute
+- refactor(session-log): delete _save_session_log and all callers
+- perf(termux): speed up tui cold start
+- docs(xai-oauth): note X Premium+ also unlocks Grok OAuth (#29055)
+- docs(web-search): document xAI Web Search backend (#29052)
+- perf(terminal): adaptive subprocess poll cuts ~195ms off every tool call (#29006)
+- ci(tests): add pytest-timeout 60s hard cap to break suite-teardown deadlock (#28861)
+- perf(compression): defer feasibility check to first compression attempt (#28957)
+- chore(deps): bump ws from 8.20.0 to 8.20.1 in /ui-tui
+- perf(agent-loop): cut 47% of per-conversation function calls via 3 targeted hot-path optimizations (#28866)
+- perf(cli): defer openai._base_client import via sys.meta_path finder (#28864)
+- docs(skills): document browse.sh source (#28939)
+- chore: add erikengervall to AUTHOR_MAP (#28855)
+- chore(deps): bump mermaid from 11.13.0 to 11.15.0 in /website (#24011)
+- chore(deps): bump ws in /ui-tui/packages/hermes-ink (#28183)
+- chore(deps): bump webpack-dev-server from 5.2.3 to 5.2.4 in /website (#28104)
+- chore(deps): bump @babel/plugin-transform-modules-systemjs in /website
+- chore(deps): bump fast-uri from 3.1.0 to 3.1.2 in /website
+- chore(deps): bump python-dotenv from 1.2.1 to 1.2.2
+- chore(deps): bump python-multipart from 0.0.22 to 0.0.27
+- chore(deps): bump lodash-es and langium in /website
+- chore(deps): bump lodash from 4.17.23 to 4.18.1 in /website
+- chore(deps): bump follow-redirects from 1.15.11 to 1.16.0 in /website
+- chore(deps): bump dompurify from 3.3.3 to 3.4.2 in /website
+- chore(actions)(deps): bump actions/checkout from 4.3.1 to 6.0.2
+- chore(actions)(deps): bump actions/setup-python from 5.3.0 to 6.2.0
+- chore(actions)(deps): bump docker/build-push-action from 6.19.2 to 7.1.0
+- chore(actions)(deps): bump docker/login-action from 3.7.0 to 4.1.0
+- chore(actions)(deps): bump the actions-minor-patch group across 1 directory with 2 updates
+- chore(release): alias xxxigm noreply for upcoming #27986 salvage (#28594)
+- chore(release): pre-stage AUTHOR_MAP for May 2026 LHF batch group 9 (#28571)
+- docs: comprehensive 2-week sweep of feature/PR coverage gaps (#28497)
+- chore(release): map @alber70g for PR #25280 salvage
+- chore(release): map @indigokarasu for PR #26636 salvage
+- chore(release): map @ai-hana-ai for PR #23928 salvage
+- docs(telegram): document ignore_root_dm feature
+- chore(release): map @OCWC22 for PR #24581 salvage
+- Document Telegram multi-profile gateway commands
+- chore(release): map oracle@jarviss-mbp.home for PR #24014 salvage
+- chore(release): map @stevehq26-bot for PR #28015 salvage
+- chore(release): map @khungate for PR #25829 salvage
+- chore(release): map @el-analista for PR #25368 salvage
+- chore(release): map @soynchux for PR #27806 salvage
+- chore(release): map @jackjin1997 for PR #27239 salvage
+- chore(release): map @B0Tch1 for PR #27634 salvage
+- chore(release): map @rak135 for PR #25960 salvage
+- chore(release): map @booker1207 for PR #25132 salvage
+- chore(release): map @kunci115 for PR #27098 salvage
+- chore(release): map @karthikeyann for PR #26609 salvage
+- chore(release): map @aqilaziz for PR #26406 salvage
+- chore(release): map @samahn0601 for PR #27887 salvage
+- chore(release): map @nftpoetrist for PR #25856 salvage
+- chore(release): map @Zyrixtrex for PR #26754 salvage
+- chore(release): map @eliteworkstation94-ai for PR #28157 salvage
+- chore(release): map @fabiosiqueira for PR #27212 salvage
+- chore(release): map @erhnysr for PR #25198 salvage
+- chore(release): map @pepelax for PR #25419 salvage
+- chore(release): map bartok9 noreply for PR #24879 salvage
+- chore(release): map @asdlem for PR #27852 salvage
+- docs: add Korean Kanban documentation
+- docs: align kanban readiness docs and smoke tests
+- docs(codex_app_server): document multi-root Kanban writable_roots (#27941)
+- chore(release): map contributor email for attribution check
+- docs: add kanban codex lane skill
+- perf(prompt): cache kanban worker guidance at session init
+- docs(kanban): document worker protocol auto-blocks
+- docs(env): add HERMES_KANBAN_DISPATCH_IN_GATEWAY override (#21956)
+- docs(kanban-worker): document notification routing configuration
+- docs: ignore box diagrams in ascii guard
+- docs(kanban): document inline create shortcuts
+- docs(kanban): document max-retries task override
+- docs(skill): align kanban dispatcher failure_limit text with current default
+- chore(release): map @yannsunn for PR #28064 xai proxy adapter salvage
+- docs(windows): avoid piping installer directly into iex
+- chore(release): alias stale-ID salvage commit for @Grogger (#28334)
+- chore(release): pre-stage AUTHOR_MAP for May 2026 LHF batch group 8 (#28328)
+- chore(release): alias stale-ID salvage commit for @LifeJiggy (#28317)
+- chore(release): pre-stage AUTHOR_MAP for May 2026 LHF batch group 7
+- chore(release): map Jack Yang contributor email
+- chore(skills/baoyu-article-illustrator): tighten description, add platforms, regen docs
+- chore(release): add AUTHOR_MAP entry for falasi
+- chore(release): add AUTHOR_MAP entry for dskwe
+- chore: add gianfrancopiana to AUTHOR_MAP
+- chore(release): AUTHOR_MAP noreply entry for Slimydog21
+- chore(release): AUTHOR_MAP entries for Fewmanism + Slimydog21
+- chore(release): add AUTHOR_MAP entry for glennc
+- chore(deps): regen uv.lock to match pinned versions in pyproject (#28094)
+- refactor(bootstrap): consolidate ACP browser bootstrap into install.{sh,ps1} (#27851)
+- docs: add ACP Zed edit approval diffs plan
+- refactor(doctor): extract section banner + fail-and-issue helpers (#27830)
+- docs(session_search): update all docs for the single-shape rewrite (#27840)
+- perf(prompt-cache): date-only timestamp + loud gateway-DB roundtrip logging
+- docs(fallback): document layered auxiliary fallback ladder
+- chore(release): map zccyman noreply email for #26998
+- refactor(auth): mostly cleanups and style changes
+- refactor(auth): collapse Nous inference fallback controls
+- docs(messaging): clarify admin/user split and signal future gating (#27623)
+- chore(acp): bump registry manifest to 0.14.0 matching pyproject
+- chore(release): map vaddisrinivas for #26394 salvage
+- chore(release): map hehehe0803 email for #26212 salvage
+- chore(release): AUTHOR_MAP entries for batch salvage group 6 contributors
+- chore(release): map QuenVix, Mind-Dragon, soynchux emails for Tier 4 salvage
+- chore: revert unrelated package-lock + nix hash churn to keep PR diff minimal
+- chore(nix): refresh ui-tui npmDeps hash after wrap-ansi direct-dep drop
+- chore(nix): refresh ui-tui npmDeps hash for wrap-ansi dep addition
+- refactor(browser): delete tools/browser_providers/ directory; migrate tests
+- refactor(browser): dispatch _get_cloud_provider through agent.browser_registry
+- chore(release): AUTHOR_MAP entries for batch salvage group 5 contributors
+- chore(deps): lazy-install boto3/botocore for bedrock adapter
+- refactor(security): extract _block_message helper to unify block logic in _parse_response
+- chore: ruff auto-fix PLR6201 resweep — tuple → set in membership tests (#27355)
+- chore(release): map EloquentBrush0x email for #26642 salvage
+- perf(run_agent): accumulate length-continuation prefix via list+join
+- chore(release): AUTHOR_MAP entries for batch salvage group 4 contributors
+- chore(release): AUTHOR_MAP entries for batch salvage group 3 contributors
+- refactor(run_agent): review fixes — keyword-forward __init__, drop dead code, tighten guards
+- chore(release): AUTHOR_MAP entries for batch salvage group 2 contributors
+- chore(release): map 0xchainer and kronexoi emails for upcoming salvages
+- docs(readme): remove hermes-eval and Hermes MemPalace from Community links (#27271)
+- refactor(run_agent): extract 10 more helpers to agent/agent_runtime_helpers.py
+- chore(release): AUTHOR_MAP entries for batch salvage contributors
+- docs(dashboard): clarify chat tab tui flag
+- docs(spotify): document Home Assistant speaker routing
+- docs(security): document YOLO mode visual indicators added in #26238
+- docs(cron): document name-based job lookup from #26231
+- docs(delegation): document api_mode wire-protocol override from #26824
+- docs(delegation): show api_mode override in custom-endpoint example
+- docs: add computer-use-linux community MCP
+- docs: add Hermes MemPalace to Community plugins section
+- docs: add hermes-eval to Community section
+- refactor(run_agent): extract __init__ (1,381 LOC) to agent/agent_init.py
+- refactor(run_agent): extract run_conversation to agent/conversation_loop.py
+- refactor(run_agent): move review prompts to agent/background_review.py
+- refactor(run_agent): extract Codex runtime + assorted helpers to dedicated modules
+- refactor(run_agent): extract streaming API caller (893 LOC) to agent/chat_completion_helpers.py
+- refactor(run_agent): extract chat-completion helpers to agent/chat_completion_helpers.py
+- refactor(run_agent): extract stream diagnostics to agent/stream_diag.py
+- refactor(run_agent): extract tool execution to agent/tool_executor.py
+- refactor(run_agent): extract system-prompt builder to agent/system_prompt.py
+- refactor(run_agent): extract context compression to agent/conversation_compression.py
+- refactor(run_agent): extract background memory/skill review to agent/background_review.py
+- refactor(run_agent): extract OpenAI proxy, safe stdio, IterationBudget
+- refactor(run_agent): extract tool-dispatch helpers to agent/tool_dispatch_helpers.py
+- refactor(run_agent): extract message sanitization to agent/message_sanitization.py
+- refactor(plugins): drop dead bundled-source guard in _discover_all_plugins
+- docs(release): expand v0.14.0 highlights with newcomer-friendly context (#27053)
+- docs(tools): add video_generate / video_gen toolset to user-facing tool docs (#27050)
+- docs(release): rewrite v0.14.0 highlights for excitement framing (#27035)
+
+### Other
+- test(xai-oauth): regression coverage for the bad-credentials disambiguator (#29344)
+- test(fast-command): stub _load_gateway_runtime_config too
+- test(tls-fd-recycle): pin shutdown-only + thread-aware close contract (#29507)
+- test(kanban): allow tmp_path artifacts past media-delivery validator
+- test: keep tirith checks hermetic
+- test(acp): pin parse_model_input in slash-command tests
+- test(plugins): regression coverage for project-plugin RCE chain (#29156)
+- infographic: PR #17659 read-deny credentials salvage
+- infographic: PR #6656 skill hub safety audit salvage
+- test: 4-way slice benchmark (with cache save)
+- infographic: PR #30609 Termux cold-start salvage (#30618)
+- infographic: PR #30591 Discord adapter → bundled plugin salvage (#30614)
+- infographic: PR #27612 Nous URL allowlist salvage
+- infographic: PR #14157 control-plane write-deny salvage
+- infographic: PR #27784 anthropic adapter refactor salvage
+- infographic: PR #8056 hash pairing codes salvage
+- infographic: PR #30373 aux model picker parity salvage
+- infographic: PR #8306 webhook HMAC bypass salvage
+- test(webhook): regression cases for empty-secret HMAC bypass
+- test(tools): centralize disable_lazy_stt_install fixture in conftest
+- test(tools): disarm lazy-install probe so _HAS_FASTER_WHISPER patches work
+- test(computer_use): end-to-end regression for capture routing (#24015)
+- test(computer_use): cover capture vision-routing helper
+- test: use subprocesses for each test file (#29016)
+- security(file-safety): also write-deny <root>/.env when running under a profile (#15981)
+- Observe unmentioned Telegram group messages
+- test(gateway): pin DEFAULT_DB_PATH in fixtures to prevent real state.db writes
+- test(gateway): pin SQLite-only load_transcript behaviour
+- test(session-log): pin no-session_json regression + drop trailing whitespace
+- test(cli): cover Brave binary CDP launch detection
+- test(kanban): cover sticky blocks for worker-initiated kanban_block (#28712)
+- 🐛 fix(cli): handle missing remote tracking refs
+- 🐛 fix(cli): handle no-remote worktree cleanup
+- test(gateway-windows): make ctypes.windll monkeypatch tolerant on non-Windows
+- Revert "feat(firecrawl): add integration tag for Hermes usage in browser and web providers" (#28862)
+- Merge pull request #28829 from NousResearch/bb/tui-no-history-truncation
+- test(file_ops): add regression tests for git baseline warning in write_file
+- Revert "fix(telegram): enforce TELEGRAM_ALLOWED_USERS allowlist on inbound messages"
+- Revert "feat(send_message): auto-detect @username mentions and create Telegram entities"
+- Revert "feat(telegram): support quick-command-only menus"
+- Revert "feat(telegram): pin incoming user message for duration of agent turn"
+- Route Telegram multi-bot mentions exclusively
+- Quiet noisy Telegram gateway errors
+- test+release: stub auth in channel_posts fixture; map @brndnsvr
+- test: address telegram channel post review
+- test+release: stub auth in test_telegram_documents fixture; map @kiranvk-2011
+- test+release: fix test fixture for forum_commands; map @chromalinx
+- test(send_message): add thread-not-found retry tests for Telegram topics
+- test(send_message): add thread-not-found retry tests for Telegram forum topics
+- test+release: align send_message mocks for MessageEntity import; map @fonhal
+- test+release: align stale sticky-IP test for #24511; map @falconexe
+- test(telegram): stub _is_callback_user_authorized in trigger-gating fixture
+- test(kanban-dashboard): pin enriched 409 detail and inline error wiring (#26744)
+- test: isolate Kanban env pins in hermetic fixture
+- test(kanban-dashboard): cover _task_dict task_age fallback
+- test(kanban): cover default board dashboard pin
+- test+docs(oauth): pin manual-paste semantics and document browser-only path (#26923)
+- test(xai-oauth): pin tier-denied 403 behavior + docs warning for #26847
+- 🐛 fix(memory): require newline after context tag
+- 🐛 fix(memory): keep inline memory-context mentions visible
+- test(cron): cover profile + workdir combined scenario
+- Merge pull request #27971 from NousResearch/austin/fix/goal-statusbar
+- test(auxiliary): cover layered fallback (chain → main agent → warn)
+- test(auxiliary): adapt eviction tests to capacity-error fallback
+- Switch to JWT token for inference against Nous, falling back to old opaque token on failure.
+- test(voice_cli): drop stale ≥1 requirement for force=True error _vprint calls
+- test(tools_config): align post_setup parametrize with current browser provider catalog
+- test(gateway): include direct_messages_topic_id in telegram DM metadata assertions
+- test(gateway): accept trust_env in fake aiohttp ClientSession lambdas
+- test(xai-oauth): pin PKCE token-exchange wire format
+- test(delegation): add regression test for runtime missing 'provider' key
+- review(tui): update stale comment refs to renamed visualLines helper
+- review(tui): route cursorLayout through @hermes/ink wrapAnsi shim (Bun runtime parity)
+- review(tui): address Copilot feedback on cursorLayout wrap-ansi rewrite
+- test(plugins/browser): coverage for the 3-plugin migration
+- test(restart_drain): assert i18n catalog resolved (#22266)
+- port(refactor): deepseek thinking-mode (068c24f8a + cd9470f41) — no net change
+- [agent] fix: harden api server response headers
+- Local: doctor uses x-goog-api-key for Google generativelanguage endpoint
+- test(skills): add regression test for skill load failure returning None
+- test(gateway): add smoke test for logger init (regression guard for #27154)
+- Port from Kilo-Org/kilocode#9434: strip historical media after compression (#27189)
+- test(plugins): cover _discover_all_plugins recursion + cross-link loader
+- Port from cline/cline#10343: periodic gateway memory logging (#27102)
+
