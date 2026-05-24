@@ -23,3 +23,30 @@ A simple and robust bash script that automatically generates a structured `CHANG
    ```
 
 This will instantly generate a `CHANGELOG.md` in your current directory.
+
+---
+
+# Claude PR Reviewer Agent
+
+A Python CLI agent that analyzes a GitHub Pull Request diff and generates a structured Markdown review using the Anthropic API.
+
+## Features
+- Fetches the PR diff directly using the GitHub CLI (`gh`).
+- Uses `claude-3-5-sonnet` to generate a structured review.
+- Outputs a Summary, Identified Risks, Improvement Suggestions, and a Confidence Score.
+
+## Setup Instructions
+
+1. **Install dependencies** (Requires Python 3 and the GitHub CLI):
+   ```bash
+   # Ensure you are logged into the GitHub CLI
+   gh auth login
+   ```
+2. **Set your API Key**:
+   ```bash
+   export ANTHROPIC_API_KEY="your_claude_api_key"
+   ```
+3. **Run the script**:
+   ```bash
+   ./claude-review.py --pr https://github.com/owner/repo/pull/123
+   ```
