@@ -1,0 +1,285 @@
+{
+  "name": "Weekly Dev Summary — Claude + GitHub",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate date range for the past week\nconst now = new Date();\nconst oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst since = oneWeekAgo.toISOString();\nconst until = now.toISOString();\n\nconst repo = $env.WEEKLY_SUMMARY_REPO || 'anthropics/claude-code';\nconst [owner, repoName] = repo.split('/');\n\nreturn [{\n  json: {\n    owner,\n    repo: repoName,\n    since,\n    until,\n    fullRepo: repo\n  }\n}];"
+      },
+      "id": "set-variables",
+      "name": "Set Variables",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits?since={{ $json.since }}&until={{ $json.until }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, -120],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/issues?state=closed&since={{ $json.since }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 120],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all GitHub data and filter PRs to only merged ones within the date range\nconst setVars = $('Set Variables').first().json;\nconst sinceDate = new Date(setVars.since);\n\n// Commits\nconst commitsRaw = $('Fetch Commits').all();\nconst commits = commitsRaw\n  .filter(item => item.json.sha)\n  .map(item => ({\n    message: (item.json.commit?.message || '').split('\\n')[0],\n    author: item.json.commit?.author?.name || 'Unknown',\n    date: item.json.commit?.author?.date,\n    url: item.json.html_url\n  }));\n\n// Closed Issues (filter out PRs, only real issues)\nconst issuesRaw = $('Fetch Closed Issues').all();\nconst issues = issuesRaw\n  .filter(item => item.json.number && !item.json.pull_request)\n  .filter(item => {\n    const closed = new Date(item.json.closed_at);\n    return closed >= sinceDate;\n  })\n  .map(item => ({\n    number: item.json.number,\n    title: item.json.title,\n    url: item.json.html_url,\n    labels: (item.json.labels || []).map(l => l.name)\n  }));\n\n// Merged PRs\nconst prsRaw = $('Fetch Merged PRs').all();\nconst prs = prsRaw\n  .filter(item => item.json.merged_at)\n  .filter(item => {\n    const merged = new Date(item.json.merged_at);\n    return merged >= sinceDate;\n  })\n  .map(item => ({\n    number: item.json.number,\n    title: item.json.title,\n    url: item.json.html_url,\n    author: item.json.user?.login || 'Unknown'\n  }));\n\n// Build summary stats\nconst stats = {\n  totalCommits: commits.length,\n  totalIssuesClosed: issues.length,\n  totalPRsMerged: prs.length,\n  uniqueAuthors: [...new Set(commits.map(c => c.author))].length,\n  topContributors: Object.entries(\n    commits.reduce((acc, c) => { acc[c.author] = (acc[c.author] || 0) + 1; return acc; }, {})\n  ).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, commits: count }))\n};\n\nreturn [{\n  json: {\n    repo: setVars.fullRepo,\n    since: setVars.since,\n    until: setVars.until,\n    stats,\n    commits: commits.slice(0, 50),\n    issues,\n    prs\n  }\n}];"
+      },
+      "id": "merge-data",
+      "name": "Merge & Analyze Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a technical project manager writing a weekly development summary. Write a concise, engaging narrative summary of this week's development activity.\\n\\nRepository: {{ $json.repo }}\\nPeriod: {{ $json.since }} to {{ $json.until }}\\n\\nSTATS:\\n- Commits: {{ $json.stats.totalCommits }}\\n- Issues Closed: {{ $json.stats.totalIssuesClosed }}\\n- PRs Merged: {{ $json.stats.totalPRsMerged }}\\n- Unique Contributors: {{ $json.stats.uniqueAuthors }}\\n\\nTOP CONTRIBUTORS:\\n{{ JSON.stringify($json.stats.topContributors) }}\\n\\nCOMMIT MESSAGES:\\n{{ $json.commits.map(c => '- ' + c.message + ' (' + c.author + ')').join('\\\\n') }}\\n\\nCLOSED ISSUES:\\n{{ $json.issues.map(i => '- #' + i.number + ': ' + i.title + ' [' + i.labels.join(', ') + ']').join('\\\\n') }}\\n\\nMERGED PRS:\\n{{ $json.prs.map(p => '- #' + p.number + ': ' + p.title + ' by @' + p.author).join('\\\\n') }}\\n\\nWrite the summary in {{ $env.WEEKLY_SUMMARY_LANG || 'EN' }}. Format it with markdown headers and bullet points. Include: 1) High-level overview 2) Key accomplishments 3) Notable PRs 4) Community highlights 5) What to watch next week.\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude-api",
+      "name": "Generate Summary with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "claude-api-key",
+          "name": "Claude API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the text content from Claude's response\nconst response = $('Generate Summary with Claude').first().json;\nlet summary = '';\n\nif (response.content && Array.isArray(response.content)) {\n  summary = response.content.map(block => block.text || '').join('\\n');\n} else if (typeof response === 'string') {\n  summary = response;\n} else {\n  summary = JSON.stringify(response);\n}\n\nreturn [{\n  json: {\n    summary,\n    repo: $('Merge & Analyze Data').first().json.repo,\n    since: $('Merge & Analyze Data').first().json.since,\n    until: $('Merge & Analyze Data').first().json.until\n  }\n}];"
+      },
+      "id": "extract-summary",
+      "name": "Extract Summary Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL || $env.SLACK_WEBHOOK_URL }}",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"# 📊 Weekly Dev Summary — {{ $json.repo }}\\n\\n**Period:** {{ $json.since.slice(0,10) }} → {{ $json.until.slice(0,10) }}\\n\\n{{ $json.summary }}\"\n}",
+        "options": {}
+      },
+      "id": "send-webhook",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1360, 0]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.FROM_EMAIL || 'noreply@example.com' }}",
+        "toEmail": "={{ $env.TO_EMAIL || 'team@example.com' }}",
+        "subject": "=📊 Weekly Dev Summary — {{ $json.repo }} ({{ $json.since.slice(0,10) }})",
+        "text": "={{ $json.summary }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email (Optional)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1360, 180],
+      "disabled": true
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Friday 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Set Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge & Analyze Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge & Analyze Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge & Analyze Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge & Analyze Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary with Claude": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary Text": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord/Slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email (Optional)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "weekly-summary"
+    },
+    {
+      "name": "claude"
+    },
+    {
+      "name": "github"
+    }
+  ]
+}
