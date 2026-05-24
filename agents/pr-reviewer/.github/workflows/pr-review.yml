@@ -1,0 +1,77 @@
+name: Claude PR Reviewer
+# Automatically reviews pull requests using Claude and posts a structured
+# Markdown comment with summary, risks, suggestions, and confidence score.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    name: Claude PR Review
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: agents/pr-reviewer
+        run: npm ci || npm install
+
+      - name: Run Claude PR Review
+        id: review
+        working-directory: agents/pr-reviewer
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REVIEW=$(node claude-review.mjs --pr "${{ github.event.pull_request.html_url }}" 2>&1)
+          echo "review<<REVIEW_EOF" >> "$GITHUB_OUTPUT"
+          echo "$REVIEW" >> "$GITHUB_OUTPUT"
+          echo "REVIEW_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const review = `${{ steps.review.outputs.review }}`;
+            const prNumber = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Find existing review comment to update
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: prNumber,
+            });
+
+            const botComment = comments.data.find(
+              c => c.user.type === 'Bot' && c.body.includes('🔍 PR Review:')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: botComment.id,
+                body: review,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: review,
+              });
+            }
