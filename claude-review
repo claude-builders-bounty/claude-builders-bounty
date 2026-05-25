@@ -1,0 +1,356 @@
+#!/usr/bin/env python3
+"""
+claude-review — PR review sub-agent for Claude Code.
+
+Fetches a PR diff, analyzes it with Claude/ZhipuAI, and posts a structured
+review comment to GitHub via `gh pr comment`.
+
+Usage:
+    ./claude-review --pr <owner/repo/pull/123>
+
+Environment variables:
+    LLM_API_KEY — API key for the LLM (required)
+    LLM_API_BASE — API base URL (default: https://open.bigmodel.cn/api/paas/v4)
+    LLM_MODEL — Model name (default: glm-4)
+    GITHUB_TOKEN — GitHub token (default: from gh auth token)
+
+Requires: Python 3.8+, gh CLI, requests
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import textwrap
+from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+
+def run(cmd: list[str], check: bool = True, capture: bool = True) -> subprocess.CompletedProcess:
+    """Run a shell command, return the CompletedProcess."""
+    return subprocess.run(
+        cmd,
+        check=check,
+        capture_output=capture,
+        text=True,
+        shell=False,
+    )
+
+
+def gh(args: list[str], check: bool = True) -> str:
+    """Run `gh` with the given sub-arguments and return stdout."""
+    result = run(["gh"] + args, check=check)
+    return result.stdout.strip()
+
+
+def gh_api(endpoint: str) -> dict | list:
+    """Call `gh api <endpoint>` and return parsed JSON."""
+    out = gh(["api", endpoint])
+    return json.loads(out)
+
+
+# ---------------------------------------------------------------------------
+# GitHub data fetching
+# ---------------------------------------------------------------------------
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    """Parse a PR URL into (owner, repo, pr_number)."""
+    # Accept: https://github.com/owner/repo/pull/123
+    # owner/repo/pull/123
+    # owner/repo#123
+    m = re.match(
+        r"(?:https://github\.com/)?([^/]+)/([^/]+)/pull[/ ]/?(\d+)",
+        url.strip(),
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1), m.group(2), int(m.group(3))
+    m2 = re.match(r"([^/]+)/([^/]+)[#\s/](\d+)", url.strip())
+    if m2:
+        return m2.group(1), m2.group(2), int(m2.group(3))
+    raise ValueError(f"Cannot parse PR URL: {url!r}")
+
+
+def fetch_diff(owner: str, repo: str, pr_num: int) -> str:
+    """Fetch the PR diff using `gh pr diff`."""
+    return gh(["pr", "diff", "--repo", f"{owner}/{repo}", str(pr_num)])
+
+
+def fetch_comments(owner: str, repo: str, pr_num: int) -> list[dict]:
+    """Fetch existing PR review comments."""
+    data = gh_api(
+        f"repos/{owner}/{repo}/pulls/{pr_num}/comments"
+    )
+    if isinstance(data, dict) and "message" in data:
+        return []
+    return data if isinstance(data, list) else []
+
+
+def fetch_pr_info(owner: str, repo: str, pr_num: int) -> dict:
+    """Fetch PR metadata."""
+    return gh_api(f"repos/{owner}/{repo}/pulls/{pr_num}")
+
+
+# ---------------------------------------------------------------------------
+# LLM integration
+# ---------------------------------------------------------------------------
+
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+LLM_API_BASE = os.environ.get(
+    "LLM_API_BASE", "https://open.bigmodel.cn/api/paas/v4"
+)
+LLM_MODEL = os.environ.get("LLM_MODEL", "glm-4-flashx")
+
+
+def build_review_prompt(
+    diff: str, pr_info: dict, existing_comments: list[dict]
+) -> str:
+    """Build the analysis prompt sent to the LLM."""
+    pr_title = pr_info.get("title", "")
+    pr_body = pr_info.get("body", "") or ""
+    base_branch = pr_info.get("base", {}).get("ref", "main")
+    head_branch = pr_info.get("head", {}).get("ref", "?")
+
+    comment_count = len(existing_comments)
+    comments_snippet = ""
+    if existing_comments:
+        snippet_lines = []
+        for c in existing_comments[:10]:
+            user = c.get("user", {}).get("login", "?")
+            body = (c.get("body", "") or "")[:300]
+            snippet_lines.append(f"- @{user}: {body}")
+        comments_snippet = "\n".join(snippet_lines)
+    else:
+        comments_snippet = "(no existing review comments)"
+
+    diff_preview = diff[:8000] if len(diff) > 8000 else diff
+
+    return textwrap.dedent(f"""\
+    You are an expert code reviewer. Analyze the following pull request and produce
+    a structured review comment in Markdown. Follow the format exactly.
+
+    ## PR Metadata
+    Title: {pr_title}
+    Base branch: {base_branch} | Head branch: {head_branch}
+    Description:
+    {pr_body[:500] if pr_body else "(no description)"}
+
+    ## Existing Review Comments ({comment_count} total)
+    {comments_snippet}
+
+    ## Diff
+    ```diff
+    {diff_preview}
+    ```
+
+    ---
+
+    Produce your review using this EXACT Markdown structure:
+
+    ## Summary
+    [2-3 sentence plain-English summary of what this PR changes and why]
+
+    ## Issues Found
+    ### Critical
+    - [list any critical issues: security vulnerabilities, data loss risks, broken builds, etc.]
+    ### Important
+    - [list important issues: bugs, performance concerns, missing error handling, etc.]
+    ### Minor
+    - [list minor issues: style nits, minor improvements, optional suggestions]
+
+    ## Suggestions
+    - [actionable, concrete improvement suggestions with reasoning]
+
+    ## Overall Assessment
+    [One paragraph: overall quality, risk level, readiness to merge, confidence score]
+
+    Be honest and constructive. If everything looks good, say so.
+    """)
+
+
+def analyze_with_llm(prompt: str) -> str:
+    """Send prompt to the LLM and return the response text."""
+    if not LLM_API_KEY:
+        raise RuntimeError(
+            "LLM_API_KEY environment variable is required. "
+            "Get yours at https://open.bigmodel.cn/"
+        )
+
+    import urllib.request
+    import urllib.error
+
+    payload = {
+        "model": LLM_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3,
+    }
+
+    req = urllib.request.Request(
+        f"{LLM_API_BASE}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {LLM_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"LLM API error ({e.code}): {body[:500]}"
+        ) from e
+
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+
+def format_review(
+    llm_output: str,
+    pr_num: int,
+    owner: str,
+    repo: str,
+    pr_title: str,
+) -> str:
+    """Wrap LLM output in a GitHub-formatted comment block."""
+    header = textwrap.dedent(f"""\
+    <!-- claude-review: PR #{pr_num} in {owner}/{repo} -->
+    ## 🤖 Claude PR Review — `#{pr_num}: {pr_title}` {pr_title and "…" or ""}
+
+    ---
+    """)
+    # Trim trailing separator from header if title is empty
+    if not pr_title:
+        header = "## 🤖 Claude PR Review\n\n---\n"
+
+    footer = "\n\n---\n*🤖 Powered by Claude · [claude-review](https://github.com/claude-builders-bounty/claude-builders-bounty)*"
+    return header + llm_output.strip() + footer
+
+
+def post_review(
+    review_text: str,
+    owner: str,
+    repo: str,
+    pr_num: int,
+    dry_run: bool = False,
+) -> None:
+    """Post the review as a PR comment via `gh pr comment`."""
+    if dry_run:
+        print(review_text)
+        return
+
+    # Write to a temp file to handle multi-line body properly
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(review_text)
+        tmp_path = f.name
+
+    try:
+        gh(
+            [
+                "pr",
+                "comment",
+                "--repo",
+                f"{owner}/{repo}",
+                str(pr_num),
+                "--body-file",
+                tmp_path,
+            ]
+        )
+        print(f"Review posted to {owner}/{repo} PR #{pr_num}")
+    finally:
+        os.unlink(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    """Entry point for claude-review."""
+    parser = argparse.ArgumentParser(
+        description="claude-review: AI-powered PR review sub-agent",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent("""\
+        Examples:
+          ./claude-review --pr claude-builders-bounty/claude-builders-bounty/pull/4
+          ./claude-review --pr https://github.com/owner/repo/pull/123 --dry-run
+          ./claude-review --pr owner/repo/pull/123 --post
+
+        Environment:
+          LLM_API_KEY — ZhipuAI/GLM API key (required)
+          LLM_API_BASE — API base URL (default: https://open.bigmodel.cn/api/paas/v4)
+          LLM_MODEL — Model name (default: glm-4-flashx)
+        """),
+    )
+    parser.add_argument(
+        "--pr",
+        required=True,
+        help="PR URL or owner/repo/pull/N format",
+    )
+    parser.add_argument(
+        "--post",
+        action="store_true",
+        help="Post the review as a GitHub comment (default: print to stdout)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print review to stdout instead of posting",
+    )
+    parser.add_argument(
+        "--output",
+        metavar="FILE",
+        help="Write review to FILE instead of stdout",
+    )
+    args = parser.parse_args()
+
+    # Parse PR URL
+    owner, repo, pr_num = parse_pr_url(args.pr)
+    print(f"Fetching PR #{pr_num} from {owner}/{repo} …", file=sys.stderr)
+
+    # Fetch data
+    diff = fetch_diff(owner, repo, pr_num)
+    if not diff:
+        print("Warning: empty diff", file=sys.stderr)
+
+    pr_info = fetch_pr_info(owner, repo, pr_num)
+    existing_comments = fetch_comments(owner, repo, pr_num)
+
+    # Build prompt and analyze
+    prompt = build_review_prompt(diff, pr_info, existing_comments)
+    print("Analyzing with LLM …", file=sys.stderr)
+    llm_output = analyze_with_llm(prompt)
+
+    # Format and output
+    review_text = format_review(
+        llm_output, pr_num, owner, repo, pr_info.get("title", "")
+    )
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(review_text)
+        print(f"Review saved to {args.output}", file=sys.stderr)
+    elif args.post or args.dry_run:
+        post_review(review_text, owner, repo, pr_num, dry_run=args.dry_run)
+    else:
+        print(review_text)
+
+    print("Done.", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

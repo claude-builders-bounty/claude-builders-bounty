@@ -1,53 +1,98 @@
-# Claude Builders Bounty 🤖
+# claude-review — AI-Powered PR Review Agent
 
-> A community bounty board for Claude Code builders.
+An AI sub-agent that reviews a GitHub pull request and posts a structured Markdown review comment. Works with Claude Code's Task tool or standalone via CLI.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (3 steps)
 
----
+### 1. Install prerequisites
 
-## How it works
+```bash
+# Ensure Python 3.8+ and gh CLI are available
+python3 --version
+gh auth status
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### 2. Set your LLM API key
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+export LLM_API_KEY="your-zhipuai-api-key"
+# Optional: customize model and endpoint
+# export LLM_MODEL="glm-4-flashx"
+# export LLM_API_BASE="https://open.bigmodel.cn/api/paas/v4"
+```
 
----
+### 3. Run the review
 
-## Active Bounties
+```bash
+# Print review to stdout
+./claude-review --pr owner/repo/pull/123
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# Post review as a PR comment
+./claude-review --pr owner/repo/pull/123 --post
+```
 
----
+## Usage
 
-## Rules
+```bash
+# Full URL
+./claude-review --pr https://github.com/owner/repo/pull/123 --post
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+# Short format
+./claude-review --pr owner/repo/pull/123 --dry-run
 
----
+# Save to file
+./claude-review --pr owner/repo/pull/123 --output review.md
+```
 
-## Community
+## Review Format
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+Every review follows this structure:
 
----
+| Section | Description |
+|---------|-------------|
+| **Summary** | 2-3 sentence plain-English summary of changes |
+| **Issues Found — Critical** | Security vulnerabilities, data loss, broken builds |
+| **Issues Found — Important** | Bugs, performance, missing error handling |
+| **Issues Found — Minor** | Style, naming, optional improvements |
+| **Suggestions** | Actionable improvement ideas with reasoning |
+| **Overall Assessment** | Quality, risk level, merge readiness, confidence score |
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## GitHub Action
+
+To run automatically on PRs, add `.github/workflows/claude-review.yml`:
+
+```yaml
+name: Claude PR Review
+on:
+ pull_request:
+ types: [opened, synchronize]
+
+jobs:
+ review:
+ runs-on: ubuntu-latest
+ steps:
+ - uses: actions/checkout@v4
+ - uses: actions/setup-python@v5
+ with:
+ python-version: '3.11'
+ - name: Install gh
+ run: |
+ type -p gh >/dev/null || (curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && sudo apt update && sudo apt install gh -y)
+ - name: Run review
+ env:
+ LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+ GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+ run: |
+ chmod +x claude-review
+ ./claude-review --pr ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --post
+```
+
+## Requirements
+
+- Python 3.8+
+- `gh` CLI (authenticated)
+- LLM API key (ZhipuAI, OpenAI, or compatible provider)
+
+## License
+
+MIT
