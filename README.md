@@ -43,6 +43,20 @@ You're in the right place.
 
 ---
 
+## Bounty #1 solution
+
+### Quick start
+1. Run `bash changelog.sh`
+2. Review `CHANGELOG.md`
+3. Commit the generated changelog if you want to keep it in-repo
+
+### Included files
+- `changelog.sh` — generates a changelog from commits since the latest tag
+- `SKILL.md` — minimal Claude Code skill wrapper for the same flow
+- `sample-changelog.md` — sample output generated from this repository
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
