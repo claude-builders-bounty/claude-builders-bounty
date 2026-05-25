@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from claude_review import markdown_review, parse_diff, pr_diff_url
+from claude_review import markdown_review, parse_diff, parse_pr_url, pr_diff_url, run
 
 
 SAMPLE_DIFF = """diff --git a/src/auth.py b/src/auth.py
@@ -36,6 +36,12 @@ class ClaudeReviewTest(unittest.TestCase):
             "https://github.com/example/project/pull/123.diff",
         )
 
+    def test_parse_pr_url(self) -> None:
+        self.assertEqual(
+            parse_pr_url("https://github.com/example/project/pull/123/"),
+            ("example", "project", "123"),
+        )
+
     def test_pr_diff_url_rejects_non_pr_url(self) -> None:
         with self.assertRaises(ValueError):
             pr_diff_url("https://github.com/example/project/issues/123")
@@ -55,6 +61,10 @@ class ClaudeReviewTest(unittest.TestCase):
         self.assertIn("## Improvement Suggestions", review)
         self.assertIn("## Confidence Score", review)
         self.assertIn("Security-sensitive", review)
+
+    def test_post_comment_requires_pr_url(self) -> None:
+        with self.assertRaises(ValueError):
+            run(["--diff", __file__, "--post-comment"])
 
 
 if __name__ == "__main__":

@@ -14,6 +14,12 @@ python3 agents/pr-reviewer/claude_review.py --pr https://github.com/owner/repo/p
 python3 agents/pr-reviewer/claude_review.py --diff ./changes.diff
 ```
 
+When the user wants the review posted to GitHub, use:
+
+```bash
+GITHUB_TOKEN=... python3 agents/pr-reviewer/claude_review.py --pr https://github.com/owner/repo/pull/123 --post-comment
+```
+
 The final review comment must include:
 
 - Summary of changes in 2-3 sentences

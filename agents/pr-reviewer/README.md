@@ -35,6 +35,28 @@ Write the Markdown comment to a file:
 claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
 ```
 
+Post the generated review directly to the pull request:
+
+```bash
+GITHUB_TOKEN=ghp_xxx claude-review --pr https://github.com/owner/repo/pull/123 --post-comment
+```
+
+The token needs permission to write issue comments on the target repository.
+For GitHub Actions, the default `secrets.GITHUB_TOKEN` works when the workflow
+sets `issues: write`.
+
+## GitHub Action
+
+An example workflow that generates and posts the structured review comment is
+included in:
+
+```text
+agents/pr-reviewer/examples/github-action.yml
+```
+
+Copy it to `.github/workflows/claude-pr-review.yml` in a repository that also
+contains this package, or adapt the install step to point at your packaged copy.
+
 ## Output Format
 
 The generated comment always includes:
