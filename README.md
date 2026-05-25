@@ -8,6 +8,18 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+This repo includes `changelog.sh`, a small Bash tool that builds a structured `CHANGELOG.md` from git commits since the latest tag.
+
+1. Run `bash changelog.sh` from any git repository.
+2. Review generated `CHANGELOG.md` sections: `Added`, `Fixed`, `Changed`, and `Removed`.
+3. Commit the generated file when output looks correct.
+
+For a sample generated from this repository, see `examples/SAMPLE_CHANGELOG.md`.
+
+---
+
 ## How it works
 
 **To post a bounty**
