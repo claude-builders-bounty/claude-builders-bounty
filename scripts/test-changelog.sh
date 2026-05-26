@@ -23,6 +23,7 @@ commit "feat: export csv"
 commit "fix: post-tag regression"
 commit "security: patch jwt validation"
 commit "chore!: drop legacy api"
+commit "feat!: remove deprecated export"
 
 bash "$ROOT/scripts/changelog.sh" "$TMP"
 
@@ -33,6 +34,7 @@ grep -q "### Changed" "$TMP/CHANGELOG.md"
 grep -q "export csv" "$TMP/CHANGELOG.md"
 grep -q "patch jwt" "$TMP/CHANGELOG.md"
 grep -q "drop legacy api" "$TMP/CHANGELOG.md"
+grep -q "remove deprecated export" "$TMP/CHANGELOG.md"
 if grep -q "add login" "$TMP/CHANGELOG.md"; then
   echo "pre-tag commit 'add login' must not appear in changelog" >&2
   exit 1

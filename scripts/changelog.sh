@@ -64,13 +64,19 @@ buckets = {
 }
 
 
-def commit_type(subject: str):
+def parse_commit(subject: str):
     m = re.match(r"^([a-z]+)(!)?[:(]", subject.lower())
-    return m.group(1) if m else None
+    if not m:
+        return None, False
+    return m.group(1), m.group(2) == "!"
 
 
 def bucket_for(subject: str) -> str:
-    t = commit_type(subject)
+    t, breaking = parse_commit(subject)
+    if not t:
+        return "Other"
+    if breaking:
+        return "Changed"
     if t == "feat":
         return "Added"
     if t == "fix":
