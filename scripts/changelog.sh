@@ -10,7 +10,18 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-python3 - "$REPO_ROOT" <<'PY'
+PYTHON=""
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON=python3
+elif command -v python >/dev/null 2>&1 && python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 0) else 1)' 2>/dev/null; then
+  PYTHON=python
+else
+  echo "changelog.sh: python3 (or python 3.x) is required but not found in PATH" >&2
+  exit 1
+fi
+
+"$PYTHON" - "$REPO_ROOT" <<'PY'
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -30,15 +41,17 @@ except subprocess.CalledProcessError:
 if latest_tag:
     rev_range = f"{latest_tag}..HEAD"
     version = latest_tag.lstrip("v")
+    range_label = rev_range
 else:
-    rev_range = "HEAD"
+    rev_range = ""
     version = "Unreleased"
+    range_label = "all commits"
 
-log = subprocess.check_output(
-    ["git", "log", rev_range, "--pretty=format:%s"],
-    cwd=root,
-    text=True,
-)
+log_cmd = ["git", "log", "--pretty=format:%s"]
+if rev_range:
+    log_cmd.insert(2, rev_range)
+
+log = subprocess.check_output(log_cmd, cwd=root, text=True)
 subjects = [line for line in log.splitlines() if line.strip()]
 
 buckets = {
@@ -50,24 +63,26 @@ buckets = {
     "Other": [],
 }
 
+
+def commit_type(subject: str):
+    m = re.match(r"^([a-z]+)(!)?[:(]", subject.lower())
+    return m.group(1) if m else None
+
+
 def bucket_for(subject: str) -> str:
-    s = subject.lower()
-    if s.startswith(("feat:", "feat(", "feat!")):
+    t = commit_type(subject)
+    if t == "feat":
         return "Added"
-    if s.startswith(("fix:", "fix(", "fix!")):
+    if t == "fix":
         return "Fixed"
-    if s.startswith(
-        (
-            "chore:", "chore(", "refactor:", "refactor(", "perf:", "perf(",
-            "style:", "style(", "build:", "build(", "ci:", "ci(",
-        )
-    ):
+    if t in ("chore", "refactor", "perf", "style", "build", "ci", "docs", "test"):
         return "Changed"
-    if s.startswith(("remove:", "remove(", "revert:", "revert(")):
+    if t in ("remove", "revert"):
         return "Removed"
-    if s.startswith(("security:", "security(", "security!")):
+    if t == "security":
         return "Security"
     return "Other"
+
 
 for subject in subjects:
     buckets[bucket_for(subject)].append(subject)
@@ -84,5 +99,5 @@ for title, items in buckets.items():
 
 out = root / "CHANGELOG.md"
 out.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-print(f"Wrote CHANGELOG.md ({len(lines)} lines, range: {rev_range or 'all commits'})")
+print(f"Wrote CHANGELOG.md ({len(lines)} lines, range: {range_label})")
 PY

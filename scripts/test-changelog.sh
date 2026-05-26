@@ -20,15 +20,22 @@ commit "fix: handle null token"
 commit "chore: bump deps"
 git -C "$TMP" tag v1.0.0 -m "v1"
 commit "feat: export csv"
+commit "fix: post-tag regression"
 commit "security: patch jwt validation"
+commit "chore!: drop legacy api"
 
 bash "$ROOT/scripts/changelog.sh" "$TMP"
 
 grep -q "### Added" "$TMP/CHANGELOG.md"
 grep -q "### Fixed" "$TMP/CHANGELOG.md"
 grep -q "### Security" "$TMP/CHANGELOG.md"
+grep -q "### Changed" "$TMP/CHANGELOG.md"
 grep -q "export csv" "$TMP/CHANGELOG.md"
 grep -q "patch jwt" "$TMP/CHANGELOG.md"
-! grep -q "add login" "$TMP/CHANGELOG.md" || true
+grep -q "drop legacy api" "$TMP/CHANGELOG.md"
+if grep -q "add login" "$TMP/CHANGELOG.md"; then
+  echo "pre-tag commit 'add login' must not appear in changelog" >&2
+  exit 1
+fi
 
 echo "changelog tests passed"
