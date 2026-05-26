@@ -51,3 +51,19 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Bounty #1 solution
+
+This repo now includes:
+
+- `SKILL.md` for `/generate-changelog`
+- `changelog.sh` for `bash changelog.sh`
+- `examples/requests-CHANGELOG.md` as sample output generated from a real repo
+
+### 3-step setup
+
+1. Copy `SKILL.md` and `changelog.sh` into your git repo
+2. Run `bash changelog.sh`
+3. Review the generated `CHANGELOG.md`
