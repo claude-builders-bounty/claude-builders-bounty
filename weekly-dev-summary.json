@@ -1,0 +1,152 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude Code)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "days", "number": 7}]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Monday 9am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo }}/commits?since={{ $moment().subtract(7, 'days').toISOString() }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Accept", "value": "application/vnd.github+json"},
+            {"name": "Authorization", "value": "=Bearer {{ $secrets.GITHUB_TOKEN }}"}
+          ]
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits (7 days)",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo }}/issues?since={{ $moment().subtract(7, 'days').toISOString() }}&state=all&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Accept", "value": "application/vnd.github+json"},
+            {"name": "Authorization", "value": "=Bearer {{ $secrets.GITHUB_TOKEN }}"}
+          ]
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Issues (7 days)",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo }}/pulls?state=all&sort=updated&direction=desc&per_page=30",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Accept", "value": "application/vnd.github+json"},
+            {"name": "Authorization", "value": "=Bearer {{ $secrets.GITHUB_TOKEN }}"}
+          ]
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compile GitHub activity into a structured summary for Claude\nconst commits = $input.all()[0].json;\nconst issues = $input.all()[1].json;\nconst prs = $input.all()[2].json;\n\nconst repo = $('Schedule Trigger').item.json.repo;\nconst weekStart = $moment().subtract(7, 'days').format('YYYY-MM-DD');\nconst weekEnd = $moment().format('YYYY-MM-DD');\n\n// Count stats\nconst commitAuthors = {};\n(Array.isArray(commits) ? commits : []).forEach(c => {\n  const author = c.commit?.author?.name || c.author?.login || 'unknown';\n  commitAuthors[author] = (commitAuthors[author] || 0) + 1;\n});\n\nconst newIssues = (Array.isArray(issues) ? issues : []).filter(i => !i.pull_request);\nconst closedIssues = newIssues.filter(i => i.state === 'closed');\nconst mergedPRs = (Array.isArray(prs) ? prs : []).filter(p => p.merged_at);\n\n// Format raw data for Claude\nconst activityData = {\n  repo,\n  period: `${weekStart} to ${weekEnd}`,\n  stats: {\n    totalCommits: (Array.isArray(commits) ? commits : []).length,\n    topContributors: Object.entries(commitAuthors).sort((a,b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, commits: count })),\n    issuesOpened: newIssues.filter(i => i.state === 'open').length,\n    issuesClosed: closedIssues.length,\n    prsMerged: mergedPRs.length,\n    prsOpen: (Array.isArray(prs) ? prs : []).filter(p => !p.merged_at && p.state === 'open').length,\n  },\n  highlights: {\n    recentCommits: (Array.isArray(commits) ? commits : []).slice(0, 10).map(c => ({\n      message: c.commit?.message?.split('\\n')[0] || '',\n      author: c.commit?.author?.name || 'unknown',\n      date: c.commit?.author?.date\n    })),\n    newIssues: newIssues.filter(i => i.state === 'open').slice(0, 5).map(i => ({\n      title: i.title,\n      url: i.html_url,\n      labels: (i.labels || []).map(l => l.name)\n    })),\n    mergedPRs: mergedPRs.slice(0, 5).map(p => ({\n      title: p.title,\n      url: p.html_url,\n      author: p.user?.login\n    }))\n  }\n};\n\nreturn {\n  prompt: `You are a developer relations writer. Write a friendly, narrative weekly summary of this GitHub repo's activity.\n\nRepository: ${activityData.repo}\nPeriod: ${activityData.period}\n\nStats:\n- ${activityData.stats.totalCommits} commits by ${activityData.stats.topContributors.length} contributors\n- ${activityData.stats.issuesOpened} new issues, ${activityData.stats.issuesClosed} closed\n- ${activityData.stats.prsMerged} PRs merged, ${activityData.stats.prsOpen} open\n\nTop contributors: ${activityData.stats.topContributors.map(c => `${c.name} (${c.commits})`).join(', ')}\n\nRecent commits: ${activityData.highlights.recentCommits.map(c => `- ${c.message} (${c.author})`).join('\\n')}\n\nNew issues: ${activityData.highlights.newIssues.map(i => `- ${i.title}`).join('\\n')}\n\nMerged PRs: ${activityData.highlights.mergedPRs.map(p => `- ${p.title} by ${p.author}`).join('\\n')}\n\nFormat the response as:\n## 📊 Weekly Dev Summary — ${activityData.repo}\n**${weekStart} → ${weekEnd}**\n\n### 🎯 Highlights\n[3-5 sentences narrative of the most interesting activity]\n\n### 📈 Stats\n| Metric | Count |\n|--------|-------|\n| Commits | ${activityData.stats.totalCommits} |\n| Issues Opened | ${activityData.stats.issuesOpened} |\n| Issues Closed | ${activityData.stats.issuesClosed} |\n| PRs Merged | ${activityData.stats.prsMerged} |\n\n### 👥 Top Contributors\n[List with emoji and commits]\n\n### 🔥 What Shipped\n[PR descriptions]\n\n### 🐛 What Needs Attention\n[Open issues that look important]\n\n### 💭 Community Pulse\n[1-2 sentences on overall project health]\n\nBe concise, professional, and slightly playful. Use emoji sparingly.`\n};\n"
+      },
+      "id": "compile-data",
+      "name": "Compile Activity Data",
+      "type": "n8n-nodes-base.code",
+      "position": [700, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $secrets.ANTHROPIC_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "model", "value": "claude-sonnet-4-20250514"},
+            {"name": "max_tokens", "value": 2048},
+            {"name": "messages[0].role", "value": "user"},
+            {"name": "messages[0].content", "value": "={{ $json.prompt }}"}
+          ]
+        }
+      },
+      "id": "claude-summarize",
+      "name": "Claude: Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [950, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst summary = response.content?.[0]?.text || 'Error: no response from Claude';\nreturn { summary, generatedAt: new Date().toISOString() };\n"
+      },
+      "id": "extract-text",
+      "name": "Extract Summary Text",
+      "type": "n8n-nodes-base.code",
+      "position": [1200, 400]
+    }
+  ],
+  "connections": {
+    "Every Monday 9am": {
+      "main": [[
+        {"node": "Fetch Commits (7 days)", "type": "main", "index": 0},
+        {"node": "Fetch Issues (7 days)", "type": "main", "index": 0},
+        {"node": "Fetch Pull Requests", "type": "main", "index": 0}
+      ]]
+    },
+    "Fetch Commits (7 days)": {
+      "main": [[{"node": "Compile Activity Data", "type": "main", "index": 0}]]
+    },
+    "Fetch Issues (7 days)": {
+      "main": [[{"node": "Compile Activity Data", "type": "main", "index": 1}]]
+    },
+    "Fetch Pull Requests": {
+      "main": [[{"node": "Compile Activity Data", "type": "main", "index": 2}]]
+    },
+    "Compile Activity Data": {
+      "main": [[{"node": "Claude: Generate Summary", "type": "main", "index": 0}]]
+    },
+    "Claude: Generate Summary": {
+      "main": [[{"node": "Extract Summary Text", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "1.0.0",
+  "active": false
+}

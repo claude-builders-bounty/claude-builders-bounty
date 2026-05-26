@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+"""
+Claude Code sub-agent: Reviews a GitHub PR and posts a structured Markdown comment.
+Usage: claude-review --pr https://github.com/owner/repo/pull/123
+       claude-review owner repo 123
+"""
+
+import sys
+import subprocess
+import json
+import re
+import argparse
+from datetime import datetime, timezone
+
+def parse_pr_url(url_or_args):
+    """Parse PR URL like https://github.com/owner/repo/pull/123 or owner/repo#123."""
+    if isinstance(url_or_args, str) and "github.com" in url_or_args:
+        m = re.match(r'https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)', url_or_args)
+        if m:
+            return m.group(1), m.group(2), int(m.group(3))
+    
+    m = re.match(r'([^/]+)/([^#]+)#(\d+)', str(url_or_args))
+    if m:
+        return m.group(1), m.group(2), int(m.group(3))
+    
+    return None, None, None
+
+def fetch_pr_diff(owner, repo, pr_number):
+    """Fetch PR diff using gh CLI or GitHub API."""
+    # Try gh CLI first
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "diff", str(pr_number), "--repo", f"{owner}/{repo}"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            return result.stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    
+    # Fallback: curl GitHub API
+    try:
+        url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+        result = subprocess.run(
+            ["curl", "-s", url],
+            capture_output=True, text=True, timeout=15
+        )
+        pr_data = json.loads(result.stdout)
+        diff_url = pr_data.get("diff_url", "")
+        if diff_url:
+            result = subprocess.run(
+                ["curl", "-s", diff_url],
+                capture_output=True, text=True, timeout=15
+            )
+            return result.stdout
+    except Exception:
+        pass
+    
+    return None
+
+def analyze_diff(diff_text):
+    """Analyze a diff and extract structured insights."""
+    if not diff_text:
+        return None
+    
+    lines = diff_text.split("\n")
+    
+    # Count changes
+    additions = sum(1 for l in lines if l.startswith("+") and not l.startswith("+++"))
+    deletions = sum(1 for l in lines if l.startswith("-") and not l.startswith("---"))
+    files_changed = sum(1 for l in lines if l.startswith("diff --git"))
+    
+    # Identify file types changed
+    file_extensions = set()
+    for line in lines:
+        if line.startswith("+++ b/"):
+            ext = line.rsplit(".", 1)[-1] if "." in line else "no_ext"
+            file_extensions.add(ext)
+    
+    # Detect risks
+    risks = []
+    
+    # Security: eval, exec, hardcoded secrets
+    for line in lines:
+        if line.startswith("+") and re.search(r'\b(eval|exec|os\.system|subprocess\.call)\s*\(', line):
+            risks.append("🔴 Potential code execution via eval/exec/system — verify input sanitization")
+            break
+    
+    # Security: hardcoded keys
+    for line in lines:
+        if line.startswith("+") and re.search(r'(api[_-]?key|secret|password|token)\s*=\s*["\']', line, re.I):
+            risks.append("🔴 Hardcoded credential detected — use environment variables")
+            break
+    
+    # SQL injection risk
+    for line in lines:
+        if line.startswith("+") and re.search(r'f["\'].*SELECT|f["\'].*INSERT|f["\'].*UPDATE|f["\'].*DELETE', line, re.I):
+            risks.append("🟡 Possible SQL injection via f-string query — use parameterized queries")
+            break
+    
+    # Large PR warning
+    if additions + deletions > 500:
+        risks.append(f"🟡 Large PR ({additions + deletions} changes) — consider splitting into smaller PRs")
+    
+    # Test files check
+    has_tests = any("test" in line.lower() for line in lines if line.startswith("+++ b/"))
+    if not has_tests:
+        risks.append("🟡 No test files detected — consider adding tests")
+    
+    # Build suggestions
+    suggestions = []
+    
+    # Type hints in Python
+    if any(ext == "py" for ext in file_extensions):
+        py_lines = [l for l in lines if l.startswith("+") and l.startswith("+def ")]
+        for py_line in py_lines[:3]:
+            if "def " in py_line and "->" not in py_line and ":" in py_line:
+                suggestions.append("Add type hints to new Python functions for better maintainability")
+                break
+    
+    if not has_tests:
+        suggestions.append("Add unit tests covering the new/changed functionality")
+    
+    # Confidence score
+    if additions + deletions < 50:
+        confidence = "High"
+    elif additions + deletions < 200:
+        confidence = "Medium"
+    else:
+        confidence = "Low"
+    
+    return {
+        "additions": additions,
+        "deletions": deletions,
+        "files_changed": files_changed,
+        "file_types": file_extensions,
+        "risks": risks,
+        "suggestions": suggestions,
+        "confidence": confidence
+    }
+
+def generate_summary(diff_text):
+    """Generate a 2-3 sentence summary of the changes."""
+    if not diff_text:
+        return "Unable to generate summary."
+    
+    lines = diff_text.split("\n")
+    files = []
+    for line in lines:
+        if line.startswith("+++ b/"):
+            fname = line[6:]
+            if fname and "/dev/null" not in fname:
+                files.append(fname)
+    
+    additions = sum(1 for l in lines if l.startswith("+") and not l.startswith("+++"))
+    deletions = sum(1 for l in lines if l.startswith("-") and not l.startswith("---"))
+    
+    file_list = ", ".join(files[:3])
+    if len(files) > 3:
+        file_list += f" and {len(files) - 3} more"
+    
+    files_word = "files" if len(files) != 1 else "file"
+    
+    if additions > deletions:
+        summary = (
+            f"This PR modifies {len(files)} {files_word} ({file_list}), "
+            f"adding {additions} lines and removing {deletions} lines. "
+            f"The changes primarily introduce new functionality."
+        )
+    elif deletions > additions:
+        summary = (
+            f"This PR modifies {len(files)} {files_word} ({file_list}), "
+            f"removing {deletions} lines and adding {additions} lines. "
+            f"The changes primarily focus on cleanup and removal."
+        )
+    else:
+        summary = (
+            f"This PR modifies {len(files)} {files_word} ({file_list}), "
+            f"with {additions} additions and {deletions} deletions. "
+            f"The changes appear balanced between additions and modifications."
+        )
+    
+    return summary
+
+def format_review(owner, repo, pr_number, analysis, summary):
+    """Format the review as structured Markdown."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    risk_section = "\n".join(f"- {r}" for r in analysis["risks"]) if analysis["risks"] else "- No significant risks detected"
+    suggestion_section = "\n".join(f"- {s}" for s in analysis["suggestions"]) if analysis["suggestions"] else "- No specific suggestions"
+    
+    review = f"""## 🤖 AI Code Review — {owner}/{repo}#{pr_number}
+
+**Review Date:** {today}  
+**Confidence Score:** {analysis['confidence']}
+
+### 📋 Summary
+{summary}
+
+### 📊 Diff Stats
+| Metric | Value |
+|--------|-------|
+| Files changed | {analysis['files_changed']} |
+| Lines added | +{analysis['additions']} |
+| Lines deleted | -{analysis['deletions']} |
+| File types | {', '.join(analysis['file_types']) if analysis['file_types'] else 'N/A'} |
+
+### ⚠️ Identified Risks
+{risk_section}
+
+### 💡 Improvement Suggestions
+{suggestion_section}
+
+---
+*🤖 Automated review by Claude Code PR Reviewer Agent*
+"""
+    return review
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Reviewer")
+    parser.add_argument("--pr", type=str, help="PR URL (https://github.com/owner/repo/pull/123)")
+    parser.add_argument("owner", nargs="?", type=str, help="Repository owner")
+    parser.add_argument("repo", nargs="?", type=str, help="Repository name")
+    parser.add_argument("number", nargs="?", type=int, help="PR number")
+    parser.add_argument("--output", type=str, help="Output format: markdown (default) or json")
+    args = parser.parse_args()
+    
+    # Parse PR reference
+    owner, repo, pr_number = None, None, None
+    
+    if args.pr:
+        owner, repo, pr_number = parse_pr_url(args.pr)
+    elif args.owner and args.repo and args.number:
+        owner, repo, pr_number = args.owner, args.repo, args.number
+    
+    if not all([owner, repo, pr_number]):
+        print("❌ Error: Provide a PR URL (--pr) or owner/repo/number arguments", file=sys.stderr)
+        print("   Example: claude-review --pr https://github.com/owner/repo/pull/123", file=sys.stderr)
+        print("   Example: claude-review owner repo 123", file=sys.stderr)
+        return 1
+    
+    print(f"🔍 Reviewing {owner}/{repo}#{pr_number}...")
+    
+    # Fetch diff
+    diff = fetch_pr_diff(owner, repo, pr_number)
+    if not diff:
+        print("❌ Error: Could not fetch PR diff. Make sure `gh` CLI is installed or the PR is public.")
+        print("   Install gh CLI: https://cli.github.com/")
+        return 1
+    
+    print(f"   ✓ Diff fetched ({len(diff)} chars)")
+    
+    # Analyze
+    analysis = analyze_diff(diff)
+    summary = generate_summary(diff)
+    
+    # Format
+    if args.output == "json":
+        output = json.dumps({
+            "owner": owner, "repo": repo, "pr": pr_number,
+            "summary": summary,
+            "analysis": analysis,
+            "review_date": datetime.now(timezone.utc).isoformat()
+        }, indent=2)
+    else:
+        output = format_review(owner, repo, pr_number, analysis, summary)
+    
+    print()
+    print(output)
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

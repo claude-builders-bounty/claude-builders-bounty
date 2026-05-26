@@ -1,0 +1,171 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cron", "expression": "0 17 * * 5"}]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Weekly Trigger (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.REPO }}/commits?since={{ $moment().subtract(7, 'days').toISOString() }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "Accept", "value": "application/vnd.github+json"},
+          {"name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}"}
+        ]}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits (7 days)",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 150]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.REPO }}/issues?state=closed&since={{ $moment().subtract(7, 'days').toISOString() }}&per_page=50",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "Accept", "value": "application/vnd.github+json"},
+          {"name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}"}
+        ]}
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues (7 days)",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.REPO }}/pulls?state=closed&base=main&per_page=50",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "Accept", "value": "application/vnd.github+json"},
+          {"name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}"}
+        ]}
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate GitHub activity for Claude\nconst commits = Array.isArray($input.all()[0]?.json) ? $input.all()[0].json : [];\nconst issues = Array.isArray($input.all()[1]?.json) ? $input.all()[1].json : [];\nconst prs = Array.isArray($input.all()[2]?.json) ? $input.all()[2].json.filter(p => p.merged_at) : [];\n\nconst lastWeek = new Date(); lastWeek.setDate(lastWeek.getDate() - 7);\nconst recentCommits = commits.filter(c => new Date(c.commit.author.date) >= lastWeek);\nconst recentIssues = issues.filter(i => i.closed_at && new Date(i.closed_at) >= lastWeek);\n\nconst topAuthors = {};\nrecentCommits.forEach(c => { const a = c.commit?.author?.name || 'unknown'; topAuthors[a] = (topAuthors[a]||0)+1; });\nconst topContributors = Object.entries(topAuthors).sort((a,b) => b[1]-a[1]).slice(0,5);\n\nconst prompt = `You are a senior developer relations writer. Write a concise weekly narrative summary.\n\nRepo: ${$env.REPO}\nPeriod: ${lastWeek.toISOString().split('T')[0]} → ${new Date().toISOString().split('T')[0]}\n\nStats: ${recentCommits.length} commits, ${recentIssues.length} closed issues, ${prs.length} PRs merged.\nTop contributors: ${topContributors.map(([n,c])=>`${n} (${c} commits)`).join(', ')}\n\nRecent commits:\\n${recentCommits.slice(0,8).map(c=>`- ${c.sha?.slice(0,7)} ${c.commit?.message?.split('\\n')[0]}`).join('\\n')}\n\nClosed issues:\\n${recentIssues.slice(0,5).map(i=>`- #${i.number} ${i.title}`).join('\\n')}\n\nMerged PRs:\\n${prs.slice(0,5).map(p=>`- #${p.number} ${p.title} by @${p.user?.login}`).join('\\n')}\n\nFormat in ${$env.LANGUAGE || 'EN'} as:\n## 📊 Weekly Dev Summary — ${$env.REPO}\n**Period: ${lastWeek.toISOString().split('T')[0]} → ${new Date().toISOString().split('T')[0]}**\n\n### 🎯 Highlights\n[3-4 sentence narrative of most interesting activity]\n\n### 📈 Stats\n- Commits: ${recentCommits.length}\n- Issues Closed: ${recentIssues.length}\n- PRs Merged: ${prs.length}\n\n### 👥 Top Contributors\n${topContributors.map(([n,c])=>`- @${n}: ${c} commits`).join('\\n')}\n\n### 🔥 Shipped\n${prs.slice(0,3).map(p=>`- #${p.number} ${p.title}`).join('\\n')}\n\n### 💭 Community Pulse\n[1-2 sentences on overall project health]\n\nBe concise, professional, and slightly playful. Use emoji.`;\n\nreturn [{ json: { prompt, commits: recentCommits, issues: recentIssues, prs, topContributors } }];"
+      },
+      "id": "compile-data",
+      "name": "Compile Activity",
+      "type": "n8n-nodes-base.code",
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}"},
+          {"name": "anthropic-version", "value": "2023-06-01"},
+          {"name": "Content-Type", "value": "application/json"}
+        ]},
+        "sendBody": true,
+        "bodyParameters": {"parameters": [
+          {"name": "model", "value": "claude-sonnet-4-20250514"},
+          {"name": "max_tokens", "value": 2048},
+          {"name": "messages[0].role", "value": "user"},
+          {"name": "messages[0].content", "value": "={{ $json.prompt }}"}
+        ]}
+      },
+      "id": "claude-summary",
+      "name": "Claude: Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Route to email or Discord based on config\nconst summary = $input.first().json.content?.[0]?.text || 'Error: no response';\nconst env = Object.keys(process.env).filter(k => k.startsWith('N8N_VAR_'));\nconst delivery = process.env.N8N_VAR_DELIVERY_METHOD || 'discord';\nconst repo = process.env.N8N_VAR_REPO || 'unknown';\n\nreturn [{ json: { summary, delivery, repo, generatedAt: new Date().toISOString() } }];"
+      },
+      "id": "route-delivery",
+      "name": "Route Delivery",
+      "type": "n8n-nodes-base.code",
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "webhook": {
+          "method": "POST",
+          "url": "={{ $env.DISCORD_WEBHOOK_URL }}"
+        },
+        "messageFields": {
+          "content": "=📊 **Weekly Dev Summary** — `{{ $json.repo }}`\n\n{{ $json.summary }}\n\n---\n*🤖 Generated by Claude + n8n | {{ $json.generatedAt }}*"
+        }
+      },
+      "id": "discord-node",
+      "name": "Discord",
+      "type": "n8n-nodes-base.discordBot",
+      "position": [1400, 200]
+    },
+    {
+      "parameters": {
+        "to": "={{ $env.EMAIL_TO }}",
+        "subject": "=📊 Weekly Dev Summary — {{ $json.repo }}",
+        "body": "={{ $json.summary }}",
+        "fromName": "n8n Bot"
+      },
+      "id": "email-node",
+      "name": "Email",
+      "type": "n8n-nodes-base.emailSend",
+      "position": [1400, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5pm)": {
+      "main": [[
+        {"node": "Fetch Commits (7 days)", "type": "main", "index": 0},
+        {"node": "Fetch Closed Issues (7 days)", "type": "main", "index": 0},
+        {"node": "Fetch Merged PRs", "type": "main", "index": 0}
+      ]]
+    },
+    "Fetch Commits (7 days)": {
+      "main": [[{"node": "Compile Activity", "type": "main", "index": 0}]]
+    },
+    "Fetch Closed Issues (7 days)": {
+      "main": [[{"node": "Compile Activity", "type": "main", "index": 1}]]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{"node": "Compile Activity", "type": "main", "index": 2}]]
+    },
+    "Compile Activity": {
+      "main": [[{"node": "Claude: Generate Summary", "type": "main", "index": 0}]]
+    },
+    "Claude: Generate Summary": {
+      "main": [[{"node": "Route Delivery", "type": "main", "index": 0}]]
+    },
+    "Route Delivery": {
+      "main": [
+        [{"node": "Discord", "type": "main", "index": 0}],
+        [{"node": "Email", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "env": [
+    {"name": "REPO", "value": "claude-builders-bounty/claude-builders-bounty"},
+    {"name": "GITHUB_TOKEN", "value": "ghp_xxxx"},
+    {"name": "ANTHROPIC_API_KEY", "value": "sk-ant-xxxx"},
+    {"name": "DELIVERY_METHOD", "value": "discord"},
+    {"name": "DISCORD_WEBHOOK_URL", "value": "https://discord.com/api/webhooks/xxx"},
+    {"name": "EMAIL_TO", "value": "your@email.com"},
+    {"name": "LANGUAGE", "value": "EN"}
+  ],
+  "settings": {"executionOrder": "v1", "saveExecutionProgress": false},
+  "active": false,
+  "versionId": "2.0.0"
+}
