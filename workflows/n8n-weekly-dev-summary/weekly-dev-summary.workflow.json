@@ -1,0 +1,326 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "owner",
+              "name": "owner",
+              "type": "string",
+              "value": "={{ $vars.owner || 'owner' }}"
+            },
+            {
+              "id": "repo",
+              "name": "repo",
+              "type": "string",
+              "value": "={{ $vars.repo || 'repo' }}"
+            },
+            {
+              "id": "since",
+              "name": "since",
+              "type": "string",
+              "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+            },
+            {
+              "id": "slackChannel",
+              "name": "slackChannel",
+              "type": "string",
+              "value": "={{ $vars.slackChannel || '#engineering' }}"
+            }
+          ]
+        }
+      },
+      "id": "set-config",
+      "name": "Set Repo Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits?since={{ encodeURIComponent($json.since) }}&per_page=50",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -440,
+        -220
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Set Repo Config').item.json.owner }}/{{ $('Set Repo Config').item.json.repo }}/issues?state=all&since={{ encodeURIComponent($('Set Repo Config').item.json.since) }}&per_page=50",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "id": "github-issues",
+      "name": "Fetch Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -440,
+        0
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Set Repo Config').item.json.owner }}/{{ $('Set Repo Config').item.json.repo }}/pulls?state=all&sort=updated&direction=desc&per_page=50",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "id": "github-prs",
+      "name": "Fetch Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -440,
+        220
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "GITHUB_CREDENTIAL_ID",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Fetch Commits').all().flatMap(item => Array.isArray(item.json) ? item.json : [item.json]).slice(0, 50);\nconst issues = $('Fetch Issues').all().flatMap(item => Array.isArray(item.json) ? item.json : [item.json]).filter(item => !item.pull_request).slice(0, 50);\nconst prs = $('Fetch Pull Requests').all().flatMap(item => Array.isArray(item.json) ? item.json : [item.json]).slice(0, 50);\n\nreturn [{\n  json: {\n    owner: $('Set Repo Config').item.json.owner,\n    repo: $('Set Repo Config').item.json.repo,\n    since: $('Set Repo Config').item.json.since,\n    slackChannel: $('Set Repo Config').item.json.slackChannel,\n    commits: commits.map(c => ({ sha: c.sha?.slice(0, 7), message: c.commit?.message, author: c.commit?.author?.name, url: c.html_url })),\n    issues: issues.map(i => ({ number: i.number, title: i.title, state: i.state, url: i.html_url, updatedAt: i.updated_at })),\n    pullRequests: prs.map(p => ({ number: p.number, title: p.title, state: p.state, url: p.html_url, updatedAt: p.updated_at, draft: p.draft }))\n  }\n}];"
+      },
+      "id": "combine-activity",
+      "name": "Combine Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-3-5-sonnet-latest\",\n  \"max_tokens\": 1800,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Create a weekly dev summary for {{$json.owner}}/{{$json.repo}} since {{$json.since}}. Use only the JSON activity below. Do not invent facts. Return Markdown with these sections: Executive Summary, Shipped Changes, Open Risks, PRs Needing Attention, Suggested Next Actions. Cite commit shas, issue numbers, or PR numbers when available. Activity JSON:\\n\\n\" + JSON.stringify({ commits: $json.commits, issues: $json.issues, pullRequests: $json.pullRequests }, null, 2)\n    }\n  ]\n}"
+      },
+      "id": "claude-summary",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ANTHROPIC_CREDENTIAL_ID",
+          "name": "Anthropic API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json;\nconst text = response.content?.map(part => part.text || '').join('\\n') || 'No summary returned.';\nreturn [{ json: { channel: $('Combine Activity').item.json.slackChannel, text } }];"
+      },
+      "id": "extract-summary",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": "={{ $json.channel }}",
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "id": "send-slack",
+      "name": "Send Slack Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        560,
+        0
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Set Repo Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Repo Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Pull Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Combine Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Issues": {
+      "main": [
+        [
+          {
+            "node": "Combine Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "Combine Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Activity": {
+      "main": [
+        [
+          {
+            "node": "Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
