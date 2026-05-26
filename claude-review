@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""
+claude-review — Claude Code PR review agent
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --token ghp_xxx
+  claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+
+Environment:
+  GITHUB_TOKEN — GitHub personal access token (or pass via --token)
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+
+
+def parse_pr_url(url):
+    """Parse GitHub PR URL into owner/repo/number."""
+    m = re.match(
+        r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url
+    )
+    if not m:
+        print(f"❌ Invalid PR URL: {url}")
+        print("   Expected: https://github.com/owner/repo/pull/123")
+        sys.exit(1)
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def fetch_pr(owner, repo, pr_number, token=None):
+    """Fetch PR metadata and diff from GitHub API."""
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "claude-review"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+
+    # Fetch PR metadata
+    pr_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    req = urllib.request.Request(pr_url, headers=headers)
+    resp = urllib.request.urlopen(req)
+    pr = json.loads(resp.read())
+
+    # Fetch diff (use diff media type)
+    diff_headers = dict(headers)
+    diff_headers["Accept"] = "application/vnd.github.diff"
+    diff_url = pr["diff_url"]
+    req = urllib.request.Request(diff_url, headers=diff_headers)
+    resp = urllib.request.urlopen(req)
+    diff = resp.read().decode()
+
+    return pr, diff
+
+
+def fetch_pr_files(owner, repo, pr_number, token=None):
+    """Fetch list of changed files."""
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "claude-review"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+
+    files_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files?per_page=100"
+    req = urllib.request.Request(files_url, headers=headers)
+    resp = urllib.request.urlopen(req)
+    return json.loads(resp.read())
+
+
+def generate_review_prompt(pr, diff, files):
+    """Generate a structured prompt for Claude Code to review."""
+    title = pr.get("title", "Unknown")
+    body = pr.get("body", "") or "(no description)"
+    additions = pr.get("additions", 0)
+    deletions = pr.get("deletions", 0)
+    changed_files = pr.get("changed_files", len(files))
+
+    # Truncate very large diffs
+    max_diff_chars = 50000
+    if len(diff) > max_diff_chars:
+        diff = diff[:max_diff_chars] + "\n\n... (diff truncated, review partial)"
+
+    # Build file summary
+    file_list = []
+    for f in files[:30]:
+        file_list.append(
+            f"  - `{f['filename']}` (+{f.get('additions', 0)}/-{f.get('deletions', 0)} — {f.get('status', 'modified')})"
+        )
+
+    prompt = f"""Review the following pull request and provide a structured code review.
+
+## PR Metadata
+- **Title**: {title}
+- **Description**: {body[:500]}
+- **Files changed**: {changed_files}
+- **Additions**: +{additions}, **Deletions**: -{deletions}
+
+## Files
+{chr(10).join(file_list)}
+
+## Diff
+```diff
+{diff}
+```
+
+## Your Review
+
+Provide a structured Markdown review with these sections:
+
+### Summary
+One paragraph summarizing what this PR does and its overall quality.
+
+### Issues Found
+List specific problems, bugs, or concerns. For each:
+- Severity: 🔴 Critical / 🟡 Warning / 🔵 Note
+- File and line reference
+- What the issue is
+- Suggested fix
+
+### Suggestions
+Non-blocking improvements — better patterns, performance, readability, tests.
+
+### Security
+Any security concerns (injection, exposed secrets, auth issues, etc.)
+
+### Confidence
+**Overall confidence: [Low/Medium/High]** — explain why.
+
+Format the confidence score as bold on its own line.
+"""
+    return prompt
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Review Agent")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--token", help="GitHub token (or set GITHUB_TOKEN env var)")
+    parser.add_argument("--output", help="Save review to file")
+    parser.add_argument("--prompt-only", action="store_true", help="Output review prompt only (don't run Claude)")
+    args = parser.parse_args()
+
+    token = args.token or os.environ.get("GITHUB_TOKEN")
+    owner, repo, pr_number = parse_pr_url(args.pr)
+
+    print(f"📋 Fetching PR #{pr_number} from {owner}/{repo}...")
+    pr, diff = fetch_pr(owner, repo, pr_number, token)
+    files = fetch_pr_files(owner, repo, pr_number, token)
+
+    prompt = generate_review_prompt(pr, diff, files)
+
+    if args.prompt_only:
+        print(prompt)
+        return
+
+    # Write prompt to temp file
+    tmp = Path("/tmp/claude_review_prompt.md")
+    tmp.write_text(prompt)
+
+    print(f"📊 PR: {pr['title']}")
+    print(f"   Files: {pr['changed_files']} | +{pr['additions']}/-{pr['deletions']}")
+    print(f"\n🤖 Running Claude Code review...")
+    print(f"   Prompt saved to: {tmp}")
+    print(f"\n   To complete the review, run:")
+    print(f"   cat {tmp} | claude -p \"$(cat)\" --output-format markdown")
+    print(f"\n   Or use the Claude Code slash command: /review:{pr_number}")
+
+    # If --output specified, also save the review instructions
+    if args.output:
+        Path(args.output).write_text(
+            f"<!-- claude-review prompt for {args.pr} -->\n\n{prompt}"
+        )
+        print(f"   Output: {args.output}")
+
+
+if __name__ == "__main__":
+    main()
