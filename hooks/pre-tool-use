@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook — blocks destructive bash commands before execution.
+
+Place at: ~/.claude/hooks/pre-tool-use
+Make executable: chmod +x ~/.claude/hooks/pre-tool-use
+
+Protocol:
+  Input (stdin):  {"tool_name": "Bash", "tool_input": {"command": "..."}, "cwd": "..."}
+  Output (stdout): {"decision": "allow"} or {"decision": "block", "reason": "..."}
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
+LOG_FILE = os.path.join(HOOKS_DIR, "blocked.log")
+DRY_RUN = os.environ.get("CLAUDE_HOOK_DRY_RUN", "0") == "1"
+
+# ── Dangerous patterns ──────────────────────────────────────────────
+# Each rule: (regex_pattern, human_readable_name, severity_message)
+# Order matters — first match wins. Place most specific patterns first.
+
+RULES = [
+    # ── Filesystem destruction ──
+    (
+        r"rm\s+-rf\s+(/(\s|$)|/\*|~|/home|/etc|/usr|/var|/boot|/root|/tmp/\*)",
+        "rm -rf of critical system path",
+        "This would delete system files or home directories. "
+        "Use a more specific path if this is intentional.",
+    ),
+    (
+        r"(^|\||;|&&|\n)\s*rm\s+-rf\s+(/|~/|/tmp/\*)",
+        "rm -rf",
+        "Recursive force-delete of absolute path is destructive. Consider using "
+        "'rm -r' without -f, or 'trash' to move files to trash instead. "
+        "Relative paths (./build, node_modules) are intentionally allowed.",
+    ),
+    (
+        r"sudo\s+rm\s+-rf\s",
+        "sudo rm -rf",
+        "Root-level recursive delete. Extremely dangerous.",
+    ),
+
+    # ── Database destruction ──
+    (
+        r"(?i)DROP\s+(TABLE|DATABASE|SCHEMA)\s",
+        "DROP TABLE / DATABASE / SCHEMA",
+        "This would permanently delete database objects. Back up first.",
+    ),
+    (
+        r"(?i)TRUNCATE\s+(TABLE\s+)?",
+        "TRUNCATE TABLE",
+        "TRUNCATE removes all rows instantly and cannot be rolled back "
+        "in most databases. Use DELETE with WHERE instead.",
+    ),
+    (
+        r"(?i)DELETE\s+FROM\s+\w+(?!.*\bWHERE\b)",
+        "DELETE FROM without WHERE clause",
+        "This would delete EVERY row in the table. Add a WHERE clause "
+        "to specify which rows to delete.",
+    ),
+
+    # ── Git force-push ──
+    (
+        r"git\s+push\s+.*(-f\b|--force(?!-with-lease))",
+        "git push --force/-f",
+        "Force-pushing rewrites remote history and can destroy others' work. "
+        "Use --force-with-lease instead, which only pushes if no one else "
+        "has pushed to the same branch.",
+    ),
+
+    # ── Fork bomb ──
+    (
+        r":\(\)\s*\{.*:\|:.*\}|:\(\)\s*\{.*:\|.*&\}",
+        "fork bomb pattern",
+        "This is a fork bomb that will crash the system by spawning "
+        "unlimited processes.",
+    ),
+
+    # ── Disk formatting / raw writes ──
+    (
+        r"(mkfs\.|mke2fs|mkdosfs|mkntfs|mkswap|dd\s+if=.*of=/dev/)",
+        "disk formatting or raw write to device",
+        "This would format or overwrite a disk device. Extremely destructive.",
+    ),
+
+    # ── chmod 777 on system dirs ──
+    (
+        r"chmod\s+.*777\s+(/(\s|$)|/etc|/usr|/var|/home)",
+        "chmod 777 on system directory",
+        "Setting world-writable permissions on system directories is a "
+        "major security vulnerability.",
+    ),
+
+    # ── Dangerous curl/wget pipes ──
+    (
+        r"(curl|wget).*\|\s*(sudo\s+)?(ba)?sh",
+        "curl/wget piped to shell",
+        "Piping remote content directly to a shell is dangerous. "
+        "Download first, inspect the script, then run it.",
+    ),
+]
+
+
+def format_command(cmd, max_len=200):
+    """Truncate command for display."""
+    cmd = cmd.strip()
+    if len(cmd) > max_len:
+        return cmd[:max_len] + "..."
+    return cmd
+
+
+def check_command(command):
+    """Check command against all rules. Returns (is_dangerous, rule_name, message)."""
+    for pattern, name, message in RULES:
+        if re.search(pattern, command):
+            return True, name, message
+    return False, "", ""
+
+
+def log_block(project_path, command, rule_name):
+    """Log blocked attempt to the log file."""
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        entry = (
+            f"[{timestamp}] BLOCKED\n"
+            f"  Project: {project_path or 'unknown'}\n"
+            f"  Command: {format_command(command)}\n"
+            f"  Rule:    {rule_name}\n"
+            f"  ──────────────────────────────────────────\n"
+        )
+        with open(LOG_FILE, "a") as f:
+            f.write(entry)
+    except Exception:
+        pass  # Logging failure should not crash the hook
+
+
+def main():
+    # ── Parse input ──
+    try:
+        raw = sys.stdin.read()
+        if not raw.strip():
+            # No input — allow (e.g., empty stdin during testing)
+            print(json.dumps({"decision": "allow"}))
+            return 0
+
+        input_data = json.loads(raw)
+    except json.JSONDecodeError:
+        print(json.dumps({"decision": "allow"}))
+        return 0
+
+    tool_name = input_data.get("tool_name", "")
+    tool_input = input_data.get("tool_input", {})
+    project_path = input_data.get("cwd", os.getcwd())
+
+    # Only intercept Bash tool calls
+    if tool_name.lower() != "bash":
+        print(json.dumps({"decision": "allow"}))
+        return 0
+
+    command = tool_input.get("command", "")
+
+    # ── Dry run mode — show what would be blocked ──
+    if DRY_RUN:
+        print(
+            json.dumps(
+                {
+                    "decision": "allow",
+                    "systemMessage": f"[DRY RUN] Hook received command: {format_command(command)}",
+                }
+            )
+        )
+        return 0
+
+    # ── Check command ──
+    is_dangerous, rule_name, reason = check_command(command)
+
+    if not is_dangerous:
+        # Rule intentionally left blank — allow silently
+        print(json.dumps({"decision": "allow"}))
+        return 0
+
+    # ── Block ──
+    log_block(project_path, command, rule_name)
+
+    # Build a clear, actionable message for Claude
+    message = (
+        f"⚠️  BLOCKED: {rule_name}\n"
+        f"\n"
+        f"  Command: {format_command(command)}\n"
+        f"\n"
+        f"  Reason:  {reason}\n"
+        f"\n"
+        f"  This attempt has been logged to: {LOG_FILE}\n"
+        f"\n"
+        f"  If you are certain this command is safe, you can:\n"
+        f"  1. Review it manually in a terminal (not through Claude Code)\n"
+        f"  2. Temporarily disable the hook by setting environment variable:\n"
+        f"     export CLAUDE_HOOK_DRY_RUN=1\n"
+        f"  3. Modify the command to be more specific (e.g., add a WHERE clause,\n"
+        f"     remove --force, use a more targeted path)"
+    )
+
+    print(
+        json.dumps(
+            {
+                "decision": "block",
+                "reason": message,
+            }
+        )
+    )
+
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
