@@ -2,7 +2,43 @@
 # Generate CHANGELOG.md from git history since the latest tag.
 set -euo pipefail
 
-REPO_ROOT="${1:-.}"
+usage() {
+  cat <<'EOF'
+Usage: changelog.sh [OPTIONS] [REPO_ROOT]
+
+  REPO_ROOT   Path to git repo (default: .)
+
+Options:
+  -o, --output FILE   Write changelog to FILE (default: CHANGELOG.md in repo root)
+  -h, --help          Show this help
+EOF
+}
+
+REPO_ROOT="."
+OUTPUT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -o|--output)
+      OUTPUT="${2:?--output requires a path}"
+      shift 2
+      ;;
+    -*)
+      echo "changelog.sh: unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+    *)
+      REPO_ROOT="$1"
+      shift
+      ;;
+  esac
+done
+
 cd "$REPO_ROOT"
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -20,7 +56,7 @@ else
   exit 1
 fi
 
-"$PYTHON" - "$REPO_ROOT" <<'PY'
+"$PYTHON" - "$REPO_ROOT" "${OUTPUT:-}" <<'PY'
 import re
 import subprocess
 import sys
@@ -28,6 +64,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 root = Path(sys.argv[1])
+output_override = sys.argv[2].strip() if len(sys.argv) > 2 else ""
 latest_tag = ""
 try:
     latest_tag = subprocess.check_output(
@@ -103,7 +140,7 @@ for title, items in buckets.items():
     lines.extend(f"- {item}" for item in items)
     lines.append("")
 
-out = root / "CHANGELOG.md"
+out = Path(output_override) if output_override else root / "CHANGELOG.md"
 out.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-print(f"Wrote CHANGELOG.md ({len(lines)} lines, range: {range_label})")
+print(f"Wrote {out} ({len(lines)} lines, range: {range_label})")
 PY

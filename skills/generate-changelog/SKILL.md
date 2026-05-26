@@ -17,9 +17,10 @@ description: Generate a structured CHANGELOG.md from git history since the lates
 
 ```bash
 bash scripts/changelog.sh
+# optional: bash scripts/changelog.sh -o docs/RELEASE-NOTES.md
 ```
 
-3. Read `CHANGELOG.md`. Edit wording if needed; do not drop security items.
+3. Read `CHANGELOG.md` (or `-o` path). Edit wording if needed; do not drop security items.
 
 ## Behavior
 

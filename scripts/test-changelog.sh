@@ -28,6 +28,8 @@ commit "feat!: remove deprecated export"
 bash "$ROOT/scripts/changelog.sh" "$TMP"
 
 grep -q "### Added" "$TMP/CHANGELOG.md"
+bash "$ROOT/scripts/changelog.sh" -o "$TMP/RELEASE.md" "$TMP"
+grep -q "### Added" "$TMP/RELEASE.md"
 grep -q "### Fixed" "$TMP/CHANGELOG.md"
 grep -q "### Security" "$TMP/CHANGELOG.md"
 grep -q "### Changed" "$TMP/CHANGELOG.md"
