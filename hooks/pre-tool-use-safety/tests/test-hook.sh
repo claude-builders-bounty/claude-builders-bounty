@@ -6,7 +6,11 @@ chmod +x "$HOOK"
 
 run_hook() {
   local cmd="$1"
-  printf '{"tool_name":"Bash","tool_input":{"command":"%s"},"cwd":"/tmp/proj"}\n' "$cmd" | "$HOOK" 2>/dev/null || true
+  python3 - "$cmd" <<'PY' | "$HOOK" 2>/dev/null || true
+import json, sys
+cmd = sys.argv[1]
+print(json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": "/tmp/proj"}))
+PY
 }
 
 expect_block() {
@@ -36,6 +40,8 @@ expect_allow() {
 echo "=== Dangerous ==="
 expect_block 'rm -rf /tmp/x'
 expect_block 'rm -fr ./build'
+expect_block 'rm --force --recursive /tmp/x'
+expect_block 'rm --recursive --force ./build'
 expect_block 'DROP TABLE users'
 expect_block 'drop table users'
 expect_block 'TRUNCATE logs'
@@ -43,6 +49,7 @@ expect_block 'DELETE FROM users'
 expect_block 'git push --force origin main'
 expect_block 'git push -f'
 expect_block 'chmod -R 777 /'
+expect_block 'echo "ok"; rm -rf /tmp/x'
 
 echo "=== Safe ==="
 expect_allow 'ls -la'
