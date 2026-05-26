@@ -43,6 +43,14 @@ You're in the right place.
 
 ---
 
+## Changelog Generator Setup
+
+1. Make the script executable: `chmod +x changelog.sh`
+2. Run the script: `./changelog.sh`
+3. Check the generated `CHANGELOG.md` file!
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
