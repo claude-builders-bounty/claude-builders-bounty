@@ -51,3 +51,25 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## changelog.sh
+
+Generate `CHANGELOG.md` from the latest git tag.
+
+### 3-step setup
+1. Clone repo
+2. Run: `chmod +x changelog.sh`
+3. Run: `./changelog.sh`
+
+### Example
+
+See `examples/cli-sample-CHANGELOG.md` for a real run on `cli/cli`.
+
+```md
+## Added
+- feat: add changelog generator (`a1b2c3d`)
+## Fixed
+- fix: handle empty tag list (`d4e5f6g`)
+```
