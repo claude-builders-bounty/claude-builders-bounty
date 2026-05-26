@@ -29,6 +29,9 @@ grep -q "### Fixed" "$TMP/CHANGELOG.md"
 grep -q "### Security" "$TMP/CHANGELOG.md"
 grep -q "export csv" "$TMP/CHANGELOG.md"
 grep -q "patch jwt" "$TMP/CHANGELOG.md"
-! grep -q "add login" "$TMP/CHANGELOG.md" || true
+if grep -q "add login" "$TMP/CHANGELOG.md"; then
+  echo "pre-tag commit 'add login' must not appear in changelog" >&2
+  exit 1
+fi
 
 echo "changelog tests passed"

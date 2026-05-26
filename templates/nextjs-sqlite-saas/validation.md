@@ -15,6 +15,12 @@
 - `requireUser` / workspace filter referenced
 - No Prisma, no Edge `better-sqlite3`, no `getServerSideProps`
 
+## Automated check
+
+```bash
+bash scripts/validate-nextjs-template.sh
+```
+
 ## Checklist mapping
 
 | Criterion | Evidence |
