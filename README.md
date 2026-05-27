@@ -34,6 +34,31 @@ You're in the right place.
 
 ---
 
+## Destructive Command Guard
+
+This repository includes a Claude Code `PreToolUse` hook that blocks destructive Bash commands before they run.
+
+Install in two commands:
+
+```bash
+git clone https://github.com/claude-builders-bounty/claude-builders-bounty.git && cd claude-builders-bounty
+bash install.sh
+```
+
+The installer copies `.claude/hooks/destructive-command-guard.py` to `~/.claude/hooks/` and adds a `PreToolUse` Bash matcher to `~/.claude/settings.json`.
+
+Blocked patterns:
+
+- `rm -rf` and equivalent recursive forced removal flags
+- `DROP TABLE`
+- `git push --force`, `git push --force-with-lease`, and `git push -f`
+- `TRUNCATE`
+- `DELETE FROM` without a `WHERE` clause
+
+Every blocked attempt is appended to `~/.claude/hooks/blocked.log` as JSON with a timestamp, attempted command, project path, and block reason. Normal Bash commands exit cleanly without output so they do not interfere with Claude Code.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
