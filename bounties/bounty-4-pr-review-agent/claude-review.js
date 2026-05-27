@@ -3,13 +3,14 @@
  * claude-review — AI-powered PR review CLI
  * 
  * Usage:
- *   claude-review --pr https://github.com/owner/repo/pull/123
- *   claude-review --owner owner --repo repo --pr-number 123
+ *   node claude-review.js --pr https://github.com/owner/repo/pull/123
+ *   node claude-review.js --owner owner --repo repo --pr-number 123
  * 
- * Outputs a structured Markdown review comment.
+ * Outputs a structured Markdown review comment to stdout.
+ * Status/diagnostic messages go to stderr.
  */
 
-const { execSync } = require('child_process');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
@@ -41,8 +42,8 @@ function parseArgs() {
 claude-review — AI-powered PR review
 
 Usage:
-  claude-review --pr https://github.com/owner/repo/pull/123
-  claude-review --owner owner --repo repo --pr-number 123
+  node claude-review.js --pr https://github.com/owner/repo/pull/123
+  node claude-review.js --owner owner --repo repo --pr-number 123
 
 Options:
   --pr URL         PR URL (e.g. https://github.com/owner/repo/pull/123)
@@ -60,7 +61,7 @@ Options:
   }
 
   if (!opts.owner || !opts.repo || !opts.prNumber) {
-    console.error('Error: --pr URL is required (or --owner/--repo/--pr-number)');
+    console.error('Error: --pr URL is required, or provide all three: --owner, --repo, --pr-number');
     process.exit(1);
   }
 
@@ -68,55 +69,92 @@ Options:
   return opts;
 }
 
-// ─── GitHub API Helper ───────────────────────────────────────────────
-function githubApi(url, token, method = 'GET', body = null) {
-  const cmd = [
-    'curl', '-s',
-    '-X', method,
-    '-H', `"Authorization: token ${token}"`,
-    '-H', '"Accept: application/vnd.github.v3+json"',
-    '-H', '"Content-Type: application/json"',
-  ];
+// ─── GitHub API via HTTPS ────────────────────────────────────────────
+function githubRequest(urlPath, token, acceptHeader = 'application/vnd.github.v3+json') {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'api.github.com',
+      path: urlPath,
+      method: 'GET',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': acceptHeader,
+        'User-Agent': 'claude-review/2.0',
+      },
+    };
 
-  if (body) {
-    const tmpFile = path.join(require('os').tmpdir(), `gh-review-body-${Date.now()}.json`);
-    fs.writeFileSync(tmpFile, JSON.stringify(body));
-    cmd.push('-d', `@${tmpFile}`);
+    const req = https.request(options, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf-8');
+        if (acceptHeader.includes('diff')) {
+          resolve(body);
+        } else {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            reject(new Error(`Failed to parse JSON: ${e.message}`));
+          }
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.setTimeout(30000, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    req.end();
+  });
+}
+
+/**
+ * Fetch ALL paginated results from a GitHub API endpoint.
+ * Follows Link headers to get all pages.
+ */
+async function fetchAllPages(urlPath, token, perPage = 100) {
+  const allItems = [];
+  let page = 1;
+  
+  while (true) {
+    const separator = urlPath.includes('?') ? '&' : '?';
+    const pageUrl = `${urlPath}${separator}per_page=${perPage}&page=${page}`;
+    const data = await githubRequest(pageUrl, token);
+    
+    if (!Array.isArray(data)) {
+      // If it's not an array, return it as-is (error or single object)
+      return data;
+    }
+    
+    allItems.push(...data);
+    
+    // If we got fewer than perPage items, we've reached the end
+    if (data.length < perPage) {
+      break;
+    }
+    page++;
+    
+    // Safety limit: don't fetch more than 50 pages
+    if (page > 50) {
+      console.error(`Warning: Reached pagination limit (50 pages, ${allItems.length} items)`);
+      break;
+    }
   }
-
-  cmd.push(`"https://api.github.com${url}"`);
-
-  const result = execSync(cmd.join(' '), { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
-  return JSON.parse(result);
+  
+  return allItems;
 }
 
 // ─── Fetch PR Data ───────────────────────────────────────────────────
-function fetchPRData(opts) {
-  console.log(`Fetching PR #${opts.prNumber} from ${opts.owner}/${opts.repo}...`);
+async function fetchPRData(opts) {
+  console.error(`Fetching PR #${opts.prNumber} from ${opts.owner}/${opts.repo}...`);
 
-  // Get PR details
-  const pr = githubApi(`/repos/${opts.owner}/${opts.repo}/pulls/${opts.prNumber}`, opts.token);
-  
-  // Get PR diff
-  const diffCmd = [
-    'curl', '-s',
-    '-H', `"Authorization: token ${opts.token}"`,
-    '-H', '"Accept: application/vnd.github.v3.diff"',
-    `"https://api.github.com/repos/${opts.owner}/${opts.repo}/pulls/${opts.prNumber}"`,
-  ];
-  const diff = execSync(diffCmd.join(' '), { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
-
-  // Get changed files
-  const files = githubApi(
-    `/repos/${opts.owner}/${opts.repo}/pulls/${opts.prNumber}/files?per_page=100`,
-    opts.token
-  );
-
-  // Get commits
-  const commits = githubApi(
-    `/repos/${opts.owner}/${opts.repo}/pulls/${opts.prNumber}/commits?per_page=100`,
-    opts.token
-  );
+  const [pr, diff, files, commits] = await Promise.all([
+    githubRequest(`/repos/${opts.owner}/${opts.repo}/pulls/${opts.prNumber}`, opts.token),
+    githubRequest(`/repos/${opts.owner}/${opts.repo}/pulls/${opts.prNumber}`, opts.token, 'application/vnd.github.v3.diff'),
+    fetchAllPages(`/repos/${opts.owner}/${opts.repo}/pulls/${opts.prNumber}/files`, opts.token),
+    fetchAllPages(`/repos/${opts.owner}/${opts.repo}/pulls/${opts.prNumber}/commits`, opts.token),
+  ]);
 
   return { pr, diff, files, commits };
 }
@@ -157,40 +195,37 @@ function analyzePR(data) {
 // ─── Risk Detection ──────────────────────────────────────────────────
 function detectRisks(files, diff, analysis) {
   const risks = [];
+  const seenMessages = new Set();
 
   if (!files || !Array.isArray(files)) return risks;
 
   for (const file of files) {
     const fn = file.filename.toLowerCase();
 
-    // Security-sensitive files
     if (fn.includes('auth') || fn.includes('password') || fn.includes('token') || fn.includes('secret')) {
-      risks.push({
-        level: 'HIGH',
-        file: file.filename,
-        message: 'Authentication/security-related change — verify no credentials are exposed',
-      });
+      const msg = 'Authentication/security-related change — verify no credentials are exposed';
+      if (!seenMessages.has(msg + file.filename)) {
+        risks.push({ level: 'HIGH', file: file.filename, message: msg });
+        seenMessages.add(msg + file.filename);
+      }
     }
 
-    // Database migrations
     if (fn.includes('migration') || fn.includes('schema')) {
-      risks.push({
-        level: 'MEDIUM',
-        file: file.filename,
-        message: 'Database schema change — verify migration is reversible and non-destructive',
-      });
+      const msg = 'Database schema change — verify migration is reversible and non-destructive';
+      if (!seenMessages.has(msg + file.filename)) {
+        risks.push({ level: 'MEDIUM', file: file.filename, message: msg });
+        seenMessages.add(msg + file.filename);
+      }
     }
 
-    // Configuration files
     if (fn.includes('.env') || fn === 'docker-compose.yml' || fn.includes('config')) {
-      risks.push({
-        level: 'MEDIUM',
-        file: file.filename,
-        message: 'Configuration change — verify no secrets are committed',
-      });
+      const msg = 'Configuration change — verify no secrets are committed';
+      if (!seenMessages.has(msg + file.filename)) {
+        risks.push({ level: 'MEDIUM', file: file.filename, message: msg });
+        seenMessages.add(msg + file.filename);
+      }
     }
 
-    // Large files
     if (file.additions && file.additions > 300) {
       risks.push({
         level: 'LOW',
@@ -200,21 +235,18 @@ function detectRisks(files, diff, analysis) {
     }
   }
 
-  // Overall PR size risk
   if (analysis.additions + analysis.deletions > 1000) {
     risks.push({
       level: 'MEDIUM',
       file: '(overall)',
-      message: `Large PR (${analysis.additions} additions, ${analysis.deletions} deletions) — consider breaking into smaller PRs for easier review`,
+      message: `Large PR (${analysis.additions} additions, ${analysis.deletions} deletions) — consider breaking into smaller PRs`,
     });
   }
 
-  // Check diff for common risky patterns
   if (diff) {
     const lines = diff.split('\n');
     for (const line of lines) {
       if (line.startsWith('+')) {
-        // Check for common risky patterns
         if (line.match(/eval\s*\(/)) {
           risks.push({ level: 'HIGH', file: '(diff)', message: '`eval()` usage detected — security risk' });
         }
@@ -231,7 +263,18 @@ function detectRisks(files, diff, analysis) {
     }
   }
 
-  return risks;
+  // Deduplicate by message
+  const unique = [];
+  const seen = new Set();
+  for (const r of risks) {
+    const key = `${r.level}:${r.file}:${r.message}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(r);
+    }
+  }
+
+  return unique;
 }
 
 // ─── Suggestion Detection ────────────────────────────────────────────
@@ -240,11 +283,10 @@ function detectSuggestions(files, diff, analysis) {
 
   if (!files || !Array.isArray(files)) return suggestions;
 
-  // Check for missing tests
-  const hasTests = files.some(f => 
+  const hasTests = files.some(f =>
     f.filename.includes('.test.') || f.filename.includes('.spec.') || f.filename.includes('__tests__')
   );
-  const hasCode = files.some(f => 
+  const hasCode = files.some(f =>
     !f.filename.includes('.test.') && !f.filename.includes('.spec.') &&
     (f.filename.endsWith('.ts') || f.filename.endsWith('.js') || f.filename.endsWith('.py'))
   );
@@ -252,31 +294,28 @@ function detectSuggestions(files, diff, analysis) {
     suggestions.push('No test files found in this PR — consider adding tests for new functionality');
   }
 
-  // Check for missing documentation
   const hasDocs = files.some(f => f.filename.endsWith('.md'));
   if (analysis.changedFiles > 5 && !hasDocs) {
     suggestions.push('Multiple files changed but no documentation updates — consider updating relevant docs');
   }
 
-  // Check diff for patterns
   if (diff) {
     const lines = diff.split('\n');
-    let hasErrorHandling = false;
+    let hasAsync = false;
     let hasTryCatch = false;
-    
+
     for (const line of lines) {
       if (line.startsWith('+')) {
-        if (line.match(/catch|\.catch|try\s*{/)) hasTryCatch = true;
-        if (line.match(/\.then|await/)) hasErrorHandling = true;
+        if (line.match(/\.then|await\b/)) hasAsync = true;
+        if (line.match(/catch|try\s*{/)) hasTryCatch = true;
       }
     }
 
-    if (hasErrorHandling && !hasTryCatch) {
+    if (hasAsync && !hasTryCatch) {
       suggestions.push('Async operations detected but no error handling — consider adding try/catch');
     }
   }
 
-  // Large PR suggestion
   if (analysis.changedFiles > 15) {
     suggestions.push(`${analysis.changedFiles} files changed — consider grouping related changes into separate PRs`);
   }
@@ -298,7 +337,7 @@ function generateReview(analysis) {
   // Summary
   lines.push('### 📋 Summary');
   lines.push('');
-  
+
   const totalChanges = analysis.additions + analysis.deletions;
   let summary = `This PR makes ${totalChanges} line changes across ${analysis.changedFiles} file(s)`;
   summary += ` (${analysis.additions} additions, ${analysis.deletions} deletions)`;
@@ -310,15 +349,14 @@ function generateReview(analysis) {
     lines.push('**Changed files**: ' + analysis.fileNames.map(f => `\`${f}\``).join(', '));
     lines.push('');
   } else if (analysis.fileNames.length > 10) {
-    lines.push('**Changed files** (first 10): ' + 
-      analysis.fileNames.slice(0, 10).map(f => `\`${f}\``).join(', ') + 
+    lines.push('**Changed files** (first 10): ' +
+      analysis.fileNames.slice(0, 10).map(f => `\`${f}\``).join(', ') +
       ` and ${analysis.fileNames.length - 10} more`);
     lines.push('');
   }
 
-  // File type breakdown
   if (Object.keys(analysis.fileTypes).length > 0) {
-    lines.push('**File types**: ' + 
+    lines.push('**File types**: ' +
       Object.entries(analysis.fileTypes).map(([ext, count]) => `${ext || 'none'} (${count})`).join(', '));
     lines.push('');
   }
@@ -326,7 +364,7 @@ function generateReview(analysis) {
   // Risks
   lines.push('### ⚠️ Identified Risks');
   lines.push('');
-  
+
   if (analysis.risks.length === 0) {
     lines.push('No significant risks identified.');
   } else {
@@ -360,7 +398,7 @@ function generateReview(analysis) {
   // Suggestions
   lines.push('### 💡 Improvement Suggestions');
   lines.push('');
-  
+
   if (analysis.suggestions.length === 0) {
     lines.push('No specific suggestions — the PR looks clean!');
   } else {
@@ -373,10 +411,10 @@ function generateReview(analysis) {
   // Confidence score
   lines.push('### 🎯 Confidence Score');
   lines.push('');
-  
+
   let confidence = 'High';
   let reason = 'Small, focused PR with clear changes.';
-  
+
   if (analysis.risks.filter(r => r.level === 'HIGH').length > 0) {
     confidence = 'Low';
     reason = 'High-priority risks detected that need attention.';
@@ -387,11 +425,10 @@ function generateReview(analysis) {
     confidence = 'Medium';
     reason = 'Large PR — harder to review thoroughly.';
   }
-  
+
   lines.push(`**${confidence}** — ${reason}`);
   lines.push('');
 
-  // Footer
   lines.push('---');
   lines.push('*This review was generated by `claude-review` — an automated PR review agent.*');
 
@@ -399,7 +436,7 @@ function generateReview(analysis) {
 }
 
 // ─── Main ────────────────────────────────────────────────────────────
-function main() {
+async function main() {
   const opts = parseArgs();
 
   if (!opts.token) {
@@ -407,16 +444,20 @@ function main() {
     process.exit(1);
   }
 
-  const data = fetchPRData(opts);
+  const data = await fetchPRData(opts);
   const analysis = analyzePR(data);
   const review = generateReview(analysis);
 
-  console.log('\n' + review);
+  // Output review to stdout (clean Markdown for piping/posting)
+  process.stdout.write(review + '\n');
 
-  // Optionally save to file
+  // Save to file for convenience (diagnostic to stderr)
   const outputPath = path.join(process.cwd(), `review-${opts.owner}-${opts.repo}-${opts.prNumber}.md`);
   fs.writeFileSync(outputPath, review, 'utf-8');
-  console.log(`\n📄 Review saved to: ${outputPath}`);
+  console.error(`\nReview saved to: ${outputPath}`);
 }
 
-main();
+main().catch(err => {
+  console.error(`Fatal error: ${err.message}`);
+  process.exit(1);
+});
