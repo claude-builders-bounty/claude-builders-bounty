@@ -6,6 +6,7 @@ Usage:
     python generate_changelog.py                  # all commits
     python generate_changelog.py --since-tag v1.0 # commits since v1.0
     python generate_changelog.py --output RELEASE_NOTES.md
+    python generate_changelog.py --repo-url https://github.com/owner/repo
 
 Requires: git CLI in PATH
 """
@@ -30,7 +31,7 @@ CATEGORY_KEYWORDS = {
                 r"\bmodify\b", r"\bmodified\b", r"\brename\b", r"\brenamed\b",
                 r"\bmove\b", r"\bmoved\b", r"\boptimize\b", r"\boptimized\b",
                 r"\benhance\b", r"\benhanced\b", r"\bupgrade\b", r"\bupgraded\b",
-                r"\bBump\b", r"\bbump\b"],
+                r"\bbump\b"],
     "Removed": [r"\bremove\b", r"\bremoved\b", r"\bdelete\b", r"\bdeleted\b",
                 r"\bdrop\b", r"\bdropped\b", r"\bdeprecate\b", r"\bdeprecated\b",
                 r"\bcleanup\b", r"\bclean up\b", r"\bstrip\b"],
@@ -48,6 +49,23 @@ def run_git(args, cwd=None):
     return result.stdout.strip()
 
 
+def get_remote_url(cwd=None):
+    """Auto-detect the GitHub repo URL from git remote."""
+    try:
+        url = run_git(["config", "--get", "remote.origin.url"], cwd=cwd)
+        # Handle SSH URLs: git@github.com:owner/repo.git
+        match = re.match(r'git@github\.com:([^/]+/[^/]+?)(?:\.git)?$', url)
+        if match:
+            return f"https://github.com/{match.group(1)}"
+        # Handle HTTPS URLs: https://github.com/owner/repo.git
+        match = re.match(r'https://github\.com/([^/]+/[^/]+?)(?:\.git)?$', url)
+        if match:
+            return f"https://github.com/{match.group(1)}"
+    except RuntimeError:
+        pass
+    return None
+
+
 def get_last_tag(cwd=None):
     """Get the most recent git tag, or None."""
     try:
@@ -57,8 +75,14 @@ def get_last_tag(cwd=None):
 
 
 def get_commits(since_tag=None, cwd=None):
-    """Parse git log into structured dicts."""
-    fmt = "%H||%s||%an||%aI"
+    """Parse git log into structured dicts.
+    
+    Uses %x1f (unit separator) as field delimiter to avoid collisions
+    with commit message content.
+    """
+    # Use ASCII unit separator (\x1f) as delimiter — extremely unlikely
+    # to appear in commit subjects
+    fmt = "%H%x1f%s%x1f%an%x1f%aI"
     args = ["log", f"--pretty=format:{fmt}"]
     if since_tag:
         args.append(f"{since_tag}..HEAD")
@@ -70,12 +94,12 @@ def get_commits(since_tag=None, cwd=None):
 
     commits = []
     for line in raw.split("\n"):
-        parts = line.split("||", 3)
+        parts = line.split("\x1f", 3)
         if len(parts) != 4:
             continue
-        sha, subject, author, date_iso = parts
-        # short hash
-        sha_short = sha[:7]
+        sha_full, subject, author, date_iso = parts
+        # Keep full SHA for link generation, use short SHA for display
+        sha_short = sha_full[:7]
         # parse date
         try:
             dt = datetime.fromisoformat(date_iso)
@@ -84,6 +108,7 @@ def get_commits(since_tag=None, cwd=None):
             date_str = date_iso[:10]
         commits.append({
             "sha": sha_short,
+            "sha_full": sha_full,
             "subject": subject,
             "author": author,
             "date": date_str,
@@ -117,7 +142,7 @@ def categorize(subject):
     return "Changed"  # default
 
 
-def build_changelog(commits, version=None, since_tag=None):
+def build_changelog(commits, version=None, since_tag=None, repo_url=None):
     """Build markdown changelog text from categorized commits."""
     buckets = defaultdict(list)
     for c in commits:
@@ -130,6 +155,14 @@ def build_changelog(commits, version=None, since_tag=None):
 
     lines = [f"## [{version_label}] - {today}", ""]
 
+    # Build commit link using full SHA for reliability
+    def commit_link(c):
+        sha_display = c["sha"]
+        sha_target = c["sha_full"]
+        if repo_url:
+            return f"[{sha_display}]({repo_url}/commit/{sha_target})"
+        return sha_display
+
     order = ["Added", "Fixed", "Changed", "Removed"]
     for cat in order:
         items = buckets.get(cat, [])
@@ -137,35 +170,49 @@ def build_changelog(commits, version=None, since_tag=None):
             continue
         lines.append(f"### {cat}")
         for c in items:
-            lines.append(f"- {c['subject']} ([{c['sha']}](https://github.com/Qiu-Difeng/claude-builders-bounty/commit/{c['sha']})) — *{c['author']}*")
+            lines.append(
+                f"- {c['subject']} ({commit_link(c)} by *{c['author']}* on {c['date']})"
+            )
         lines.append("")
 
     return "\n".join(lines)
 
 
 def prepend_to_file(filepath, new_content):
-    """Prepend new changelog section to an existing CHANGELOG.md."""
+    """Prepend new changelog section to an existing CHANGELOG.md.
+    
+    Handles various header formats:
+    - Windows line endings (\\r\\n)
+    - Single or multiple newlines after title
+    - Extra whitespace
+    """
     if os.path.exists(filepath):
         with open(filepath, "r", encoding="utf-8") as f:
             existing = f.read()
-        # insert before first existing ## header (or at top if none)
-        header = "# Changelog\n\n"
-        if existing.startswith(header):
-            body = existing[len(header):]
-            combined = header + new_content + "\n" + body
-        elif existing.startswith("# "):
-            # find second line group
-            idx = existing.find("\n## ")
+
+        # Normalize line endings for processing
+        existing_norm = existing.replace("\r\n", "\n")
+
+        # Match the changelog header flexibly: "# Changelog" followed by whitespace
+        header_match = re.match(r'#[ \t]+[Cc]hangelog\s*\n', existing_norm)
+
+        if header_match:
+            header_end = header_match.end()
+            body = existing_norm[header_end:]
+            combined = existing_norm[:header_end] + new_content + "\n" + body
+        elif existing_norm.startswith("# "):
+            # find second ## header
+            idx = existing_norm.find("\n## ")
             if idx >= 0:
-                combined = existing[:idx+1] + new_content + "\n" + existing[idx+1:]
+                combined = existing_norm[:idx + 1] + new_content + "\n" + existing_norm[idx + 1:]
             else:
-                combined = existing + "\n\n" + new_content
+                combined = existing_norm + "\n\n" + new_content
         else:
-            combined = header + new_content + "\n" + existing
+            combined = "# Changelog\n\n" + new_content + "\n" + existing
     else:
         combined = "# Changelog\n\n" + new_content + "\n"
 
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(filepath, "w", encoding="utf-8", newline="\n") as f:
         f.write(combined)
 
 
@@ -180,7 +227,16 @@ def main():
     parser.add_argument("--dry-run", action="store_true",
                         help="Print to stdout instead of writing file")
     parser.add_argument("--cwd", default=".", help="Git repo path (default: .)")
+    parser.add_argument("--repo-url",
+                        help="Base URL for commit links (default: auto-detect from git remote)")
     args = parser.parse_args()
+
+    # Auto-detect repo URL if not provided
+    repo_url = args.repo_url
+    if not repo_url:
+        repo_url = get_remote_url(cwd=args.cwd)
+        if repo_url:
+            print(f"Auto-detected repo URL: {repo_url}")
 
     since_tag = args.since_tag
     if not since_tag:
@@ -198,7 +254,8 @@ def main():
     print(f"Found {len(commits)} commits" +
           (f" since {since_tag}" if since_tag else ""))
 
-    md = build_changelog(commits, version=args.version, since_tag=since_tag)
+    md = build_changelog(commits, version=args.version, since_tag=since_tag,
+                         repo_url=repo_url)
 
     if args.dry_run:
         print("\n" + md)
