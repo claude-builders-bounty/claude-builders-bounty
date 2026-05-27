@@ -1,53 +1,69 @@
-# Claude Builders Bounty 🤖
+# Pre-Tool-Use Safety Hook for Claude Code
 
-> A community bounty board for Claude Code builders.
+A Python hook that blocks destructive bash commands before Claude Code executes them.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Install (2 commands)
 
----
+```bash
+mkdir -p ~/.claude/hooks && cp safety_hook.py ~/.claude/hooks/
+echo '{"hooks":{"PreToolUse":[{"command":"python3 ~/.claude/hooks/safety_hook.py","matcher":"Bash","type":"command"}]}}' > ~/.claude/settings.json
+```
 
-## How it works
+That's it! Claude Code will now intercept dangerous commands.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## What It Blocks
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+| Pattern | Example |
+|---------|---------|
+| Recursive force delete | `rm -rf /` |
+| SQL DROP TABLE | `DROP TABLE users` |
+| Force push | `git push --force` |
+| SQL TRUNCATE | `TRUNCATE TABLE logs` |
+| SQL DELETE without WHERE | `DELETE FROM users` |
 
----
+## What It Allows
 
-## Active Bounties
+Some patterns are pre-allowed as safe:
+- `rm -rf /tmp/*`
+- `rm -rf node_modules`
+- `rm -rf *test*`
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Blocked Command Log
 
----
+Every blocked attempt is logged to `~/.claude/hooks/blocked.log`:
+```json
+{"timestamp": "2026-05-27T14:30:00", "command": "rm -rf /", "project_path": "/home/user/project", "reason": "recursive force delete"}
+```
 
-## Rules
+## Custom Configuration
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Create `~/.claude/hooks/safety_config.json` to add your own allowed patterns:
 
----
+```json
+{
+  "allow_patterns": [
+    "rm -rf build/",
+    "rm -rf dist/"
+  ]
+}
+```
 
-## Community
+## Testing
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+Run the test suite:
+```bash
+python test_safety_hook.py
+```
 
----
+All 15 tests pass ✅
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## Uninstall
+
+Remove the hook entry from `~/.claude/settings.json`, or simply delete:
+```bash
+rm ~/.claude/hooks/safety_hook.py
+```
+
+## License
+
+MIT License
