@@ -34,6 +34,26 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+Generate a structured `CHANGELOG.md` from commits since the latest git tag.
+
+Setup in three steps:
+
+1. Clone this repository.
+2. Run `bash changelog.sh` from any git repository, or pass `--repo /path/to/repo`.
+3. Review the generated `CHANGELOG.md`.
+
+Example:
+
+```bash
+bash changelog.sh --repo /path/to/project --output CHANGELOG.md
+```
+
+The generator fetches remote tags when a remote exists, finds the latest tag with `git describe --tags --abbrev=0`, and groups commits into `Added`, `Fixed`, `Changed`, and `Removed` using commit-message prefixes and common keywords. If the repository has no tags, it uses the full commit history.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
