@@ -1,0 +1,54 @@
+name: PR Review Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_url:
+        description: 'PR URL (e.g. https://github.com/owner/repo/pull/123)'
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run PR Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node bounties/bounty-4-pr-review-agent/claude-review.js \
+            --pr "${{ github.event.inputs.pr_url || format('https://github.com/{0}/{1}/pull/{2}', github.repository_owner, github.event.pull_request.base.repo.name, github.event.pull_request.number) }}" \
+            --token "${{ secrets.GITHUB_TOKEN }}" \
+            2>review-stderr.log \
+            1>review.md
+
+      - name: Post Review Comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number || '' }}"
+          if [ -z "$PR_NUMBER" ]; then
+            PR_URL="${{ github.event.inputs.pr_url }}"
+            PR_NUMBER=$(echo "$PR_URL" | grep -oP '/pull/\K\d+')
+          fi
+
+          BODY=$(cat review.md)
+          # Use GitHub API to post comment
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            -d "{\"body\": $(echo "$BODY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"
