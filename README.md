@@ -1,53 +1,110 @@
-# Claude Builders Bounty 🤖
+# Pre-Tool-Use Safety Hook for Claude Code
 
-> A community bounty board for Claude Code builders.
+A Python hook that blocks destructive bash commands before Claude Code executes them.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation
 
----
+### Step 1: Copy the hook script
 
-## How it works
+```bash
+mkdir -p ~/.claude/hooks && cp safety_hook.py ~/.claude/hooks/
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### Step 2: Register the hook in settings
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+**If you already have `~/.claude/settings.json`**, merge the `hooks` section into your existing config:
 
----
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "command": "python3 ~/.claude/hooks/safety_hook.py",
+        "matcher": "Bash",
+        "type": "command"
+      }
+    ]
+  }
+}
+```
 
-## Active Bounties
+> **⚠️ Do NOT overwrite your existing `settings.json`!** Merge this with your current settings.
+> If your file already has a `hooks` section, add the new entry to the `PreToolUse` array.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+**If you don't have a settings.json yet:**
 
----
+```bash
+echo '{"hooks":{"PreToolUse":[{"command":"python3 ~/.claude/hooks/safety_hook.py","matcher":"Bash","type":"command"}]}}' > ~/.claude/settings.json
+```
 
-## Rules
+That's it! Claude Code will now intercept dangerous commands.
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## What It Blocks
 
----
+| Pattern | Example |
+|---------|---------|
+| Recursive force delete | `rm -rf /` |
+| SQL DROP TABLE | `DROP TABLE users` |
+| Force push | `git push --force` |
+| SQL TRUNCATE | `TRUNCATE TABLE logs` |
+| SQL DELETE without WHERE | `DELETE FROM users` |
 
-## Community
+## What It Allows
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+Some patterns are pre-allowed as safe:
+- `rm -rf /tmp/*`
+- `rm -rf node_modules`
+- `rm -rf *test*`
 
----
+## Blocked Command Log
 
-*Started by the Claude builder community · March 2026 · MIT License*
+Every blocked attempt is logged to `~/.claude/hooks/blocked.log`:
+
+```json
+{"timestamp": "2026-05-27T14:30:00", "command": "rm -rf /", "project_path": "/home/user/project", "reason": "recursive force delete"}
+```
+
+### Log Rotation
+
+The log file is automatically rotated when it exceeds 1 MB (configurable via
+the `SAFETY_HOOK_LOG_MAX_SIZE` environment variable). When rotated, the old
+log is saved as `blocked.log.1`.
+
+To disable rotation, set `SAFETY_HOOK_LOG_MAX_SIZE=0`.
+
+## Custom Configuration
+
+Create `~/.claude/hooks/safety_config.json` to add your own allowed patterns:
+
+```json
+{
+  "allow_patterns": [
+    "rm -rf build/",
+    "rm -rf dist/"
+  ]
+}
+```
+
+The config file is cached in memory and automatically reloaded when the file changes.
+
+## Testing
+
+Run the test suite:
+
+```bash
+python test_safety_hook.py
+```
+
+Tests cover blocked commands, allowed commands, logging, and truncation behavior.
+
+## Uninstall
+
+Remove the hook entry from `~/.claude/settings.json`, or simply delete:
+
+```bash
+rm ~/.claude/hooks/safety_hook.py
+```
+
+## License
+
+MIT License
