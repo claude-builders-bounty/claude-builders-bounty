@@ -2,18 +2,40 @@
 
 A Python hook that blocks destructive bash commands before Claude Code executes them.
 
-## Quick Install (2 steps)
+## Installation
+
+### Step 1: Copy the hook script
 
 ```bash
-# Step 1: Copy hook to Claude hooks directory
 mkdir -p ~/.claude/hooks && cp safety_hook.py ~/.claude/hooks/
-
-# Step 2: Add the hook config to your settings.json
-# Edit ~/.claude/settings.json and add under "hooks" > "PreToolUse":
-# { "command": "python3 ~/.claude/hooks/safety_hook.py", "matcher": "Bash", "type": "command" }
 ```
 
-> **Note**: The hook modifies the `PreToolUse` hooks array in your settings. If you have existing hooks, just append this one to the array.
+### Step 2: Register the hook in settings
+
+**If you already have `~/.claude/settings.json`**, merge the `hooks` section into your existing config:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "command": "python3 ~/.claude/hooks/safety_hook.py",
+        "matcher": "Bash",
+        "type": "command"
+      }
+    ]
+  }
+}
+```
+
+> **⚠️ Do NOT overwrite your existing `settings.json`!** Merge this with your current settings.
+> If your file already has a `hooks` section, add the new entry to the `PreToolUse` array.
+
+**If you don't have a settings.json yet:**
+
+```bash
+echo '{"hooks":{"PreToolUse":[{"command":"python3 ~/.claude/hooks/safety_hook.py","matcher":"Bash","type":"command"}]}}' > ~/.claude/settings.json
+```
 
 That's it! Claude Code will now intercept dangerous commands.
 
@@ -31,35 +53,58 @@ That's it! Claude Code will now intercept dangerous commands.
 
 Some patterns are pre-allowed as safe:
 - `rm -rf /tmp/*`
-- `rm -rf node_modules/`
-- `rm -rf /var/tmp/*`
-- `rm -rf test_output/`
-- `DELETE FROM ... WHERE ...` (with WHERE clause is fine)
-
-## Custom Allowlist
-
-Create `~/.claude/hooks/allow.json` to add your own safe paths:
-
-```json
-{"allowed_paths": ["^/my-safe-dir/", "^/cache/"]}
-```
+- `rm -rf node_modules`
+- `rm -rf *test*`
 
 ## Blocked Command Log
 
-Blocked attempts are logged to `~/.claude/hooks/blocked.log`.
-Log rotation: when the log exceeds 5MB, it auto-rotates to `blocked.log.1`.
+Every blocked attempt is logged to `~/.claude/hooks/blocked.log`:
 
-## Test
+```json
+{"timestamp": "2026-05-27T14:30:00", "command": "rm -rf /", "project_path": "/home/user/project", "reason": "recursive force delete"}
+```
+
+### Log Rotation
+
+The log file is automatically rotated when it exceeds 1 MB (configurable via
+the `SAFETY_HOOK_LOG_MAX_SIZE` environment variable). When rotated, the old
+log is saved as `blocked.log.1`.
+
+To disable rotation, set `SAFETY_HOOK_LOG_MAX_SIZE=0`.
+
+## Custom Configuration
+
+Create `~/.claude/hooks/safety_config.json` to add your own allowed patterns:
+
+```json
+{
+  "allow_patterns": [
+    "rm -rf build/",
+    "rm -rf dist/"
+  ]
+}
+```
+
+The config file is cached in memory and automatically reloaded when the file changes.
+
+## Testing
+
+Run the test suite:
 
 ```bash
 python test_safety_hook.py
-# 21 tests: 10 blocked + 10 allowed + 1 logging
 ```
+
+Tests cover blocked commands, allowed commands, logging, and truncation behavior.
 
 ## Uninstall
 
-Remove the hook entry from `~/.claude/settings.json` and delete the hook file:
+Remove the hook entry from `~/.claude/settings.json`, or simply delete:
 
 ```bash
 rm ~/.claude/hooks/safety_hook.py
 ```
+
+## License
+
+MIT License
