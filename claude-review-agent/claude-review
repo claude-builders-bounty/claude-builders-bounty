@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+"""
+Claude Review — AI-powered PR review agent.
+Analyzes a GitHub pull request and posts a structured Markdown review.
+
+Usage: claude-review --pr https://github.com/owner/repo/pull/123
+       claude-review --pr https://github.com/owner/repo/pull/123 --model deepseek-chat
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+from urllib.parse import urlparse
+
+import requests
+
+# -----------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------
+DEFAULT_MODEL = os.environ.get("CLAUDE_REVIEW_MODEL", "deepseek-chat")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+AI_API_KEY = os.environ.get(
+    "DEEPSEEK_API_KEY",
+    os.environ.get("ANTHROPIC_API_KEY", "")
+)
+AI_BASE_URL = os.environ.get(
+    "AI_BASE_URL",
+    "https://api.deepseek.com/v1"  # DeepSeek default (OpenAI-compatible)
+)
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+
+SYSTEM_PROMPT = """You are a senior software engineer conducting a code review.
+Analyze the PR diff and return a structured JSON review.
+
+Output ONLY valid JSON — no markdown, no explanation, no code fences:
+
+{
+  "summary": "2-3 sentence summary of what this PR does",
+  "risks": [
+    {"severity": "high|medium|low", "description": "specific risk", "file": "path/to/file", "line_hint": "brief location"}
+  ],
+  "suggestions": [
+    {"category": "bug|performance|security|style|architecture|testing", "description": "specific suggestion", "file": "path/to/file"}
+  ],
+  "confidence": "low|medium|high"
+}
+
+Rules:
+- Only include real issues — don't invent problems
+- If the diff is small (< 50 lines), confidence should be higher
+- Security risks ALWAYS get severity "high"
+- Suggestions must reference actual files in the diff
+- If there are no risks, use empty array []
+"""
+
+# -----------------------------------------------------------
+# GitHub API helpers
+# -----------------------------------------------------------
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    """Extract (owner, repo, pr_number) from a GitHub PR URL."""
+    parsed = urlparse(url)
+    path = parsed.path.strip("/")
+    parts = path.split("/")
+    if len(parts) >= 4 and parts[2] == "pull":
+        return parts[0], parts[1], int(parts[3])
+    raise ValueError(f"Invalid PR URL: {url}")
+
+
+def get_pr_diff(owner: str, repo: str, pr_number: int) -> str:
+    """Fetch the diff of a PR."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    headers = {"Accept": "application/vnd.github.v3.diff"}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    return resp.text
+
+
+def get_pr_info(owner: str, repo: str, pr_number: int) -> dict:
+    """Fetch PR metadata."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    return {
+        "title": data.get("title", ""),
+        "body": (data.get("body") or "")[:500],
+        "files_changed": data.get("changed_files", 0),
+        "additions": data.get("additions", 0),
+        "deletions": data.get("deletions", 0),
+        "author": data.get("user", {}).get("login", "unknown"),
+    }
+
+
+# -----------------------------------------------------------
+# AI analysis
+# -----------------------------------------------------------
+
+def analyze_diff(diff: str, pr_info: dict, model: str) -> dict:
+    """Send diff to AI and parse the structured review."""
+    user_prompt = f"""Review this GitHub pull request:
+
+**PR Title**: {pr_info['title']}
+**Author**: {pr_info['author']}
+**Files Changed**: {pr_info['files_changed']}
+**+{pr_info['additions']} / -{pr_info['deletions']}
+
+**Description**: {pr_info['body']}
+
+**Diff**:
+```diff
+{diff[:15000]}
+```
+
+Return the review as JSON. Focus on real issues only.
+"""
+
+    if ANTHROPIC_API_KEY and not DEEPSEEK_API_KEY:
+        headers = {
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model if model.startswith("claude-") else "claude-sonnet-4-20250514",
+            "system": SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": user_prompt}],
+            "max_tokens": 4096,
+        }
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers=headers,
+            json=payload,
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data["content"][0]["text"]
+    else:
+        headers = {
+            "Authorization": f"Bearer {AI_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.2,
+            "max_tokens": 4096,
+        }
+        resp = requests.post(
+            f"{AI_BASE_URL}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+
+    # Extract JSON from the response (handle markdown code fences)
+    json_match = re.search(r"\{[\s\S]*\}", content)
+    if json_match:
+        return json.loads(json_match.group())
+    raise ValueError(f"Failed to parse AI response as JSON:\n{content[:500]}")
+
+
+# -----------------------------------------------------------
+# Render Markdown
+# -----------------------------------------------------------
+
+def render_review(review: dict, pr_info: dict, pr_url: str) -> str:
+    """Convert structured review into Markdown."""
+    confidence_emoji = {"low": "🔴", "medium": "🟡", "high": "🟢"}
+    severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+
+    md = f"""# 🤖 AI Code Review
+
+**PR**: [{pr_info['title']}]({pr_url})
+**Author**: @{pr_info['author']}
+**Files**: {pr_info['files_changed']} changed (+{pr_info['additions']} / -{pr_info['deletions']})
+**Confidence**: {confidence_emoji.get(review.get('confidence', 'low'), '⚪')} {review.get('confidence', 'unknown').upper()}
+
+---
+
+## 📝 Summary
+
+{review.get('summary', '_No summary provided._')}
+
+---
+
+## ⚠️ Risks
+
+"""
+
+    risks = review.get("risks", [])
+    if risks:
+        for r in risks:
+            sev = severity_emoji.get(r.get("severity", "low"), "⚪")
+            md += f"- {sev} **[{r.get('severity', 'low').upper()}]** {r.get('description', '')} `{r.get('file', '?')}` — _{r.get('line_hint', '')}_\n"
+    else:
+        md += "_No significant risks identified._\n"
+
+    md += "\n---\n\n## 💡 Suggestions\n\n"
+
+    suggestions = review.get("suggestions", [])
+    if suggestions:
+        for s in suggestions:
+            cat = s.get("category", "style")
+            md += f"- **[{cat.upper()}]** {s.get('description', '')} `{s.get('file', '?')}`\n"
+    else:
+        md += "_No additional suggestions._\n"
+
+    md += f"\n---\n\n*Review generated by [claude-review](https://github.com/claude-builders-bounty) · AI-assisted, human-verified*"
+    return md
+
+
+# -----------------------------------------------------------
+# Main
+# -----------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="AI-powered PR review agent")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"AI model (default: {DEFAULT_MODEL})")
+    parser.add_argument("--json", action="store_true", help="Output raw JSON instead of Markdown")
+    args = parser.parse_args()
+
+    if not AI_API_KEY:
+        print("❌ Set DEEPSEEK_API_KEY or ANTHROPIC_API_KEY", file=sys.stderr)
+        sys.exit(1)
+
+    owner, repo, pr_number = parse_pr_url(args.pr)
+
+    print(f"🔍 Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+    diff = get_pr_diff(owner, repo, pr_number)
+    pr_info = get_pr_info(owner, repo, pr_number)
+
+    size_msg = f"{pr_info['files_changed']} files, +{pr_info['additions']}/-{pr_info['deletions']}"
+    print(f"📊 {size_msg} — analyzing...", file=sys.stderr)
+
+    if len(diff) > 20000:
+        print(f"⚠️  Diff is {len(diff)} chars — truncating to 15000 for analysis", file=sys.stderr)
+        diff = diff[:15000]
+
+    review = analyze_diff(diff, pr_info, args.model)
+
+    if args.json:
+        print(json.dumps(review, ensure_ascii=False, indent=2))
+    else:
+        print(render_review(review, pr_info, args.pr))
+
+    print(f"\n✅ Review complete ({review.get('confidence', '?')} confidence)", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
