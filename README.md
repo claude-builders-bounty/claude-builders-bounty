@@ -22,7 +22,7 @@ A Python CLI tool that automatically generates a structured `CHANGELOG.md` from 
 # All commits (auto-prepends to existing CHANGELOG.md)
 python generate_changelog.py
 
-# Only commits since last tag (auto-detected)
+# Commits since a specific tag
 python generate_changelog.py --since-tag v1.0
 
 # Custom version label and output file
@@ -30,40 +30,41 @@ python generate_changelog.py --version v2.0 --output RELEASE_NOTES.md
 
 # Preview without writing
 python generate_changelog.py --dry-run
-
-# Point to a different repo
-python generate_changelog.py --cwd /path/to/repo
 ```
+
+## How It Categorizes Commits
+
+| Category | Keywords / Conventional Prefix |
+|----------|-------------------------------|
+| Added | add, new, create, feat, implement, support |
+| Fixed | fix, bug, patch, hotfix, resolve |
+| Changed | update, change, modify, refactor, improve |
+| Removed | remove, delete, deprecate, drop |
+| Docs | doc, readme, comment, changelog |
+| Test | test, spec, ci, coverage |
+
+Supports [Conventional Commits](https://www.conventionalcommits.org/) format — `feat:`, `fix:`, etc.
 
 ## Features
 
-- **Auto-categorizes** commits into `Added`, `Fixed`, `Changed`, `Removed`
-- Supports **Conventional Commits** (`feat:`, `fix:`, `refactor:`, etc.)
-- Falls back to **keyword matching** for non-conventional messages
-- **Auto-detects** the last git tag
-- **Prepends** to existing CHANGELOG.md (preserves history)
-- Includes commit short hash, author, and date
-- Zero dependencies (stdlib only)
+- **Zero dependencies** — pure Python stdlib
+- **Robust parsing** — uses git's `%x1f`/`%x1e` separators (not fragile string delimiters)
+- **Auto repo URL** — derives commit links from `git remote` (SSH and HTTPS)
+- **Full SHA links** — commit URLs use full SHA for reliability
+- **Line ending tolerant** — handles both `\n` and `\r\n`
+- **Prepend mode** — new entries go above existing ones
 
 ## Sample Output
 
 ```markdown
 # Changelog
 
-## [v3.2] - 2026-05-27
+## v3.2
 
 ### Added
-- Add Excel export support with openpyxl ([fd96446](link)) — *Qiu-Difeng*
-- Add LICENSE and FUNDING.yml ([755ac79](link)) — *Qiu-Difeng*
+- Add GitHub Actions badges — [abc1234](link) (Author, 2025-01-15)
+- Create FUNDING.yml — [def5678](link) (Author, 2025-01-14)
 
 ### Fixed
-- Fix datetime import conflict in github_search.py ([fd96446](link)) — *Qiu-Difeng*
-
-### Changed
-- Update README with badges ([755ac79](link)) — *Qiu-Difeng*
-- Clean up test files ([755ac79](link)) — *Qiu-Difeng*
+- Fix CSV export encoding — [ghi9012](link) (Author, 2025-01-13)
 ```
-
-## Tested On
-
-Tested on [python-mega-scraper-kit](https://github.com/Qiu-Difeng/python-mega-scraper-kit) — a real GitHub repo with 20+ commits and multiple tags.
