@@ -1,0 +1,3 @@
+ Pas de fléchissements ou de redondance. Les réflexions sont claires et les solutions sont directes.
+
+## Réponse format : [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [PDF] [
