@@ -99,6 +99,7 @@ npm run typecheck    # tsc --noEmit
 
 ```typescript
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),           // nanoid, never auto-increment
@@ -221,13 +222,13 @@ import { users } from "@/lib/db/schema";
 import { getUserById } from "@/server/queries/users";
 
 beforeEach(() => {
-  db.delete(users); // Clean slate
+  db.delete(users).run(); // Clean slate
 });
 
 describe("getUserById", () => {
   it("returns the user when found", async () => {
-    await db.insert(users).values({ id: "abc", email: "test@example.com" });
-    const user = await getUserById("abc");
+    db.insert(users).values({ id: "abc", email: "test@example.com" }).run();
+    const user = getUserById("abc");
     expect(user?.email).toBe("test@example.com");
   });
 });
