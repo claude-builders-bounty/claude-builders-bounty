@@ -1,53 +1,30 @@
-# Claude Builders Bounty 🤖
+# Claude Builders Bounty — Safe Bash Hook
 
-> A community bounty board for Claude Code builders.
+A Claude Code `pre-tool-use` hook that blocks destructive Bash commands before execution.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Install
 
----
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/pre_tool_use_safe_bash.py ~/.claude/hooks/pre_tool_use_safe_bash.py
+chmod +x ~/.claude/hooks/pre_tool_use_safe_bash.py
+```
 
-## How it works
+## What it blocks
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+- `rm -rf`
+- `DROP TABLE`
+- `git push --force` / `git push -f`
+- `TRUNCATE`
+- `DELETE FROM` without a `WHERE` clause
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Every blocked attempt is appended to:
 
----
+```text
+~/.claude/hooks/blocked.log
+```
 
-## Active Bounties
+Log format includes timestamp, matched rule, project path, attempted command.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Behavior
 
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+Normal bash commands exit `0` and continue. Dangerous commands exit `2`, print a clear message to Claude, and are logged.
