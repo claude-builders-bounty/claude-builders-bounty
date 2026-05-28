@@ -1,0 +1,430 @@
+{
+  "name": "Weekly GitHub Dev Summary With Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "7a0e9f2a-0b77-4bb2-a017-2df0a4d41a5a",
+      "name": "Weekly Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -940,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "e55cbaf9-45fd-470f-8b4b-6f8a23c9e3c7",
+      "name": "Manual test trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -940,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst repoFullName = $env.GITHUB_REPO || 'owner/repo';\nconst [owner, repo] = repoFullName.split('/');\nreturn [{\n  json: {\n    owner,\n    repo,\n    repoFullName,\n    since: since.toISOString(),\n    until: now.toISOString(),\n    language: ($env.SUMMARY_LANGUAGE || 'EN').toUpperCase(),\n    deliveryMode: ($env.DELIVERY_MODE || 'slack').toLowerCase(),\n    destinationWebhook: $env.DESTINATION_WEBHOOK_URL || '',\n    destinationEmail: $env.DESTINATION_EMAIL || ''\n  }\n}];"
+      },
+      "id": "4c568dcb-0ca7-4f54-9ab5-29f5dfd6f8b6",
+      "name": "Build config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.owner}}/{{$json.repo}}/commits?since={{$json.since}}&until={{$json.until}}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GITHUB_TOKEN}}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "a4200380-3b4d-467d-a91b-98f87c3a0dc6",
+      "name": "Fetch commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$node[\"Build config\"].json.owner}}/{{$node[\"Build config\"].json.repo}}/issues?state=closed&since={{$node[\"Build config\"].json.since}}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GITHUB_TOKEN}}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "a96750d4-2497-4605-9419-8f2d23927b7b",
+      "name": "Fetch closed issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$node[\"Build config\"].json.owner}}/{{$node[\"Build config\"].json.repo}}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GITHUB_TOKEN}}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "61e68615-7a29-4b82-9dc4-3646bcd995de",
+      "name": "Fetch merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Build config').first().json;\nconst commits = $('Fetch commits').all().map(item => item.json).filter(Boolean);\nconst closedIssues = $('Fetch closed issues').all().map(item => item.json).filter(issue => issue && !issue.pull_request);\nconst sinceTime = Date.parse(config.since);\nconst mergedPrs = $('Fetch merged PRs').all()\n  .map(item => item.json)\n  .filter(pr => pr && pr.merged_at && Date.parse(pr.merged_at) >= sinceTime);\nconst payload = {\n  repo: config.repoFullName,\n  period: { since: config.since, until: config.until },\n  commits: commits.slice(0, 50).map(commit => ({\n    sha: commit.sha?.slice(0, 7),\n    message: commit.commit?.message?.split('\\n')[0],\n    author: commit.commit?.author?.name,\n    url: commit.html_url\n  })),\n  closedIssues: closedIssues.slice(0, 30).map(issue => ({\n    number: issue.number,\n    title: issue.title,\n    url: issue.html_url,\n    closedAt: issue.closed_at\n  })),\n  mergedPullRequests: mergedPrs.slice(0, 30).map(pr => ({\n    number: pr.number,\n    title: pr.title,\n    url: pr.html_url,\n    mergedAt: pr.merged_at\n  }))\n};\nconst languageInstruction = config.language === 'FR' ? 'Write the summary in French.' : 'Write the summary in English.';\nconst prompt = `${languageInstruction}\\nCreate a concise weekly narrative development summary for ${payload.repo}. Include notable themes, shipped work, risk or follow-up notes, and useful links. Avoid inventing facts; use only this JSON activity data:\\n${JSON.stringify(payload, null, 2)}`;\nreturn [{ json: { ...config, activity: payload, claudeRequest: { model: 'claude-sonnet-4-20250514', max_tokens: 900, messages: [{ role: 'user', content: prompt }] } } }];"
+      },
+      "id": "4bd8ef31-fffb-48c7-acfc-0ed0a82670e2",
+      "name": "Build Claude request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$env.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.claudeRequest}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "7246a738-a938-496f-b612-a8a4adebc11b",
+      "name": "Generate summary with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        100,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Build config').first().json;\nconst response = $input.first().json;\nconst text = response.content?.map(part => part.text).filter(Boolean).join('\\n\\n') || 'No summary returned by Claude.';\nreturn [{ json: { ...config, summary: text, slackPayload: { text }, emailSubject: `Weekly dev summary: ${config.repoFullName}`, emailBody: text } }];"
+      },
+      "id": "fc632b25-dca7-471f-a52b-d1fd60737eb4",
+      "name": "Format delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "21af9771-6055-45e7-bd8d-cf29d0664092",
+              "leftValue": "={{$json.deliveryMode}}",
+              "rightValue": "slack",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "d309fb4f-1eaf-4419-8c72-ec6e9c7f820b",
+      "name": "Deliver by webhook?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        620,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.destinationWebhook}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.slackPayload}}"
+      },
+      "id": "081fe985-8eba-409c-a525-9705e8467877",
+      "name": "Send Slack or Discord webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL || 'dev-summary@example.com'}}",
+        "toEmail": "={{$json.destinationEmail}}",
+        "subject": "={{$json.emailSubject}}",
+        "text": "={{$json.emailBody}}"
+      },
+      "id": "c93ef8bd-2578-41a1-8912-00cde63cb910",
+      "name": "Send email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Build config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual test trigger": {
+      "main": [
+        [
+          {
+            "node": "Build config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build config": {
+      "main": [
+        [
+          {
+            "node": "Fetch commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch closed issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch commits": {
+      "main": [
+        [
+          {
+            "node": "Build Claude request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch closed issues": {
+      "main": [
+        [
+          {
+            "node": "Build Claude request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Build Claude request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude request": {
+      "main": [
+        [
+          {
+            "node": "Generate summary with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate summary with Claude": {
+      "main": [
+        [
+          {
+            "node": "Format delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format delivery": {
+      "main": [
+        [
+          {
+            "node": "Deliver by webhook?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deliver by webhook?": {
+      "main": [
+        [
+          {
+            "node": "Send Slack or Discord webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": []
+}
