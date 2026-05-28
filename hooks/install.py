@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +17,7 @@ CLAUDE_DIR = Path.home() / ".claude"
 HOOKS_DIR = CLAUDE_DIR / "hooks"
 TARGET_HOOK = HOOKS_DIR / "pre_tool_use_guard.py"
 SETTINGS_PATH = CLAUDE_DIR / "settings.json"
-HOOK_COMMAND = f"python3 {TARGET_HOOK}"
+HOOK_COMMAND = f"{shlex.quote(sys.executable)} {shlex.quote(str(TARGET_HOOK))}"
 
 
 def main() -> int:
@@ -31,9 +33,14 @@ def main() -> int:
 
 
 def install_hook_file() -> None:
-    HOOKS_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(SOURCE_HOOK, TARGET_HOOK)
-    TARGET_HOOK.chmod(0o755)
+    try:
+        HOOKS_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SOURCE_HOOK, TARGET_HOOK)
+        TARGET_HOOK.chmod(0o755)
+    except OSError as exc:
+        raise SystemExit(
+            f"Cannot install hook from {SOURCE_HOOK} to {TARGET_HOOK}: {exc}"
+        ) from exc
 
 
 def load_settings() -> dict[str, Any]:

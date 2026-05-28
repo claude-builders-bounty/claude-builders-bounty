@@ -20,6 +20,7 @@ def main() -> int:
     tests = [
         test_blocks_required_patterns,
         test_allows_normal_commands,
+        test_logs_redacted_command,
         test_non_bash_tools_are_ignored,
         test_installer_registers_bash_hook,
     ]
@@ -65,6 +66,9 @@ def test_allows_normal_commands() -> None:
     allowed = [
         "ls -la",
         "git status --short",
+        "echo 'DROP TABLE users'",
+        "cat migration.sql | sed 's/DROP TABLE/DROP VIEW/'",
+        "echo rm -rf /tmp/example",
         "echo 'DELETE FROM users WHERE id = 1'",
         "sqlite3 app.db 'DELETE FROM sessions WHERE id = 7;'",
         "rm -r ./build",
@@ -79,6 +83,17 @@ def test_allows_normal_commands() -> None:
 
         log_path = Path(home) / ".claude" / "hooks" / "blocked.log"
         assert not log_path.exists()
+
+
+def test_logs_redacted_command() -> None:
+    with tempfile.TemporaryDirectory() as home:
+        result = run_hook("PASSWORD=hunter2 rm -rf /tmp/example", home=home)
+        assert result.returncode == 0
+
+        log_path = Path(home) / ".claude" / "hooks" / "blocked.log"
+        entry = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+        assert entry["command"] == "PASSWORD=<redacted> rm -rf /tmp/example"
+        assert "hunter2" not in entry["command"]
 
 
 def test_non_bash_tools_are_ignored() -> None:
