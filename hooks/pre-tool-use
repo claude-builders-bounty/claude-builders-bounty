@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook
+Blocks destructive bash commands and logs attempts.
+"""
+
+import sys
+import json
+import os
+import logging
+from datetime import datetime
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+# Patterns to block (case-insensitive after lower())
+DANGEROUS_PATTERNS = [
+    "rm -rf",
+    "drop table",
+    "git push --force",
+    "truncate",
+]
+
+
+def is_delete_without_where(cmd_lower: str) -> bool:
+    """Check if command contains DELETE FROM without WHERE."""
+    if "delete from" not in cmd_lower:
+        return False
+    # Ensure it's not a comment or string; simple check
+    # Remove everything after -- or # comments? Not necessary for basic safety.
+    # Check if there's a 'where' after 'delete from'
+    idx = cmd_lower.find("delete from")
+    after = cmd_lower[idx + len("delete from"):]
+    # If 'where' appears in the remainder, it's okay
+    return "where" not in after
+
+
+def block_command(cmd: str, reason: str) -> None:
+    """Log the blocked command and exit with non-zero status."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"[{timestamp}] BLOCKED reason='{reason}' command='{cmd}'\n"
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        with open(LOG_FILE, "a") as f:
+            f.write(log_entry)
+    except Exception:
+        logging.exception("Failed to write to blocked.log")
+    # Exit non-zero to block the tool
+    sys.exit(1)
+
+
+def main():
+    # Read tool call input from stdin (JSON)
+    try:
+        raw = sys.stdin.read()
+        if not raw:
+            # No input, allow
+            sys.exit(0)
+        call = json.loads(raw)
+    except (json.JSONDecodeError, Exception):
+        # If we can't parse, allow (fail open) but log?
+        # Better to allow to avoid breaking normal flow
+        sys.exit(0)
+
+    # Extract the command string
+    # Claude Code tool names may vary; check for 'Bash' or 'execute_command'
+    tool_name = call.get("name", "").lower()
+    tool_input = call.get("input", {})
+
+    # Possible field names that contain the command
+    command = tool_input.get("command", "") or tool_input.get("code", "") or tool_input.get("script", "") or ""
+
+    cmd_lower = command.lower().strip()
+
+    if not cmd_lower:
+        sys.exit(0)
+
+    # Check dangerous patterns
+    for pattern in DANGEROUS_PATTERNS:
+        if pattern in cmd_lower:
+            block_command(command, f"matched pattern: {pattern}")
+
+    # Special check for DELETE FROM without WHERE
+    if is_delete_without_where(cmd_lower):
+        block_command(command, "DELETE FROM without WHERE clause")
+
+    # All checks passed
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

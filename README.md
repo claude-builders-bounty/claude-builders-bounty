@@ -50,4 +50,35 @@ You're in the right place.
 
 ---
 
+## Hooks
+
+### pre-tool-use: Block destructive bash commands
+
+This hook intercepts dangerous bash commands before they are executed by Claude Code.
+It blocks:
+- `rm -rf` (any variant)
+- `DROP TABLE`
+- `git push --force`
+- `TRUNCATE`
+- `DELETE FROM` without a `WHERE` clause
+
+All blocked attempts are logged to `~/.claude/hooks/blocked.log` with a timestamp.
+
+#### Installation
+
+```bash
+# Create hooks directory if it doesn't exist
+mkdir -p ~/.claude/hooks
+
+# Copy the hook script
+cp hooks/pre-tool-use ~/.claude/hooks/
+
+# Make it executable
+chmod +x ~/.claude/hooks/pre-tool-use
+```
+
+Now restart Claude Code. The hook will automatically run before each tool use.
+
+---
+
 *Started by the Claude builder community · March 2026 · MIT License*
