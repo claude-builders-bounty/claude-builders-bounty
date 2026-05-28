@@ -1,53 +1,86 @@
-# Claude Builders Bounty 🤖
+# generate-changelog
 
-> A community bounty board for Claude Code builders.
+A Claude Code skill and standalone Python script that automatically generates
+a structured `CHANGELOG.md` from your project's git history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (3 steps)
 
----
+**Step 1** — Place `changelog.py` and `changelog.sh` in your project.
 
-## How it works
+```bash
+cp changelog.py changelog.sh /path/to/your/project/
+chmod +x changelog.sh
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+**Step 2** — Generate your changelog.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+cd /path/to/your/project && bash changelog.sh -o CHANGELOG.md
+```
 
----
+**Step 3** — (Optional) Install as a Claude Code skill by placing `SKILL.md`
+in `.claude/skills/`:
 
-## Active Bounties
+```bash
+cp SKILL.md /path/to/your/project/.claude/skills/generate-changelog.md
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+Then run `/generate-changelog` inside a Claude Code session.
 
 ---
 
-## Rules
+## Requirements
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+- **Python 3.8+**
+- **Git 2.20+**
+- A repository that uses [Conventional Commits](https://www.conventionalcommits.org/)
+  (works without them — unrecognized commits go under Changed)
 
----
+## Options
 
-## Community
+```
+usage: changelog.py [-h] [--since SINCE] [--until UNTIL] [--output OUTPUT]
+                    [--version VERSION] [--repo REPO] [--date DATE]
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+Generate a structured CHANGELOG.md from git history.
 
----
+optional arguments:
+  -h, --help            show this help message and exit
+  --since SINCE, -s SINCE
+                        Tag name or ISO date (YYYY-MM-DD). Default: last tag.
+  --until UNTIL, -u UNTIL
+                        End date for date-range filtering.
+  --output OUTPUT, -o OUTPUT
+                        Output file path. Default: stdout.
+  --version VERSION, -v VERSION
+                        Version string for heading (default: Unreleased).
+  --repo REPO, -r REPO  Path to git repo (default: current dir).
+  --date DATE, -d DATE  Release date (YYYY-MM-DD). Default: today.
+```
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## Example Output
+
+```markdown
+# Changelog
+
+## 1.2.0 — 2025-06-15
+
+### Added
+
+- Support for date-range filtering (`--since` / `--until`)
+- Auto-detection of breaking changes from `BREAKING CHANGE` footers
+- `--repo` flag to target a different repository
+
+### Fixed
+
+- Edge case where empty commit body caused index errors
+- Commit message encoding for non-ASCII characters
+
+### Changed
+
+- Improved categorization for `perf:` and `optimize:` prefixes
+- Better indentation for multi-line commit bodies
+
+## License
+
+MIT
