@@ -1,53 +1,96 @@
-# Claude Builders Bounty 🤖
+# CLAUDE.md Template — Next.js + SQLite SaaS
 
-> A community bounty board for Claude Code builders.
+A production-ready `CLAUDE.md` template for Next.js 15 App Router + SQLite
+(Turso) SaaS projects. Designed to be dropped into a greenfield project and
+used immediately — every rule has a reason, every convention has a rationale.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## What This Is
 
----
+`CLAUDE.md` is a project-level instruction file read by Claude (via Claude
+Code, Cursor, or any MCP-compatible AI coding tool) at the start of every
+session. It establishes:
 
-## How it works
+- The tech stack and why each choice was made
+- The exact folder structure to follow
+- Database schema and migration rules
+- Naming conventions across the entire codebase
+- Patterns to follow and anti-patterns to avoid
+- Dev commands for common workflows
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Quick Start
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+# Copy the template into your project root:
+cp /path/to/this/repo/CLAUDE.md ./CLAUDE.md
 
----
+# If you're starting a new project from scratch, create alongside it:
+mkdir my-saas && cd my-saas
+cp /path/to/this/repo/CLAUDE.md .
 
-## Active Bounties
+# Initialize your Next.js project and follow the Getting Started
+# section at the bottom of CLAUDE.md
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## What's Covered
 
----
+| Section                     | Contents                                                       |
+| --------------------------- | -------------------------------------------------------------- |
+| Stack & Versions            | Every library with version constraints and justification       |
+| Project Structure           | Full directory tree with rationale for each decision           |
+| Database & SQL Conventions  | Schema rules, migration discipline, query patterns             |
+| Component Patterns          | Server-first, client-when-necessary, forms, error boundaries   |
+| Naming Conventions          | Table of every named thing in the project                      |
+| Dev Commands                | `pnpm` scripts for dev, DB, testing, build, Stripe             |
+| Environment Variables       | Zod-validated env setup pattern                                |
+| What We Don't Do            | Anti-patterns table with reasons                               |
+| Auth Guard Pattern          | Layout-level + action-level auth gating                        |
+| Billing & Subscription      | Stripe Checkout, webhooks, customer ID storage                 |
+| Getting Started             | Step-by-step greenfield bootstrap                              |
 
-## Rules
+## Stack Decisions
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+| Concern     | Choice      | Alternative Considered            |
+| ----------- | ----------- | --------------------------------- |
+| Database    | Turso       | better-sqlite3 (local only), Neon (Postgres) |
+| ORM         | Drizzle     | Prisma (heavier), Kysely (lower-level)      |
+| Auth        | Better Auth | NextAuth v5, Clerk (not self-hostable)      |
+| Styling     | Tailwind 4  | CSS Modules, Panda CSS                     |
+| Validation  | Zod         | Valibot (newer, smaller bundle)             |
 
----
+These choices are opinionated but not arbitrary — they prioritize
+production-readiness, SQLite compatibility, and the Next.js server-component
+model.
 
-## Community
+## Customizing for Your Project
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+The template is usable without modification, but you'll likely want to:
 
----
+1. **Replace `Turso` with `better-sqlite3`** if you're deploying to a single
+   server (e.g., a VPS). Change the database section to reflect local file
+   paths and remove Turso-specific commands.
+2. **Remove `trigger.dev`** if you don't need background jobs yet — it's
+   marked optional.
+3. **Adjust route groups** if your SaaS has different navigation (e.g., add
+   `(admin)` or rename `(dashboard)` to `(app)`).
+4. **Add domain-specific sections** — if your SaaS revolves around documents,
+   add a `Documents & Storage` section with your S3/R2 upload patterns.
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## Why This Exists
+
+Most AI coding assistants produce better code when they understand the
+project's conventions. Without a `CLAUDE.md`:
+
+- Components get scattered between `src/` and project root
+- Database queries mix raw SQL with ORM calls
+- Auth checks are inconsistent or missing
+- Server actions grow into 200-line untestable monoliths
+- Naming drifts across files
+
+With one, every session starts from the same set of rules — like an automated
+onboarding doc for every AI contributor.
+
+## Contributing
+
+If you find a rule that doesn't hold up in practice or a pattern that should
+be added, open an issue or PR. The goal is a living document that reflects
+real production experience, not theoretical best practices.
