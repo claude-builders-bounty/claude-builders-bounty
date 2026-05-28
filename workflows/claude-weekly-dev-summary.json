@@ -1,0 +1,246 @@
+{
+  "name": "Claude Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Weekly Trigger (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/commits",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "since",
+                "value": "={{ $now.minus(7, 'days').toISO() }}"
+              },
+              {
+                "name": "per_page",
+                "value": "20"
+              }
+            ]
+          }
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "github-commits",
+      "name": "Fetch GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/issues",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "state",
+                "value": "closed"
+              },
+              {
+                "name": "since",
+                "value": "={{ $now.minus(7, 'days').toISO() }}"
+              },
+              {
+                "name": "per_page",
+                "value": "20"
+              }
+            ]
+          }
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 400]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/pulls",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "state",
+                "value": "closed"
+              },
+              {
+                "name": "merged",
+                "value": "true"
+              },
+              {
+                "name": "per_page",
+                "value": "20"
+              }
+            ]
+          }
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all data for Claude\nconst commits = $input.all()[1].json;\nconst issues = $input.all()[2].json;\nconst prs = $input.all()[3].json;\n\nconst formatCommits = (commits || []).map(c => `- ${c.commit.message.split('\\n')[0]} (@${c.author?.login || 'unknown'})`).join('\\n');\nconst formatIssues = (issues || []).map(i => `- #${i.number} ${i.title} (closed)`).join('\\n');\nconst formatPRs = (prs || []).map(p => `- ##{p.number} {p.title} (merged by @${p.merged_by?.login || 'unknown'})`).join('\\n');\n\nconst prompt = `Generate a concise weekly developer summary for the repository {{ $env.GITHUB_REPO }}.\n\n## This Week's Activity:\n\n### Commits (${(commits || []).length}):\n${formatCommits || 'No commits this week'}\n\n### Closed Issues (${(issues || []).length}):\n${formatIssues || 'No closed issues this week'}\n\n### Merged PRs (${(prs || []).length}):\n${formatPRs || 'No merged PRs this week'}\n\nPlease provide:\n1. A brief overview (2-3 sentences)\n2. Key highlights\n3. Any notable achievements or problem resolutions\n\nLanguage: {{ $env.LANGUAGE || 'EN' }}\n\nFormat in markdown.`;\n\nreturn [{ json: { prompt, commits, issues, prs } }];"
+      },
+      "id": "combine-data",
+      "name": "Combine & Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 400]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "={{ $json.prompt }}"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 1000,
+          "temperature": 0.7
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API (Sonnet 4)",
+      "type": "@n8n/n8n-nodes-langchain.chatMemoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [760, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DISCORD_WEBHOOK }}",
+        "method": "POST",
+        "sendBody": {
+          "options": {},
+          "bodyContentType": "json",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "content",
+                "value": "=# Weekly Dev Summary — {{ $env.GITHUB_REPO }}\n\n={{ $json.text || $json.content || $('Claude API (Sonnet 4)').item.json.text || 'No summary generated' }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "discord-notify",
+      "name": "Discord Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "to": "={{ $env.EMAIL_TO }}",
+        "subject": "=Weekly Dev Summary — {{ $env.GITHUB_REPO }}",
+        "body": "=<!DOCTYPE html>\n<html>\n<body>\n<h2>📊 Weekly Dev Summary — {{ $env.GITHUB_REPO }}</h2>\n<pre>{{ $json.text || $json.content || 'No summary generated' }}</pre>\n<hr>\n<small>Generated by Claude AI on {{ $now.toISO() }}</small>\n</body>\n</html>",
+        "options": {
+          "contentType": "html"
+        }
+      },
+      "id": "email-notify",
+      "name": "Email Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [980, 500],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5pm)": {
+      "main": [
+        [
+          { "node": "Fetch GitHub Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch GitHub Commits": {
+      "main": [
+        [{ "node": "Combine & Format Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [{ "node": "Combine & Format Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [{ "node": "Combine & Format Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Combine & Format Data": {
+      "main": [
+        [{ "node": "Claude API (Sonnet 4)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API (Sonnet 4)": {
+      "main": [
+        [{ "node": "Discord Notification", "type": "main", "index": 0 }],
+        [{ "node": "Email Notification", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [" claude", "github", "weekly", "summary", "automation"],
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "templateId": "claude-weekly-dev-summary"
+  }
+}
