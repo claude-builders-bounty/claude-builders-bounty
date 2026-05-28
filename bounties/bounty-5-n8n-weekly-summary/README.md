@@ -33,7 +33,7 @@ Set up these credentials in n8n:
 
 | Credential | Type | Purpose |
 |---|---|---|
-| **GitHub Token** | HTTP Header Auth | Header: `Authorization`, Value: `Bearer ghp_YOUR_TOKEN` |
+| **GitHub Token** | HTTP Header Auth | Header: `Authorization`, Value: `Bearer ghp_YOUR_TOKEN` (classic PAT) or `Bearer github_pat_YOUR_TOKEN` (fine-grained PAT) |
 | **Claude API** | Anthropic API | Your Anthropic API key |
 | **SMTP Account** (optional) | SMTP | For email delivery (host, port, user, password) |
 

@@ -45,14 +45,6 @@
             {
               "name": "emailTo",
               "value": "={{ $env.EMAIL_TO || '' }}"
-            },
-            {
-              "name": "githubToken",
-              "value": "={{ $env.GITHUB_TOKEN }}"
-            },
-            {
-              "name": "claudeApiKey",
-              "value": "={{ $env.CLAUDE_API_KEY }}"
             }
           ]
         },
@@ -168,6 +160,7 @@
       "parameters": {
         "mode": "combine",
         "combinationMode": "mergeByPosition",
+        "modeMergeByPosition": 3,
         "options": {}
       },
       "id": "merge-data",
@@ -178,7 +171,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Aggregate all fetched data into a structured summary\nconst commits = $('Fetch Commits').all();\nconst closedIssues = $('Fetch Closed Issues').all();\nconst mergedPRs = $('Fetch Merged PRs').all();\nconst config = $('Configuration').first().json;\nconst dates = $('Prepare Date Range').first().json;\n\n// Process commits\nconst commitList = commits.map(c => ({\n  sha: c.json.sha?.substring(0, 7) || 'N/A',\n  message: (c.json.commit?.message || '').split('\\n')[0],\n  author: c.json.commit?.author?.name || 'Unknown',\n  date: c.json.commit?.author?.date || '',\n}));\n\n// Process closed issues (filter to ones closed in the date range)\nconst sinceDate = new Date(dates.since_date);\nconst issueList = closedIssues\n  .filter(i => {\n    const closedAt = new Date(i.json.closed_at);\n    return closedAt >= sinceDate;\n  })\n  .map(i => ({\n    number: i.json.number,\n    title: i.json.title,\n    labels: (i.json.labels || []).map(l => l.name),\n    closedBy: i.json.closed_by?.login || 'N/A',\n  }));\n\n// Process merged PRs\nconst prList = mergedPRs\n  .filter(p => p.json.merged_at && new Date(p.json.merged_at) >= sinceDate)\n  .map(p => ({\n    number: p.json.number,\n    title: p.json.title,\n    author: p.json.user?.login || 'Unknown',\n    mergedAt: p.json.merged_at,\n    additions: p.json.additions || 0,\n    deletions: p.json.deletions || 0,\n  }));\n\nconst summary = {\n  repository: config.githubRepo,\n  period: `${dates.since_date} to ${dates.until_date}`,\n  language: config.language,\n  stats: {\n    totalCommits: commitList.length,\n    closedIssues: issueList.length,\n    mergedPRs: prList.length,\n  },\n  commits: commitList,\n  closedIssues: issueList,\n  mergedPRs: prList,\n};\n\nreturn [{ json: summary }];"
+        "jsCode": "// Aggregate all fetched data into a structured summary\n// Note: GitHub API returns array responses; we access the data directly\nconst commitsRaw = $('Fetch Commits').first().json;\nconst issuesRaw = $('Fetch Closed Issues').first().json;\nconst prsRaw = $('Fetch Merged PRs').first().json;\nconst config = $('Configuration').first().json;\nconst dates = $('Prepare Date Range').first().json;\n\n// GitHub API returns an array directly as the response body\nconst commitArray = Array.isArray(commitsRaw) ? commitsRaw : [];\nconst issueArray = Array.isArray(issuesRaw) ? issuesRaw : [];\nconst prArray = Array.isArray(prsRaw) ? prsRaw : [];\n\n// Process commits\nconst commitList = commitArray.map(c => ({\n  sha: c.sha?.substring(0, 7) || 'N/A',\n  message: (c.commit?.message || '').split('\\n')[0],\n  author: c.commit?.author?.name || 'Unknown',\n  date: c.commit?.author?.date || '',\n}));\n\n// Process closed issues (filter to ones closed in the date range)\nconst sinceDate = new Date(dates.since_date);\nconst issueList = issueArray\n  .filter(i => {\n    const closedAt = new Date(i.closed_at);\n    return closedAt >= sinceDate;\n  })\n  .map(i => ({\n    number: i.number,\n    title: i.title,\n    labels: (i.labels || []).map(l => typeof l === 'string' ? l : l.name),\n    closedBy: i.closed_by?.login || 'N/A',\n  }));\n\n// Process merged PRs\nconst prList = prArray\n  .filter(p => p.merged_at && new Date(p.merged_at) >= sinceDate)\n  .map(p => ({\n    number: p.number,\n    title: p.title,\n    author: p.user?.login || 'Unknown',\n    mergedAt: p.merged_at,\n    additions: p.additions || 0,\n    deletions: p.deletions || 0,\n  }));\n\nconst summary = {\n  repository: config.githubRepo,\n  period: `${dates.since_date} to ${dates.until_date}`,\n  language: config.language,\n  stats: {\n    totalCommits: commitList.length,\n    closedIssues: issueList.length,\n    mergedPRs: prList.length,\n  },\n  commits: commitList,\n  closedIssues: issueList,\n  mergedPRs: prList,\n};\n\nreturn [{ json: summary }];"
       },
       "id": "aggregate-data",
       "name": "Aggregate Data",
@@ -188,24 +181,45 @@
     },
     {
       "parameters": {
-        "model": "={{ $('Configuration').first().json.claudeModel }}",
-        "options": {
-          "temperature": 0.5
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
         },
-        "promptType": "define",
-        "text": "={{ 'You are a technical writer creating a weekly development summary for a GitHub repository.\\n\\nRepository: ' + $json.repository + '\\nPeriod: ' + $json.period + '\\n\\nHere is the raw data for this week:\\n\\n## Commits (' + $json.stats.totalCommits + ' total)\\n' + JSON.stringify($json.commits, null, 2) + '\\n\\n## Closed Issues (' + $json.stats.closedIssues + ' total)\\n' + JSON.stringify($json.closedIssues, null, 2) + '\\n\\n## Merged Pull Requests (' + $json.stats.mergedPRs + ' total)\\n' + JSON.stringify($json.mergedPRs, null, 2) + '\\n\\nWrite a narrative weekly summary in ' + ($json.language === 'FR' ? 'French' : 'English') + ' that:\\n1. Opens with a high-level summary of the week\\'s activity\\n2. Highlights the most impactful changes (merged PRs, key commits)\\n3. Notes closed issues and their significance\\n4. Mentions top contributors by number of commits\\n5. Ends with a brief outlook or call to action\\n\\nUse Markdown formatting with headers, bullet points, and emojis for readability.\\nKeep it concise (300-500 words).\\n\\nOutput ONLY the summary text, no preamble.' }}"
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: $('Configuration').first().json.claudeModel,\n  max_tokens: 1024,\n  messages: [{\n    role: 'user',\n    content: 'You are a technical writer creating a weekly development summary for a GitHub repository.\\n\\nRepository: ' + $json.repository + '\\nPeriod: ' + $json.period + '\\n\\nHere is the raw data for this week:\\n\\n## Commits (' + $json.stats.totalCommits + ' total)\\n' + JSON.stringify($json.commits, null, 2) + '\\n\\n## Closed Issues (' + $json.stats.closedIssues + ' total)\\n' + JSON.stringify($json.closedIssues, null, 2) + '\\n\\n## Merged Pull Requests (' + $json.stats.mergedPRs + ' total)\\n' + JSON.stringify($json.mergedPRs, null, 2) + '\\n\\nWrite a narrative weekly summary in ' + ($json.language === 'FR' ? 'French' : 'English') + ' that:\\n1. Opens with a high-level summary of the week\\'s activity\\n2. Highlights the most impactful changes (merged PRs, key commits)\\n3. Notes closed issues and their significance\\n4. Mentions top contributors by number of commits\\n5. Ends with a brief outlook or call to action\\n\\nUse Markdown formatting with headers, bullet points, and emojis for readability.\\nKeep it concise (300-500 words).\\n\\nOutput ONLY the summary text, no preamble.'\n  }]\n}) }}",
+        "options": {}
       },
       "id": "claude-summary",
       "name": "Generate Summary (Claude)",
-      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1,
-      "position": [1320, 0],
-      "credentials": {
-        "anthropicApi": {
-          "id": "claude-api-credentials",
-          "name": "Claude API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the summary text from Claude API response\nconst response = $input.first().json;\nconst summaryText = response.content?.[0]?.text || 'No summary generated.';\nreturn [{ json: { summaryText } }];"
+      },
+      "id": "extract-summary",
+      "name": "Extract Summary Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 0]
     },
     {
       "parameters": {
@@ -233,7 +247,7 @@
       "name": "Check Destination",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1540, 0]
+      "position": [1760, 0]
     },
     {
       "parameters": {
@@ -241,28 +255,28 @@
         "url": "={{ $('Configuration').first().json.webhookUrl }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  content: '**📋 Weekly Dev Summary — ' + $('Aggregate Data').first().json.repository + '\\nPeriod: ' + $('Aggregate Data').first().json.period + '**\\n\\n' + $json.text || $json.message || $json.output\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  content: '**📋 Weekly Dev Summary — ' + $('Aggregate Data').first().json.repository + '\\nPeriod: ' + $('Aggregate Data').first().json.period + '**\\n\\n' + $json.summaryText\n}) }}",
         "options": {}
       },
       "id": "send-webhook",
       "name": "Send to Webhook (Discord/Slack)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1760, -100]
+      "position": [1980, -100]
     },
     {
       "parameters": {
         "fromEmail": "={{ $env.EMAIL_FROM || 'noreply@example.com' }}",
         "toEmail": "={{ $('Configuration').first().json.emailTo }}",
         "subject": "={{ '📋 Weekly Dev Summary — ' + $('Aggregate Data').first().json.repository + ' (' + $('Aggregate Data').first().json.period + ')' }}",
-        "text": "={{ $json.text || $json.message || $json.output }}",
+        "text": "={{ $json.summaryText }}",
         "options": {}
       },
       "id": "send-email",
       "name": "Send via Email",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [1760, 100],
+      "position": [1980, 100],
       "credentials": {
         "smtp": {
           "id": "smtp-credentials",
@@ -371,6 +385,17 @@
       ]
     },
     "Generate Summary (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary Text": {
       "main": [
         [
           {
