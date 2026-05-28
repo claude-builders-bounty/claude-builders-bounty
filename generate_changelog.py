@@ -108,7 +108,7 @@ def categorize(subject):
 
 
 def get_repo_url():
-    """Derive the repository URL from git remote."""
+    """Derive the repository URL from git remote, stripping any embedded credentials."""
     try:
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
@@ -120,10 +120,14 @@ def get_repo_url():
             m = re.match(r'git@([^:]+):(.+?)(?:\.git)?$', url)
             if m:
                 return f"https://{m.group(1)}/{m.group(2)}"
-            # Handle HTTPS URLs
-            m = re.match(r'https?://(.+?)(?:\.git)?$', url)
+            # Handle HTTPS URLs - strip embedded credentials (user:pass@host)
+            m = re.match(r'https?://(?:[^@]+@)?(.+?)(?:\.git)?$', url)
             if m:
                 return f"https://{m.group(1)}"
+            # Handle ssh://git@host/org/repo.git
+            m = re.match(r'ssh://(?:[^@]+@)?([^/]+)(/.+?)(?:\.git)?$', url)
+            if m:
+                return f"https://{m.group(1)}{m.group(2)}"
     except Exception:
         pass
     return None
@@ -163,7 +167,7 @@ def build_changelog(commits, version=None, repo_url=None):
 def prepend_changelog(new_text, filepath):
     """Insert new changelog entry after the header, handling varied line endings."""
     if os.path.exists(filepath):
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             existing = f.read()
     else:
         existing = "# Changelog\n\n"
@@ -172,13 +176,19 @@ def prepend_changelog(new_text, filepath):
     norm = existing.replace("\r\n", "\n")
     header = "# Changelog\n\n"
     if norm.startswith("# Changelog"):
-        # Find end of header section (first ## or end of content)
-        rest = norm[len(header):] if norm.startswith(header) else norm.split("\n\n", 1)[-1]
-        result = header + new_text + "\n" + rest
+        # Find the first ## section or end of content
+        first_section = norm.find("\n## ")
+        if first_section != -1:
+            before = norm[:first_section + 1]
+            after = norm[first_section + 1:]
+            result = before + new_text + "\n" + after
+        else:
+            # No ## sections, append after header
+            result = header + new_text + "\n" + norm[len(header):]
     else:
         result = header + new_text + "\n" + norm
 
-    with open(filepath, "w", newline="\n") as f:
+    with open(filepath, "w", newline="\n", encoding="utf-8") as f:
         f.write(result)
 
 
