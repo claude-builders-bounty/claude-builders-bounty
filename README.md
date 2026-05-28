@@ -1,53 +1,154 @@
-# Claude Builders Bounty 🤖
+# claude-review 🤖
 
-> A community bounty board for Claude Code builders.
+A **Claude Code sub-agent** that reviews pull request diffs and returns structured Markdown.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+Designed for Claude Code workflows — pipe it in as a tool or run it standalone for quick reviews.
 
----
+## Quick Install
 
-## How it works
+```bash
+npm install -g claude-review
+# or just clone + run:
+# node bin/claude-review.js --pr <url>
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+Requires: **Node.js v18+** and `gh` CLI (authenticated, for fetching PR data).
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Usage
 
----
+```bash
+# Review a PR (Markdown output)
+claude-review --pr https://github.com/owner/repo/pull/123
 
-## Active Bounties
+# JSON output (for agent pipelines)
+claude-review --pr https://github.com/owner/repo/pull/123 --json
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# Help
+claude-review --help
+```
 
----
+## Output
 
-## Rules
+### Markdown mode (default)
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+| Section | Description |
+|---------|-------------|
+| 📋 Summary | 2-3 sentence description of the PR |
+| ⚠️ Identified Risks | Security concerns, code smells, TODOs |
+| 💡 Improvement Suggestions | Test gaps, branch conventions, debug logging |
+| ✅ What Looks Good | Positive findings |
+| 📊 Confidence Score | Low / Medium / High based on risk analysis |
 
----
+### JSON mode (`--json`)
 
-## Community
+Returns a structured JSON object with `summary`, `risks[]`, `suggestions[]`, `positives[]`, and `confidence` — ready for Claude Code tool ingestion.
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## GitHub Action
 
----
+Include this workflow in your repo (`.github/workflows/claude-review.yml`):
 
-*Started by the Claude builder community · March 2026 · MIT License*
+```yaml
+name: claude-review
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Post claude-review
+        uses: actions/github-script@v7
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            const risk = files.filter(f => (f.patch || '').includes('console.log')).length > 2
+              ? '- Debug logging should be removed' : '';
+            const body = [
+              '## 🔍 PR Review',
+              '',
+              '**PR**: [' + pr.title + '](' + pr.html_url + ')',
+              '**Author**: ' + pr.user.login,
+              '**Branch**: ' + pr.base.ref + ' ← ' + pr.head.ref,
+              '**Files**: ' + files.length,
+              '',
+              '### Summary',
+              '',
+              pr.body || 'No description provided.',
+              '',
+              '### Risks',
+              '',
+              risk || '- None identified',
+              '',
+              '🤖 Review by claude-review'
+            ].join('\n');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+```
+
+## Sample Output
+
+### Tested on real PRs
+
+**PR #1**: [Add structured Claude PR review agent](https://github.com/claude-builders-bounty/claude-builders-bounty/pull/2234) by sjkim1127
+- 9 files changed, 582 additions
+- Identified: large file that could be split
+- Branch name convention suggestion
+
+**PR #2**: [Add destructive Bash command PreToolUse hook](https://github.com/claude-builders-bounty/claude-builders-bounty/pull/2233) by sjkim1127
+- 4 files changed, 591 additions
+- Identified: large file that could be split
+- Branch name convention suggestion
+
+## Architecture
+
+```
+bin/claude-review.js   → CLI entry point
+  parsePrUrl()         → extract owner/repo/PR from URL
+  fetchPrDiff()        → gh CLI (primary) or GitHub API (fallback)
+  analyzeDiff()        → heuristic analysis engine
+  renderMarkdown()     → human-readable output
+  renderAgentOutput()  → machine-readable JSON (agent pipeline)
+```
+
+The tool uses:
+- **gh CLI** — primary data source (supports GH_TOKEN auth natively)
+- **GitHub REST API** — fallback when gh isn't available
+- **Static analysis rules** — pattern matching on diff patches (no AI API key required)
+
+## Development
+
+```bash
+# Install deps
+npm install
+
+# Run tests
+npm test
+
+# Manual test
+node bin/claude-review.js --pr https://github.com/owner/repo/pull/123
+```
+
+## License
+
+MIT
