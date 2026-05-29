@@ -43,6 +43,34 @@ You're in the right place.
 
 ---
 
+## Changelog Generator Setup
+
+### 🚀 Quick Start (3 Steps)
+1. Make the script executable: 
+   ```bash
+   chmod +x changelog.sh
+   ```
+2. Run the generator to automatically update the changelog:
+   ```bash
+   ./changelog.sh
+   ```
+3. Open and check the newly generated/updated `CHANGELOG.md`!
+
+### ⚙️ Advanced CLI Options
+The generator is packed with professional options for ultimate version control pipelines:
+```bash
+# Generate since a specific tag or commit hash
+./changelog.sh --since v1.2.0
+
+# Preview output in console without making any file changes
+./changelog.sh --dry-run
+
+# Show full usage instructions
+./changelog.sh --help
+```
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
