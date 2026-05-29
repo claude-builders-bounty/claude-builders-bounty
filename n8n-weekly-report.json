@@ -1,0 +1,133 @@
+{
+  "name": "Weekly GitHub Repo Activity Report",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-1",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cron", "expression": "0 17 * * 5"}]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repository || 'https://api.github.com/repos/owner/repo' }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "n8n-weekly-report-bot"
+          }
+        }
+      },
+      "id": "github-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 200],
+      "parameters": {
+        "url": "={{ $json.repository + '/commits?since=' + $json.since || 'https://api.github.com/repos/owner/repo/commits?since=' + new Date(Date.now() - 7*24*60*60*1000).toISOString() }}",
+        "options": {}
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repository || 'https://api.github.com/repos/owner/repo' }}"
+      },
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 350],
+      "parameters": {
+        "url": "={{ $json.repository + '/issues?state=closed&since=' + $json.since || 'https://api.github.com/repos/owner/repo/issues?state=closed&since=' + new Date(Date.now() - 7*24*60*60*1000).toISOString() }}",
+        "options": {}
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repository || 'https://api.github.com/repos/owner/repo' }}"
+      },
+      "id": "github-merges",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 500],
+      "parameters": {
+        "url": "={{ $json.repository + '/pulls?state=closed&sort=updated&direction=desc&per_page=20' || '' }}",
+        "options": {}
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CLAUDE_API_KEY ? 'https://api.anthropic.com/v1/messages' : 'https://api.openai.com/v1/chat/completions' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2000
+            },
+            {
+              "name": "messages",
+              "value": "=[\n  {\n    \"role\": \"user\",\n    \"content\": \"Generate a weekly narrative summary of GitHub repo activity. Use the data below.\\n\\n## Commits\\n{{ $('Get Commits').item.json | json }}\\n\\n## Closed Issues\\n{{ $('Get Closed Issues').item.json | json }}\\n\\n## Merged PRs\\n{{ $('Get Merged PRs').item.json | json }}\\n\\nFormat as a markdown report with sections: Highlights, Commits, Issues Resolved, Merged PRs, and Shoutouts.\"\n            }\n          ]\n        }
+      },
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 350],
+      "parameters": {
+        "options": {}
+      }
+    },
+    {
+      "parameters": {
+        "from": {
+          "name": "reports@yourdomain.com",
+          "email": "reports@yourdomain.com"
+        },
+        "to": ["team@yourdomain.com"],
+        "subject": "Weekly GitHub Activity Report - {{ $now.format('YYYY-MM-DD') }}",
+        "text": "={{ $json.content || $json.choices[0].message.content }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "email-send",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.2,
+      "position": [850, 350],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [[{ "node": "Get Commits", "type": "main" }, { "node": "Get Closed Issues", "type": "main" }, { "node": "Get Merged PRs", "type": "main" }]]
+    },
+    "Get Commits": { "main": [[{ "node": "Claude API", "type": "main" }]] },
+    "Get Closed Issues": { "main": [[{ "node": "Claude API", "type": "main" }]] },
+    "Get Merged PRs": { "main": [[{ "node": "Claude API", "type": "main" }]] },
+    "Claude API": { "main": [[{ "node": "Send Email", "type": "main" }]] }
+  }
+}
