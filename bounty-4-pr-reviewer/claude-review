@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""
+Claude Code PR Reviewer Sub-Agent
+Usage: claude-review --pr https://github.com/owner/repo/pull/123
+       claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+       claude-review --pr https://github.com/owner/repo/pull/123 --json
+
+Takes a GitHub PR URL, fetches the diff + metadata via gh CLI, analyzes
+the changes, and outputs a structured Markdown review.
+
+Designed to be invoked as a Claude Code sub-agent (SKILL.md) or standalone CLI.
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+def run_gh(args: list[str], check: bool = True) -> str:
+    """Run gh CLI and return stdout."""
+    cmd = ["gh"] + args
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        sys.stderr.write(f"gh command failed: {' '.join(cmd)}\n{result.stderr}\n")
+        sys.exit(1)
+    return result.stdout
+
+
+def parse_pr_url(url: str) -> tuple[str, str, str]:
+    """Parse GitHub PR URL into (owner, repo, pr_number)."""
+    pattern = r"github\.com/([^/]+)/([^/]+)/pull/(\d+)"
+    m = re.search(pattern, url)
+    if not m:
+        sys.stderr.write(f"Invalid PR URL: {url}\nExpected format: https://github.com/owner/repo/pull/123\n")
+        sys.exit(1)
+    return m.group(1), m.group(2), m.group(3)
+
+
+def get_pr_data(owner: str, repo: str, pr_number: str) -> dict:
+    """Fetch PR metadata and diff via gh CLI."""
+    repo_slug = f"{owner}/{repo}"
+
+    pr_json = run_gh(["pr", "view", pr_number, "--repo", repo_slug, "--json",
+                       "title,body,author,state,additions,deletions,changedFiles,labels,url,createdAt,baseRefName,headRefName"])
+    pr_data = json.loads(pr_json)
+
+    diff = run_gh(["pr", "diff", pr_number, "--repo", repo_slug])
+
+    # Also get the list of files changed
+    files_json = run_gh(["pr", "view", pr_number, "--repo", repo_slug, "--json", "files"])
+    files_data = json.loads(files_json)
+
+    return {
+        "pr": pr_data,
+        "diff": diff,
+        "files": files_data.get("files", [])
+    }
+
+
+def analyze_diff(diff: str, files: list) -> dict:
+    """Analyze diff for key patterns and generate review insights."""
+    lines = diff.split("\n")
+    total_additions = sum(1 for l in lines if l.startswith("+") and not l.startswith("+++"))
+    total_deletions = sum(1 for l in lines if l.startswith("-") and not l.startswith("---"))
+
+    # Categorize changes
+    risks = []
+    suggestions = []
+
+    # Check for risky patterns
+    full_diff = diff
+    if re.search(r'(?i)\brm\s+-rf\b', full_diff):
+        risks.append("Contains `rm -rf` — verify this is intentional and scoped correctly")
+    if re.search(r'(?i)\b(eval|exec|system|subprocess|os\.system)\s*\(', full_diff):
+        risks.append("Contains potentially dangerous system calls (eval/exec/system) — review carefully")
+    if re.search(r'(?i)\b(DROP\s+TABLE|TRUNCATE\s+TABLE|DELETE\s+FROM)\b', full_diff):
+        risks.append("Contains destructive SQL operations — ensure backups exist")
+    if re.search(r'(?i)\bpassword\s*[=:]\s*[\'"][^\'"]+[\'"]', full_diff):
+        risks.append("⚠️ **CRITICAL**: Hardcoded credentials detected in diff")
+    if re.search(r'(?i)\bTODO|FIXME|HACK\b', full_diff):
+        risks.append("Contains TODO/FIXME/HACK markers — may indicate incomplete work")
+    if re.search(r'(?i)\bconsole\.log\(', full_diff) and any(f.get("path", "").endswith((".ts", ".tsx", ".js")) for f in files):
+        suggestions.append("Remove debug `console.log` statements before merging")
+    if re.search(r'(?i)(\.catch|try\s*\{)', full_diff) and not re.search(r'(?i)(error|err)\s*(\)|\)\s*=>|exception)', full_diff):
+        suggestions.append("Error handling: caught exceptions appear to be silently swallowed")
+    if total_additions > 500:
+        risks.append(f"Large PR: {total_additions} lines added — consider splitting for easier review")
+    if total_deletions > 300:
+        risks.append(f"Large deletion: {total_deletions} lines removed — verify no unintended removals")
+
+    # Detect file type categories
+    categories = {"Added": [], "Modified": [], "Removed": [], "Renamed": []}
+    for f in files:
+        path = f.get("path", "")
+        status = f.get("status", "modified")
+        if status == "added":
+            categories["Added"].append(path)
+        elif status == "removed":
+            categories["Removed"].append(path)
+        elif status == "renamed":
+            categories["Renamed"].append(path)
+        else:
+            categories["Modified"].append(path)
+
+    # Compute confidence based on diff size and patterns
+    if total_additions + total_deletions < 50:
+        confidence = "High"
+    elif total_additions + total_deletions < 200:
+        confidence = "Medium"
+    else:
+        confidence = "Low"
+
+    return {
+        "summary_stats": {
+            "additions": total_additions,
+            "deletions": total_deletions,
+            "files_changed": len(files),
+        },
+        "categories": categories,
+        "risks": risks,
+        "suggestions": suggestions,
+        "confidence": confidence,
+    }
+
+
+def format_markdown(pr_data: dict, analysis: dict) -> str:
+    """Format review as structured Markdown."""
+    pr = pr_data["pr"]
+    stats = analysis["summary_stats"]
+
+    lines = [
+        f"# PR Review: {pr.get('title', 'Untitled')}",
+        "",
+        f"**PR**: [{pr.get('url', '')}]({pr.get('url', '')})",
+        f"**Author**: {pr.get('author', {}).get('login', 'unknown')}",
+        f"**Branch**: `{pr.get('headRefName', '?')}` → `{pr.get('baseRefName', '?')}`",
+        f"**State**: {pr.get('state', '?')}",
+        f"**Date**: {pr.get('createdAt', '?')}",
+        f"**Stats**: +{stats['additions']} / -{stats['deletions']} | {stats['files_changed']} files",
+        "",
+    ]
+
+    # Labels
+    labels = pr.get("labels", [])
+    if labels:
+        label_names = [l.get("name", "") for l in labels]
+        lines.append(f"**Labels**: {', '.join(f'`{l}`' for l in label_names)}")
+        lines.append("")
+
+    # Summary
+    lines.append("## Summary of Changes")
+    lines.append("")
+    file_list = analysis["categories"]
+    added = file_list.get("Added", [])
+    modified = file_list.get("Modified", [])
+    removed = file_list.get("Removed", [])
+    renamed = file_list.get("Renamed", [])
+
+    summary_parts = []
+    if added:
+        summary_parts.append(f"**Added** {len(added)} file(s)")
+    if modified:
+        summary_parts.append(f"**Modified** {len(modified)} file(s)")
+    if removed:
+        summary_parts.append(f"**Removed** {len(removed)} file(s)")
+    if renamed:
+        summary_parts.append(f"**Renamed** {len(renamed)} file(s)")
+    lines.append("This PR " + ", ".join(summary_parts) + ".")
+
+    # Generate a 2-3 sentence summary
+    if pr.get("body"):
+        # Try to extract first meaningful sentence from PR body
+        body_preview = pr["body"].strip().split("\n")[0][:200]
+        lines.append(f"> {body_preview}")
+    lines.append("")
+
+    # Change details
+    lines.append("### Files Changed")
+    lines.append("")
+    lines.append("| File | Status |")
+    lines.append("|------|--------|")
+    for path in added:
+        lines.append(f"| `{path}` | Added |")
+    for path in modified:
+        lines.append(f"| `{path}` | Modified |")
+    for path in removed:
+        lines.append(f"| `{path}` | Removed |")
+    for path in renamed:
+        lines.append(f"| `{path}` | Renamed |")
+    lines.append("")
+
+    # Risks
+    lines.append("## Identified Risks")
+    lines.append("")
+    risks = analysis.get("risks", [])
+    if risks:
+        for risk in risks:
+            lines.append(f"- {risk}")
+    else:
+        lines.append("- No significant risks identified.")
+    lines.append("")
+
+    # Suggestions
+    lines.append("## Improvement Suggestions")
+    lines.append("")
+    suggestions = analysis.get("suggestions", [])
+    if suggestions:
+        for s in suggestions:
+            lines.append(f"- {s}")
+    else:
+        lines.append("- No specific suggestions.")
+    lines.append("")
+
+    # Confidence
+    lines.append("## Confidence Score")
+    lines.append("")
+    conf = analysis.get("confidence", "Medium")
+    lines.append(f"**{conf}** — ", end="")
+    if conf == "High":
+        lines.append("Small, focused change with clear scope.")
+    elif conf == "Medium":
+        lines.append("Moderate change; manual review of key files recommended.")
+    else:
+        lines.append("Large or complex change; thorough manual review recommended.")
+    lines.append("")
+
+    # Footer
+    lines.append("---")
+    lines.append(f"*Review generated by claude-review on {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}*")
+
+    return "\n".join(lines)
+
+
+def format_json(pr_data: dict, analysis: dict) -> str:
+    """Format review as JSON."""
+    return json.dumps({
+        "pr": pr_data["pr"],
+        "analysis": analysis,
+        "generated_at": datetime.now().isoformat(),
+    }, indent=2)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Claude Code PR Reviewer — analyze PR diffs and output structured review"
+    )
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
+    parser.add_argument("--json", action="store_true", help="Output as JSON instead of Markdown")
+    parser.add_argument("--diff-only", action="store_true", help="Only print the raw diff (for piping into Claude)")
+    args = parser.parse_args()
+
+    owner, repo, pr_number = parse_pr_url(args.pr)
+
+    data = get_pr_data(owner, repo, pr_number)
+
+    if args.diff_only:
+        output = data["diff"]
+        if args.output:
+            Path(args.output).write_text(output)
+        else:
+            sys.stdout.write(output)
+        return
+
+    analysis = analyze_diff(data["diff"], data["files"])
+
+    if args.json:
+        output = format_json(data, analysis)
+    else:
+        output = format_markdown(data, analysis)
+
+    if args.output:
+        Path(args.output).write_text(output)
+        print(f"Review saved to {args.output}", file=sys.stderr)
+    else:
+        sys.stdout.write(output)
+
+
+if __name__ == "__main__":
+    main()
