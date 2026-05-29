@@ -50,4 +50,25 @@ You're in the right place.
 
 ---
 
+---
+
+## Hooks
+
+### Pre-tool-use guard — `hooks/guard.sh`
+
+A Claude Code `pre-tool-use` hook that intercepts dangerous bash commands before execution.
+
+**Blocks:** `rm -rf /`, `dd if=`, fork bombs, `mkfs`, `DROP TABLE`, `TRUNCATE`, `DELETE FROM` (no WHERE), `git push --force`, `wget/curl | bash`, `chmod -R 777 /`, `sudo rm -rf`, `shutdown`, and more.
+
+**Installation:**
+
+```bash
+cp -r .claude/hooks ~/.claude/hooks
+cp .claude/settings.json .claude/settings.json  # or merge into your existing settings
+```
+
+All blocked attempts are logged to `~/.claude/hooks/blocked.log` with timestamp, command, and project path. See `.claude/hooks/guard.sh` to customize the allowlist/blocklist.
+
+---
+
 *Started by the Claude builder community · March 2026 · MIT License*
