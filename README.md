@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Templates
+
+- [`CLAUDE.md`](./CLAUDE.md) - opinionated production template for greenfield Next.js 15 App Router + SQLite + better-sqlite3 + TypeScript SaaS projects.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
