@@ -1,53 +1,65 @@
-# Claude Builders Bounty 🤖
+# Claude Code Safety Hook 🔒
 
-> A community bounty board for Claude Code builders.
+A pre-tool-use hook for [Claude Code](https://claude.ai) that blocks dangerous bash commands before they execute.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## What It Blocks
 
----
+| Pattern | Risk |
+|---------|------|
+| `rm -rf /` or `rm -rf <anything>` | Recursive file deletion |
+| `DROP TABLE` | Irreversible database loss |
+| `TRUNCATE` | Bulk data deletion |
+| `DELETE FROM` without `WHERE` | Mass row deletion |
+| `git push --force` | Branch history overwrite |
+| `git reset --hard` | Commit history rewrite |
+| `mkfs`, `fdisk`, `dd`, `format` | Disk formatting |
+| `chmod 777 /` | Root permissions escalation |
 
-## How it works
+Safe operations like `rm -rf node_modules` or `rm -rf target/` pass through normally.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Installation
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+# 1. Install the hook
+mkdir -p ~/.claude/hooks && cp safety-hook.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/safety-hook.py
 
----
+# 2. Register the hook in Claude Code settings
+cp settings.json ~/.claude/settings.json
+```
 
-## Active Bounties
+**That's it.** Restart Claude Code. The hook activates on your next session.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+> ⚠️ If `~/.claude/settings.json` already exists, merge the `hooks` block rather than overwriting.
 
----
+## How It Works
 
-## Rules
+Claude Code fires a `PreToolUse` event before every tool call. The hook:
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+1. Receives the tool call as JSON on stdin
+2. Checks bash commands against dangerous patterns
+3. **Blocked**: Logs to `~/.claude/hooks/blocked.log` + returns `{"skip": true}` with explanation
+4. **Safe**: Allows execution with zero overhead
 
----
+## Blocked Log
 
-## Community
+Every blocked command is timestamped and logged:
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+```json
+{"timestamp": "2026-05-29T05:00:00Z", "command": "rm -rf /important", "reason": "Recursive force delete (rm -rf)", "project_path": "/home/user/project"}
+```
 
----
+Log location: `~/.claude/hooks/blocked.log`
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## Testing
+
+```bash
+# Simulate a blocked command
+echo '{"event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /etc"}}' | python3 ~/.claude/hooks/safety-hook.py
+
+# Simulate a safe command (no output = allowed)
+echo '{"event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls -la"}}' | python3 ~/.claude/hooks/safety-hook.py
+```
+
+## License
+
+MIT
