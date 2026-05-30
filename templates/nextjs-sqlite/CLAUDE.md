@@ -10,6 +10,8 @@
 - **Validation**: Zod (schemas co-located with routes or actions)
 - **Styling**: Tailwind CSS v4 + `shadcn/ui`
 - **Package manager**: `pnpm`
+- **Testing**: Vitest + @testing-library/react
+- **CI**: GitHub Actions (lint, typecheck, test on every PR)
 
 ## Folder structure
 
