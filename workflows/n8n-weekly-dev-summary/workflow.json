@@ -1,0 +1,336 @@
+{
+  "name": "Weekly Dev Summary (GitHub + Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "triggerDayOfWeek": [
+                5
+              ]
+            }
+          ]
+        }
+      },
+      "id": "t1",
+      "name": "Weekly Cron (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_api }}/commits?since={{ $json.week_start }}&until={{ $json.week_end }}&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth"
+      },
+      "id": "n1",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        200
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "gh",
+          "name": "GitHub PAT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_api }}/issues?state=closed&since={{ $json.week_start }}&until={{ $json.week_end }}&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth"
+      },
+      "id": "n2",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        340
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "gh",
+          "name": "GitHub PAT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_api }}/pulls?state=closed&sort=updated&direction=desc&since={{ $json.week_start }}&until={{ $json.week_end }}&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth"
+      },
+      "id": "n3",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        480
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "gh",
+          "name": "GitHub PAT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const n=new Date();const d=n.getDay();\nconst df=(d===0?-6:1)-d;\nconst m=new Date(n);m.setDate(n.getDate()+df);m.setHours(0,0,0,0);\nconst e=new Date(m);e.setDate(m.getDate()+6);e.setHours(23,59,59,999);\nreturn [{json:{repo_owner:$env.REPO_OWNER,repo_name:$env.REPO_NAME,\nrepo_api:\"https://api.github.com/repos/\"+$env.REPO_OWNER+\"/\"+$env.REPO_NAME,\nweek_start:m.toISOString(),week_end:e.toISOString(),\nlanguage:$env.SUMMARY_LANGUAGE||\"EN\",destination:$env.DESTINATION_WEBHOOK||\"\"}}];"
+      },
+      "id": "d1",
+      "name": "Compute Week Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "2048"
+            },
+            {
+              "name": "system",
+              "value": "You are a technical project manager writing a weekly development summary. Be concise but informative. Group by category: features, fixes, infrastructure. Include specific numbers and issue/PR references."
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\":\"user\",\"content\":\"Generate a weekly dev summary in \" + $json.language + \" for \" + $json.repo_owner + \"/\" + $json.repo_name + \". Commits: \" + $json.commits.length + \". Issues: \" + $json.issues.length + \". Merged PRs: \" + $json.prs.filter(function(p){return p.merged}).length + \".\\n\\nCOMMITS:\\n\" + $json.commits.slice(0,30).map(function(c,i){return (i+1)+\". \"+c.commit.message.split(\"\\n\")[0]+\" - \"+c.commit.author.name}).join(\"\\n\") + \"\\n\\nISSUES:\\n\" + $json.issues.slice(0,20).map(function(it,j){return (j+1)+\".#\"+it.number+\" \"+it.title}).join(\"\\n\") + \"\\n\\nMERGED PRs:\\n\" + $json.prs.filter(function(p){return p.merged}).slice(0,15).map(function(p,k){return (k+1)+\".#\"+p.number+\" \"+p.title+\" by \"+p.user.login}).join(\"\\n\")\"}]"
+            }
+          ]
+        }
+      },
+      "id": "c1",
+      "name": "Claude Narrative Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const c=$items(1).json||[];const i=$items(2).json||[];\nconst p=$items(3).json||[];const cfg=$items(0).json||{};\nfunction P(d){if(Array.isArray(d))return d;if(d&&d.data&&Array.isArray(d.data))return d.data;return d?[d]:[];}\nreturn [{json:Object.assign({},cfg,{commits:P(c),issues:P(i),prs:P(p)})}];"
+      },
+      "id": "m1",
+      "name": "Merge Data for Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.destination }}",
+        "sendBody": true,
+        "specifyBody": "string",
+        "jsonBody": "{\"text\":\"Weekly Dev Summary - \"+$json.repo_owner+\"/\"+$json.repo_name+\"\\n\\n\"+$json.summary}"
+      },
+      "id": "s1",
+      "name": "Post to Slack/Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        200
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "let b=$json;let s=\"\";\nif(b.content&&Array.isArray(b.content)){let t=b.content.find(function(x){return x.type===\"text\"});s=t?t.text:\"\";}\nelse if(b.json&&b.json.content){let c=Array.isArray(b.json.content)?b.json.content:[b.json.content];\nlet t2=c.find(function(x){return x.type===\"text\"});s=t2?t2.text:JSON.stringify(b.json);}\nelse{s=JSON.stringify(b);}\nlet base=b.json||b;\nreturn [{json:Object.assign({},base,{summary:s})}];"
+      },
+      "id": "p1",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM }}",
+        "toEmail": "={{ $env.SMTP_TO }}",
+        "subject": "Weekly Dev Summary - {{ $json.repo_owner }}/{{ $json.repo_name }}",
+        "emailType": "html",
+        "message": "<h2>Weekly Development Summary</h2><p><strong>Repo:</strong> {{ $json.repo_owner }}/{{ $json.repo_name }}</p><p><strong>Period:</strong> {{ $json.week_start.slice(0,10) }} to {{ $json.week_end.slice(0,10) }}</p><hr/>{{ ($json.summary||\"\").replace(/\\\\n/g,\"<br/>\") }}<hr/><p><em>Generated by n8n + Claude API</em></p>"
+      },
+      "id": "e1",
+      "name": "Send Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        920,
+        480
+      ],
+      "continueOnFail": true,
+      "credentials": {
+        "smtp": {
+          "id": "smtp",
+          "name": "SMTP Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Friday 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Compute Week Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Week Range": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Data for Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge Data for Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge Data for Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Data for Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Narrative Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Narrative Summary": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Post to Slack/Discord",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
