@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+Use `changelog.sh` or the Claude Code skill in `skills/generate-changelog/SKILL.md` to create a structured `CHANGELOG.md` from git commits since the latest tag.
+
+1. Run `bash changelog.sh` from the repository root.
+2. Review the generated `CHANGELOG.md` sections: `Added`, `Fixed`, `Changed`, and `Removed`.
+3. Commit the generated changelog after confirming the categories.
+
+Set `CHANGELOG_OUTPUT=path/to/file.md` to write to a custom path.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
