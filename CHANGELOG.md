@@ -1,0 +1,15 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+Generated from git history range: `main`.
+
+## Unreleased - 2026-05-30
+
+### Added
+
+- Initial README with bounty board ([`1aeae2a`](https://github.com/claude-builders-bounty/claude-builders-bounty/commit/1aeae2adc82d33f971fd7731644348dcdd24b5a6))
+
+### Changed
+
+- Initial commit ([`a80a580`](https://github.com/claude-builders-bounty/claude-builders-bounty/commit/a80a580e34190a6bb8649a1b75a9fec8312bea5c))
