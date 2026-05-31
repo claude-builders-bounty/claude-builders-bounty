@@ -1,0 +1,216 @@
+{
+  "name": "GitHub Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "expression": "1"
+            }
+          ]
+        }
+      },
+      "id": "trigger-node",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "weekly-trigger"
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getCommits",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "since": "={{ $json.lastWeek }}"
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 200],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "state": "closed",
+        "since": "={{ $json.lastWeek }}"
+      },
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 400],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "state": "closed"
+      },
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate last week date\nconst now = new Date();\nconst lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\n// Process commits\nconst commits = $input.all()[0]?.json || [];\nconst commitCount = Array.isArray(commits) ? commits.length : 0;\nconst commitAuthors = [...new Set(commits.map(c => c.commit?.author?.name || 'Unknown'))];\n\n// Process issues\nconst issues = $input.all()[1]?.json || [];\nconst closedIssues = Array.isArray(issues) ? issues.filter(i => i.closed_at > lastWeek.toISOString()) : [];\n\n// Process PRs\nconst prs = $input.all()[2]?.json || [];\nconst mergedPRs = Array.isArray(prs) ? prs.filter(p => p.merged_at && p.merged_at > lastWeek.toISOString()) : [];\n\nreturn [{\n  json: {\n    lastWeek: lastWeek.toISOString(),\n    stats: {\n      commits: commitCount,\n      closedIssues: closedIssues.length,\n      mergedPRs: mergedPRs.length,\n      contributors: commitAuthors\n    },\n    details: {\n      commits: commits.slice(0, 10),\n      issues: closedIssues.slice(0, 5),\n      prs: mergedPRs.slice(0, 5)\n    }\n  }\n}];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "options": {},
+        "messages": {
+          "message": [
+            {
+              "role": "system",
+              "content": "You are a technical writer creating weekly development summaries. Write in a narrative, engaging style."
+            },
+            {
+              "role": "user",
+              "content": "=Create a weekly development summary for {{ $env.GITHUB_OWNER }}/{{ $env.GITHUB_REPO }} in {{ $env.LANGUAGE || 'English' }}.\n\nStats:\n- {{ $json.stats.commits }} commits\n- {{ $json.stats.closedIssues }} issues closed\n- {{ $json.stats.mergedPRs }} PRs merged\n- Contributors: {{ $json.stats.contributors.join(', ') }}\n\nRecent commits:\n{{ JSON.stringify($json.details.commits.map(c => c.commit?.message?.split('\\n')[0]).filter(Boolean), null, 2) }}\n\nWrite a friendly, narrative summary highlighting key achievements and thanking contributors."
+            }
+          ]
+        }
+      },
+      "id": "claude-api",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "sendOptions": {},
+        "options": {},
+        "fromEmail": "={{ $env.FROM_EMAIL }}",
+        "toEmail": "={{ $env.TO_EMAIL }}",
+        "subject": "Weekly Dev Summary: {{ $env.GITHUB_REPO }}",
+        "text": "={{ $json.summary }}"
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-creds",
+          "name": "SMTP Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}
