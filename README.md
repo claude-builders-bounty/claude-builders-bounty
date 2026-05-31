@@ -34,6 +34,10 @@ You're in the right place.
 
 ---
 
+## Included Submission Docs
+
+- [Claude PR Reviewer](./README-pr-reviewer.md)
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
