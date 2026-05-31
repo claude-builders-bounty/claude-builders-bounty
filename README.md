@@ -43,6 +43,14 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. Run `python generate_changelog.py` or `bash changelog.sh`.
+2. Review the generated `CHANGELOG.md`.
+3. Use `--since <tag>` to override the latest git tag.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
