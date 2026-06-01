@@ -22,6 +22,14 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+1. Run `bash changelog.sh` from the repository root
+2. Review the generated `CHANGELOG.md`
+3. Commit the changelog when the categories look right
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
