@@ -43,6 +43,16 @@ You're in the right place.
 
 ---
 
+## Review a Pull Request
+
+1. Run `claude-review --pr https://github.com/owner/repo/pull/123`.
+2. Review the generated Markdown comment.
+3. Post the comment manually from your GitHub account when appropriate.
+
+On Windows, run `.\claude-review.cmd --pr https://github.com/owner/repo/pull/123`.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
