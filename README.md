@@ -50,4 +50,18 @@ You're in the right place.
 
 ---
 
+## Submissions
+
+### 🔒 [#3] HOOK: Block destructive bash commands
+
+**Install** (2 commands):
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/pre-tool-use ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use
+```
+
+Blocks: `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, `DELETE FROM` without `WHERE`.  
+Logs all blocked attempts to `~/.claude/hooks/blocked.log`.
+
+---
+
 *Started by the Claude builder community · March 2026 · MIT License*
