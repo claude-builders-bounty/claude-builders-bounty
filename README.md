@@ -34,6 +34,21 @@ You're in the right place.
 
 ---
 
+## Destructive Bash guard hook
+
+This repository includes a Claude Code PreToolUse hook for bounty #3.
+
+Setup in two commands:
+
+```bash
+python hooks/install_block_hook.py
+python hooks/block_destructive_bash.py < hooks/sample-dangerous-input.json
+```
+
+The hook blocks `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` commands that do not include a `WHERE` clause. See `HOOK_README.md` for the full behavior and Claude Code settings snippet.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
