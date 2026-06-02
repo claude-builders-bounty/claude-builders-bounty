@@ -1,0 +1,339 @@
+{
+  "name": "Weekly GitHub Summary (n8n)",
+  "nodes": [
+    {
+      "id": "trigger-schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "config-vars",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repo",
+              "value": "={{ $json.repo || 'owner/repo' }}"
+            },
+            {
+              "name": "discordWebhook",
+              "value": "={{ $json.discordWebhook || 'https://discord.com/api/webhooks/your-webhook-id/your-webhook-token' }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $json.language || 'EN' }}"
+            },
+            {
+              "name": "claudeApiKey",
+              "value": "={{ $json.claudeApiKey || 'sk-ant-...' }}"
+            },
+            {
+              "name": "claudeModel",
+              "value": "claude-sonnet-4-20250514"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "date-range",
+      "name": "Compute Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "parameters": {
+        "language": "javaScript",
+        "code": "// Get the current date and compute the past 7 days\nconst now = new Date();\n\n// Calculate last Friday (7 days ago from the trigger Friday)\n// Since the workflow runs every Friday at 17:00, we want the previous 7 days\nconst endDate = new Date(now);\nconst startDate = new Date(now);\nstartDate.setDate(startDate.getDate() - 7);\n\n// Format as ISO strings for GitHub API\nconst since = startDate.toISOString();\nconst until = endDate.toISOString();\n\n// Human-readable week range\nconst weekStart = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });\nconst weekEnd = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    since: since,\n    until: until,\n    weekLabel: `${weekStart} – ${weekEnd}`\n  }\n}];"
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 200],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $json['repo'] + '/commits?since=' + $json['since'] + '&until=' + $json['until'] + '&per_page=100' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "GitHub Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 350],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $json['repo'] + '/issues?state=closed&since=' + $json['since'] + '&per_page=100&sort=updated&direction=desc' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "GitHub PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 500],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $json['repo'] + '/pulls?state=closed&sort=updated&direction=desc&per_page=100' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "merge-data",
+      "name": "Merge GitHub Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "parameters": {
+        "language": "javaScript",
+        "code": "// Aggregate all GitHub data and build prompt for Claude\nconst inputs = $input.all();\n\n// The merge node combines 3 inputs: [commits, issues, prs]\n// Each input may have multiple items\n\n// Parse the merged data structure\n// Input[0] = commits from first GitHub call\n// Input[1] = issues from second GitHub call\n// Input[2] = PRs from third GitHub call\n\nconst commits = inputs[0] ? inputs[0].json : [];\nconst issues = inputs[1] ? inputs[1].json : [];\nconst prs = inputs[2] ? inputs[2].json : [];\n\nconst config = inputs[0]?.json || {};\nconst repo = $json['repo'] || 'owner/repo';\nconst language = ($json['language'] || 'EN').toUpperCase();\nconst weekLabel = $json['weekLabel'] || '';\n\n// Filter issues to only closed issues (API returns both issues and PRs)\nconst closedIssues = (Array.isArray(issues) ? issues : []).filter(i => !i.pull_request);\nconst mergedPRs = (Array.isArray(prs) ? prs : []).filter(pr => pr.merged_at);\nconst commitList = Array.isArray(commits) ? commits : [];\n\n// Count by author\nconst commitAuthors = {};\ncommitList.forEach(c => {\n  const author = c.commit?.author?.name || 'Unknown';\n  commitAuthors[author] = (commitAuthors[author] || 0) + 1;\n});\n\nconst issueLabels = {};\nclosedIssues.forEach(issue => {\n  (issue.labels || []).forEach(label => {\n    const name = typeof label === 'string' ? label : (label.name || 'unknown');\n    issueLabels[name] = (issueLabels[name] || 0) + 1;\n  });\n});\n\n// Determine instruction language\nlet langInstruction = '';\nif (language === 'FR') {\n  langInstruction = 'Write the entire summary in French. Use a professional yet friendly tone.';\n} else if (language === 'ZH') {\n  langInstruction = 'Write the entire summary in Chinese. Use a professional yet friendly tone.';\n} else {\n  langInstruction = 'Write the entire summary in English. Use a professional yet friendly tone.';\n}\n\nconst prompt = `${langInstruction}\n\nYou are writing a weekly summary for the GitHub repository **${repo}**.\n\nWeek: ${weekLabel}\n\n## Activity Overview\n- **Commits**: ${commitList.length} commits by ${Object.keys(commitAuthors).length} contributors\n- **Issues Closed**: ${closedIssues.length} issues closed\n- **Pull Requests Merged**: ${mergedPRs.length} PRs merged\n\n## Contributors (Commits)\n${Object.entries(commitAuthors).sort((a, b) => b[1] - a[1]).map(([name, count]) => \`- ${name}: ${count} commit${count > 1 ? 's' : ''}\`).join('\\n')}\n\n## Closed Issues\n${closedIssues.map(issue => \`- [#${issue.number}] ${issue.title}\`).join('\\n') || 'No issues closed this week.'}\n\n## Merged Pull Requests\n${mergedPRs.map(pr => \`- [#${pr.number}] ${pr.title} (by ${pr.user?.login || 'unknown'})\`).join('\\n') || 'No PRs merged this week.'}\n\n## Issue Labels Distribution\n${Object.entries(issueLabels).sort((a, b) => b[1] - a[1]).map(([label, count]) => \`- ${label}: ${count}\`).join('\\n') || 'No labels found.'}\n\nPlease write a concise, engaging narrative summary (2-3 paragraphs) highlighting the key developments, notable contributions, and impact of this week's work. Keep it professional but warm. Focus on the most interesting changes and thank contributors where appropriate.`;\n\nreturn [{\n  json: {\n    repo: repo,\n    weekLabel: weekLabel,\n    discordWebhook: $json['discordWebhook'],\n    language: language,\n    model: $json['claudeModel'] || 'claude-sonnet-4-20250514',\n    prompt: prompt,\n    stats: {\n      commits: commitList.length,\n      closedIssues: closedIssues.length,\n      mergedPRs: mergedPRs.length,\n      contributors: Object.keys(commitAuthors).length\n    },\n    topContributors: Object.entries(commitAuthors).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, commits: count }))\n  }\n}];"
+      }
+    },
+    {
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "={{ $json['model'] }}"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2000
+            },
+            {
+              "name": "system",
+              "value": "You are a technical writer creating concise weekly summaries for open source projects. Be engaging, accurate, and professional."
+            },
+            {
+              "name": "messages",
+              "value": "={{ [{\"role\": \"user\", \"content\": $json['prompt']}] }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "format-discord",
+      "name": "Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 300],
+      "parameters": {
+        "language": "javaScript",
+        "code": "// Format the Claude response into a Discord embed message\nconst claudeResponse = $input.first().json;\nconst summaryText = claudeResponse.content?.[0]?.text || claudeResponse.content || 'Summary not available.';\n\nconst repo = $json['repo'] || 'owner/repo';\nconst weekLabel = $json['weekLabel'] || '';\nconst stats = $json['stats'] || {};\nconst topContributors = $json['topContributors'] || [];\n\n// Build the Discord embed\nconst embed = {\n  title: `📊 Weekly Report: ${repo}`,\n  description: `**Week of ${weekLabel}**\\n\\n${summaryText.substring(0, 4000)}`,\n  color: 5814783,\n  fields: [\n    {\n      name: '📈 Stats',\n      value: `Commits: ${stats.commits || 0} | Issues Closed: ${stats.closedIssues || 0} | PRs Merged: ${stats.mergedPRs || 0}`,\n      inline: false\n    }\n  ],\n  timestamp: new Date().toISOString(),\n  footer: {\n    text: 'Generated by n8n Weekly Summary'\n  }\n};\n\n// Add top contributors if available\nif (topContributors.length > 0) {\n  embed.fields.push({\n    name: '🏆 Top Contributors',\n    value: topContributors.map(c => `${c.name} (${c.commits} commits)`).join('\\n'),\n    inline: false\n  });\n}\n\n// Build the full message payload\nconst discordPayload = {\n  embeds: [embed],\n  username: 'Weekly Summary Bot',\n  avatar_url: 'https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png'\n};\n\nreturn [{\n  json: {\n    discordWebhook: claudeResponse.discordWebhook || $json['discordWebhook'],\n    discordPayload: discordPayload\n  }\n}];"
+      }
+    },
+    {
+      "id": "discord-webhook",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1850, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json['discordWebhook'] }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json['discordPayload'] }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Compute Date Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Date Range": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge GitHub Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "GitHub PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge GitHub Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge GitHub Data": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Format Discord Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Discord Message": {
+      "main": [
+        [
+          {
+            "node": "Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "settings": {},
+  "tags": [
+    {
+      "name": "weekly-summary",
+      "id": "weekly-summary-tag"
+    }
+  ]
+}
