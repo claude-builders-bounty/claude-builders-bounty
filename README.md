@@ -34,6 +34,14 @@ You're in the right place.
 
 ---
 
+## Next.js + SQLite CLAUDE.md template
+
+This repository includes a production-ready `CLAUDE.md` template for bounty #2.
+
+Use it by copying `CLAUDE.md` into the root of a greenfield Next.js 15 App Router SaaS project that uses SQLite through `better-sqlite3` or Turso/libSQL. The template gives Claude Code project structure, naming conventions, migration rules, component patterns, commands, and anti-patterns with reasons.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
