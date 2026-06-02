@@ -26,11 +26,31 @@ You're in the right place.
 
 | # | Task | Amount | Status |
 |---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+| [#1](issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
+| [#2](issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
+| [#3](issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
+| [#4](issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#5](issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+
+---
+
+## Generate a changelog
+
+This repository includes a small changelog generator for bounty [#1](issues/1).
+It reads commits since the latest git tag, groups them into `Added`, `Fixed`,
+`Changed`, and `Removed`, then writes a formatted `CHANGELOG.md`.
+
+Setup in 3 steps:
+
+1. Clone the repository and make sure `git` and Python 3.8+ are installed.
+2. Run `bash changelog.sh`; it may be launched from any directory.
+3. Review the generated `CHANGELOG.md`; see `examples/CHANGELOG.sample.md` for sample output.
+
+Optional: use `bash changelog.sh --print` to preview output or
+`bash changelog.sh --output path/to/CHANGELOG.md` to choose a file.
+When the repository has no tags, the generator reads a bounded recent commit
+history by default; use `bash changelog.sh --max-count N` to choose the bound or
+`bash changelog.sh --max-count 0` to include full history.
 
 ---
 

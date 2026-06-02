@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+PYTHON_CMD=()
+PYTHON_CANDIDATES=("python3" "python" "py -3")
+
+for candidate in "${PYTHON_CANDIDATES[@]}"; do
+  read -r -a candidate_cmd <<< "$candidate"
+  if "${candidate_cmd[@]}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1; then
+    PYTHON_CMD=("${candidate_cmd[@]}")
+    break
+  fi
+done
+
+if [[ ${#PYTHON_CMD[@]} -eq 0 ]]; then
+  echo "Python 3.8 or newer is required to generate the changelog." >&2
+  exit 1
+fi
+
+cd "$SCRIPT_DIR"
+exec "${PYTHON_CMD[@]}" "$SCRIPT_DIR/scripts/generate_changelog.py" "$@"
