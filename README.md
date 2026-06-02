@@ -34,6 +34,27 @@ You're in the right place.
 
 ---
 
+## Generate Changelog Skill
+
+This PR includes a `/generate-changelog` skill for bounty [#1](../../issues/1).
+
+Run it from any git repository:
+
+```bash
+bash changelog.sh --repo . --output CHANGELOG.md
+```
+
+The generator reads commit history, groups entries into `Added`, `Fixed`, `Changed`, and `Removed`, and writes a structured Markdown changelog. A sample output is included at `samples/generate-changelog-sample.md`.
+
+Validate the implementation:
+
+```bash
+python3 -m unittest tests/test_generate_changelog.py -v
+bash changelog.sh --repo . --output samples/generate-changelog-sample.md
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
