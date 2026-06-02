@@ -1,0 +1,244 @@
+{
+  "id": "issue-5-board-report",
+  "name": "Issue 5 - Claude Weekly Board Report",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "0f3277c0-5f20-4c5c-bb7f-b0e77309c501",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -980,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "c6d2d28f-4fc4-43a9-9047-f8cb07bd75ad",
+      "name": "Friday 5pm Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -980,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const env = typeof $env === 'object' ? $env : {};\n\nfunction required(name) {\n  const value = String(env[name] || '').trim();\n  if (!value) {\n    throw new Error('Missing required environment variable: ' + name);\n  }\n  return value;\n}\n\nconst githubRepo = required('GITHUB_REPO');\nconst [owner, repoName] = githubRepo.split('/');\nif (!owner || !repoName) {\n  throw new Error('GITHUB_REPO must use owner/repo format, for example n8n-io/n8n');\n}\n\nconst language = String(env.SUMMARY_LANGUAGE || 'EN').trim().toUpperCase();\nif (!['EN', 'FR'].includes(language)) {\n  throw new Error('SUMMARY_LANGUAGE must be EN or FR');\n}\n\nconst lookbackDays = Math.max(1, Math.min(31, Number(env.LOOKBACK_DAYS || 7)));\nconst until = new Date();\nconst since = new Date(until.getTime() - lookbackDays * 24 * 60 * 60 * 1000);\n\nconst githubApiBaseUrl = String(env.GITHUB_API_BASE_URL || 'https://api.github.com').replace(/\\/+$/, '');\nconst anthropicApiBaseUrl = String(env.ANTHROPIC_API_BASE_URL || 'https://api.anthropic.com').replace(/\\/+$/, '');\n\nreturn [{\n  json: {\n    githubRepo,\n    owner,\n    repoName,\n    language,\n    lookbackDays,\n    sinceIso: since.toISOString(),\n    untilIso: until.toISOString(),\n    sinceDate: since.toISOString().slice(0, 10),\n    untilDate: until.toISOString().slice(0, 10),\n    githubToken: required('GITHUB_TOKEN'),\n    anthropicApiKey: required('ANTHROPIC_API_KEY'),\n    discordWebhookUrl: required('DISCORD_WEBHOOK_URL'),\n    githubApiBaseUrl,\n    anthropicMessagesUrl: anthropicApiBaseUrl + '/v1/messages'\n  }\n}];"
+      },
+      "id": "a8e0dfb5-3b1e-48c2-b8ec-c9c19153a3e1",
+      "name": "Load Config and Date Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const config = $json;\n\nconst headers = {\n  Accept: 'application/vnd.github+json',\n  Authorization: 'Bearer ' + config.githubToken,\n  'X-GitHub-Api-Version': '2022-11-28',\n  'User-Agent': 'n8n-claude-weekly-board-report'\n};\n\nasync function githubJson(path) {\n  const data = await helpers.httpRequest({\n    method: 'GET',\n    url: config.githubApiBaseUrl + path,\n    headers,\n    json: true\n  });\n  return data;\n}\n\nasync function githubPages(path, limitPages = 3) {\n  const out = [];\n  for (let page = 1; page <= limitPages; page += 1) {\n    const pagePath = path + (path.includes('?') ? '&' : '?') + 'per_page=100&page=' + page;\n    const data = await githubJson(pagePath);\n    const rows = Array.isArray(data) ? data : data?.items || [];\n    out.push(...rows);\n    if (rows.length < 100) break;\n  }\n  return out;\n}\n\nconst repoPath = config.owner + '/' + config.repoName;\nconst commitsRaw = await githubPages('/repos/' + repoPath + '/commits?since=' + encodeURIComponent(config.sinceIso) + '&until=' + encodeURIComponent(config.untilIso));\nconst closedIssuesRaw = await githubPages('/search/issues?q=' + encodeURIComponent('repo:' + repoPath + ' is:issue is:closed closed:' + config.sinceDate + '..' + config.untilDate));\nconst mergedPrsRaw = await githubPages('/search/issues?q=' + encodeURIComponent('repo:' + repoPath + ' is:pr is:merged merged:' + config.sinceDate + '..' + config.untilDate));\n\nconst commits = commitsRaw.map((commit) => ({\n  sha: String(commit.sha || '').slice(0, 7),\n  author: commit.author?.login || commit.commit?.author?.name || 'unknown',\n  message: String(commit.commit?.message || '').split('\\n')[0].slice(0, 180),\n  date: commit.commit?.author?.date,\n  url: commit.html_url\n}));\n\nconst closedIssues = closedIssuesRaw\n  .filter((issue) => !issue.pull_request)\n  .map((issue) => ({\n    number: issue.number,\n    title: issue.title,\n    labels: (issue.labels || []).map((label) => label.name),\n    closedAt: issue.closed_at,\n    author: issue.user?.login || 'unknown',\n    url: issue.html_url\n  }));\n\nconst mergedPrs = mergedPrsRaw.map((pr) => ({\n  number: pr.number,\n  title: pr.title,\n  mergedAt: pr.closed_at,\n  author: pr.user?.login || 'unknown',\n  url: pr.html_url\n}));\n\nconst contributorMap = new Map();\nfor (const commit of commits) {\n  contributorMap.set(commit.author, (contributorMap.get(commit.author) || 0) + 1);\n}\nfor (const pr of mergedPrs) {\n  contributorMap.set(pr.author, (contributorMap.get(pr.author) || 0) + 1);\n}\n\nconst topContributors = [...contributorMap.entries()]\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 10)\n  .map(([name, activityCount]) => ({ name, activityCount }));\n\nconst labelCounts = {};\nfor (const issue of closedIssues) {\n  for (const label of issue.labels || []) {\n    labelCounts[label] = (labelCounts[label] || 0) + 1;\n  }\n}\n\nconst riskKeywords = /\\b(revert|rollback|hotfix|incident|security|broken|failure|regression|urgent)\\b/i;\nconst riskSignals = [\n  ...commits.filter((commit) => riskKeywords.test(commit.message)).map((commit) => ({\n    type: 'commit',\n    ref: commit.sha,\n    title: commit.message,\n    url: commit.url\n  })),\n  ...mergedPrs.filter((pr) => riskKeywords.test(pr.title)).map((pr) => ({\n    type: 'pr',\n    ref: '#' + pr.number,\n    title: pr.title,\n    url: pr.url\n  })),\n  ...closedIssues.filter((issue) => riskKeywords.test(issue.title) || (issue.labels || []).some((label) => riskKeywords.test(label))).map((issue) => ({\n    type: 'issue',\n    ref: '#' + issue.number,\n    title: issue.title,\n    url: issue.url\n  }))\n].slice(0, 12);\n\nreturn [{\n  json: {\n    ...config,\n    stats: {\n      commits: commits.length,\n      closedIssues: closedIssues.length,\n      mergedPrs: mergedPrs.length,\n      contributors: topContributors.length,\n      riskSignals: riskSignals.length\n    },\n    labelCounts,\n    topContributors,\n    riskSignals,\n    commits: commits.slice(0, 80),\n    closedIssues: closedIssues.slice(0, 60),\n    mergedPrs: mergedPrs.slice(0, 60)\n  }\n}];"
+      },
+      "id": "6afd127f-4ae7-4e5d-a640-ad54a839d6a5",
+      "name": "Collect GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -420,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const data = $json;\nconst languageName = data.language === 'FR' ? 'French' : 'English';\nconst rawActivity = JSON.stringify({\n  stats: data.stats,\n  labelCounts: data.labelCounts,\n  topContributors: data.topContributors,\n  riskSignals: data.riskSignals,\n  commits: data.commits,\n  closedIssues: data.closedIssues,\n  mergedPrs: data.mergedPrs\n}, null, 2);\n\nconst prompt = [\n  'You are a senior engineering program manager writing a weekly board-style development report.',\n  '',\n  'Repository: ' + data.githubRepo,\n  'Window: ' + data.sinceIso + ' to ' + data.untilIso,\n  'Output language: ' + languageName,\n  '',\n  'Write a narrative summary from the evidence only. Do not invent roadmap items, names, metrics, or impact.',\n  '',\n  'Return Markdown with exactly these sections:',\n  '1. Executive Pulse - 3 short bullets for leadership.',\n  '2. Narrative Summary - one cohesive paragraph.',\n  '3. What Shipped - merged PR highlights with PR numbers where available.',\n  '4. Issues Closed - resolved user/developer problems with issue numbers where available.',\n  '5. Contributor Spotlight - recognize contributors without ranking them aggressively.',\n  '6. Risk Radar - mention only observed risks or say \"No obvious risk signals in the sampled activity.\"',\n  '7. Audit Trail - compact counts and date range.',\n  '',\n  'Raw activity JSON:',\n  rawActivity\n].join('\\n');\n\nreturn [{\n  json: {\n    ...data,\n    claudeRequest: {\n      model: 'claude-sonnet-4-20250514',\n      max_tokens: 1800,\n      messages: [\n        {\n          role: 'user',\n          content: prompt\n        }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "60c930b5-1996-4a2e-9bf9-a7f976a2872f",
+      "name": "Build Claude Board Brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -140,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.anthropicMessagesUrl}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$json.anthropicApiKey}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.claudeRequest}}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "6eff5d66-f079-40ea-8eef-5ea5ebf2cc42",
+      "name": "Generate Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const source = $('Build Claude Board Brief').first().json;\nconst response = $json;\nconst summary = Array.isArray(response.content)\n  ? response.content.map((part) => part.text || '').filter(Boolean).join('\\n\\n').trim()\n  : String(response.summary || '').trim();\n\nif (!summary) {\n  throw new Error('Claude response did not include text content');\n}\n\nconst audit = {\n  repo: source.githubRepo,\n  since: source.sinceIso,\n  until: source.untilIso,\n  language: source.language,\n  model: source.claudeRequest.model,\n  stats: source.stats\n};\n\nconst title = 'Weekly board report: ' + source.githubRepo;\nconst intro = source.stats.commits + ' commits, ' + source.stats.mergedPrs + ' merged PRs, ' + source.stats.closedIssues + ' closed issues';\nconst body = summary.length > 3500 ? summary.slice(0, 3490) + '\\n...' : summary;\n\nreturn [{\n  json: {\n    discordWebhookUrl: source.discordWebhookUrl,\n    summary,\n    audit,\n    discordPayload: {\n      content: title + '\\n' + intro,\n      embeds: [\n        {\n          title,\n          description: body,\n          color: 3447003,\n          fields: [\n            { name: 'Repository', value: source.githubRepo, inline: true },\n            { name: 'Language', value: source.language, inline: true },\n            { name: 'Window', value: source.sinceDate + ' to ' + source.untilDate, inline: false },\n            { name: 'Audit JSON', value: 'Included in n8n execution data for traceability.', inline: false }\n          ],\n          footer: {\n            text: 'Generated by n8n + Claude Sonnet 4'\n          }\n        }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "ca60f943-543b-4e91-9d33-537093ddfd9d",
+      "name": "Prepare Discord Delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.discordWebhookUrl}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.discordPayload}}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "fc9077dd-2bd6-4634-9ab9-66b9cc8c114b",
+      "name": "Send Discord Board Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        730,
+        60
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load Config and Date Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Friday 5pm Schedule": {
+      "main": [
+        [
+          {
+            "node": "Load Config and Date Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config and Date Window": {
+      "main": [
+        [
+          {
+            "node": "Collect GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect GitHub Activity": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Board Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Board Brief": {
+      "main": [
+        [
+          {
+            "node": "Generate Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Prepare Discord Delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Discord Delivery": {
+      "main": [
+        [
+          {
+            "node": "Send Discord Board Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC"
+  },
+  "versionId": "1d8fa67d-d0c5-4d1b-a52e-2e1901dd1047",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    {
+      "name": "bounty-5"
+    }
+  ]
+}
