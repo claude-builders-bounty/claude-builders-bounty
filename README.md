@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Generate a structured changelog
+
+Use `changelog.sh` to generate `CHANGELOG.md` from git commits since the latest reachable tag. Commits are grouped into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+Setup in 3 steps:
+
+1. Copy `changelog.sh` into any git repository.
+2. Run `bash changelog.sh` to write `CHANGELOG.md` or `bash changelog.sh RELEASE_NOTES.md` for a custom file.
+3. Review and commit the generated changelog.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
