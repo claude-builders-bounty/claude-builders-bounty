@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+1. Copy `changelog.sh` into any git repository and run `chmod +x changelog.sh`.
+2. Run `./changelog.sh` from inside that repository.
+3. Review the generated `CHANGELOG.md`, which includes commits since the latest git tag or all commits when no tag exists.
+
+Validation: run `bash tests/test_changelog.sh` from this repository.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
