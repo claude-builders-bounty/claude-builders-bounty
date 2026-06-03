@@ -40,6 +40,8 @@ You're in the right place.
 2. Run `./changelog.sh` from inside that repository.
 3. Review the generated `CHANGELOG.md`, which includes commits since the latest git tag or all commits when no tag exists.
 
+Validation: run `bash tests/test_changelog.sh` from this repository.
+
 ---
 
 ## Rules
