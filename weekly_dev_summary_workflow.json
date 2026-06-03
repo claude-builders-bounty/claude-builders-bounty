@@ -1,0 +1,264 @@
+{
+  "name": "Automated Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "type": "cron",
+          "value": "0 17 * * 5"
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_REPO",
+              "value": "claude-builders-bounty/claude-builders-bounty"
+            },
+            {
+              "name": "SUMMARY_LANGUAGE",
+              "value": "EN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "action": "calculate",
+        "value": -7,
+        "duration": "days",
+        "dataPropertyName": "sinceDate",
+        "format": "YYYY-MM-DDTHH:mm:ssZ"
+      },
+      "name": "Date & Time",
+      "type": "n8n-nodes-base.dateTime",
+      "typeVersion": 1,
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{'https://api.github.com/repos/' + $('Config').first().json['GITHUB_REPO'] + '/commits?since=' + $('Date & Time').first().json['sinceDate']}}",
+        "options": {
+          "headers": {
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "name": "HTTP Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{'https://api.github.com/repos/' + $('Config').first().json['GITHUB_REPO'] + '/issues?since=' + $('Date & Time').first().json['sinceDate'] + '&state=closed'}}",
+        "options": {
+          "headers": {
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "name": "HTTP Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{'https://api.github.com/repos/' + $('Config').first().json['GITHUB_REPO'] + '/pulls?state=closed&sort=updated&direction=desc&per_page=100'}}",
+        "options": {
+          "headers": {
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "name": "HTTP PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Aggregates GitHub data into a narrative prompt for Claude.\n * Follows Development Guidelines: No magic numbers, robust validation, standard docs.\n */\nconst MAX_COMMITS_TO_INCLUDE = 50;\nconst MAX_ISSUES_TO_INCLUDE = 20;\nconst MAX_PRS_TO_INCLUDE = 20;\n\n// Validate inputs from previous nodes\nconst commitsData = $('HTTP Commits').all() || [];\nconst issuesData = $('HTTP Issues').all() || [];\nconst prsData = $('HTTP PRs').all() || [];\nconst config = $('Config').first().json || {};\n\nconst repoName = config.GITHUB_REPO || 'unknown/repo';\nconst language = config.SUMMARY_LANGUAGE || 'EN';\n\n// Extract payloads assuming HTTP nodes returned JSON arrays\nconst commits = (commitsData[0] && commitsData[0].json && Array.isArray(commitsData[0].json)) ? commitsData[0].json : [];\nconst issues = (issuesData[0] && issuesData[0].json && Array.isArray(issuesData[0].json)) ? issuesData[0].json : [];\nconst prs = (prsData[0] && prsData[0].json && Array.isArray(prsData[0].json)) ? prsData[0].json : [];\n\nconst sinceDate = new Date($('Date & Time').first().json.sinceDate);\n\n// Thorough Validation: Ensure we actually process valid subsets without duplicating\nconst validCommits = commits.filter(c => c && c.commit && c.commit.message).slice(0, MAX_COMMITS_TO_INCLUDE);\nconst validIssues = issues.filter(i => i && i.title && !i.pull_request).slice(0, MAX_ISSUES_TO_INCLUDE);\nconst validPrs = prs.filter(p => p && p.title && p.merged_at && new Date(p.merged_at) >= sinceDate).slice(0, MAX_PRS_TO_INCLUDE);\n\nconst commitList = validCommits.map(c => `- ${c.commit.message} (by ${c.commit.author ? c.commit.author.name : 'Unknown'})`).join('\\n');\nconst issueList = validIssues.map(i => `- ${i.title} (${i.state})`).join('\\n');\nconst prList = validPrs.map(p => `- ${p.title} (authored by ${p.user ? p.user.login : 'Unknown'})`).join('\\n');\n\nconst prompt = `You are a technical lead. Write a weekly narrative summary for the GitHub repository: ${repoName}.\nPlease write the summary in the following language: ${language}.\nFocus on the progress made, features added, and issues resolved. Keep it engaging and concise.\n\n### Recent Commits\n${commitList || 'No recent commits.'}\n\n### Closed Issues\n${issueList || 'No closed issues.'}\n\n### Merged PRs\n${prList || 'No merged PRs.'}`;\n\nreturn [{\n    json: {\n        prompt: prompt\n    }\n}];"
+      },
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$env.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "options": {},
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{$json['prompt'] | stringify}}\n    }\n  ]\n}"
+      },
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.DISCORD_WEBHOOK_URL}}",
+        "sendBody": true,
+        "options": {},
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"content\": \"**Weekly Dev Summary**\\n\\n{{$json['content'][0]['text'].substring(0, 1950)}}\"\n}"
+      },
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1600,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Date & Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Date & Time": {
+      "main": [
+        [
+          {
+            "node": "HTTP Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Commits": {
+      "main": [
+        [
+          {
+            "node": "HTTP Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Issues": {
+      "main": [
+        [
+          {
+            "node": "HTTP PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

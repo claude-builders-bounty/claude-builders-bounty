@@ -1,0 +1,218 @@
+{
+  "name": "Claude API Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [ 100, 300 ],
+      "id": "e9538c64-2195-4f4c-8367-ab18e69837a2"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "github_repo",
+              "value": "claude-builders-bounty/claude-builders-bounty"
+            },
+            {
+              "name": "language",
+              "value": "EN"
+            },
+            {
+              "name": "webhook_url",
+              "value": "YOUR_DISCORD_OR_SLACK_WEBHOOK_URL_HERE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [ 300, 300 ],
+      "id": "bb029676-e106-44ec-9e23-74b8ff5b172a"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json['github_repo'] + '/commits' }}",
+        "options": {}
+      },
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [ 500, 300 ],
+      "id": "273a8128-44bd-4e20-bfd6-84d50937c415"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $items(\"Config Variables\")[0].json.github_repo + '/pulls?state=closed' }}",
+        "options": {}
+      },
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [ 700, 300 ],
+      "id": "9218204b-f73c-40ad-be11-e63a89332e19"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const commits = $items(\"Fetch Commits\").map(i => i.json);\nconst prs = $items(\"Fetch Merged PRs\").map(i => i.json);\nconst lang = $items(\"Config Variables\")[0].json.language;\n\nreturn [{\n  json: {\n    summaryData: JSON.stringify({ \n      commits: commits.slice(0, 20), \n      prs: prs.slice(0, 10) \n    }),\n    lang: lang,\n    webhookUrl: $items(\"Config Variables\")[0].json.webhook_url\n  }\n}];"
+      },
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [ 900, 300 ],
+      "id": "8361b36e-d7f4-416b-bc54-5a21db851167"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "YOUR_ANTHROPIC_API_KEY_HERE"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "1024"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\":\"user\",\"content\":\"Generate a weekly narrative summary in {{ $json['lang'] }} based on this GitHub activity: {{ $json['summaryData'] }}\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Claude API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [ 1100, 300 ],
+      "id": "b18274d6-8eb5-4309-8bb4-b78f4cf21d96"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json['webhookUrl'] }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json['content'][0]['text'] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Deliver via Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [ 1300, 300 ],
+      "id": "c138d87a-8f92-4911-b1fb-481395379b18"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Claude API Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API Call": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {}
+}
