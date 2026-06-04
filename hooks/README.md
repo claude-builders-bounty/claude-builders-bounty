@@ -37,11 +37,9 @@ PY
 
 ## Log file
 
-Blocked attempts are appended as JSON lines to:
-
-```text
-~/.claude/hooks/blocked.log
-```
+This hook appends JSON lines to `~/.claude/hooks/blocked.log`. Use your normal
+log-retention tooling if the hook runs in a high-volume environment; for example,
+rotate or truncate this file periodically.
 
 Each entry includes:
 

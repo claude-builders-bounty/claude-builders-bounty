@@ -35,11 +35,10 @@ BLOCK_REASON_BY_PATTERN: tuple[tuple[str, re.Pattern[str]], ...] = (
         "SQL TRUNCATE statement",
         re.compile(r"(?is)\btruncate\b"),
     ),
-    (
-        "SQL DELETE FROM without a WHERE clause",
-        re.compile(r"(?is)\bdelete\s+from\s+[\w.\"`\[\]-]+(?:(?!\bwhere\b).)*(?:;|$)"),
-    ),
 )
+
+DELETE_FROM_PATTERN = re.compile(r"(?is)\bdelete\s+from\s+[\w.\"`\[\]-]+")
+WHERE_PATTERN = re.compile(r"(?is)\bwhere\b")
 
 
 def load_event() -> dict[str, Any]:
@@ -85,13 +84,15 @@ def block_reason(command: str) -> str | None:
     for reason, pattern in BLOCK_REASON_BY_PATTERN:
         if pattern.search(command):
             return reason
+    if DELETE_FROM_PATTERN.search(command) and not WHERE_PATTERN.search(command):
+        return "SQL DELETE FROM without a WHERE clause"
     return None
 
 
 def append_block_log(command: str, project_path: str, reason: str) -> None:
     """Log blocked command attempt with timestamp, command, and project path."""
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    timestamp = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    timestamp = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     entry = {
         "timestamp": timestamp,
         "project_path": project_path,
