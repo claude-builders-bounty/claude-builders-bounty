@@ -22,6 +22,12 @@ You're in the right place.
 
 ---
 
+## Submitted Artifacts
+
+- [Claude Code PreToolUse Safety Hook](hooks/README.md) — blocks destructive Bash commands before execution.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
