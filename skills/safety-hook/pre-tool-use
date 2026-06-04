@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""
+pre-tool-use hook — Blocks destructive bash commands before execution.
+Installed at ~/.claude/hooks/pre-tool-use
+
+Bounty: $100 — claude-builders-bounty#3
+Wallet: 0x53b0957b9d7c86c6c20463e945044cd722227728
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
+
+# Dangerous patterns — block these before they execute
+DANGEROUS_PATTERNS = [
+    # Destructive file operations
+    (r'\brm\s+-rf\b', 'Recursive force delete'),
+    (r'\brm\s+-r\b', 'Recursive delete'),
+    (r'\brm\s+-f\b', 'Force delete'),
+    
+    # Git destructive
+    (r'\bgit\s+push\s+--force\b', 'Force git push'),
+    (r'\bgit\s+push\s+-f\b', 'Force git push'),
+    (r'\bgit\s+reset\s+--hard\b', 'Hard git reset'),
+    (r'\bgit\s+branch\s+-D\b', 'Force delete branch'),
+    (r'\bgit\s+clean\s+-f[d]?\b', 'Force clean git'),
+    
+    # Database destructive
+    (r'\bDROP\s+TABLE\b', 'Drop table'),
+    (r'\bDROP\s+DATABASE\b', 'Drop database'),
+    (r'\bTRUNCATE\b', 'Truncate table'),
+    (r'\bDELETE\s+FROM\b(?!.*\bWHERE\b)', 'Delete without WHERE clause'),
+    
+    # System destructive
+    (r'\bmkfs\b', 'Format filesystem'),
+    (r'\bdd\s+if=.*\bof=', 'Raw disk write'),
+    (r'\bmkswap\b', 'Create swap'),
+    (r'\b>\/dev\/sd[a-z]\b', 'Write to block device'),
+    
+    # Dangerous chmod/chown
+    (r'\bchmod\s+-R\s+777\b', 'Recursive world-writable'),
+    (r'\bchown\s+-R\b', 'Recursive ownership change'),
+    
+    # Package manager destructive
+    (r'\bapt\s+remove\b', 'Remove packages'),
+    (r'\bapt\s+purge\b', 'Purge packages'),
+    (r'\bpip\s+uninstall\b', 'Uninstall pip packages'),
+    (r'\bnpm\s+uninstall\b', 'Uninstall npm packages'),
+    
+    # Crypto/wallet dangerous
+    (r'\brm\s+-rf\s+.*\.(key|pem|p12|wallet|keystore)\b', 'Delete key/wallet file'),
+]
+
+def log_blocked(command, reason):
+    """Log blocked command attempt"""
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    project = os.getcwd()
+    log_entry = f"[{timestamp}] BLOCKED: {reason}\n  Command: {command}\n  Project: {project}\n\n"
+    with open(LOG_FILE, "a") as f:
+        f.write(log_entry)
+    return log_entry
+
+def check_command(command):
+    """Check if command contains dangerous patterns"""
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True, reason, pattern
+    return False, None, None
+
+def main():
+    # Claude Code hooks receive the tool use JSON on stdin
+    try:
+        input_data = sys.stdin.read()
+        if not input_data:
+            # No input — allow (not a tool call)
+            print(json.dumps({"is_blocked": False}))
+            return
+        
+        tool_call = json.loads(input_data)
+        command = ""
+        
+        # Extract command from various tool call formats
+        if isinstance(tool_call, dict):
+            if "command" in tool_call:
+                command = tool_call["command"]
+            elif "input" in tool_call:
+                input_val = tool_call["input"]
+                if isinstance(input_val, dict):
+                    command = input_val.get("command", "") or input_val.get("cmd", "")
+                elif isinstance(input_val, str):
+                    command = input_val
+            elif "args" in tool_call:
+                args = tool_call["args"]
+                if isinstance(args, dict):
+                    command = args.get("command", "") or args.get("cmd", "")
+            elif "bash" in str(tool_call):
+                command = str(tool_call)
+            elif "parameters" in tool_call:
+                params = tool_call["parameters"]
+                if isinstance(params, dict):
+                    command = params.get("command", "") or params.get("cmd", "")
+        
+        if not command:
+            print(json.dumps({"is_blocked": False}))
+            return
+        
+        is_dangerous, reason, pattern = check_command(command)
+        
+        if is_dangerous:
+            log_entry = log_blocked(command, reason)
+            message = (
+                f"⚠️ **BLOCKED**: {reason}\n\n"
+                f"This command was intercepted by the safety hook.\n"
+                f"Pattern matched: `{pattern}`\n\n"
+                f"Logged to: {LOG_FILE}\n\n"
+                f"If you're sure you want to run this, use a more specific "
+                f"command or disable the hook temporarily."
+            )
+            print(json.dumps({
+                "is_blocked": True,
+                "reason": reason,
+                "message": message,
+                "logged": log_entry
+            }))
+        else:
+            print(json.dumps({"is_blocked": False}))
+            
+    except json.JSONDecodeError:
+        # Not valid JSON — let it through
+        print(json.dumps({"is_blocked": False}))
+    except Exception as e:
+        # On error, allow the command (fail open is safer for hooks)
+        print(json.dumps({"is_blocked": False, "error": str(e)}))
+
+if __name__ == "__main__":
+    main()
