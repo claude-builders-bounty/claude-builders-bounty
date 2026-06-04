@@ -1,0 +1,301 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+### Added
+
+- Add bounty issue templates and label workflows
+- add PR template and enforce agent contribution format
+- Add bug bounty meta issue seeder
+### Changed
+
+- Initial commit
+- Create main.yml
+- Update README.md
+- Replace auto process workflow
+- sync README and workflow with SecureBananaLabs pattern
+- chore: update leaderboard for PR #26
+- chore: update leaderboard for PR #27
+- chore: update leaderboard for PR #28
+- chore: update leaderboard for PR #29
+- chore: update leaderboard for PR #30
+- chore: update leaderboard for PR #31
+- chore: update leaderboard for PR #32
+- Update README.md
+- Update CONTRIBUTING.md
+- Update CONTRIBUTING.md
+- chore: update leaderboard for PR #34
+- chore: update leaderboard for PR #35
+- chore: update leaderboard for PR #36
+- chore: update leaderboard for PR #37
+- chore: update leaderboard for PR #38
+- chore: update leaderboard for PR #39
+- chore: update leaderboard for PR #40
+- chore: update leaderboard for PR #41
+- chore: update leaderboard for PR #42
+- chore: update leaderboard for PR #43
+- chore: update leaderboard for PR #44
+- chore: update leaderboard for PR #45
+- chore: update leaderboard for PR #46
+- chore: update leaderboard for PR #47
+- chore: update leaderboard for PR #48
+- chore: update leaderboard for PR #49
+- chore: update leaderboard for PR #50
+- chore: update leaderboard for PR #51
+- chore: update leaderboard for PR #52
+- chore: update leaderboard for PR #53
+- chore: update leaderboard for PR #54
+- chore: update leaderboard for PR #55
+- chore: update leaderboard for PR #56
+- chore: update leaderboard for PR #57
+- chore: update leaderboard for PR #58
+- chore: update leaderboard for PR #59
+- chore: update leaderboard for PR #61
+- chore: update leaderboard for PR #62
+- chore: update leaderboard for PR #63
+- chore: update leaderboard for PR #64
+- chore: update leaderboard for PR #65
+- chore: update leaderboard for PR #66
+- chore: update leaderboard for PR #67
+- chore: update leaderboard for PR #68
+- chore: update leaderboard for PR #69
+- chore: update leaderboard for PR #70
+- chore: update leaderboard for PR #71
+- chore: update leaderboard for PR #72
+- chore: update leaderboard for PR #73
+- chore: update leaderboard for PR #74
+- chore: update leaderboard for PR #75
+- chore: update leaderboard for PR #76
+- chore: update leaderboard for PR #77
+- chore: update leaderboard for PR #78
+- chore: update leaderboard for PR #79
+- chore: update leaderboard for PR #80
+- chore: update leaderboard for PR #81
+- chore: update leaderboard for PR #82
+- chore: update leaderboard for PR #83
+- chore: update leaderboard for PR #84
+- chore: update leaderboard for PR #85
+- chore: update leaderboard for PR #86
+- chore: update leaderboard for PR #87
+- chore: update leaderboard for PR #88
+- chore: update leaderboard for PR #89
+- chore: update leaderboard for PR #90
+- chore: update leaderboard for PR #91
+- chore: update leaderboard for PR #92
+- chore: update leaderboard for PR #93
+- chore: update leaderboard for PR #94
+- chore: update leaderboard for PR #95
+- chore: update leaderboard for PR #96
+- chore: update leaderboard for PR #97
+- chore: update leaderboard for PR #98
+- chore: update leaderboard for PR #99
+- chore: update leaderboard for PR #100
+- chore: update leaderboard for PR #101
+- chore: update leaderboard for PR #102
+- chore: update leaderboard for PR #103
+- chore: update leaderboard for PR #104
+- chore: update leaderboard for PR #105
+- chore: update leaderboard for PR #106
+- chore: update leaderboard for PR #107
+- chore: update leaderboard for PR #108
+- chore: update leaderboard for PR #109
+- chore: update leaderboard for PR #110
+- chore: update leaderboard for PR #111
+- chore: update leaderboard for PR #112
+- chore: update leaderboard for PR #113
+- chore: update leaderboard for PR #114
+- chore: update leaderboard for PR #115
+- chore: update leaderboard for PR #116
+- chore: update leaderboard for PR #117
+- chore: update leaderboard for PR #118
+- chore: update leaderboard for PR #119
+- chore: update leaderboard for PR #120
+- chore: update leaderboard for PR #121
+- chore: update leaderboard for PR #122
+- chore: update leaderboard for PR #123
+- chore: update leaderboard for PR #124
+- chore: update leaderboard for PR #125
+- chore: update leaderboard for PR #126
+- chore: update leaderboard for PR #127
+- chore: update leaderboard for PR #128
+- chore: update leaderboard for PR #129
+- chore: update leaderboard for PR #130
+- chore: update leaderboard for PR #131
+- chore: update leaderboard for PR #132
+- chore: update leaderboard for PR #133
+- chore: update leaderboard for PR #135
+- chore: update leaderboard for PR #136
+- chore: update leaderboard for PR #137
+- chore: update leaderboard for PR #138
+- chore: update leaderboard for PR #139
+- chore: update leaderboard for PR #140
+- chore: update leaderboard for PR #141
+- chore: update leaderboard for PR #142
+- chore: update leaderboard for PR #143
+- chore: update leaderboard for PR #144
+- chore: update leaderboard for PR #145
+- chore: update leaderboard for PR #146
+- chore: update leaderboard for PR #147
+- chore: update leaderboard for PR #148
+- chore: update leaderboard for PR #149
+- chore: update leaderboard for PR #150
+- chore: update leaderboard for PR #151
+- chore: update leaderboard for PR #152
+- chore: update leaderboard for PR #153
+- chore: update leaderboard for PR #154
+- chore: update leaderboard for PR #155
+- chore: update leaderboard for PR #156
+- chore: update leaderboard for PR #157
+- chore: update leaderboard for PR #158
+- chore: update leaderboard for PR #159
+- chore: update leaderboard for PR #160
+- chore: update leaderboard for PR #161
+- chore: update leaderboard for PR #162
+- chore: update leaderboard for PR #163
+- chore: update leaderboard for PR #164
+- chore: update leaderboard for PR #165
+- chore: update leaderboard for PR #166
+- chore: update leaderboard for PR #167
+- chore: update leaderboard for PR #168
+- chore: update leaderboard for PR #169
+- chore: update leaderboard for PR #170
+- chore: update leaderboard for PR #171
+- chore: update leaderboard for PR #172
+- chore: update leaderboard for PR #173
+- chore: update leaderboard for PR #174
+- chore: update leaderboard for PR #175
+- chore: update leaderboard for PR #176
+- chore: update leaderboard for PR #177
+- chore: update leaderboard for PR #178
+- chore: update leaderboard for PR #179
+- chore: update leaderboard for PR #180
+- chore: update leaderboard for PR #181
+- chore: update leaderboard for PR #182
+- chore: update leaderboard for PR #183
+- chore: update leaderboard for PR #184
+- chore: update leaderboard for PR #185
+- chore: update leaderboard for PR #186
+- chore: update leaderboard for PR #187
+- chore: update leaderboard for PR #188
+- chore: update leaderboard for PR #189
+- chore: update leaderboard for PR #190
+- chore: update leaderboard for PR #191
+- chore: update leaderboard for PR #192
+- chore: update leaderboard for PR #193
+- chore: update leaderboard for PR #194
+- chore: update leaderboard for PR #195
+- chore: update leaderboard for PR #196
+- chore: update leaderboard for PR #197
+- chore: update leaderboard for PR #198
+- chore: update leaderboard for PR #199
+- chore: update leaderboard for PR #200
+- chore: update leaderboard for PR #201
+- chore: update leaderboard for PR #202
+- chore: update leaderboard for PR #203
+- chore: update leaderboard for PR #204
+- chore: update leaderboard for PR #205
+- chore: update leaderboard for PR #206
+- chore: update leaderboard for PR #207
+- chore: update leaderboard for PR #208
+- chore: update leaderboard for PR #209
+- chore: update leaderboard for PR #210
+- chore: update leaderboard for PR #211
+- chore: update leaderboard for PR #212
+- chore: update leaderboard for PR #213
+- chore: update leaderboard for PR #214
+- chore: update leaderboard for PR #215
+- chore: update leaderboard for PR #216
+- chore: update leaderboard for PR #217
+- chore: update leaderboard for PR #218
+- chore: update leaderboard for PR #219
+- chore: update leaderboard for PR #222
+- chore: update leaderboard for PR #224
+- chore: update leaderboard for PR #226
+- chore: update leaderboard for PR #227
+- chore: update leaderboard for PR #228
+- chore: update leaderboard for PR #229
+- chore: update leaderboard for PR #230
+- chore: update leaderboard for PR #231
+- chore: update leaderboard for PR #232
+- chore: update leaderboard for PR #233
+- chore: update leaderboard for PR #234
+- chore: update leaderboard for PR #236
+- chore: update leaderboard for PR #237
+- chore: update leaderboard for PR #238
+- chore: update leaderboard for PR #239
+- chore: update leaderboard for PR #240
+- chore: update leaderboard for PR #241
+- chore: update leaderboard for PR #242
+- chore: update leaderboard for PR #243
+- chore: update leaderboard for PR #244
+- chore: update leaderboard for PR #245
+- chore: update leaderboard for PR #246
+- chore: update leaderboard for PR #247
+- chore: update leaderboard for PR #248
+- chore: update leaderboard for PR #249
+- chore: update leaderboard for PR #250
+- chore: update leaderboard for PR #252
+- chore: update leaderboard for PR #255
+- chore: update leaderboard for PR #256
+- chore: update leaderboard for PR #257
+- chore: update leaderboard for PR #258
+- chore: update leaderboard for PR #259
+- chore: update leaderboard for PR #260
+- chore: update leaderboard for PR #261
+- chore: update leaderboard for PR #262
+- chore: update leaderboard for PR #263
+- chore: update leaderboard for PR #265
+- chore: update leaderboard for PR #266
+- chore: update leaderboard for PR #267
+- chore: update leaderboard for PR #268
+- chore: update leaderboard for PR #269
+- chore: update leaderboard for PR #270
+- chore: update leaderboard for PR #271
+- chore: update leaderboard for PR #272
+- chore: update leaderboard for PR #273
+- chore: update leaderboard for PR #274
+- chore: update leaderboard for PR #275
+- chore: update leaderboard for PR #276
+- chore: update leaderboard for PR #277
+- chore: update leaderboard for PR #278
+- chore: update leaderboard for PR #279
+- chore: update leaderboard for PR #280
+- chore: update leaderboard for PR #281
+- chore: update leaderboard for PR #282
+- chore: update leaderboard for PR #283
+- chore: update leaderboard for PR #284
+- chore: update leaderboard for PR #285
+- chore: update leaderboard for PR #286
+- chore: update leaderboard for PR #287
+- chore: update leaderboard for PR #289
+- chore: update leaderboard for PR #288
+- chore: update leaderboard for PR #290
+- chore: update leaderboard for PR #291
+- chore: update leaderboard for PR #293
+- chore: update leaderboard for PR #294
+- chore: update leaderboard for PR #295
+- chore: update leaderboard for PR #296
+- chore: update leaderboard for PR #297
+- chore: update leaderboard for PR #298
+- chore: update leaderboard for PR #299
+- chore: update leaderboard for PR #300
+- chore: update leaderboard for PR #301
+- chore: update leaderboard for PR #302
+- chore: update leaderboard for PR #303
+- chore: update leaderboard for PR #304
+- chore: update leaderboard for PR #305
+- [agent] feat: implement infinite sequence iterator with safe iteration
+### Fixed
+
+- Fix seed issues workflow YAML syntax
+- Fix auto process leaderboard commit
+- fix: replace peter-evans action with gh cli for PR closing
+- fix: remove auto-close, let agents manage their own PRs
+### Removed
+
+- Delete .github/workflows/main.yml
+---
+
+Generated by [CHANGELOG Generator](https://github.com/claude-builders-bounty/claude-builders-bounty)
