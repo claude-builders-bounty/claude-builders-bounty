@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. Run `bash changelog.sh` from any git repository.
+2. Pass a custom path if needed: `bash changelog.sh docs/CHANGELOG.md`.
+3. Review the generated `CHANGELOG.md`, with commits grouped into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+See `SAMPLE_CHANGELOG.md` for output generated from this repository's git history.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
