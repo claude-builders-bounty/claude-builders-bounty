@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Templates
+
+- `templates/nextjs-sqlite-saas/CLAUDE.md` - opinionated Claude Code project instructions for a Next.js 15 + SQLite SaaS.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
