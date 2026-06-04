@@ -1,0 +1,142 @@
+{
+  "name": "Weekly GitHub Dev Summary — Claude AI",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "0 17 * * 5"}]
+        }
+      },
+      "id": "trigger-cron",
+      "name": "Friday 5pm Trigger",
+      "type": "n8n-nodes-base.cron",
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/commits?since={{ $json.last_week_iso }}&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}"},
+            {"name": "Accept", "value": "application/vnd.github+json"}
+          ]
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/issues?state=closed&since={{ $json.last_week_iso }}&per_page=30",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}"},
+            {"name": "Accept", "value": "application/vnd.github+json"}
+          ]
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 350]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/pulls?state=closed&sort=updated&direction=desc&per_page=20",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}"},
+            {"name": "Accept", "value": "application/vnd.github+json"}
+          ]
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.all()[0]?.json || [];\nconst issues = $input.all()[1]?.json || [];\nconst prs = $input.all()[2]?.json || [];\n\nconst repo = $('Set Repo URL').item.json.repo_url;\nconst repoName = repo.split('/').slice(-2).join('/');\nconst weekStart = $('Set Repo URL').item.json.last_week_iso;\n\nconst summary = {\n  commits: commits.map(c => ({\n    message: c.commit.message.split('\\n')[0],\n    author: c.commit.author.name,\n    date: c.commit.author.date\n  })),\n  issuesClosed: issues.filter(i => !i.pull_request).map(i => ({\n    title: i.title,\n    number: i.number\n  })),\n  prsMerged: prs.filter(p => p.merged_at).map(p => ({\n    title: p.title,\n    number: p.number,\n    author: p.user.login\n  }))\n};\n\nconst prompt = `You are a tech lead writing a weekly dev summary for ${repoName}. \nWrite a concise, professional weekly summary in Markdown. Include:\n1. Overview (2-3 sentences)\n2. Key commits (bullet points, max 5 highlights)\n3. Issues closed (bullet points)\n4. PRs merged (bullet points)\n5. Upcoming focus\n\nData:\nCommits this week: ${summary.commits.length}\n${summary.commits.slice(0,10).map(c => `- ${c.message} (${c.author})`).join('\\n')}\n\nIssues closed: ${summary.issuesClosed.length}\n${summary.issuesClosed.map(i => `- #${i.number} ${i.title}`).join('\\n')}\n\nPRs merged: ${summary.prsMerged.length}\n${summary.prsMerged.map(p => `- #${p.number} ${p.title} (by ${p.author})`).join('\\n')}\n\nWeek: ${weekStart}`;\n\nreturn { prompt, weekStart, repoName };"
+      },
+      "id": "merge-data",
+      "name": "Merge & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "position": [650, 450]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "model", "value": "claude-sonnet-4-20250514"},
+            {"name": "max_tokens", "value": 2048},
+            {"name": "messages[0][role]", "value": "user"},
+            {"name": "messages[0][content]", "value": "={{ $json.prompt }}"}
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        }
+      },
+      "id": "call-claude",
+      "name": "Claude API — Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "const summary = $input.first().json.content[0].text;\nconst repoName = $('Merge & Build Prompt').first().json.repoName;\nconst weekStart = $('Merge & Build Prompt').first().json.weekStart.split('T')[0];\n\nconst markdown = `# Weekly Dev Summary — ${repoName}\n\nWeek of ${weekStart}\n\n${summary}\n\n---\n*Auto-generated by n8n + Claude AI workflow*`;\n\nreturn { markdown, repoName, weekStart };"
+      },
+      "id": "format-output",
+      "name": "Format Markdown",
+      "type": "n8n-nodes-base.code",
+      "position": [1050, 450]
+    },
+    {
+      "parameters": {
+        "content": "## ✅ Weekly Dev Summary Generated\n\n{{ $json.markdown }}",
+        "height": 500
+      },
+      "id": "display-summary",
+      "name": "Display Summary",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [1250, 250]
+    }
+  ],
+  "connections": {
+    "Friday 5pm Trigger": {"main": [[{"node": "Fetch Commits", "type": "main", "index": 0}]]},
+    "Fetch Commits": {"main": [[{"node": "Fetch Closed Issues", "type": "main", "index": 0}]]},
+    "Fetch Closed Issues": {"main": [[{"node": "Fetch Merged PRs", "type": "main", "index": 0}]]},
+    "Fetch Merged PRs": {"main": [[{"node": "Merge & Build Prompt", "type": "main", "index": 0}]]},
+    "Merge & Build Prompt": {"main": [[{"node": "Claude API — Generate Summary", "type": "main", "index": 0}]]},
+    "Claude API — Generate Summary": {"main": [[{"node": "Format Markdown", "type": "main", "index": 0}]]},
+    "Format Markdown": {"main": [[{"node": "Display Summary", "type": "main", "index": 0}]]}
+  },
+  "settings": {
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}
