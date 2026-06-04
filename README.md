@@ -1,53 +1,103 @@
-# Claude Builders Bounty 🤖
+﻿# Claude Builders Bounty — CHANGELOG Generator
 
-> A community bounty board for Claude Code builders.
+Generate structured `CHANGELOG.md` from git history using conventional commits.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup
 
----
+**Step 1:** Copy the script into your project:
 
-## How it works
+```bash
+cp scripts/generate-changelog.sh your-project/scripts/
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+**Step 2:** Run it:
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+cd your-project
+bash scripts/generate-changelog.sh
+```
 
----
+**Step 3:** Review your new `CHANGELOG.md`:
 
-## Active Bounties
+```markdown
+# Changelog
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## [Unreleased]
 
----
+### 🚀 Added
+- New user dashboard (a1b2c3d)
 
-## Rules
+### 🐛 Fixed
+- Login redirect loop (e4f5g6h)
+```
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Usage
 
----
+### As a Claude Code Skill
 
-## Community
+1. Copy the `skills/changelog-generator/` folder into your `.claude/skills/` directory
+2. In Claude Code, type: `/generate-changelog`
+3. Claude will run the script and present the output
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### As a CLI Script
 
----
+```bash
+# Bash version (zero dependencies)
+bash scripts/generate-changelog.sh                    # Output to CHANGELOG.md
+bash scripts/generate-changelog.sh --stdout            # Print to stdout
+bash scripts/generate-changelog.sh --no-emoji          # Plain text output
+bash scripts/generate-changelog.sh --output RELEASES.md # Custom filename
 
-*Started by the Claude builder community · March 2026 · MIT License*
+# Python version (zero dependencies)
+python scripts/generate_changelog.py                   # Output to CHANGELOG.md
+python scripts/generate_changelog.py --stdout           # Print to stdout
+python scripts/generate_changelog.py --no-emoji         # Plain text
+python scripts/generate_changelog.py --output RELEASES.md
+```
+
+### As a GitHub Action
+
+Copy `.github/workflows/generate-changelog.yml` to your project. On every `v*` tag push, it auto-generates and commits a `CHANGELOG.md`.
+
+## What It Does
+
+1. Finds the latest git tag (sorted by version)
+2. Fetches all commits since that tag
+3. Parses conventional commit messages into 10 categories
+4. Outputs a structured, human-readable CHANGELOG.md
+
+## Conventional Commit Convention
+
+| Prefix | Category | Emoji |
+|--------|----------|-------|
+| `feat:` | Added | 🚀 |
+| `fix:` | Fixed | 🐛 |
+| `refactor:` | Changed | 🔧 |
+| `docs:` | Documentation | 📖 |
+| `perf:` | Performance | ⚡ |
+| `test:` | Testing | 🧪 |
+| `security:` | Security | 🔒 |
+| `build:`, `ci:` | Dependencies | 📦 |
+| `revert:`, `remove:` | Removed | 🔥 |
+
+## Files
+
+```
+├── scripts/
+│   ├── generate-changelog.sh          # Bash implementation
+│   └── generate_changelog.py          # Python implementation
+├── skills/
+│   └── changelog-generator/
+│       └── SKILL.md                   # Claude Code skill
+├── .github/workflows/
+│   └── generate-changelog.yml         # GitHub Action
+└── sample/
+    └── CHANGELOG.md                   # Example output
+```
+
+## Requirements
+
+- git 2.0+
+- bash 4+ **or** python 3.6+
+
+Created for the [Claude Builders Bounty](https://github.com/claude-builders-bounty/claude-builders-bounty) — Issue [#1](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/1).
