@@ -8,6 +8,42 @@ You're in the right place.
 
 ---
 
+## 🛠️ Included Tools
+
+This repository contains two production-ready developer tools built for Claude Code:
+
+1. **CHANGELOG Generator Skill (`generate_changelog.py`)**: Automatically parses your project's git history since the last release tag, categorizes commits into standard bins (`Added`, `Fixed`, `Changed`, `Removed`), and outputs a clean `CHANGELOG.md`.
+2. **Claude PR Reviewer CLI (`claude_review.py`)**: Fetches raw PR diffs from GitHub without needing API authentication, runs static code analysis (or calls Gemini AI if configured), and writes a structured Markdown review report.
+
+---
+
+## 🚀 Quick Start (3 Steps or Fewer)
+
+### 1. Slicing Git History (CHANGELOG)
+Generate your changelog instantly in the current repository:
+```bash
+python generate_changelog.py
+```
+
+### 2. Run PR Reviews Natively
+Review any public pull request via URL (it will generate `pr_review_report.md`):
+* **Windows**:
+  ```cmd
+  claude-review --pr https://github.com/owner/repo/pull/123
+  ```
+* **Linux/macOS**:
+  ```bash
+  ./claude-review --pr https://github.com/owner/repo/pull/123
+  ```
+
+### 3. Optional: Configure Gemini AI for Reviews
+Create a `.env` file in the root directory and add your API key for generative reviews:
+```env
+GEMINI_API_KEY=your_actual_gemini_api_key
+```
+
+---
+
 ## How it works
 
 **To post a bounty**
