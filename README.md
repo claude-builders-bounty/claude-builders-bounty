@@ -31,6 +31,7 @@ What's Covered
 │ Commit Conventions          │ Conventional commits format                      │
 │ Testing Philosophy          │ Unit vs integration vs e2e strategy              │
 └─────────────────────────────┴──────────────────────────────────────────────────┘
+
 Why This CLAUDE.md?
 - Opinionated — every rule has a why, not just a what
 - Zero-config — drop it in a greenfield project and Claude Code works immediately
