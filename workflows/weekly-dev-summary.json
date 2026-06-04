@@ -1,0 +1,177 @@
+{
+  "name": "Weekly Dev Summary (Claude + GitHub)",
+  "nodes": [
+    {
+      "id": "e3b0c442-98fc-11e7-8a9c-98fc11e78a9c",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-98fc-11e7-8a9c-98fc11e78a9c",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repo",
+              "value": "={{ $json.repo || $env.REPO || 'owner/repo' }}"
+            },
+            {
+              "name": "channel",
+              "value": "={{ $json.channel || $env.CHANNEL || '#dev-updates' }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $json.language || $env.LANGUAGE || 'EN' }}"
+            },
+            {
+              "name": "githubToken",
+              "value": "={{ $json.githubToken || $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "claudeApiKey",
+              "value": "={{ $json.claudeApiKey || $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "slackWebhook",
+              "value": "={{ $json.slackWebhook || $env.SLACK_WEBHOOK || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b2c3d4e5-98fc-11e7-8a9c-98fc11e78a9c",
+      "name": "Collect GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "parameters": {
+        "language": "=javaScript",
+        "code": "// Collect all GitHub activity for the repo in the past week\nconst item = $input.first().json;\nconst repo = item.repo || 'owner/repo';\nconst token = item.githubToken || '';\nconst since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();\nconst headers = {\n  'Accept': 'application/vnd.github.v3+json',\n  'User-Agent': 'WeeklyDevSummaryBot'\n};\nif (token) headers['Authorization'] = `Bearer ${token}`;\n\nconst api = async (path) => {\n  const url = `https://api.github.com/repos/${repo}/${path}`;\n  const res = await this.helpers.httpRequest({\n    url,\n    method: 'GET',\n    headers,\n    json: true\n  });\n  return Array.isArray(res) ? res : [];\n};\n\n// Fetch all three data sources in parallel\nconst [commits, issues, prs] = await Promise.all([\n  api(`commits?per_page=20&since=${encodeURIComponent(since)}`),\n  api(`issues?state=closed&per_page=20&since=${encodeURIComponent(since)}&filter=all`),\n  api(`pulls?state=closed&sort=updated&direction=desc&per_page=20`)\n]);\n\n// Filter PRs to only merged ones from this week\nconst weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;\nconst mergedPrs = prs.filter(p => p.merged_at && new Date(p.merged_at).getTime() > weekAgo);\n\n// Filter issues to exclude pull requests\nconst closedIssues = issues.filter(i => !i.pull_request);\n\nreturn [{\n  json: {\n    repo,\n    channel: item.channel || '#dev-updates',\n    language: item.language || 'EN',\n    claudeApiKey: item.claudeApiKey,\n    slackWebhook: item.slackWebhook || '',\n    commitCount: commits.length,\n    commits: commits.map(c => ({\n      message: c.commit.message.split('\\n')[0],\n      author: c.commit.author.name,\n      date: c.commit.author.date,\n      url: c.html_url\n    })),\n    issueCount: closedIssues.length,\n    issues: closedIssues.slice(0, 20).map(i => ({\n      title: i.title,\n      author: i.user?.login,\n      url: i.html_url\n    })),\n    prCount: mergedPrs.length,\n    prs: mergedPrs.slice(0, 20).map(p => ({\n      title: p.title,\n      author: p.user?.login,\n      url: p.html_url\n    }))\n  }\n}];"
+      }
+    },
+    {
+      "id": "c3d4e5f6-98fc-11e7-8a9c-98fc11e78a9c",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300],
+      "parameters": {
+        "language": "=javaScript",
+        "code": "// Build a prompt for Claude from collected GitHub data\nconst data = $input.first().json;\nconst lang = (data.language || 'EN').toUpperCase();\n\nconst format = (items) => items.map(i => `- ${i.title || i.message} (${i.author || 'unknown'})`).join('\\n');\n\nconst repo = data.repo;\nconst isFrench = lang === 'FR';\n\nconst prompt = isFrench\n  ? `Résumé hebdomadaire — ${repo}\\n\\n` +\n    `Commits (${data.commitCount}) :\\n${format(data.commits)}\\n\\n` +\n    `Problèmes fermés (${data.issueCount}) :\\n${format(data.issues)}\\n\\n` +\n    `PRs fusionnées (${data.prCount}) :\\n${format(data.prs)}\\n\\n` +\n    `Génère un résumé narratif en français organisé par thème. ` +\n    `Mets en évidence les changements significatifs, les tendances et les domaines nécessitant une attention particulière.`\n  : `Weekly development summary — ${repo}\\n\\n` +\n    `Commits (${data.commitCount}):\\n${format(data.commits)}\\n\\n` +\n    `Closed issues (${data.issueCount}):\\n${format(data.issues)}\\n\\n` +\n    `Merged PRs (${data.prCount}):\\n${format(data.prs)}\\n\\n` +\n    `Generate a narrative summary organized by theme. ` +\n    `Highlight significant changes, trends, and areas needing attention.`;\n\nreturn [{\n  json: {\n    prompt,\n    repo: data.repo,\n    channel: data.channel,\n    language: data.language,\n    claudeApiKey: data.claudeApiKey,\n    slackWebhook: data.slackWebhook,\n    commitCount: data.commitCount,\n    issueCount: data.issueCount,\n    prCount: data.prCount\n  }\n}];"
+      }
+    },
+    {
+      "id": "d4e5f6a7-98fc-11e7-8a9c-98fc11e78a9c",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1000, 300],
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendBody": true,
+        "bodyParameters": {},
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 4096,\n  \"system\": \"You are a technical writer generating concise weekly development summaries. Focus on meaningful changes and trends.\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": $json.prompt\n        }\n      ]\n    }\n  ]\n}",
+        "sendQuery": false,
+        "sendHeaders": true,
+        "options": {
+          "headers": {
+            "x-api-key": "={{ $json.claudeApiKey }}",
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+          }
+        },
+        "method": "POST",
+        "authentication": "none"
+      }
+    },
+    {
+      "id": "e5f6a7b8-98fc-11e7-8a9c-98fc11e78a9c",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "parameters": {
+        "language": "=javaScript",
+        "code": "// Extract the narrative summary from Claude's response\nconst item = $input.first().json;\nconst content = item.content || [];\nconst textBlock = content.find(c => c.type === 'text');\nconst summary = textBlock?.text || 'No summary generated.';\n\nreturn [{\n  json: {\n    summary,\n    repo: $json.repo,\n    channel: $json.channel,\n    slackWebhook: $json.slackWebhook,\n    commitCount: $json.commitCount,\n    issueCount: $json.issueCount,\n    prCount: $json.prCount,\n    generatedAt: new Date().toISOString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "f6a7b8c9-98fc-11e7-8a9c-98fc11e78a9c",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1500, 300],
+      "parameters": {
+        "url": "={{ $json.slackWebhook }}",
+        "sendBody": true,
+        "bodyParameters": {},
+        "jsonBody": "={\n  \"text\": \"*Weekly Dev Summary — {{ $json.repo }}*\\n{{ $json.summary }}\",\n  \"username\": \"Weekly Dev Bot\",\n  \"icon_emoji\": \":memo:\"\n}",
+        "sendQuery": false,
+        "sendHeaders": true,
+        "options": {
+          "headers": {
+            "content-type": "application/json"
+          }
+        },
+        "method": "POST",
+        "authentication": "none"
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [
+        [{ "node": "Configuration", "type": "main", "index": 0 }]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [{ "node": "Collect GitHub Activity", "type": "main", "index": 0 }]
+      ]
+    },
+    "Collect GitHub Activity": {
+      "main": [
+        [{ "node": "Build Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [{ "node": "Claude API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [{ "node": "Extract Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Summary": {
+      "main": [
+        [{ "node": "Send to Slack", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null
+}
