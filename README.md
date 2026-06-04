@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. From the repository root, run `bash changelog.sh`.
+2. Review the generated `CHANGELOG.md`.
+3. Commit the changelog when it looks correct.
+
+The script finds the most recent git tag with `git describe --tags --abbrev=0`, collects commits from that tag through `HEAD`, and sorts them into `Added`, `Fixed`, `Changed`, and `Removed`. If the repository has no tags, it uses all commits.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
