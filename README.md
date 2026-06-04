@@ -34,6 +34,48 @@ You're in the right place.
 
 ---
 
+## Claude PR Review Agent
+
+This repo includes a Claude Code sub-agent and CLI for reviewing GitHub pull requests.
+
+Install the local CLI:
+
+```bash
+npm install
+npm link
+```
+
+Review a public GitHub pull request and print structured Markdown:
+
+```bash
+claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+Post the generated review as a PR comment:
+
+```bash
+GITHUB_TOKEN=ghp_xxx claude-review --pr https://github.com/owner/repo/pull/123 --post
+```
+
+The output includes:
+
+- Summary of changes in 2-3 sentences
+- Identified risks
+- Improvement suggestions
+- Confidence score: Low, Medium, or High
+
+The Claude Code sub-agent definition lives at `.claude/agents/pr-reviewer.md`. The GitHub Action in `.github/workflows/claude-review.yml` runs the same reviewer on pull requests and can also be triggered manually with a PR URL.
+
+Validate locally without network access:
+
+```bash
+npm test
+```
+
+For bounty submission evidence, run the CLI against at least two real GitHub PRs and paste the generated Markdown outputs into the pull request description.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
