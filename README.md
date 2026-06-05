@@ -8,6 +8,27 @@ You're in the right place.
 
 ---
 
+## 🔒 Destructive Command Blocking Hook (Issue #3)
+
+A safety-first, pre-tool-use validation hook built natively in Python to intercept and block destructive bash commands from being executed by Claude Code.
+
+### **Features**
+* Intercepts `PreToolUse` events for the `Bash` matcher.
+* Blocks standard destructive commands including `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` without a `WHERE` clause.
+* Logs all blocked commands automatically to `~/.claude/hooks/blocked.log` with timestamp, command, and project directory.
+* Exits with code `1` to block the execution while displaying a clear reason message.
+
+---
+
+## 🚀 Installation (1 Command)
+
+Enable the hook automatically in your local Claude Code settings:
+```bash
+python install_hook.py
+```
+
+---
+
 ## How it works
 
 **To post a bounty**
