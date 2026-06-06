@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 import urllib.error
 import urllib.request
 from typing import Any
@@ -47,8 +48,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="PR Review Agent")
     parser.add_argument(
         "--pr",
-        required=True,
         help="PR URL or number (e.g., https://github.com/owner/repo/pull/123)",
+    )
+    parser.add_argument(
+        "--diff-file",
+        metavar="PATH",
+        help="Review a local unified diff file (no GitHub API required)",
+    )
+    parser.add_argument(
+        "--title",
+        help="PR title when using --diff-file (default: derived from filename)",
+    )
+    parser.add_argument(
+        "--author",
+        default="local",
+        help="Author login when using --diff-file (default: local)",
     )
     parser.add_argument(
         "--repo",
@@ -77,7 +91,81 @@ def parse_args() -> argparse.Namespace:
         metavar="N",
         help="Limit analysis to the first N changed files (useful for very large PRs)",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.pr and not args.diff_file:
+        parser.error("one of --pr or --diff-file is required")
+    if args.pr and args.diff_file:
+        parser.error("--pr and --diff-file are mutually exclusive")
+    return args
+
+
+def parse_diff_filenames(diff: str) -> list[dict[str, Any]]:
+    """Extract changed files and line counts from a unified diff."""
+    files: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+
+    for line in diff.splitlines():
+        header = re.match(r"^diff --git a/(.+?) b/(.+)$", line)
+        if header:
+            if current is not None:
+                files.append(current)
+            filename = header.group(2)
+            current = {
+                "filename": filename,
+                "status": "modified",
+                "additions": 0,
+                "deletions": 0,
+                "changes": 0,
+            }
+            continue
+
+        if current is None:
+            continue
+
+        if line.startswith("new file mode"):
+            current["status"] = "added"
+        elif line.startswith("deleted file mode"):
+            current["status"] = "removed"
+        elif line.startswith("rename from "):
+            current["status"] = "renamed"
+        elif line.startswith("+") and not line.startswith("+++"):
+            current["additions"] += 1
+            current["changes"] += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            current["deletions"] += 1
+            current["changes"] += 1
+
+    if current is not None:
+        files.append(current)
+    return files
+
+
+def metadata_from_diff(
+    diff: str,
+    *,
+    title: str,
+    author: str,
+    body: str = "",
+) -> dict[str, Any]:
+    changed_files = parse_diff_filenames(diff)
+    return {
+        "title": title,
+        "body": body[:2000],
+        "state": "open",
+        "author": author,
+        "base_branch": "main",
+        "head_branch": "feature",
+        "changed_files": changed_files,
+        "total_changes": sum(item["changes"] for item in changed_files),
+        "commits": 1,
+        "additions": sum(item["additions"] for item in changed_files),
+        "deletions": sum(item["deletions"] for item in changed_files),
+        "created_at": "",
+        "labels": [],
+        "owner": "local",
+        "repo": "review",
+        "pr_number": 0,
+    }
 
 
 def gh_api(path: str, token: str, accept: str = "application/vnd.github.v3+json") -> Any:
@@ -432,6 +520,22 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
                 "PR description is brief or missing. Add context about the problem being solved."
             )
 
+        src_changed = [
+            file_info["filename"]
+            for file_info in metadata["changed_files"]
+            if re.search(r"(?:^|/)(?:src|lib|app)/", file_info["filename"])
+            and file_info["status"] != "removed"
+        ]
+        test_changed = any(
+            re.search(r"(?:^|/)(?:tests?|__tests__|spec)/", file_info["filename"])
+            for file_info in metadata["changed_files"]
+        )
+        if src_changed and not test_changed:
+            suggestions.append(
+                "Source files changed without accompanying test updates. "
+                "Add or extend tests for the modified behavior."
+            )
+
     detail_lines = []
     if metadata["changed_files"]:
         detail_lines.append("")
@@ -585,51 +689,81 @@ def parse_pr_url(pr_url: str) -> tuple[str | None, str | None, int | None]:
 
 def main() -> None:
     args = parse_args()
-    token = args.token or os.environ.get("GITHUB_TOKEN")
-    if not token:
-        print(
-            "Error: GITHUB_TOKEN not set. Provide --token or set GITHUB_TOKEN env var.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
 
-    owner, repo, pr_number = parse_pr_url(args.pr)
-    if pr_number is None:
-        print(f"Error: Cannot parse PR: {args.pr}", file=sys.stderr)
-        sys.exit(1)
-
-    if owner is None:
-        if not args.repo or "/" not in args.repo:
-            print("Error: --repo owner/repo is required when --pr is a number.", file=sys.stderr)
+    if args.diff_file:
+        try:
+            with open(args.diff_file, encoding="utf-8") as handle:
+                diff = handle.read()
+        except OSError as exc:
+            print(f"Error reading diff file: {exc}", file=sys.stderr)
             sys.exit(1)
-        owner, repo = args.repo.split("/", 1)
 
-    print(f"Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+        title = args.title or Path(args.diff_file).stem.replace("-", " ").replace("_", " ")
+        metadata = metadata_from_diff(diff, title=title, author=args.author)
+        if args.max_files is not None and args.max_files > 0:
+            total_files = len(metadata["changed_files"])
+            if total_files > args.max_files:
+                metadata["files_truncated"] = total_files - args.max_files
+                metadata["changed_files"] = metadata["changed_files"][: args.max_files]
 
-    metadata = fetch_pr_metadata(owner, repo, pr_number, token)
-    if args.max_files is not None and args.max_files > 0:
-        total_files = len(metadata["changed_files"])
-        if total_files > args.max_files:
-            metadata["files_truncated"] = total_files - args.max_files
-            metadata["changed_files"] = metadata["changed_files"][: args.max_files]
-    diff = fetch_pr_diff(owner, repo, pr_number, token)
+        if args.diff_only:
+            print(diff or "No diff available")
+            return
 
-    if args.diff_only:
-        print(diff or "No diff available")
-        return
+        review = analyze_pr(metadata, diff)
+        output = format_markdown(metadata, review)
+    else:
+        token = args.token or os.environ.get("GITHUB_TOKEN")
+        if not token:
+            print(
+                "Error: GITHUB_TOKEN not set. Provide --token or set GITHUB_TOKEN env var.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    if not diff:
-        print(
-            "Warning: Could not fetch diff. Review will be limited to metadata.",
-            file=sys.stderr,
-        )
+        owner, repo, pr_number = parse_pr_url(args.pr)
+        if pr_number is None:
+            print(f"Error: Cannot parse PR: {args.pr}", file=sys.stderr)
+            sys.exit(1)
 
-    metadata["owner"] = owner
-    metadata["repo"] = repo
-    metadata["pr_number"] = pr_number
+        if owner is None:
+            if not args.repo or "/" not in args.repo:
+                print(
+                    "Error: --repo owner/repo is required when --pr is a number.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            owner, repo = args.repo.split("/", 1)
 
-    review = analyze_pr(metadata, diff)
-    output = format_markdown(metadata, review)
+        print(f"Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+
+        metadata = fetch_pr_metadata(owner, repo, pr_number, token)
+        if args.max_files is not None and args.max_files > 0:
+            total_files = len(metadata["changed_files"])
+            if total_files > args.max_files:
+                metadata["files_truncated"] = total_files - args.max_files
+                metadata["changed_files"] = metadata["changed_files"][: args.max_files]
+        diff = fetch_pr_diff(owner, repo, pr_number, token)
+
+        if args.diff_only:
+            print(diff or "No diff available")
+            return
+
+        if not diff:
+            print(
+                "Warning: Could not fetch diff. Review will be limited to metadata.",
+                file=sys.stderr,
+            )
+
+        metadata["owner"] = owner
+        metadata["repo"] = repo
+        metadata["pr_number"] = pr_number
+
+        review = analyze_pr(metadata, diff)
+        output = format_markdown(metadata, review)
+
+        if args.post:
+            post_review_comment(owner, repo, pr_number, output, token)
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as handle:
@@ -637,9 +771,6 @@ def main() -> None:
         print(f"Review written to {args.output}", file=sys.stderr)
     else:
         print(output)
-
-    if args.post:
-        post_review_comment(owner, repo, pr_number, output, token)
 
 
 if __name__ == "__main__":

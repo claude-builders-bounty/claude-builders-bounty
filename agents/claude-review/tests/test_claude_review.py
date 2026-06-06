@@ -358,6 +358,51 @@ class MaxFilesTests(unittest.TestCase):
         self.assertIn("2 of 5 file(s)", review["summary"])
 
 
+class DiffFileTests(unittest.TestCase):
+    SAMPLE_DIFF = """diff --git a/src/widget.py b/src/widget.py
+new file mode 100644
+--- /dev/null
++++ b/src/widget.py
+@@ -0,0 +1,2 @@
++def widget():
++    pass
+"""
+
+    def test_parse_diff_filenames(self):
+        files = claude_review.parse_diff_filenames(self.SAMPLE_DIFF)
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0]["filename"], "src/widget.py")
+        self.assertEqual(files[0]["status"], "added")
+        self.assertEqual(files[0]["additions"], 2)
+
+    def test_metadata_from_diff(self):
+        metadata = claude_review.metadata_from_diff(
+            self.SAMPLE_DIFF,
+            title="Add widget",
+            author="alice",
+        )
+        self.assertEqual(metadata["title"], "Add widget")
+        self.assertEqual(metadata["author"], "alice")
+        self.assertEqual(len(metadata["changed_files"]), 1)
+
+    def test_src_without_tests_triggers_suggestion(self):
+        metadata = claude_review.metadata_from_diff(
+            self.SAMPLE_DIFF,
+            title="Add widget",
+            author="alice",
+        )
+        review = claude_review.analyze_pr(metadata, self.SAMPLE_DIFF)
+        self.assertTrue(
+            any("test" in suggestion.lower() for suggestion in review["suggestions"])
+        )
+
+    def test_diff_file_mode_does_not_require_pr(self):
+        with unittest.mock.patch("sys.argv", ["claude-review", "--diff-file", "changes.diff"]):
+            args = claude_review.parse_args()
+        self.assertEqual(args.diff_file, "changes.diff")
+        self.assertIsNone(args.pr)
+
+
 class MarkdownFormatTests(unittest.TestCase):
     def test_required_sections_present(self):
         metadata = {

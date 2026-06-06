@@ -27,9 +27,13 @@ claude-review --pr https://github.com/owner/repo/pull/123 -o review.md
 
 # Cap analysis to the first N changed files on very large PRs
 claude-review --pr https://github.com/owner/repo/pull/123 --max-files 50
+
+# Offline review from a local unified diff (no GitHub token required)
+git diff main...HEAD > /tmp/changes.diff
+claude-review --diff-file /tmp/changes.diff --title "My feature branch"
 ```
 
-Set `GITHUB_TOKEN` (or pass `--token`) with `repo` scope for private repos or `public_repo` for public repositories.
+Set `GITHUB_TOKEN` (or pass `--token`) with `repo` scope for private repos or `public_repo` for public repositories. `--diff-file` mode works without a token.
 
 ## Claude Code sub-agent
 
