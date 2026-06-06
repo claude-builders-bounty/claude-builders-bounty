@@ -4,12 +4,15 @@
  * Run: node tests/validate-workflow.mjs
  */
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const workflowPath = join(__dirname, '..', 'weekly-dev-summary.json');
+const readmePath = join(__dirname, '..', 'README.md');
 const workflow = JSON.parse(readFileSync(workflowPath, 'utf8'));
+const readme = readFileSync(readmePath, 'utf8');
 
 const failures = [];
 
@@ -68,9 +71,56 @@ assert(buildPrompt?.parameters?.jsCode?.includes('rows[0].items'), 'unwraps GitH
 assert(buildPrompt?.parameters?.jsCode?.includes('system:'), 'Claude request includes system prompt');
 assert(buildPrompt?.parameters?.jsCode?.includes('JSON.stringify(activity'), 'sends structured activity JSON to Claude');
 
-const connections = Object.keys(workflow.connections || {});
-assert(connections.includes('Friday 5pm Weekly Trigger'), 'trigger is wired');
-assert(connections.includes('Claude API'), 'Claude node is wired');
+const connections = workflow.connections || {};
+assert(Object.keys(connections).includes('Friday 5pm Weekly Trigger'), 'trigger is wired');
+assert(Object.keys(connections).includes('Claude API'), 'Claude node is wired');
+
+function targets(source, index = 0) {
+  return (connections[source]?.main?.[index] || []).map((edge) => edge.node);
+}
+
+const pipeline = [
+  ['Friday 5pm Weekly Trigger', 'Load Config'],
+  ['Load Config', 'Fetch Commits'],
+  ['Load Config', 'Fetch Closed Issues'],
+  ['Load Config', 'Fetch Merged PRs'],
+  ['Fetch Commits', 'Merge GitHub Results'],
+  ['Fetch Closed Issues', 'Merge GitHub Results'],
+  ['Fetch Merged PRs', 'Merge GitHub Results'],
+  ['Merge GitHub Results', 'Build Claude Prompt'],
+  ['Build Claude Prompt', 'Claude API'],
+  ['Claude API', 'Format Summary'],
+  ['Format Summary', 'Route Delivery'],
+];
+for (const [source, target] of pipeline) {
+  assert(targets(source).includes(target), `${source} connects to ${target}`);
+}
+assert(
+  targets('Route Delivery', 0).includes('Send Discord') &&
+    targets('Route Delivery', 1).includes('Send Slack') &&
+    targets('Route Delivery', 2).includes('Send Email'),
+  'Route Delivery connects to Discord, Slack, and Email nodes',
+);
+
+for (const node of workflow.nodes || []) {
+  const code = node.parameters?.jsCode;
+  if (code) {
+    try {
+      new vm.Script(`(async () => {\n${code}\n})`);
+    } catch (error) {
+      failures.push(`${node.name} contains invalid JavaScript: ${error.message}`);
+    }
+  }
+}
+
+const setupSteps = [...readme.matchAll(/^### \d+\./gm)];
+assert(setupSteps.length > 0 && setupSteps.length <= 5, 'README setup uses five steps or fewer');
+assert(readme.includes('weekly-dev-summary.json'), 'README points to importable workflow JSON');
+assert(readme.includes('n8n-execution-screenshot.png'), 'README references n8n execution screenshot');
+
+for (const forbidden of ['sk-ant-', 'ghp_', 'gho_', 'discord.com/api/webhooks/']) {
+  assert(!serialized.includes(forbidden), `workflow does not embed ${forbidden} secrets`);
+}
 
 if (failures.length) {
   console.error('FAILED:\n- ' + failures.join('\n- '));
