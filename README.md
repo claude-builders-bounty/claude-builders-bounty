@@ -22,6 +22,16 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+1. Run `bash changelog.sh` from the repository root.
+2. Review the generated `CHANGELOG.md`.
+3. Commit `changelog.sh` and `CHANGELOG.md` in your pull request.
+
+The script finds the latest git tag, reads commits from that tag to `HEAD`, and categorizes them into `Added`, `Fixed`, `Changed`, and `Removed`. If the repository has no tags, it uses the full commit history.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
