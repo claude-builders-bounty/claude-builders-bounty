@@ -1,0 +1,314 @@
+# Next.js 15 + SQLite SaaS — Claude Code Guide
+
+You are building a **multi-tenant B2B SaaS** with **Next.js 15 App Router**, **React 19**, **TypeScript strict**, and **SQLite**. Local development uses **`better-sqlite3`**; production uses **Turso** via **`@libsql/client`**. This document defines stack choices, folder layout, SQL rules, and component patterns. Treat it as authoritative — deviate only when the user explicitly overrides a convention.
+
+---
+
+## Stack & Versions
+
+| Layer | Pin | Rationale |
+|-------|-----|-----------|
+| Framework | Next.js 15.x, App Router | RSC + Server Actions; Pages Router is not used |
+| UI | React 19, Tailwind CSS 4 | Server-first rendering; no runtime CSS-in-JS |
+| Language | TypeScript 5.x, `strict: true` | Catch schema drift at compile time |
+| Validation | Zod 3.x | One schema for forms, actions, and env parsing |
+| Local DB | `better-sqlite3` 11.x | Synchronous driver; ideal for dev and single-node deploys |
+| Prod DB | `@libsql/client` (Turso) | Same SQL dialect; edge replication without Postgres ops |
+| Migrations | Plain `.sql` files in git | Reviewable diffs; no ORM migration DSL |
+| Package manager | `pnpm` | Strict dep graph; faster CI installs |
+| Tests | Vitest + React Testing Library | Fast unit tests; same tooling as Vite ecosystem |
+
+**Greenfield defaults:** SQLite file at `./data/app.db` in dev; Turso URL in production. Auth is **httpOnly session cookies** backed by a `sessions` table. Tenancy is **organization-scoped** via `org_id` on every owned row.
+
+---
+
+## Dev Commands
+
+Run from the repo root. If a script is missing, add it to `package.json` — do not invent ad-hoc shell one-liners.
+
+```bash
+pnpm install              # install dependencies
+pnpm dev                  # Next.js dev server (localhost:3000)
+pnpm build                # production build
+pnpm start                # serve production build
+pnpm typecheck            # tsc --noEmit
+pnpm lint                 # eslint
+pnpm test                 # vitest run
+pnpm test:watch           # vitest in watch mode
+pnpm db:migrate           # apply pending SQL migrations
+pnpm db:migrate:status    # show applied vs pending migrations
+pnpm db:seed              # seed dev data (blocked in production)
+```
+
+**Migration runner contract:** `pnpm db:migrate` reads `src/db/migrations/*.sql` in lexicographic filename order, records each in `_migrations`, and skips already-applied files. Migrations never run automatically on `pnpm dev`.
+
+---
+
+## Folder Structure
+
+```
+.
+├── CLAUDE.md                     # this file — copy to project root
+├── data/                         # local SQLite file (gitignored)
+├── public/                       # static assets only
+├── src/
+│   ├── app/
+│   │   ├── (auth)/               # login, signup — no app chrome
+│   │   ├── (app)/                # authenticated shell (sidebar, nav)
+│   │   │   └── [orgSlug]/        # tenant-scoped routes
+│   │   ├── api/                  # webhooks & third-party callbacks only
+│   │   ├── layout.tsx
+│   │   └── globals.css
+│   ├── components/
+│   │   ├── ui/                   # stateless primitives (Button, Input)
+│   │   └── features/             # domain UI (InvoiceTable, ProjectCard)
+│   ├── db/
+│   │   ├── migrations/           # append-only SQL files
+│   │   ├── queries/              # one module per aggregate
+│   │   └── schema.sql            # full schema snapshot for fresh installs
+│   ├── lib/
+│   │   ├── db.ts                 # singleton connection — ONLY db entrypoint
+│   │   ├── auth.ts               # session read/write helpers
+│   │   ├── env.ts                # Zod-validated env vars
+│   │   └── utils.ts              # pure helpers (cn, formatCurrency)
+│   ├── server/
+│   │   ├── actions/              # 'use server' mutations
+│   │   └── jobs/                 # cron / background tasks (idempotent)
+│   └── types/                    # shared TS types (no db runtime imports)
+├── scripts/
+│   ├── migrate.ts                # migration runner
+│   └── seed.ts                   # dev seed data
+└── tests/
+    ├── db/                       # query + migration tests
+    └── components/               # component tests
+```
+
+**Boundary rules:**
+- `src/app/` — routing and page composition only; no SQL.
+- `src/db/queries/` — all reads/writes; one file per domain entity.
+- `src/lib/db.ts` — the only module that imports `better-sqlite3` or `@libsql/client`.
+- `src/server/` — server-only; never import from `"use client"` files.
+- No new top-level `src/` folders without explicit justification.
+
+---
+
+## Naming Conventions
+
+| Artifact | Convention | Example |
+|----------|------------|---------|
+| Route folders | `kebab-case` | `src/app/(app)/[orgSlug]/billing/page.tsx` |
+| Feature components | `PascalCase` file + export | `InvoiceRow.tsx` → `export function InvoiceRow` |
+| UI primitives | `kebab-case` in `components/ui/` | `button.tsx`, `dialog.tsx` |
+| Query modules | `kebab-case`, entity name | `src/db/queries/invoices.ts` |
+| Query functions | `verbNoun`, camelCase | `listInvoices`, `getInvoiceById` |
+| Server actions | `kebab-case` file, `actionVerbNoun` fn | `actionCreateInvoice` in `create-invoice.ts` |
+| Migration files | `YYYYMMDDHHMMSS_snake_slug.sql` (UTC) | `20260315120000_create_invoices.sql` |
+| SQL columns/tables | `snake_case` | `created_at`, `org_id`, `deleted_at` |
+| TS types | `PascalCase` | `Invoice`, `CreateInvoiceInput` |
+| Env vars | `SCREAMING_SNAKE` | `DATABASE_URL`, `SESSION_SECRET` |
+
+**Tables:** plural nouns (`users`, `organizations`, `invoices`). Join tables: alphabetically ordered (`org_members`, not `members_orgs`).
+
+**Primary keys:** `id TEXT PRIMARY KEY` with UUID v7 (or ULID) generated in application code — not `INTEGER AUTOINCREMENT`. Reason: safe distributed ID generation and consistent shape across Turso replicas.
+
+---
+
+## SQL & Migration Conventions
+
+### Principles
+
+1. **Append-only.** Never edit a migration merged to `main`. Fix forward with a new file.
+2. **One concern per file.** Do not combine unrelated schema changes.
+3. **Additive first.** Add columns with defaults; backfill in the same migration; drop obsolete columns later.
+4. **Idempotent where practical.** Use `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` so dev re-runs are safe.
+
+### Migration template
+
+```sql
+-- 20260315120000_create_invoices.sql
+-- Org-scoped invoices for billing.
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id           TEXT PRIMARY KEY NOT NULL,
+  org_id       TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0),
+  status       TEXT NOT NULL DEFAULT 'draft'
+               CHECK (status IN ('draft', 'sent', 'paid', 'void')),
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  deleted_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoices_org_created
+  ON invoices (org_id, created_at DESC)
+  WHERE deleted_at IS NULL;
+```
+
+### Query rules
+
+- **No `SELECT *`.** List columns explicitly so schema changes surface as type errors.
+- **Filter soft-deletes:** `WHERE deleted_at IS NULL` unless querying archives.
+- **Deterministic pagination:** `ORDER BY created_at DESC, id DESC` with `LIMIT`/`OFFSET` or keyset pagination.
+- **Scoped writes:** every `UPDATE`/`DELETE` includes a `WHERE` clause; user data deletes are soft (`SET deleted_at = ...`).
+- **Transactions for multi-table writes:** `db.transaction(() => { ... })` (better-sqlite3) or batched calls (libsql).
+- **Parameterized queries only.** Never interpolate user input into SQL strings.
+
+### Timestamps
+
+Store as **ISO 8601 UTC strings** (`TEXT`) via `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`. Convert to `Date` only at UI boundaries. Reason: SQLite date functions work on ISO strings; mixing integer epochs causes subtle bugs.
+
+### Money
+
+Store as **integer cents** (`amount_cents INTEGER`). Never `REAL`. Format for display in the UI layer only.
+
+---
+
+## Component Patterns
+
+### Server Components (default)
+
+Files in `src/app/` and most of `src/components/features/` are Server Components unless they need browser APIs.
+
+```tsx
+// src/app/(app)/[orgSlug]/invoices/page.tsx
+import { listInvoices } from '@/db/queries/invoices';
+import { InvoiceTable } from '@/components/features/invoice-table';
+
+export default async function InvoicesPage({
+  params,
+}: {
+  params: Promise<{ orgSlug: string }>;
+}) {
+  const { orgSlug } = await params;
+  const invoices = await listInvoices(orgSlug);
+  return <InvoiceTable invoices={invoices} />;
+}
+```
+
+Fetch data by calling query functions directly — **never `fetch()` your own `/api` routes** for internal reads.
+
+### Client Components (islands)
+
+Add `"use client"` only for: React state, effects, event handlers, or browser APIs.
+
+```tsx
+'use client';
+
+import { useTransition } from 'react';
+import { actionVoidInvoice } from '@/server/actions/void-invoice';
+
+export function VoidInvoiceButton({ invoiceId }: { invoiceId: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <button
+      disabled={pending}
+      onClick={() => startTransition(() => actionVoidInvoice(invoiceId))}
+    >
+      Void
+    </button>
+  );
+}
+```
+
+Keep client components **small and leaf-level**. Pass serializable props from server parents.
+
+### Server Actions
+
+```tsx
+// src/server/actions/create-invoice.ts
+'use server';
+
+import { z } from 'zod';
+import { requireOrgMember } from '@/lib/auth';
+import { createInvoice } from '@/db/queries/invoices';
+import { revalidatePath } from 'next/cache';
+
+const schema = z.object({
+  orgSlug: z.string().min(1),
+  amountCents: z.number().int().positive(),
+});
+
+export async function actionCreateInvoice(input: z.infer<typeof schema>) {
+  const data = schema.parse(input);
+  const { orgId, userId } = await requireOrgMember(data.orgSlug);
+  const invoice = await createInvoice({
+    orgId,
+    amountCents: data.amountCents,
+    createdBy: userId,
+  });
+  revalidatePath(`/${data.orgSlug}/invoices`);
+  return { ok: true as const, invoice };
+}
+```
+
+**Action checklist:** validate → authorize → mutate → revalidate affected paths → return structured result. Never throw raw error strings to the client.
+
+### Route-level UI
+
+Co-locate `loading.tsx`, `error.tsx`, and `not-found.tsx` in data-fetching route segments. Streaming and error boundaries are route concerns, not component hacks.
+
+### Forms
+
+Prefer **Server Actions + `useActionState`** over client `fetch` to API routes. Auth stays on the server; forms work without JavaScript.
+
+---
+
+## Patterns to Follow
+
+1. **Tenant scope every query.** Org-owned rows carry `org_id`; query functions accept `orgId` or resolve it from the session — never trust client-supplied IDs alone.
+2. **Map at the query boundary.** Query modules return typed domain objects (`Invoice`), not raw driver rows.
+3. **Validate env at boot.** `src/lib/env.ts` parses `process.env` with Zod and exports `env`. Fail fast on missing secrets.
+4. **Colocate by feature.** Invoice UI in `components/features/`, queries in `db/queries/invoices.ts`, actions in `server/actions/`.
+5. **API routes for externals only.** Internal CRUD uses Server Actions or direct query calls in RSC. `/api/*` is for Stripe webhooks, OAuth callbacks, and third-party integrations.
+6. **Idempotent background jobs.** Jobs in `src/server/jobs/` must tolerate retries via unique constraints, upserts, or status checks.
+7. **Feature flags via env or DB** — not compile-time branching.
+
+---
+
+## What We Don't Do (And Why)
+
+| Don't | Why |
+|-------|-----|
+| Use Pages Router (`pages/`) | Out of scope; mixing routers breaks caching and conventions |
+| Use Prisma, Drizzle, or Kysely | Raw SQL + typed query modules keeps migrations visible and deps light |
+| Put SQL in route files or components | Untestable, leaks connections, breaks server/client boundaries |
+| Import `src/lib/db.ts` from client code | Bundles native modules or leaks credentials |
+| Run migrations on `pnpm dev` startup | Race conditions and non-deterministic schema across branches |
+| Use `SELECT *` | Silent breakage when columns change |
+| Store money as floats | Rounding errors; integer cents are exact |
+| Store enums as unconstrained TEXT | Typos reach production; use `CHECK` constraints |
+| Add catch-all `utils/` files | Becomes a junk drawer; use `lib/` with clear names |
+| Put `"use client"` on layouts | Forces entire subtrees client-side; kills RSC benefits |
+| Fetch internal data via `/api/...` | Extra latency, duplicate auth, worse caching |
+| Commit `data/*.db` or `.env` files | Local state and secrets belong in gitignore |
+| Mix sync and async DB drivers in one module | Different semantics; abstract behind `lib/db.ts` per environment |
+| Hard-delete user content by default | Audit and recovery requirements; use `deleted_at` |
+| Add client deps without bundle review | Bundle size is a product concern |
+| Use `any` or `@ts-ignore` | Defeats strict mode; fix the type or add a narrow assertion |
+
+---
+
+## Environment Variables
+
+```bash
+# .env.local (never committed)
+DATABASE_URL="file:./data/app.db"           # or libsql://... for Turso
+SESSION_SECRET="..."                        # 32+ random bytes
+NEXT_PUBLIC_APP_URL="http://localhost:3000" # only NEXT_PUBLIC_* allowed
+```
+
+All server secrets are read in `src/lib/env.ts`. **`NEXT_PUBLIC_*` is only for client-safe values** (app URL, analytics IDs). Never expose database URLs or session secrets.
+
+---
+
+## When to Ask Clarifying Questions
+
+Ask before implementing when the request touches:
+
+- **Auth provider change** (Clerk, Auth.js, magic links) — affects session schema and middleware
+- **Multi-tenant model change** (org vs workspace vs team) — affects every query
+- **Deployment target** (Vercel serverless vs long-running Node vs edge) — affects driver and pooling
+- **Billing integration** (Stripe Billing vs Checkout) — affects webhooks and idempotency
+- **Data retention / GDPR policy** — affects soft-delete vs hard-delete strategy
+
+For routine feature work within these conventions, **proceed without asking**.
