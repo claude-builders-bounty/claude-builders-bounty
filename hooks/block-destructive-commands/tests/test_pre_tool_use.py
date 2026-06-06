@@ -251,6 +251,46 @@ class CheckCommandTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNotNone(self.hook.check_command(command))
 
+    def test_blocks_rm_rf_uppercase_flags(self):
+        for command in ("rm -Rf /var/log", "rm -RF /var/log"):
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Recursive force delete (rm -rf)",
+                )
+
+    def test_blocks_rm_rdf_combined_flags(self):
+        self.assertEqual(
+            self.hook.check_command("rm -rdf ./dist"),
+            "Recursive force delete (rm -rf)",
+        )
+
+    def test_blocks_rm_rf_piped_to_dash(self):
+        self.assertEqual(
+            self.hook.check_command("cat file.txt | rm -rf -"),
+            "Recursive force delete (rm -rf)",
+        )
+
+    def test_blocks_rm_f_r_reversed_flag_order(self):
+        self.assertEqual(
+            self.hook.check_command("rm -f -r /build"),
+            "Recursive force delete (rm -rf)",
+        )
+
+    def test_blocks_drop_table_if_exists(self):
+        self.assertEqual(
+            self.hook.check_command("DROP TABLE IF EXISTS audit_events"),
+            "SQL DROP TABLE",
+        )
+
+    def test_allows_rm_i_interactive(self):
+        self.assertIsNone(self.hook.check_command("rm -i README.md"))
+
+    def test_allows_find_and_mkdir(self):
+        for command in ("find . -name '*.py'", "mkdir -p /tmp/build"):
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
+
 
 class HookIntegrationTests(unittest.TestCase):
     def setUp(self):
@@ -325,6 +365,20 @@ class HookIntegrationTests(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, str(HOOK_PATH)],
             input="not-json",
+            text=True,
+            capture_output=True,
+            env=self.env,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+        self.assertFalse(self.log_file.exists())
+
+    def test_non_dict_json_payload_exits_cleanly(self):
+        result = subprocess.run(
+            [sys.executable, str(HOOK_PATH)],
+            input=json.dumps([1, 2, 3]),
             text=True,
             capture_output=True,
             env=self.env,
