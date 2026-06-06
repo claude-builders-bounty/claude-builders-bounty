@@ -450,6 +450,37 @@ class DiffFilterTests(unittest.TestCase):
         self.assertFalse(any("TODO" in message for message in messages))
         self.assertFalse(any("hardcoded secrets" in message for message in messages))
 
+    def test_analyze_pr_ignores_heuristic_definition_lines(self):
+        diff = (
+            "diff --git a/reviewer.py b/reviewer.py\n"
+            "+++ b/reviewer.py\n"
+            "+        todos = re.findall(\n"
+            "+            r\"(?:\\+.*(?://|#|\\*).*?(?:TODO|FIXME|HACK|XXX).*)\",\n"
+            "+            added_lines,\n"
+            "+        )\n"
+            "+        if todos:\n"
+            "+            add_risk(\n"
+            "+                \"low\",\n"
+            "+                f\"{len(todos)} TODO/FIXME/HACK markers found in new code. \"\n"
+            "+                \"Address them or track as follow-up issues.\",\n"
+            "+            )\n"
+        )
+        metadata = {
+            "title": "Add reviewer",
+            "body": "",
+            "changed_files": [
+                {"filename": "reviewer.py", "status": "added", "additions": 8, "deletions": 0, "changes": 8},
+            ],
+            "total_changes": 8,
+            "commits": 1,
+            "additions": 8,
+            "deletions": 0,
+            "labels": [],
+        }
+        review = claude_review.analyze_pr(metadata, diff)
+        messages = [message for _, message in review["risks"]]
+        self.assertFalse(any("TODO" in message for message in messages))
+
 
 class MarkdownFormatTests(unittest.TestCase):
     def test_required_sections_present(self):

@@ -424,6 +424,10 @@ def _is_meta_detection_line(line: str) -> bool:
         return True
     if "self.assert" in stripped:
         return True
+    if "(?:TODO|FIXME|HACK|XXX)" in stripped:
+        return True
+    if "TODO/FIXME/HACK markers found" in stripped:
+        return True
     return False
 
 
