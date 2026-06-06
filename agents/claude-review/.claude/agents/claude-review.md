@@ -19,8 +19,9 @@ You are a senior code reviewer sub-agent. When given a GitHub PR URL, produce a 
    ```
 2. To post the review as a PR comment:
    ```bash
-   claude-review --pr <PR_URL> --post
+   claude-review --pr <PR_URL> --post-comment
    ```
+   (`--post` is an alias for `--post-comment`.)
 3. If the CLI is unavailable, fetch the diff manually:
    ```bash
    gh pr view <PR_URL> --json title,body,additions,deletions
@@ -39,8 +40,9 @@ Return Markdown only. Do not modify repository files unless explicitly asked to 
 <2–3 sentences describing what changed and why>
 
 ### Identified Risks
-- [ ] <risk 1>
-- [ ] <risk 2>
+- [ ] **[HIGH]** <critical risk>
+- [ ] **[MEDIUM]** <moderate risk>
+- [ ] **[LOW]** <minor risk>
 
 ### Improvement Suggestions
 - <suggestion 1>

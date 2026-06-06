@@ -6,7 +6,7 @@ Maps each acceptance criterion to the exact command or artifact in this PR.
 |-----------|----------|
 | CLI: `claude-review --pr <url>` | Repo-root `./claude-review` and `agents/claude-review/claude_review.py` |
 | GitHub Action workflow YAML | `agents/claude-review/.github/workflows/claude-review.yml` |
-| Summary (2–3 sentences) | `build_review_markdown()` → **Summary of Changes** section |
+| Summary (2–3 sentences) | `build_narrative_summary()` + `format_markdown()` → **Summary of Changes** section |
 | Identified risks (list) | **Identified Risks** with `HIGH` / `MEDIUM` / `LOW` severity tags |
 | Improvement suggestions (list) | **Improvement Suggestions** section |
 | Confidence score (Low/Medium/High) | **Confidence Score** section |
