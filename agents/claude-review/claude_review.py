@@ -365,6 +365,79 @@ def _truncate_snippet(text: str, max_len: int = 200) -> str:
     return cut.rstrip(".,;:") + "..."
 
 
+_TEST_PATH_RE = re.compile(
+    r"(?:^|/)(?:tests?|__tests__|spec|mocks?|fixtures?)(?:/|$)|"
+    r"(?:^|/)test_[^/]+$|"
+    r"[^/]+_test\.(?:py|js|ts|jsx|tsx|go|rb)$",
+    re.I,
+)
+
+_DOC_EXTENSIONS = frozenset({".md", ".rst", ".txt", ".adoc"})
+
+
+def _is_test_path(path: str) -> bool:
+    return bool(_TEST_PATH_RE.search(path))
+
+
+def _is_doc_path(path: str) -> bool:
+    return os.path.splitext(path)[1].lower() in _DOC_EXTENSIONS
+
+
+def _split_diff_by_file(diff: str) -> list[tuple[str, str]]:
+    parts: list[tuple[str, str]] = []
+    current_file = ""
+    current_hunk: list[str] = []
+
+    for line in diff.splitlines(keepends=True):
+        header = re.match(r"^diff --git a/(.+?) b/(.+)$", line)
+        if header:
+            if current_file:
+                parts.append((current_file, "".join(current_hunk)))
+            current_file = header.group(2)
+            current_hunk = [line]
+        elif current_file:
+            current_hunk.append(line)
+
+    if current_file:
+        parts.append((current_file, "".join(current_hunk)))
+    elif diff.strip():
+        parts.append(("", diff))
+    return parts
+
+
+def filter_diff_for_heuristics(diff: str) -> str:
+    """Return diff hunks for production source files (skip tests and docs)."""
+    filtered: list[str] = []
+    for path, hunk in _split_diff_by_file(diff):
+        if path and (_is_test_path(path) or _is_doc_path(path)):
+            continue
+        filtered.append(hunk)
+    return "".join(filtered)
+
+
+def _is_meta_detection_line(line: str) -> bool:
+    """Skip lines that define or exercise security heuristics."""
+    stripped = line.lstrip("+").strip()
+    if re.search(r"\bre\.(?:findall|search|match|fullmatch|compile)\b", stripped):
+        return True
+    if stripped.startswith("diff = "):
+        return True
+    if "self.assert" in stripped:
+        return True
+    return False
+
+
+def _heuristic_added_lines(diff: str) -> str:
+    lines = []
+    for line in diff.splitlines():
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        if _is_meta_detection_line(line):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def build_narrative_summary(metadata: dict[str, Any]) -> str:
     file_count = len(metadata["changed_files"])
     title = metadata["title"]
@@ -432,6 +505,9 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
         )
 
     if diff:
+        code_diff = filter_diff_for_heuristics(diff)
+        added_lines = _heuristic_added_lines(code_diff)
+
         if metadata["total_changes"] > 500:
             add_risk(
                 "medium",
@@ -439,7 +515,10 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
                 "smaller, more focused PRs for easier review.",
             )
 
-        todos = re.findall(r"(\+.*(?:TODO|FIXME|HACK|XXX).*)", diff)
+        todos = re.findall(
+            r"(?:\+.*(?://|#|\*).*?(?:TODO|FIXME|HACK|XXX).*)",
+            added_lines,
+        )
         if todos:
             add_risk(
                 "low",
@@ -448,13 +527,13 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
             )
 
         debug_prints = re.findall(
-            r"(\+.*(?:console\.log|pprint\(|logger\.debug).*)",
-            diff,
+            r"(?:\+.*(?:console\.log|pprint\(|logger\.debug).*)",
+            added_lines,
         )
         debug_prints.extend(
             re.findall(
-                r"(\+.*print\s*\([^)]*(?:debug|DEBUG|temp|tmp|xxx)[^)]*\).*)",
-                diff,
+                r"(?:\+.*print\s*\([^)]*(?:debug|DEBUG|temp|tmp|xxx)[^)]*\).*)",
+                added_lines,
                 re.I,
             )
         )
@@ -464,7 +543,7 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
                 "Debug/console statements detected in new code. Remove before merging.",
             )
 
-        commented = re.findall(r"(\+#.*$)", diff, re.M)
+        commented = re.findall(r"(?:\+#.*$)", added_lines, re.M)
         commented_blocks = [
             line
             for line in commented
@@ -477,9 +556,9 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
             )
 
         secrets = re.findall(
-            r"(\+.*(?:api[_-]?key|secret|password|token|credential)\s*[:=]\s*"
+            r"(?:\+.*(?:api[_-]?key|secret|password|token|credential)\s*[:=]\s*"
             r'["\'](?![${\\<\']).{8,})',
-            diff,
+            added_lines,
             re.I,
         )
         if secrets:
@@ -488,7 +567,7 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
                 "Potential hardcoded secrets detected. Use environment variables or a secrets manager.",
             )
 
-        if re.search(r"^\+.*\b(?:eval|exec)\s*\(", diff, re.M):
+        if re.search(r"^\+.*\b(?:eval|exec)\s*\(", added_lines, re.M):
             add_risk(
                 "high",
                 "Dynamic code execution (`eval`/`exec`) detected in new code. "

@@ -403,6 +403,54 @@ new file mode 100644
         self.assertIsNone(args.pr)
 
 
+class DiffFilterTests(unittest.TestCase):
+    def test_filter_diff_excludes_test_and_doc_hunks(self):
+        diff = (
+            "diff --git a/README.md b/README.md\n"
+            "+++ b/README.md\n"
+            "+TODO/FIXME markers in docs\n"
+            "diff --git a/tests/test_app.py b/tests/test_app.py\n"
+            "+++ b/tests/test_app.py\n"
+            "+api_key = 'supersecretvalue123'\n"
+            "diff --git a/src/app.py b/src/app.py\n"
+            "+++ b/src/app.py\n"
+            "+pass\n"
+        )
+        filtered = claude_review.filter_diff_for_heuristics(diff)
+        self.assertNotIn("README.md", filtered)
+        self.assertNotIn("tests/test_app.py", filtered)
+        self.assertIn("src/app.py", filtered)
+
+    def test_analyze_pr_ignores_test_fixture_strings(self):
+        diff = (
+            "diff --git a/tests/test_app.py b/tests/test_app.py\n"
+            "+++ b/tests/test_app.py\n"
+            "+        diff = \"+++ b/app.py\\n+# TODO: handle edge case\\n\"\n"
+            "+        diff = \"+++ b/app.py\\n+api_key = 'supersecretvalue123'\\n\"\n"
+            "diff --git a/src/app.py b/src/app.py\n"
+            "+++ b/src/app.py\n"
+            "+def run():\n"
+            "+    return 1\n"
+        )
+        metadata = {
+            "title": "Add app",
+            "body": "",
+            "changed_files": [
+                {"filename": "tests/test_app.py", "status": "modified", "additions": 2, "deletions": 0, "changes": 2},
+                {"filename": "src/app.py", "status": "modified", "additions": 2, "deletions": 0, "changes": 2},
+            ],
+            "total_changes": 4,
+            "commits": 1,
+            "additions": 4,
+            "deletions": 0,
+            "labels": [],
+        }
+        review = claude_review.analyze_pr(metadata, diff)
+        messages = [message for _, message in review["risks"]]
+        self.assertFalse(any("TODO" in message for message in messages))
+        self.assertFalse(any("hardcoded secrets" in message for message in messages))
+
+
 class MarkdownFormatTests(unittest.TestCase):
     def test_required_sections_present(self):
         metadata = {
