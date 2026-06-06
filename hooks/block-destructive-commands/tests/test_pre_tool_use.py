@@ -212,10 +212,37 @@ class CheckCommandTests(unittest.TestCase):
         )
 
     def test_blocks_git_push_force_via_config_override(self):
-        self.assertEqual(
-            self.hook.check_command("git -c push.force=true push origin main"),
-            "Git force push (git -c push.force)",
+        blocked = (
+            "git -c push.force=true push origin main",
+            "git -c push.force=1 push origin main",
+            "git -c push.force push origin main",
         )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Git force push (git -c push.force)",
+                )
+
+    def test_allows_git_push_force_disabled_via_config(self):
+        allowed = (
+            "git -c push.force=false push origin main",
+            "git -c push.force=0 push origin main",
+            "git -c push.force=no push origin main",
+            "git -c push.force=off push origin main",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
+
+    def test_allows_unrelated_git_config_keys_with_push_force_substring(self):
+        allowed = (
+            "git -c core.push.force push origin main",
+            "git -c submodule.push.force push origin main",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
 
     def test_blocks_git_push_force_refspec_prefix(self):
         blocked = (

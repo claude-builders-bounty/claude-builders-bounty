@@ -24,10 +24,6 @@ BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"\bgit\b.*?\bpush\b.*?\s-f\b", re.IGNORECASE),
         "Git force push (git push -f)",
     ),
-    (
-        re.compile(r"\bgit\b.*?-c\s+\S*push\.force", re.IGNORECASE),
-        "Git force push (git -c push.force)",
-    ),
     (re.compile(r"\btruncate\b", re.IGNORECASE), "SQL TRUNCATE"),
 ]
 
@@ -49,6 +45,24 @@ DEV_REDIRECT = re.compile(
     re.IGNORECASE,
 )
 WIPEFS = re.compile(r"\bwipefs\b", re.IGNORECASE)
+GIT_PUSH_FORCE_CONFIG = re.compile(
+    r"-c\s+push\.force(?:\s*=\s*(?P<val>[^\s;|&]+))?",
+    re.IGNORECASE,
+)
+GIT_PUSH_FORCE_CONFIG_FALSE = frozenset({"false", "0", "no", "off", "n"})
+
+
+def is_git_force_via_config(command: str) -> bool:
+    """True when git -c push.force enables force push (not explicit false values)."""
+    if not re.search(r"\bgit\b", command, re.IGNORECASE):
+        return False
+    if not re.search(r"\bpush\b", command, re.IGNORECASE):
+        return False
+    for match in GIT_PUSH_FORCE_CONFIG.finditer(command):
+        value = (match.group("val") or "").strip().lower().strip("'\"")
+        if value not in GIT_PUSH_FORCE_CONFIG_FALSE:
+            return True
+    return False
 
 
 def is_rm_rf(command: str) -> bool:
@@ -91,6 +105,9 @@ def check_command(command: str) -> str | None:
                 return reason
         elif pattern.search(command):
             return reason
+
+    if is_git_force_via_config(command):
+        return "Git force push (git -c push.force)"
 
     if GIT_FORCE_REFSPEC.search(command):
         return "Git force push (git push +<ref>)"
