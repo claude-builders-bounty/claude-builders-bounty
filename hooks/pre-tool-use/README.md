@@ -17,7 +17,7 @@ Blocks destructive bash commands inside Claude Code. Zero configuration.
 **One command:**
 
 ```bash
-mkdir -p ~/.claude/hooks && curl -sL https://raw.githubusercontent.com/pppyx-hub/claude-hooks/main/pre-tool-use -o ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+curl -fsSL https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/hooks/pre-tool-use/pre-tool-use -o ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
 ```
 
 Or manually:
@@ -43,7 +43,7 @@ Blocked commands are timestamped and logged to:
 ~/.claude/hooks/blocked.log
 ```
 
-Format: `[timestamp] project=/path | cmd=blocked command`
+Format: `[timestamp] project=/path | reason=why | cmd=blocked command`
 
 ## Uninstall
 
