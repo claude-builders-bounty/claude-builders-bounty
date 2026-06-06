@@ -191,6 +191,28 @@ class CheckCommandTests(unittest.TestCase):
             "Git force push (git push -f)",
         )
 
+    def test_blocks_chained_destructive_commands(self):
+        chained = (
+            "git status; rm -rf /",
+            "echo ok && rm -rf /",
+            "ls || rm -rf /",
+            "npm test; DROP TABLE users",
+            "git fetch && git push --force origin main",
+        )
+        for command in chained:
+            with self.subTest(command=command):
+                self.assertIsNotNone(self.hook.check_command(command))
+
+    def test_allows_chained_safe_commands(self):
+        allowed = (
+            "git status && npm test",
+            "ls -la; git push --force-with-lease origin main",
+            "echo ok; rm -f README.md",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
+
 
 class HookIntegrationTests(unittest.TestCase):
     def setUp(self):

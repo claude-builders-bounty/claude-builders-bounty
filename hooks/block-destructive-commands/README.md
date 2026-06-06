@@ -26,10 +26,26 @@ Uses the official Claude Code `hookSpecificOutput` schema (`permissionDecision: 
 ## How it works
 
 1. Intercepts every `Bash` tool call via the `PreToolUse` hook
-2. Checks the command against destructive patterns
+2. Checks the command against destructive patterns (including chained commands joined with `;`, `&&`, or `||`)
 3. **Blocks** matching commands and returns a clear denial message to Claude
 4. **Logs** every blocked attempt to `~/.claude/hooks/blocked.log` with timestamp, command, and project path
 5. **Allows** safe commands to pass through unchanged
+
+## Hook protocol
+
+Claude Code sends JSON on stdin. When a command is blocked, the hook prints the official denial schema:
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "Recursive force delete (rm -rf) blocked. Run this command directly in your terminal if you truly need it."
+  }
+}
+```
+
+Safe commands produce no stdout and exit `0`.
 
 ## Blocked log
 
@@ -49,7 +65,7 @@ From the repository root:
 
 ```bash
 python3 -m unittest discover -s hooks/block-destructive-commands/tests -v
-# 33 regression tests
+# 35 regression tests
 ```
 
 ## License
