@@ -266,6 +266,17 @@ def sanitize_pr_body(body: str) -> str:
     return _clean_summary_text("\n".join(fallback_lines))
 
 
+def _truncate_snippet(text: str, max_len: int = 200) -> str:
+    if len(text) <= max_len:
+        return text
+
+    cut = text[:max_len]
+    last_space = cut.rfind(" ")
+    if last_space > max_len // 2:
+        cut = cut[:last_space]
+    return cut.rstrip(".,;:") + "..."
+
+
 def build_narrative_summary(metadata: dict[str, Any]) -> str:
     file_count = len(metadata["changed_files"])
     title = metadata["title"]
@@ -286,9 +297,9 @@ def build_narrative_summary(metadata: dict[str, Any]) -> str:
     )
 
     if body:
-        snippet = body[:200]
+        snippet = _truncate_snippet(body)
         summary += f"The author describes the change as: {snippet}"
-        if not snippet.endswith("."):
+        if not snippet.endswith((".", "...")):
             summary += "."
     else:
         summary += (

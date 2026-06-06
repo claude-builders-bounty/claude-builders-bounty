@@ -165,6 +165,22 @@ class AnalyzePrTests(unittest.TestCase):
         self.assertEqual(review["confidence"], "Low")
 
 
+class TruncateSnippetTests(unittest.TestCase):
+    def test_short_text_unchanged(self):
+        self.assertEqual(claude_review._truncate_snippet("Short text."), "Short text.")
+
+    def test_long_text_truncates_at_word_boundary(self):
+        text = (
+            "This PR implements a python-based PreToolUse hooks gatekeeper that "
+            "intercepts and blocks dangerous bash commands (e.g. rm -rf, DROP TABLE, "
+            "git push --force, TRUNCATE, and DELETE FROM without a WHERE clause)."
+        )
+        snippet = claude_review._truncate_snippet(text, max_len=200)
+        self.assertLessEqual(len(snippet), 203)
+        self.assertTrue(snippet.endswith("..."))
+        self.assertNotIn("TRUNCATE, and.", snippet)
+
+
 class SummaryFormatTests(unittest.TestCase):
     def test_summary_has_blank_line_before_file_breakdown(self):
         metadata = {

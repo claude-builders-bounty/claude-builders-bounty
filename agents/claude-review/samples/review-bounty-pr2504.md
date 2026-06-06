@@ -6,7 +6,7 @@
 
 ### Summary of Changes
 
-This pull request titled "feat: add destructive command blocker hook (Issue #3)" updates 4 file(s) with +152/-0 lines across 2 commit(s). The author describes the change as: This PR implements a python-based `PreToolUse` hooks gatekeeper (`pre-tool-use.py`) that intercepts and blocks dangerous bash commands (e.g. `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and.
+This pull request titled "feat: add destructive command blocker hook (Issue #3)" updates 4 file(s) with +152/-0 lines across 2 commit(s). The author describes the change as: This PR implements a python-based `PreToolUse` hooks gatekeeper (`pre-tool-use.py`) that intercepts and blocks dangerous bash commands (e.g. `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`...
 
 **File type breakdown:**
 - `.md`: 1 file(s) (21+, 0-)
