@@ -11,6 +11,8 @@ A [Claude Code](https://code.claude.com/docs/en/hooks) `PreToolUse` hook that in
 | `git push --force` / `git push -f` | Rewrites remote history (allows `--force-with-lease`) |
 | `TRUNCATE` | SQL table truncation |
 | `DELETE FROM ...` (without `WHERE`) | Unconditional SQL row deletion |
+| `dd ... of=/dev/*` | Raw disk overwrite |
+| `:(){ :|:& };:` fork bomb | Process exhaustion attack |
 
 ## Install (2 commands)
 
@@ -65,7 +67,7 @@ From the repository root:
 
 ```bash
 python3 -m unittest discover -s hooks/block-destructive-commands/tests -v
-# 35 regression tests
+# 39 regression tests
 ```
 
 ## License

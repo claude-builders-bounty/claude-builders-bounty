@@ -213,6 +213,32 @@ class CheckCommandTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.hook.check_command(command))
 
+    def test_blocks_dd_disk_overwrite(self):
+        self.assertEqual(
+            self.hook.check_command("dd if=/dev/zero of=/dev/sda bs=1M"),
+            "Disk overwrite (dd of=/dev/*)",
+        )
+
+    def test_allows_dd_read_from_disk(self):
+        self.assertIsNone(
+            self.hook.check_command("dd if=/dev/sda of=backup.img bs=1M")
+        )
+
+    def test_blocks_fork_bomb(self):
+        self.assertEqual(
+            self.hook.check_command(":(){ :|:& };:"),
+            "Fork bomb",
+        )
+
+    def test_blocks_dd_and_fork_bomb_in_chains(self):
+        chained = (
+            "ls; dd if=/dev/zero of=/dev/sdb",
+            "echo ok && :(){ :|:& };:",
+        )
+        for command in chained:
+            with self.subTest(command=command):
+                self.assertIsNotNone(self.hook.check_command(command))
+
 
 class HookIntegrationTests(unittest.TestCase):
     def setUp(self):

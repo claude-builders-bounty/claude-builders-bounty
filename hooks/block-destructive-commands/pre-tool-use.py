@@ -23,6 +23,8 @@ BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 DELETE_FROM = re.compile(r"delete\s+from", re.IGNORECASE)
 WHERE_CLAUSE = re.compile(r"\bwhere\b", re.IGNORECASE)
 SHELL_LITERAL = re.compile(r"^\s*(echo|cat|printf|tee)\b", re.IGNORECASE)
+DD_DISK = re.compile(r"\bdd\b.*\bof=/dev/", re.IGNORECASE)
+FORK_BOMB = re.compile(r":\(\s*\)\s*\{.*:\s*\|.*:.*&.*\}")
 
 
 def is_rm_rf(command: str) -> bool:
@@ -69,6 +71,12 @@ def check_command(command: str) -> str | None:
         and not SHELL_LITERAL.match(command)
     ):
         return "SQL DELETE FROM without WHERE clause"
+
+    if DD_DISK.search(command):
+        return "Disk overwrite (dd of=/dev/*)"
+
+    if FORK_BOMB.search(command):
+        return "Fork bomb"
 
     return None
 
