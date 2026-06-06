@@ -27,6 +27,7 @@ assert(workflow.name, 'workflow has a name');
 assert(Array.isArray(workflow.nodes) && workflow.nodes.length >= 8, 'workflow has enough nodes');
 assert(workflow.connections && typeof workflow.connections === 'object', 'workflow has connections map');
 assert(workflow.settings?.executionOrder, 'workflow has execution settings for n8n import');
+assert(workflow.settings?.timezone, 'workflow defines a timezone for the Friday 5pm cron');
 assert(
   workflow.nodes.every((n) => n.id && n.name && n.type && Array.isArray(n.position)),
   'every node has id, name, type, and position for n8n canvas import',
