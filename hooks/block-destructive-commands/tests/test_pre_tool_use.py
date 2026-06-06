@@ -86,15 +86,56 @@ class CheckCommandTests(unittest.TestCase):
             self.hook.check_command("git push --force-with-lease origin main")
         )
 
-    def test_allows_normal_commands(self):
-        for command in (
+    def test_blocks_rm_recursive_force_long_flags(self):
+        self.assertEqual(
+            self.hook.check_command("rm --recursive --force /var/log"),
+            "Recursive force delete (rm -rf)",
+        )
+
+    def test_blocks_delete_from_case_insensitive(self):
+        self.assertEqual(
+            self.hook.check_command("psql -c 'delete from sessions'"),
+            "SQL DELETE FROM without WHERE clause",
+        )
+
+    def test_blocks_git_push_force_mixed_case(self):
+        self.assertEqual(
+            self.hook.check_command("GIT PUSH --FORCE origin main"),
+            "Git force push (git push --force)",
+        )
+
+    def test_parametrized_blocked_commands(self):
+        blocked = (
+            ("rm -rf /", "Recursive force delete (rm -rf)"),
+            ("rm -fr build/", "Recursive force delete (rm -rf)"),
+            ("rm -r -f node_modules", "Recursive force delete (rm -rf)"),
+            ("DROP TABLE users", "SQL DROP TABLE"),
+            ("drop table accounts", "SQL DROP TABLE"),
+            ("TRUNCATE sessions", "SQL TRUNCATE"),
+            ("truncate logs", "SQL TRUNCATE"),
+            ("git push --force origin main", "Git force push (git push --force)"),
+            ("git push -f origin main", "Git force push (git push -f)"),
+            ("DELETE FROM users", "SQL DELETE FROM without WHERE clause"),
+        )
+        for command, reason in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(self.hook.check_command(command), reason)
+
+    def test_parametrized_allowed_commands(self):
+        allowed = (
             "ls -la",
             "git status",
             "npm test",
             "rm README.md",
+            "rm -f README.md",
+            "rm -r build",
             "git push origin main",
+            "git push --force-with-lease origin main",
+            "DELETE FROM users WHERE id = 1",
             "echo 'DELETE FROM backup' > notes.txt",
-        ):
+            "cat notes.txt | grep DELETE FROM",
+        )
+        for command in allowed:
             with self.subTest(command=command):
                 self.assertIsNone(self.hook.check_command(command))
 
@@ -162,6 +203,34 @@ class HookIntegrationTests(unittest.TestCase):
                 "tool_input": {"file_path": "README.md", "content": "rm -rf /"},
                 "cwd": "/workspace/demo",
             }
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+        self.assertFalse(self.log_file.exists())
+
+    def test_malformed_json_exits_cleanly(self):
+        result = subprocess.run(
+            [sys.executable, str(HOOK_PATH)],
+            input="not-json",
+            text=True,
+            capture_output=True,
+            env=self.env,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+        self.assertFalse(self.log_file.exists())
+
+    def test_empty_stdin_exits_cleanly(self):
+        result = subprocess.run(
+            [sys.executable, str(HOOK_PATH)],
+            input="",
+            text=True,
+            capture_output=True,
+            env=self.env,
+            check=False,
         )
 
         self.assertEqual(result.returncode, 0)
