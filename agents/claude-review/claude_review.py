@@ -118,10 +118,20 @@ def fetch_pr_metadata(owner: str, repo: str, pr_number: int, token: str) -> dict
     }
 
 
+def sanitize_pr_body(body: str) -> str:
+    lines = []
+    for line in body.splitlines():
+        stripped = line.strip().lower()
+        if stripped.startswith("/claim") or stripped.startswith("/opire"):
+            continue
+        lines.append(line)
+    return " ".join(" ".join(lines).split())
+
+
 def build_narrative_summary(metadata: dict[str, Any]) -> str:
     file_count = len(metadata["changed_files"])
     title = metadata["title"]
-    body = metadata.get("body", "").strip()
+    body = sanitize_pr_body(metadata.get("body", "").strip())
 
     if file_count == 0:
         return "No file changes were detected in this pull request."
@@ -133,7 +143,7 @@ def build_narrative_summary(metadata: dict[str, Any]) -> str:
     )
 
     if body:
-        snippet = " ".join(body.split())[:200]
+        snippet = body[:200]
         summary += f"The author describes the change as: {snippet}"
         if not snippet.endswith("."):
             summary += "."
@@ -217,7 +227,7 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
                     "Consider whether this can be modularized."
                 )
 
-        if ext_summary:
+        if len(ext_summary) > 1:
             suggestions.append(
                 f"Changes span {len(ext_summary)} file types. Verify cross-language compatibility."
             )

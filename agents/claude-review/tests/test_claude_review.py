@@ -51,6 +51,19 @@ class AnalyzePrTests(unittest.TestCase):
         self.assertIn("Add widget endpoint", review["summary"])
         self.assertIn("widget API", review["summary"])
 
+    def test_sanitize_pr_body_strips_claim_commands(self):
+        body = "/claim #1\n## Summary\nAdds a changelog generator."
+        self.assertEqual(
+            claude_review.sanitize_pr_body(body),
+            "## Summary Adds a changelog generator.",
+        )
+
+    def test_single_file_type_skips_cross_language_suggestion(self):
+        review = claude_review.analyze_pr(self._metadata(), diff="+++ b/src/widget.py\n+pass\n")
+        self.assertFalse(
+            any("file types" in suggestion for suggestion in review["suggestions"])
+        )
+
     def test_detects_todo_markers(self):
         diff = "+++ b/app.py\n+# TODO: handle edge case\n"
         review = claude_review.analyze_pr(self._metadata(), diff=diff)
