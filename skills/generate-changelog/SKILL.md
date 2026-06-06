@@ -15,6 +15,7 @@ bash skills/generate-changelog/changelog.sh
 ## Options
 
 - `--since <tag>` — start from a specific tag instead of the latest
+- `--version <name>` — override the release header (e.g. `1.2.0`)
 - `--output <file>` — write to a different file (default: `CHANGELOG.md`)
 - `--preview` — print to stdout without writing a file
 
