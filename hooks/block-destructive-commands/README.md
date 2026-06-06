@@ -14,9 +14,11 @@ A [Claude Code](https://code.claude.com/docs/en/hooks) `PreToolUse` hook that in
 
 ## Install (2 commands)
 
+From the repository root:
+
 ```bash
-mkdir -p ~/.claude/hooks && cp pre-tool-use.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use.py
-cp settings.json ~/.claude/settings.json
+mkdir -p ~/.claude/hooks && cp hooks/block-destructive-commands/pre-tool-use.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use.py
+cp hooks/block-destructive-commands/settings.json ~/.claude/settings.json
 ```
 
 Claude Code loads `~/.claude/settings.json` automatically on the next session.
@@ -43,8 +45,10 @@ Example entry:
 
 ## Tests
 
+From the repository root:
+
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s hooks/block-destructive-commands/tests -v
 ```
 
 ## License
