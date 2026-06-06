@@ -1,0 +1,14 @@
+## 🔍 Claude Code PR Reviewer Report
+
+### 📝 Summary of Changes
+Reviewing PR #6 - 'feat(hook): PreToolUse hook to block destructive bash commands (#3)'. This PR contains 184 additions across files. The description indicates: ## Fixes #3
+
+This PR implements a Claude Code `PreToolUse` hook that intercepts dangerous bash comma...
+
+### ⚠️ Identified Risks
+- No critical static code risks detected in the changes.
+
+### 💡 Improvement Suggestions
+- No immediate structural improvements required.
+
+**Confidence Score:** `Medium (Static Analysis)`
