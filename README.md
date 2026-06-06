@@ -34,6 +34,35 @@ You're in the right place.
 
 ---
 
+## Claude PR Reviewer Agent
+
+This PR includes a structured PR review agent for bounty [#4](../../issues/4).
+
+Run it against any public GitHub pull request:
+
+```bash
+bin/claude-review --pr owner/repo#123
+bin/claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+Set `GITHUB_TOKEN` to raise GitHub API limits. Set
+`CLAUDE_REVIEW_USE_CLAUDE=1` to ask the local `claude` CLI to review the diff;
+otherwise the tool returns a deterministic structured review with local
+heuristics.
+
+The agent always returns Markdown with `Summary`, `Identified Risks`,
+`Improvement Suggestions`, and `Confidence`. A reusable GitHub Actions example
+is included at `examples/github-actions/claude-review.yml`.
+
+Validate it locally:
+
+```bash
+python3 -m unittest tests/test_claude_review.py -v
+bin/claude-review --pr claude-builders-bounty/claude-builders-bounty#2351
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling

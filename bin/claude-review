@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Fetch a GitHub PR diff and print a structured Markdown review."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import textwrap
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+
+
+PR_URL_PATTERN = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)")
+PR_SHORT_PATTERN = re.compile(r"^([^/\s]+)/([^#\s]+)#(\d+)$")
+
+
+@dataclass(frozen=True)
+class PullRequest:
+    owner: str
+    repo: str
+    number: int
+    title: str
+    body: str
+    changed_files: int
+    additions: int
+    deletions: int
+    diff: str
+
+
+def parse_pr(value: str) -> tuple[str, str, int]:
+    match = PR_URL_PATTERN.search(value) or PR_SHORT_PATTERN.search(value)
+    if not match:
+        raise ValueError("PR must be a GitHub pull URL or owner/repo#number")
+    owner, repo, number = match.groups()
+    return owner, repo, int(number)
+
+
+def github_request(url: str, accept: str = "application/vnd.github+json") -> str:
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-review-agent",
+    }
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub request failed: HTTP {error.code}: {detail}") from error
+
+
+def fetch_pr(owner: str, repo: str, number: int) -> PullRequest:
+    api_base = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    metadata = json.loads(github_request(api_base))
+    diff = github_request(api_base, accept="application/vnd.github.v3.diff")
+    return PullRequest(
+        owner=owner,
+        repo=repo,
+        number=number,
+        title=metadata.get("title", ""),
+        body=metadata.get("body") or "",
+        changed_files=int(metadata.get("changed_files") or 0),
+        additions=int(metadata.get("additions") or 0),
+        deletions=int(metadata.get("deletions") or 0),
+        diff=diff,
+    )
+
+
+def changed_paths(diff: str) -> list[str]:
+    paths: list[str] = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                paths.append(parts[3].removeprefix("b/"))
+    return paths
+
+
+def has_test_path(paths: list[str]) -> bool:
+    for path in paths:
+        lowered = path.lower()
+        if lowered.startswith(("test/", "tests/", "__tests__/")):
+            return True
+        if "/test/" in lowered or "/tests/" in lowered or "/__tests__/" in lowered:
+            return True
+        if re.search(r"(\.|_)(test|spec)\.", lowered):
+            return True
+        if re.search(r"(test|spec)s?\.(py|ts|tsx|js|jsx)$", lowered):
+            return True
+    return False
+
+
+def risk_signals(pr: PullRequest) -> list[str]:
+    diff_lower = pr.diff.lower()
+    paths = changed_paths(pr.diff)
+    risks: list[str] = []
+
+    if pr.changed_files > 20 or pr.additions + pr.deletions > 1000:
+        risks.append("Large review surface; split or add stronger targeted validation if possible.")
+    if any(path.startswith((".github/workflows/", "deploy", "infra")) for path in paths):
+        risks.append("CI or deployment files changed; verify secrets, permissions, and rollback behavior.")
+    if re.search(r"\b(eval|exec|subprocess|shell=True|child_process)\b", diff_lower):
+        risks.append("Command execution surface changed; inspect input validation and escaping carefully.")
+    if re.search(r"\b(delete from|drop table|truncate|migration|schema)\b", diff_lower):
+        risks.append("Data or schema mutation appears in the diff; confirm migration and rollback safety.")
+    if re.search(r"\bpassword|secret|token|api[_-]?key\b", diff_lower):
+        risks.append("Credential-related strings appear in the diff; ensure no secrets are committed.")
+    if not has_test_path(paths):
+        risks.append("No obvious test file changed; reviewers should ask for validation evidence.")
+
+    return risks or ["No high-risk patterns detected from the diff heuristics."]
+
+
+def suggestions(pr: PullRequest) -> list[str]:
+    paths = changed_paths(pr.diff)
+    suggestions_out = [
+        "Include exact commands or CI links that exercised the changed paths.",
+        "Keep the PR description tied to user-visible behavior and known non-goals.",
+    ]
+    if any(path.endswith((".md", ".mdx")) for path in paths):
+        suggestions_out.append("Run a docs/link smoke check if the project has one.")
+    if any(path.endswith((".py", ".ts", ".tsx", ".js", ".jsx")) for path in paths):
+        suggestions_out.append("Add or update focused tests for the main changed branch.")
+    return suggestions_out
+
+
+def confidence(pr: PullRequest) -> str:
+    total = pr.additions + pr.deletions
+    has_tests = has_test_path(changed_paths(pr.diff))
+    if total < 250 and has_tests:
+        return "High"
+    if total < 800:
+        return "Medium"
+    return "Low"
+
+
+def fallback_review(pr: PullRequest) -> str:
+    paths = changed_paths(pr.diff)
+    summary = (
+        f"PR `{pr.owner}/{pr.repo}#{pr.number}` changes {pr.changed_files} file(s) "
+        f"with +{pr.additions}/-{pr.deletions}. The title is: {pr.title}."
+    )
+    if paths:
+        summary += f" Primary touched paths include: {', '.join(paths[:5])}."
+
+    lines = [
+        "## Summary",
+        textwrap.fill(summary, width=100),
+        "",
+        "## Identified Risks",
+        *[f"- {item}" for item in risk_signals(pr)],
+        "",
+        "## Improvement Suggestions",
+        *[f"- {item}" for item in suggestions(pr)],
+        "",
+        f"## Confidence: {confidence(pr)}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def claude_review(pr: PullRequest) -> str | None:
+    if not os.environ.get("CLAUDE_REVIEW_USE_CLAUDE"):
+        return None
+    prompt = (
+        "Return a concise Markdown PR review with exactly these sections: "
+        "Summary, Identified Risks, Improvement Suggestions, Confidence. "
+        f"Review {pr.owner}/{pr.repo}#{pr.number}: {pr.title}\n\n{pr.diff[:60000]}"
+    )
+    try:
+        result = subprocess.run(
+            ["claude", "-p", prompt],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=120,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    return result.stdout.strip()
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pr", required=True, help="GitHub PR URL or owner/repo#number")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        owner, repo, number = parse_pr(args.pr)
+        pr = fetch_pr(owner, repo, number)
+    except Exception as error:
+        print(f"claude-review: {error}", file=sys.stderr)
+        return 2
+
+    print(claude_review(pr) or fallback_review(pr))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
