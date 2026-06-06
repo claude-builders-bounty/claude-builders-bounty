@@ -21,7 +21,6 @@ This pull request titled "Add toast notification component" updates 15 file(s) w
 
 ### Improvement Suggestions
 
-- Changes span 1 file types. Verify cross-language compatibility.
 - Single commit with a large changeset. Split into logical commits for traceability.
 
 ---
