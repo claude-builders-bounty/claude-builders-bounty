@@ -3,7 +3,7 @@
  * Regression tests for weekly-dev-summary n8n workflow JSON.
  * Run: node tests/validate-workflow.mjs
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -117,6 +117,10 @@ const setupSteps = [...readme.matchAll(/^### \d+\./gm)];
 assert(setupSteps.length > 0 && setupSteps.length <= 5, 'README setup uses five steps or fewer');
 assert(readme.includes('weekly-dev-summary.json'), 'README points to importable workflow JSON');
 assert(readme.includes('n8n-execution-screenshot.png'), 'README references n8n execution screenshot');
+
+const screenshotPath = join(__dirname, '..', 'assets', 'n8n-execution-screenshot.png');
+const screenshot = statSync(screenshotPath);
+assert(screenshot.isFile() && screenshot.size > 1024, 'n8n execution screenshot asset exists and is non-trivial');
 
 for (const forbidden of ['sk-ant-', 'ghp_', 'gho_', 'discord.com/api/webhooks/']) {
   assert(!serialized.includes(forbidden), `workflow does not embed ${forbidden} secrets`);
