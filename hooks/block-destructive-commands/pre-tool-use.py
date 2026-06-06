@@ -30,6 +30,10 @@ BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 DELETE_FROM = re.compile(r"delete\s+from", re.IGNORECASE)
 WHERE_CLAUSE = re.compile(r"\bwhere\b", re.IGNORECASE)
 SHELL_LITERAL = re.compile(r"^\s*(echo|cat|printf|tee)\b", re.IGNORECASE)
+GIT_FORCE_REFSPEC = re.compile(
+    r"\bgit\b.*?\bpush\b(?:\s+[^\s;|&]+)*\s+\+[^\s;|&]+",
+    re.IGNORECASE,
+)
 DD_DISK = re.compile(r"\bdd\b.*\bof=/dev/", re.IGNORECASE)
 FORK_BOMB = re.compile(r":\(\s*\)\s*\{.*:\s*\|.*:.*&.*\}")
 
@@ -71,6 +75,9 @@ def check_command(command: str) -> str | None:
     for pattern, reason in BLOCKED_PATTERNS:
         if pattern.search(command):
             return reason
+
+    if GIT_FORCE_REFSPEC.search(command):
+        return "Git force push (git push +<ref>)"
 
     if (
         DELETE_FROM.search(command)

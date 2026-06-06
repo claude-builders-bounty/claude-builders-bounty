@@ -203,6 +203,25 @@ class CheckCommandTests(unittest.TestCase):
             "Git force push (git push --force)",
         )
 
+    def test_blocks_git_push_force_refspec_prefix(self):
+        blocked = (
+            ("git push +main", "Git force push (git push +<ref>)"),
+            (
+                "git push origin +main",
+                "Git force push (git push +<ref>)",
+            ),
+            (
+                "git push origin +refs/heads/main:refs/heads/main",
+                "Git force push (git push +<ref>)",
+            ),
+        )
+        for command, reason in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(self.hook.check_command(command), reason)
+
+    def test_allows_branch_names_with_plus_sign(self):
+        self.assertIsNone(self.hook.check_command("git push origin feature+fix"))
+
     def test_blocks_chained_destructive_commands(self):
         chained = (
             "git status; rm -rf /",
@@ -210,6 +229,7 @@ class CheckCommandTests(unittest.TestCase):
             "ls || rm -rf /",
             "npm test; DROP TABLE users",
             "git fetch && git push --force origin main",
+            "git status; git push origin +main",
         )
         for command in chained:
             with self.subTest(command=command):
