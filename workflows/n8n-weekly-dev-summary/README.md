@@ -55,9 +55,20 @@ Friday 5pm Trigger → Load Config → parallel GitHub fetches (commits, issues,
 ## Validation
 
 ```bash
-node tests/validate-workflow.mjs
-node tests/collect-github-data.test.mjs
+npm test
 jq empty weekly-dev-summary.json
+```
+
+Optional live GitHub API check (requires `GITHUB_TOKEN`):
+
+```bash
+npm run test:github
+```
+
+Optional full n8n execution + screenshot regeneration (requires `n8n` CLI and `GITHUB_TOKEN`):
+
+```bash
+npm run test:e2e
 ```
 
 ## Test evidence
