@@ -47,6 +47,7 @@ Friday 5pm Trigger → Load Config → parallel GitHub fetches (commits, issues,
 ```
 
 - Fetches the past 7 days of commits, closed issues, and merged PRs (filtered by date)
+- GitHub fetch nodes use **Always Output Data** so a quiet week does not block the merge step
 - Builds a structured prompt with contributor stats
 - Generates EN/FR narrative via Claude Sonnet 4
 - Delivers formatted output to your chosen channel

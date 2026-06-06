@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Completes n8n setup if needed, opens workflow, executes it, captures screenshot.
+ * Opens imported workflow in n8n, executes it, captures execution screenshot.
  */
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,18 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const out = join(__dirname, '..', 'assets', 'n8n-execution-screenshot.png');
+
+async function dismissOverlays(page) {
+  for (const label of [/skip/i, /close/i, /dismiss/i, /got it/i, /later/i]) {
+    const btn = page.getByRole('button', { name: label });
+    if (await btn.count()) {
+      await btn.first().click({ force: true }).catch(() => {});
+      await page.waitForTimeout(500);
+    }
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+}
 
 const browser = await chromium.launch({
   headless: true,
@@ -47,36 +59,19 @@ try {
     await page.waitForTimeout(3000);
   }
 
-  await page.goto('http://localhost:5678/home/workflows', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2000);
-
-  const dismiss = page.getByRole('button', { name: /close|dismiss|got it|skip|later/i });
-  if (await dismiss.count()) {
-    await dismiss.first().click({ force: true }).catch(() => {});
-    await page.waitForTimeout(1000);
-  }
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(500);
-
   await page.goto('http://localhost:5678/workflow/weekly-github-dev-summary', {
     waitUntil: 'domcontentloaded',
   });
-  await page.waitForTimeout(3000);
-
-  const getStarted = page.getByRole('button', { name: /get started/i });
-  if (await getStarted.count()) {
-    await getStarted.first().click({ force: true }).catch(() => {});
-    await page.waitForTimeout(1000);
-  }
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(2000);
+  await dismissOverlays(page);
 
   const executeBtn = page.getByRole('button', { name: /execute workflow/i });
   if (await executeBtn.count()) {
     await executeBtn.first().click();
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(12000);
   }
 
+  await dismissOverlays(page);
   await page.screenshot({ path: out, fullPage: false });
   console.log(`Screenshot saved: ${out}`);
 } catch (err) {

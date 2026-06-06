@@ -43,6 +43,12 @@ assert(serialized.includes('/issues'), 'fetches issues');
 assert(serialized.includes('/pulls'), 'fetches pull requests');
 assert(serialized.includes('api.anthropic.com/v1/messages'), 'calls Claude API');
 
+const fetchNodes = workflow.nodes.filter((n) =>
+  ['Fetch Commits', 'Fetch Closed Issues', 'Fetch Merged PRs'].includes(n.name),
+);
+assert(fetchNodes.length === 3, 'has three GitHub fetch nodes');
+assert(fetchNodes.every((n) => n.alwaysOutputData === true), 'GitHub fetch nodes always output data (empty week safe)');
+
 const buildPrompt = workflow.nodes.find((n) => n.name === 'Build Claude Prompt');
 assert(buildPrompt?.parameters?.jsCode?.includes('merged_at'), 'filters merged PRs by date');
 assert(buildPrompt?.parameters?.mode === 'runOnceForAllItems', 'Build Claude Prompt runs once after merge');
