@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 import urllib.error
@@ -68,7 +69,10 @@ def parse_args() -> argparse.Namespace:
         "--repo",
         help="Repository (owner/repo). Required if --pr is a number.",
     )
-    parser.add_argument("--token", help="GitHub token (or set GITHUB_TOKEN env var)")
+    parser.add_argument(
+        "--token",
+        help="GitHub token (or set GITHUB_TOKEN, or authenticate with gh CLI)",
+    )
     parser.add_argument("--output", "-o", help="Output file (default: stdout)")
     parser.add_argument(
         "--diff-only",
@@ -166,6 +170,33 @@ def metadata_from_diff(
         "repo": "review",
         "pr_number": 0,
     }
+
+
+def resolve_github_token(explicit: str | None = None) -> str | None:
+    """Resolve a GitHub token from CLI flag, env var, or gh auth."""
+    if explicit:
+        return explicit
+
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        return token
+
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return None
+
+    if result.returncode == 0:
+        token = result.stdout.strip()
+        if token:
+            return token
+    return None
 
 
 def gh_api(path: str, token: str, accept: str = "application/vnd.github.v3+json") -> Any:
@@ -796,10 +827,11 @@ def main() -> None:
         review = analyze_pr(metadata, diff)
         output = format_markdown(metadata, review)
     else:
-        token = args.token or os.environ.get("GITHUB_TOKEN")
+        token = resolve_github_token(args.token)
         if not token:
             print(
-                "Error: GITHUB_TOKEN not set. Provide --token or set GITHUB_TOKEN env var.",
+                "Error: GitHub token not found. Provide --token, set GITHUB_TOKEN, "
+                "or run `gh auth login`.",
                 file=sys.stderr,
             )
             sys.exit(1)

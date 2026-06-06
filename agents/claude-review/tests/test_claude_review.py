@@ -482,6 +482,38 @@ class DiffFilterTests(unittest.TestCase):
         self.assertFalse(any("TODO" in message for message in messages))
 
 
+class TokenResolutionTests(unittest.TestCase):
+    def test_explicit_token_takes_priority(self):
+        with unittest.mock.patch.dict("os.environ", {"GITHUB_TOKEN": "env-token"}, clear=False):
+            self.assertEqual(
+                claude_review.resolve_github_token("cli-token"),
+                "cli-token",
+            )
+
+    def test_env_token_used_when_no_explicit(self):
+        with unittest.mock.patch.dict("os.environ", {"GITHUB_TOKEN": "env-token"}, clear=False):
+            with unittest.mock.patch("claude_review.subprocess.run") as run:
+                self.assertEqual(claude_review.resolve_github_token(), "env-token")
+                run.assert_not_called()
+
+    def test_gh_auth_token_fallback(self):
+        with unittest.mock.patch.dict("os.environ", {}, clear=True):
+            with unittest.mock.patch(
+                "claude_review.subprocess.run",
+                return_value=unittest.mock.Mock(returncode=0, stdout="gh-token\n"),
+            ) as run:
+                self.assertEqual(claude_review.resolve_github_token(), "gh-token")
+                run.assert_called_once()
+
+    def test_returns_none_when_unavailable(self):
+        with unittest.mock.patch.dict("os.environ", {}, clear=True):
+            with unittest.mock.patch(
+                "claude_review.subprocess.run",
+                side_effect=FileNotFoundError,
+            ):
+                self.assertIsNone(claude_review.resolve_github_token())
+
+
 class MarkdownFormatTests(unittest.TestCase):
     def test_required_sections_present(self):
         metadata = {

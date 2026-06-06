@@ -16,7 +16,7 @@ Maps each acceptance criterion to the exact command or artifact in this PR.
 ## Commands
 
 ```bash
-# Unit tests (35 cases)
+# Unit tests (39 cases)
 python3 -m unittest agents/claude-review/tests/test_claude_review.py -v
 
 # Live CLI against a public PR
@@ -27,4 +27,4 @@ git diff main...HEAD > /tmp/changes.diff
 ./claude-review --diff-file /tmp/changes.diff --title "local branch"
 ```
 
-Expected test output ends with `OK` and `Ran 35 tests`.
+Expected test output ends with `OK` and `Ran 39 tests`.

@@ -33,7 +33,7 @@ git diff main...HEAD > /tmp/changes.diff
 claude-review --diff-file /tmp/changes.diff --title "My feature branch"
 ```
 
-Set `GITHUB_TOKEN` (or pass `--token`) with `repo` scope for private repos or `public_repo` for public repositories. `--diff-file` mode works without a token.
+Set `GITHUB_TOKEN` (or pass `--token`) with `repo` scope for private repos or `public_repo` for public repositories. If the [GitHub CLI](https://cli.github.com/) is installed and authenticated, `claude-review` uses `gh auth token` automatically. `--diff-file` mode works without a token.
 
 ## Claude Code sub-agent
 
