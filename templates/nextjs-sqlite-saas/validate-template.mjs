@@ -58,7 +58,9 @@ const stackRationaleRows = [...text.matchAll(/^\| [^|]+ \| [^|]+ \| [^|]+ \|$/gm
 ).length;
 
 const inlineReasons = text.match(/\bReason:/g)?.length ?? 0;
-const smokeTestSteps = text.match(/^\d+\.\s+/gm)?.length ?? 0;
+
+const greenfieldSection = text.split("## Greenfield Smoke Test")[1]?.split(/^## /m)[0] ?? "";
+const smokeTestSteps = greenfieldSection.match(/^\d+\.\s+/gm)?.length ?? 0;
 const opinionatedCount = antiPatternRows + stackRationaleRows + inlineReasons;
 
 if (opinionatedCount < 20) {
