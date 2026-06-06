@@ -70,6 +70,13 @@ def parse_args() -> argparse.Namespace:
         dest="post",
         help="Post the review as a comment on the pull request",
     )
+    parser.add_argument(
+        "--max-files",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Limit analysis to the first N changed files (useful for very large PRs)",
+    )
     return parser.parse_args()
 
 
@@ -267,8 +274,13 @@ def build_narrative_summary(metadata: dict[str, Any]) -> str:
     if file_count == 0:
         return "No file changes were detected in this pull request."
 
+    truncated = metadata.get("files_truncated", 0)
+    file_phrase = f"{file_count} file(s)"
+    if truncated:
+        file_phrase = f"{file_count} of {file_count + truncated} file(s) (--max-files cap)"
+
     summary = (
-        f'This pull request titled "{title}" updates {file_count} file(s) with '
+        f'This pull request titled "{title}" updates {file_phrase} with '
         f'+{metadata["additions"]}/-{metadata["deletions"]} lines across '
         f'{metadata["commits"]} commit(s). '
     )
@@ -559,6 +571,11 @@ def main() -> None:
     print(f"Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
 
     metadata = fetch_pr_metadata(owner, repo, pr_number, token)
+    if args.max_files is not None and args.max_files > 0:
+        total_files = len(metadata["changed_files"])
+        if total_files > args.max_files:
+            metadata["files_truncated"] = total_files - args.max_files
+            metadata["changed_files"] = metadata["changed_files"][: args.max_files]
     diff = fetch_pr_diff(owner, repo, pr_number, token)
 
     if args.diff_only:

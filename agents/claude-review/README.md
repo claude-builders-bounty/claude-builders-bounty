@@ -24,6 +24,9 @@ python agents/claude-review/claude_review.py --pr https://github.com/owner/repo/
 
 # Save output to a file
 claude-review --pr https://github.com/owner/repo/pull/123 -o review.md
+
+# Cap analysis to the first N changed files on very large PRs
+claude-review --pr https://github.com/owner/repo/pull/123 --max-files 50
 ```
 
 Set `GITHUB_TOKEN` (or pass `--token`) with `repo` scope for private repos or `public_repo` for public repositories.

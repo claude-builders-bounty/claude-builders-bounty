@@ -283,6 +283,27 @@ class PostReviewCommentTests(unittest.TestCase):
         self.assertEqual(comment_id, 2)
 
 
+class MaxFilesTests(unittest.TestCase):
+    def test_truncates_changed_files_when_max_files_set(self):
+        metadata = {
+            "title": "Big refactor",
+            "body": "",
+            "changed_files": [
+                {"filename": f"src/{i}.py", "status": "modified", "additions": 1, "deletions": 0, "changes": 1}
+                for i in range(5)
+            ],
+            "total_changes": 5,
+            "commits": 1,
+            "additions": 5,
+            "deletions": 0,
+            "labels": [],
+            "files_truncated": 3,
+        }
+        metadata["changed_files"] = metadata["changed_files"][:2]
+        review = claude_review.analyze_pr(metadata, "")
+        self.assertIn("2 of 5 file(s)", review["summary"])
+
+
 class MarkdownFormatTests(unittest.TestCase):
     def test_required_sections_present(self):
         metadata = {
