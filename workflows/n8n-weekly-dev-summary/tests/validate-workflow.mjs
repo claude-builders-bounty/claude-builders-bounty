@@ -1,0 +1,80 @@
+#!/usr/bin/env node
+/**
+ * Regression tests for weekly-dev-summary n8n workflow JSON.
+ * Run: node tests/validate-workflow.mjs
+ */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const workflowPath = join(__dirname, '..', 'weekly-dev-summary.json');
+const workflow = JSON.parse(readFileSync(workflowPath, 'utf8'));
+
+const failures = [];
+
+function assert(condition, message) {
+  if (!condition) failures.push(message);
+}
+
+const nodeTypes = workflow.nodes.map((n) => n.type);
+const nodeNames = workflow.nodes.map((n) => n.name);
+
+assert(workflow.name, 'workflow has a name');
+assert(Array.isArray(workflow.nodes) && workflow.nodes.length >= 8, 'workflow has enough nodes');
+assert(nodeTypes.includes('n8n-nodes-base.scheduleTrigger'), 'has schedule trigger');
+assert(nodeTypes.filter((t) => t === 'n8n-nodes-base.httpRequest').length >= 4, 'has GitHub + Claude + delivery HTTP nodes');
+assert(nodeNames.includes('Claude API'), 'has Claude API node');
+
+const trigger = workflow.nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger');
+const interval = trigger?.parameters?.rule?.interval?.[0];
+assert(interval?.field === 'weeks', 'trigger runs weekly');
+assert(interval?.triggerAtDay?.includes(5), 'trigger runs on Friday');
+assert(interval?.triggerAtHour === 17, 'trigger runs at 5pm');
+
+const serialized = JSON.stringify(workflow);
+assert(serialized.includes('claude-sonnet-4-20250514'), 'uses required Claude model');
+assert(serialized.includes('GITHUB_REPO'), 'configurable GitHub repo');
+assert(serialized.includes('DELIVERY_CHANNEL'), 'configurable delivery channel');
+assert(serialized.includes('SUMMARY_LANGUAGE'), 'configurable language EN/FR');
+assert(
+  serialized.includes('DISCORD_WEBHOOK_URL') &&
+    serialized.includes('SLACK_WEBHOOK_URL') &&
+    serialized.includes('SUMMARY_EMAIL_TO'),
+  'discord, slack, and email delivery configured',
+);
+assert(serialized.includes('api.github.com'), 'fetches GitHub API');
+assert(serialized.includes('/commits'), 'fetches commits');
+assert(serialized.includes('/issues'), 'fetches issues');
+assert(serialized.includes('search/issues'), 'fetches merged PRs via GitHub search API');
+assert(serialized.includes('api.anthropic.com/v1/messages'), 'calls Claude API');
+assert(serialized.includes("'Bearer ' +"), 'GitHub Authorization uses Bearer expression');
+
+const fetchNodes = workflow.nodes.filter((n) =>
+  ['Fetch Commits', 'Fetch Closed Issues', 'Fetch Merged PRs'].includes(n.name),
+);
+assert(fetchNodes.length === 3, 'has three GitHub fetch nodes');
+assert(fetchNodes.every((n) => n.alwaysOutputData === true), 'GitHub fetch nodes always output data (empty week safe)');
+assert(
+  fetchNodes.every((n) => n.parameters?.options?.response?.response?.responseFormat === 'json'),
+  'GitHub fetch nodes parse JSON responses',
+);
+
+const buildPrompt = workflow.nodes.find((n) => n.name === 'Build Claude Prompt');
+assert(buildPrompt?.parameters?.jsCode?.includes('merged_at'), 'filters merged PRs by date');
+assert(buildPrompt?.parameters?.mode === 'runOnceForAllItems', 'Build Claude Prompt runs once after merge');
+assert(buildPrompt?.parameters?.jsCode?.includes('collectRecords'), 'collects all GitHub HTTP items');
+assert(buildPrompt?.parameters?.jsCode?.includes('rows[0].items'), 'unwraps GitHub search API responses');
+assert(buildPrompt?.parameters?.jsCode?.includes('system:'), 'Claude request includes system prompt');
+assert(buildPrompt?.parameters?.jsCode?.includes('JSON.stringify(activity'), 'sends structured activity JSON to Claude');
+
+const connections = Object.keys(workflow.connections || {});
+assert(connections.includes('Friday 5pm Weekly Trigger'), 'trigger is wired');
+assert(connections.includes('Claude API'), 'Claude node is wired');
+
+if (failures.length) {
+  console.error('FAILED:\n- ' + failures.join('\n- '));
+  process.exit(1);
+}
+
+console.log(`OK: ${workflow.nodes.length} nodes, all acceptance checks passed.`);
