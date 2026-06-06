@@ -1,53 +1,33 @@
-# Claude Builders Bounty 🤖
+# 🦞 Bounty Hunter Solutions
 
-> A community bounty board for Claude Code builders.
+本目录包含实际 GitHub bounty 的完整解决方案。
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## 可用解决方案
 
----
+### ✅ $50 - CHANGELOG 生成器
+- **Issue**: [SKILL: Generate a structured CHANGELOG from git history](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/1)
+- **文件**: `changelog.sh`
+- **状态**: 待提交
 
-## How it works
+### ✅ $100 - SafeGuard Hook
+- **Issue**: [HOOK: Pre-tool-use hook that blocks destructive bash commands](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/3)
+- **文件**: `pre-tool-use.sh`
+- **状态**: 待提交
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### ✅ GH Actions CI
+- **Issue**: [L1: Add GitHub Actions CI for forge build + forge test](https://github.com/kcolbchain/erc721-ai/issues/31)
+- **文件**: `ci.yml`
+- **状态**: 待提交
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### ⏳ $150 - PR Review Agent
+- **Issue**: [AGENT: Claude Code sub-agent that reviews a PR](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/4)
+- **状态**: 待开发
 
 ---
 
-## Rules
+## 提交步骤
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+1. Fork 对应仓库
+2. 将解决方案文件放到正确路径
+3. 提交 PR
+4. 在 PR 中引用 issue 编号
