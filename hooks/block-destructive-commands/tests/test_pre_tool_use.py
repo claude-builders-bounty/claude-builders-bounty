@@ -177,6 +177,14 @@ class CheckCommandTests(unittest.TestCase):
             "SQL TRUNCATE",
         )
 
+    def test_allows_truncate_utility_with_size_flag(self):
+        for command in (
+            "truncate -s 0 important.db",
+            "truncate --size 0 /var/log/app.log",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
+
     def test_allows_delete_from_in_quoted_echo(self):
         self.assertIsNone(
             self.hook.check_command("echo \"DELETE FROM users WHERE id = 1\"")
@@ -201,6 +209,12 @@ class CheckCommandTests(unittest.TestCase):
         self.assertEqual(
             self.hook.check_command("git -C /repo push --force origin main"),
             "Git force push (git push --force)",
+        )
+
+    def test_blocks_git_push_force_via_config_override(self):
+        self.assertEqual(
+            self.hook.check_command("git -c push.force=true push origin main"),
+            "Git force push (git -c push.force)",
         )
 
     def test_blocks_git_push_force_refspec_prefix(self):

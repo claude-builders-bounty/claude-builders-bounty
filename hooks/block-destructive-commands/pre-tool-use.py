@@ -24,8 +24,15 @@ BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"\bgit\b.*?\bpush\b.*?\s-f\b", re.IGNORECASE),
         "Git force push (git push -f)",
     ),
+    (
+        re.compile(r"\bgit\b.*?-c\s+\S*push\.force", re.IGNORECASE),
+        "Git force push (git -c push.force)",
+    ),
     (re.compile(r"\btruncate\b", re.IGNORECASE), "SQL TRUNCATE"),
 ]
+
+# Unix truncate(1) uses flag options; avoid blocking file truncation utilities.
+TRUNCATE_UTIL = re.compile(r"\btruncate\s+(?:-[a-zA-Z]|--)", re.IGNORECASE)
 
 DELETE_FROM = re.compile(r"delete\s+from", re.IGNORECASE)
 WHERE_CLAUSE = re.compile(r"\bwhere\b", re.IGNORECASE)
@@ -79,7 +86,10 @@ def check_command(command: str) -> str | None:
         return "Recursive force delete (rm -rf)"
 
     for pattern, reason in BLOCKED_PATTERNS:
-        if pattern.search(command):
+        if reason == "SQL TRUNCATE":
+            if pattern.search(command) and not TRUNCATE_UTIL.search(command):
+                return reason
+        elif pattern.search(command):
             return reason
 
     if GIT_FORCE_REFSPEC.search(command):
