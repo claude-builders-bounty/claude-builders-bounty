@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Claude Code pre-tool-use hook — 阻止破坏性 bash 命令
+
+安装：复制到 ~/.claude/hooks/pre-tool-use 并 chmod +x
+"""
+
+import json
+import sys
+import re
+import os
+from datetime import datetime, timezone
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+# === 破坏性命令模式 ===
+DESTRUCTIVE_PATTERNS = [
+    # rm -rf 及其变体
+    (r"\brm\s+(-[a-z]*r[a-z]*f[a-z]*|-rf|--recursive.*--force)\b",
+     "rm -rf 会递归强制删除文件，不可恢复"),
+
+    # DROP TABLE / TRUNCATE
+    (r"\bDROP\s+TABLE\b",
+     "DROP TABLE 会永久删除表及其所有数据"),
+    (r"\bTRUNCATE\s+(TABLE\s+)?\w+",
+     "TRUNCATE 会清空表中所有数据，不可恢复"),
+
+    # DELETE FROM 无 WHERE
+    (r"\bDELETE\s+FROM\s+\w+\s*(;|$)(?!.*\bWHERE\b)",
+     "DELETE FROM 缺少 WHERE 子句，会删除表中所有行"),
+
+    # git push --force
+    (r"\bgit\s+push\s+(-[a-z]*f[a-z]*|--force)",
+     "git push --force 会覆盖远程历史，团队成员的工作可能丢失"),
+
+    # git reset --hard
+    (r"\bgit\s+reset\s+--hard\b",
+     "git reset --hard 会丢弃所有未提交的修改"),
+
+    # chmod 777 （安全风险）
+    (r"\bchmod\s+(-R\s+)?777\b",
+     "chmod 777 给所有用户完全权限，存在安全风险"),
+
+    # fork bomb
+    (r":\(\)\s*\{",
+     "疑似 fork bomb，会耗尽系统资源"),
+
+    # dd 写磁盘（危险）
+    (r"\bdd\s+if=.*\s+of=/dev/(sd|nvme|hd)",
+     "dd 直接写磁盘设备可能导致数据永久丢失"),
+
+    # > /dev/sda 重定向覆盖磁盘
+    (r">\s*/dev/(sd|nvme|hd)",
+     "重定向到磁盘设备会覆盖分区表或数据"),
+]
+
+
+def should_block(command: str) -> tuple[bool, str]:
+    """检查命令是否应被阻止。返回 (是否阻止, 原因)"""
+    for pattern, reason in DESTRUCTIVE_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True, reason
+    return False, ""
+
+
+def log_block(command: str, reason: str, project_path: str):
+    """记录阻止事件到日志"""
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with open(LOG_FILE, "a") as f:
+        f.write(f"[{timestamp}] BLOCKED\n")
+        f.write(f"  Command: {command}\n")
+        f.write(f"  Reason:  {reason}\n")
+        f.write(f"  Project: {project_path}\n")
+        f.write("---\n")
+
+
+def main():
+    try:
+        input_data = json.load(sys.stdin)
+    except (json.JSONDecodeError, EOFError):
+        # 非 JSON 输入，放行
+        print(json.dumps({"decision": "allow"}))
+        return
+
+    tool_name = input_data.get("tool_name", "")
+    tool_input = input_data.get("tool_input", {})
+
+    # 只拦截 Bash 工具
+    if tool_name != "Bash":
+        print(json.dumps({"decision": "allow"}))
+        return
+
+    command = tool_input.get("command", "")
+    if not command:
+        print(json.dumps({"decision": "allow"}))
+        return
+
+    blocked, reason = should_block(command)
+    if blocked:
+        project_path = os.getcwd()
+        log_block(command, reason, project_path)
+
+        # 返回阻止决策 + 给 Claude 的消息
+        print(json.dumps({
+            "decision": "block",
+            "reason": (
+                f"⛔ 该命令已被安全 Hook 阻止。\n\n"
+                f"命令: {command}\n"
+                f"原因: {reason}\n\n"
+                f"如果你确实需要执行此操作，请：\n"
+                f"1. 确认你知道在做什么\n"
+                f"2. 手动备份相关数据\n"
+                f"3. 修改命令添加必要的安全防护（如 DELETE 加 WHERE、rm 改为 trash）\n\n"
+                f"阻止记录已写入: {LOG_FILE}"
+            )
+        }))
+    else:
+        print(json.dumps({"decision": "allow"}))
+
+
+if __name__ == "__main__":
+    main()
