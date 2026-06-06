@@ -50,6 +50,12 @@ GIT_PUSH_FORCE_CONFIG = re.compile(
     re.IGNORECASE,
 )
 GIT_PUSH_FORCE_CONFIG_FALSE = frozenset({"false", "0", "no", "off", "n"})
+CHAIN_SPLIT = re.compile(r"\s*(?:;|&&|\|\|)\s*")
+
+
+def iter_command_segments(command: str) -> list[str]:
+    """Split chained bash commands so each segment is checked independently."""
+    return [segment.strip() for segment in CHAIN_SPLIT.split(command) if segment.strip()]
 
 
 def is_git_force_via_config(command: str) -> bool:
@@ -95,45 +101,53 @@ def deny(reason: str) -> None:
     sys.exit(0)
 
 
-def check_command(command: str) -> str | None:
-    if is_rm_rf(command):
+def check_segment(segment: str) -> str | None:
+    if is_rm_rf(segment):
         return "Recursive force delete (rm -rf)"
 
     for pattern, reason in BLOCKED_PATTERNS:
         if reason == "SQL TRUNCATE":
-            if pattern.search(command) and not TRUNCATE_UTIL.search(command):
+            if pattern.search(segment) and not TRUNCATE_UTIL.search(segment):
                 return reason
-        elif pattern.search(command):
+        elif pattern.search(segment):
             return reason
 
-    if is_git_force_via_config(command):
+    if is_git_force_via_config(segment):
         return "Git force push (git -c push.force)"
 
-    if GIT_FORCE_REFSPEC.search(command):
+    if GIT_FORCE_REFSPEC.search(segment):
         return "Git force push (git push +<ref>)"
 
     if (
-        DELETE_FROM.search(command)
-        and not WHERE_CLAUSE.search(command)
-        and not SHELL_LITERAL.match(command)
+        DELETE_FROM.search(segment)
+        and not WHERE_CLAUSE.search(segment)
+        and not SHELL_LITERAL.match(segment)
     ):
         return "SQL DELETE FROM without WHERE clause"
 
-    if DD_DISK.search(command):
+    if DD_DISK.search(segment):
         return "Disk overwrite (dd of=/dev/*)"
 
-    if FORK_BOMB.search(command):
+    if FORK_BOMB.search(segment):
         return "Fork bomb"
 
-    if MKFS.search(command):
+    if MKFS.search(segment):
         return "Filesystem format (mkfs)"
 
-    if DEV_REDIRECT.search(command):
+    if DEV_REDIRECT.search(segment):
         return "Raw device overwrite (> /dev/*)"
 
-    if WIPEFS.search(command):
+    if WIPEFS.search(segment):
         return "Disk signature wipe (wipefs)"
 
+    return None
+
+
+def check_command(command: str) -> str | None:
+    for segment in iter_command_segments(command):
+        reason = check_segment(segment)
+        if reason:
+            return reason
     return None
 
 

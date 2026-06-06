@@ -31,7 +31,7 @@ Uses the official Claude Code `hookSpecificOutput` schema (`permissionDecision: 
 ## How it works
 
 1. Intercepts every `Bash` tool call via the `PreToolUse` hook
-2. Checks the command against destructive patterns (including chained commands joined with `;`, `&&`, or `||`)
+2. Splits chained commands on `;`, `&&`, and `||`, then checks each segment independently
 3. **Blocks** matching commands and returns a clear denial message to Claude
 4. **Logs** every blocked attempt to `~/.claude/hooks/blocked.log` with timestamp, command, and project path
 5. **Allows** safe commands to pass through unchanged
@@ -70,7 +70,7 @@ From the repository root:
 
 ```bash
 python3 -m unittest discover -s hooks/block-destructive-commands/tests -v
-# 59 regression tests
+# 59 regression tests (including per-segment chained-command checks)
 ```
 
 ## License

@@ -281,6 +281,8 @@ class CheckCommandTests(unittest.TestCase):
             "git status && npm test",
             "ls -la; git push --force-with-lease origin main",
             "echo ok; rm -f README.md",
+            "ls && echo DELETE FROM backup",
+            "git status || cat delete_from.sql",
         )
         for command in allowed:
             with self.subTest(command=command):
