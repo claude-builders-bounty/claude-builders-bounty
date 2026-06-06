@@ -11,6 +11,11 @@ const requiredSections = [
   "## Component Patterns",
   "## Patterns to Follow",
   "## What We Don't Do (And Why)",
+  "## When to Ask Clarifying Questions",
+  "## Auth and Authorization",
+  "## Route Handlers and APIs",
+  "## Testing Rules",
+  "## Greenfield Smoke Test",
 ];
 
 const requiredKeywords = [
@@ -53,6 +58,7 @@ const stackRationaleRows = [...text.matchAll(/^\| [^|]+ \| [^|]+ \| [^|]+ \|$/gm
 ).length;
 
 const inlineReasons = text.match(/\bReason:/g)?.length ?? 0;
+const smokeTestSteps = text.match(/^\d+\.\s+/gm)?.length ?? 0;
 const opinionatedCount = antiPatternRows + stackRationaleRows + inlineReasons;
 
 if (opinionatedCount < 20) {
@@ -60,4 +66,16 @@ if (opinionatedCount < 20) {
   process.exit(1);
 }
 
-console.log(`Template validation passed with ${opinionatedCount} explicit reasons.`);
+if (smokeTestSteps < 4) {
+  console.error(`Expected at least 4 greenfield smoke-test steps, found ${smokeTestSteps}.`);
+  process.exit(1);
+}
+
+if (!/Expected behavior:.*Claude Code/i.test(text)) {
+  console.error("Missing explicit expected Claude Code greenfield behavior.");
+  process.exit(1);
+}
+
+console.log(
+  `Template validation passed with ${opinionatedCount} explicit reasons and ${smokeTestSteps} smoke-test steps.`,
+);

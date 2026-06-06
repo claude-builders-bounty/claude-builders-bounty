@@ -23,8 +23,10 @@ cp "$ROOT/CLAUDE.md" "$WORKDIR/app/CLAUDE.md"
 node "$ROOT/validate-template.mjs"
 
 test -f "$WORKDIR/app/CLAUDE.md"
+test -d "$WORKDIR/app/src/app"
 grep -q "Next.js 15" "$WORKDIR/app/CLAUDE.md"
 grep -q "better-sqlite3" "$WORKDIR/app/CLAUDE.md"
 grep -q "src/app/" "$WORKDIR/app/CLAUDE.md"
+grep -q "## What We Don't Do" "$WORKDIR/app/CLAUDE.md"
 
 echo "Greenfield smoke test passed: CLAUDE.md is usable in a fresh Next.js 15 project."

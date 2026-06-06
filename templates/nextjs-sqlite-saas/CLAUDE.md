@@ -312,3 +312,61 @@ Ask before implementing when the request touches:
 - **Data retention / GDPR policy** — affects soft-delete vs hard-delete strategy
 
 For routine feature work within these conventions, **proceed without asking**.
+
+---
+
+## Auth and Authorization
+
+Sessions are **httpOnly cookies** backed by a `sessions` table. Reason: cookies resist XSS exfiltration better than localStorage tokens.
+
+1. **Read session in Server Components and actions** via `getSession()` from `src/lib/auth.ts` — never parse cookies manually.
+2. **Resolve org membership** in `requireOrgMember(orgSlug)` before any org-scoped read or write.
+3. **Middleware** (`src/middleware.ts`) only redirects unauthenticated users away from `(app)/` routes. Reason: keep auth logic out of middleware matchers; complex checks belong in layouts and actions.
+4. **Never trust `orgSlug` or `orgId` from the client alone.** Always verify the session user belongs to that org in the database.
+
+---
+
+## Route Handlers and APIs
+
+`src/app/api/` is for **external callbacks only** — Stripe webhooks, OAuth redirects, cron ingress. Reason: internal CRUD belongs in Server Actions with shared auth helpers.
+
+```tsx
+// src/app/api/webhooks/stripe/route.ts
+import { headers } from 'next/headers';
+import { env } from '@/lib/env';
+
+export async function POST(request: Request) {
+  const signature = (await headers()).get('stripe-signature');
+  if (!signature) return new Response('Missing signature', { status: 400 });
+  const body = await request.text();
+  // verify with env.STRIPE_WEBHOOK_SECRET, then upsert idempotently
+  return new Response('ok');
+}
+```
+
+Webhook handlers must be **idempotent** (use event IDs or unique constraints). Return `400` for bad signatures, `200` for duplicates.
+
+---
+
+## Testing Rules
+
+- **Query modules:** test against an in-memory SQLite database or a temp file; seed minimal schema in `beforeEach`.
+- **Server actions:** call the action function directly with mocked `getSession()` — no HTTP layer.
+- **Components:** React Testing Library for client islands; RSC pages are covered indirectly via query/action tests.
+- **Migrations:** apply all migrations to a fresh DB in CI; assert `_migrations` row count matches file count.
+
+Reason: testing at the query/action boundary catches most regressions without brittle full-stack E2E for every change.
+
+---
+
+## Greenfield Smoke Test
+
+After copying this file to a new Next.js 15 project root, Claude Code should handle these without clarifying questions:
+
+1. Add `src/db/migrations/20260315120000_create_organizations.sql` with `org_id` scoping and soft-delete columns.
+2. Create `src/db/queries/invoices.ts` with `listInvoices(orgId)` using explicit column lists and `deleted_at IS NULL`.
+3. Add `src/server/actions/create-invoice.ts` with Zod validation, `requireOrgMember`, and `revalidatePath`.
+4. Scaffold `src/app/(app)/[orgSlug]/invoices/page.tsx` as a Server Component that calls `listInvoices`.
+5. Run `pnpm db:migrate` and `pnpm typecheck` — migrations apply in filename order; types stay strict.
+
+**Expected behavior:** Claude Code follows `src/` layout, raw SQL migrations, tenant scoping, and Server Action patterns without asking which ORM, router, or auth model to use.
