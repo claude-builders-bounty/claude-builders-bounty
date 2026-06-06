@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHANGELOG_SH="${SCRIPT_DIR}/../changelog.sh"
+ROOT_CHANGELOG_SH="${SCRIPT_DIR}/../../../changelog.sh"
 PASS=0
 FAIL=0
 
@@ -172,7 +173,23 @@ OUT5="${TMP_ROOT}/changelog5.md"
 bash "$CHANGELOG_SH" "$REPO5" --version 2.1.0 --output "$OUT5" >/dev/null
 assert_contains "$OUT5" "## [2.1.0]" "custom version header"
 
-# Test 7: non-git directory fails
+# Test 7: repo-root changelog.sh wrapper delegates to the skill script
+REPO6="${TMP_ROOT}/repo6"
+setup_repo "$REPO6"
+printf 'base\n' >"$REPO6/README"
+git -C "$REPO6" add README
+git -C "$REPO6" commit -qm "Initial commit"
+git -C "$REPO6" tag v1.0.0
+printf 'feature\n' >"$REPO6/feature.txt"
+git -C "$REPO6" add feature.txt
+git -C "$REPO6" commit -qm "feat: root wrapper"
+
+OUT6="${TMP_ROOT}/changelog6.md"
+bash "$ROOT_CHANGELOG_SH" "$REPO6" --output "$OUT6" >/dev/null
+assert_contains "$OUT6" "### Added" "root wrapper produces Added section"
+assert_contains "$OUT6" "root wrapper" "root wrapper categorizes feat commit"
+
+# Test 8: non-git directory fails
 set +e
 bash "$CHANGELOG_SH" "$TMP_ROOT" --output "${TMP_ROOT}/bad.md" >/dev/null 2>&1
 STATUS=$?

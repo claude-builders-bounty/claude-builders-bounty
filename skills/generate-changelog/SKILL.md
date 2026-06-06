@@ -9,6 +9,12 @@ allowed-tools: Bash, Read, Write
 Run the bundled script from the repository root:
 
 ```bash
+bash changelog.sh
+```
+
+Or invoke the skill script directly:
+
+```bash
 bash skills/generate-changelog/changelog.sh
 ```
 
