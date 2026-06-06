@@ -8,7 +8,7 @@ A [Claude Code](https://code.claude.com/docs/en/hooks) `PreToolUse` hook that in
 |---------|-----|
 | `rm -rf` / `rm --recursive --force` | Recursive force delete |
 | `DROP TABLE` | SQL table destruction |
-| `git push --force` / `git push -f` | Rewrites remote history |
+| `git push --force` / `git push -f` | Rewrites remote history (allows `--force-with-lease`) |
 | `TRUNCATE` | SQL table truncation |
 | `DELETE FROM ...` (without `WHERE`) | Unconditional SQL row deletion |
 

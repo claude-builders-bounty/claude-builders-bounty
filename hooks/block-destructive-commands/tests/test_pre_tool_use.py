@@ -66,6 +66,11 @@ class CheckCommandTests(unittest.TestCase):
             self.hook.check_command("sqlite3 db.sqlite 'DELETE FROM users WHERE id = 1'")
         )
 
+    def test_allows_git_push_force_with_lease(self):
+        self.assertIsNone(
+            self.hook.check_command("git push --force-with-lease origin main")
+        )
+
     def test_allows_normal_commands(self):
         for command in (
             "ls -la",
