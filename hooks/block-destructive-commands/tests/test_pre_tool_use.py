@@ -52,6 +52,12 @@ class CheckCommandTests(unittest.TestCase):
             "SQL DROP TABLE",
         )
 
+    def test_blocks_drop_database(self):
+        self.assertEqual(
+            self.hook.check_command("mysql -e 'DROP DATABASE staging'"),
+            "SQL DROP DATABASE",
+        )
+
     def test_blocks_git_push_force(self):
         self.assertEqual(
             self.hook.check_command("git push --force origin main"),
