@@ -8,12 +8,14 @@ import urllib.request
 import re
 
 # Ensure UTF-8 output on all platforms
-if sys.stdout.encoding.lower() != 'utf-8':
-    sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 def get_pr_info(pr_url):
     """Fetch PR metadata and diff using GitHub CLI or web requests."""
-    # Pattern to match: https://github.com/owner/repo/pull/123
     pattern = r'github\.com/([^/]+)/([^/]+)/pull/(\d+)'
     match = re.search(pattern, pr_url)
     if not match:
@@ -21,47 +23,50 @@ def get_pr_info(pr_url):
         sys.exit(1)
     
     owner, repo, pr_num = match.groups()
+    diff_text = None
+    pr_title = f"PR #{pr_num}"
+    pr_body = ""
     
-    # Try using gh CLI first
+    # Try using gh CLI first (handles private repos and auth natively)
     try:
-        cmd = ["gh", "pr", "view", pr_url, "--json", "title,body,number,baseRefName,headRefName"]
+        cmd = ["gh", "pr", "view", pr_url, "--json", "title,body"]
         res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
         if res.returncode == 0:
             pr_data = json.loads(res.stdout)
+            pr_title = pr_data.get("title", pr_title)
+            pr_body = pr_data.get("body", "")
             
             diff_cmd = ["gh", "pr", "diff", pr_url]
             diff_res = subprocess.run(diff_cmd, capture_output=True, text=True, encoding="utf-8")
-            diff_text = diff_res.stdout if diff_res.returncode == 0 else ""
-            
-            return {
-                "owner": owner,
-                "repo": repo,
-                "number": pr_num,
-                "title": pr_data.get("title", ""),
-                "body": pr_data.get("body", ""),
-                "diff": diff_text
-            }
+            if diff_res.returncode == 0:
+                diff_text = diff_res.stdout
     except Exception:
         pass
         
-    # Fallback to fetching diff directly from GitHub web
-    diff_url = f"https://github.com/{owner}/{repo}/pull/{pr_num}.diff"
-    print(f"gh CLI not available or failed. Fetching diff from web: {diff_url}", file=sys.stderr)
-    try:
-        req = urllib.request.Request(diff_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=15) as r:
-            diff_text = r.read().decode('utf-8', 'ignore')
-        return {
-            "owner": owner,
-            "repo": repo,
-            "number": pr_num,
-            "title": f"PR #{pr_num}",
-            "body": "",
-            "diff": diff_text
-        }
-    except Exception as e:
-        print(f"Error: Failed to fetch PR diff: {e}", file=sys.stderr)
+    # Fallback to fetching diff directly from GitHub web (public repos only)
+    if not diff_text:
+        diff_url = f"https://github.com/{owner}/{repo}/pull/{pr_num}.diff"
+        print(f"gh CLI not available or failed. Fetching diff from public web: {diff_url}", file=sys.stderr)
+        try:
+            req = urllib.request.Request(diff_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                diff_text = r.read().decode('utf-8', 'ignore')
+        except Exception as e:
+            print(f"Error: Failed to fetch PR diff: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    if not diff_text or not diff_text.strip():
+        print("Error: Fetched PR diff is empty. Cannot perform review.", file=sys.stderr)
         sys.exit(1)
+
+    return {
+        "owner": owner,
+        "repo": repo,
+        "number": pr_num,
+        "title": pr_title,
+        "body": pr_body,
+        "diff": diff_text
+    }
 
 def analyze_diff_heuristically(pr_data):
     """Fallback static analysis of diff when no LLM key is configured."""
@@ -72,40 +77,32 @@ def analyze_diff_heuristically(pr_data):
     risks = []
     suggestions = []
     
-    # Analyze lines added (starting with +)
     lines_added = []
     for line in diff.split('\n'):
         if line.startswith('+') and not line.startswith('+++'):
             lines_added.append(line[1:])
             
-    # Simple risk patterns
     for line in lines_added:
-        # 1. Secret leakage
         if re.search(r'\b(api_key|token|password|secret|passwd|private_key|privatekey)\b\s*=\s*[\'"][^\'"]+[\'"]', line, re.IGNORECASE):
             risks.append("Possible hardcoded secret or credential detected in source code.")
             suggestions.append("Move secrets to environment variables or use a secret manager.")
         
-        # 2. Debug code
         if "console.log" in line and not "test" in pr_data["repo"].lower():
             risks.append("Debug output `console.log` left in production code.")
             suggestions.append("Remove debugging statements or use a dedicated logging framework.")
             
-        # 3. SQL injection risk
         if re.search(r'execute\(\s*[\'"].*?%s.*?[\'"]\s*%', line) or re.search(r'execute\(\s*f[\'"].*?\{.*?\}', line):
             risks.append("Potential SQL Injection: dynamic SQL formatting detected.")
             suggestions.append("Use parameterized queries instead of string formatting.")
             
-        # 4. Error handling
         if re.search(r'except\s+Exception:\s*pass', line) or re.search(r'catch\s*\(e\)\s*\{\s*\}', line):
             risks.append("Empty catch/except block: errors are silently swallowed.")
             suggestions.append("Log the caught exception or rethrow it.")
 
-    # Generic checks
     if len(lines_added) > 500:
         risks.append("Large PR size: review is complex and edge cases may be missed.")
         suggestions.append("Consider breaking the PR into smaller, modular pull requests.")
 
-    # Fallback to defaults if clean
     if not risks:
         risks.append("No critical static code risks detected in the changes.")
     if not suggestions:
@@ -130,7 +127,6 @@ def analyze_diff_with_claude(pr_data, api_key):
     title = pr_data["title"]
     body = pr_data["body"]
     
-    # Truncate diff to fit context window if extremely large
     max_diff_len = 100000
     if len(diff) > max_diff_len:
         diff = diff[:max_diff_len] + "\n\n[Diff truncated due to size limit]"
@@ -180,7 +176,6 @@ Output only the raw JSON. Do not wrap in markdown code blocks.
         with urllib.request.urlopen(req, timeout=30) as r:
             res_data = json.loads(r.read().decode('utf-8'))
             text_resp = res_data["content"][0]["text"].strip()
-            # Clean up potential markdown code block wrappers
             if text_resp.startswith("```"):
                 text_resp = re.sub(r'^```(?:json)?\n', '', text_resp)
                 text_resp = re.sub(r'\n```$', '', text_resp)
@@ -216,13 +211,11 @@ def main():
     
     pr_data = get_pr_info(args.pr)
     
-    # Try Anthropic API if key is present
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     review_data = None
     if api_key:
         review_data = analyze_diff_with_claude(pr_data, api_key)
         
-    # Fallback to local static check
     if not review_data:
         review_data = analyze_diff_heuristically(pr_data)
         
