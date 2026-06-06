@@ -157,7 +157,22 @@ else
   PASS=$((PASS + 1))
 fi
 
-# Test 6: non-git directory fails
+# Test 6: --version overrides release header
+REPO5="${TMP_ROOT}/repo5"
+setup_repo "$REPO5"
+printf 'base\n' >"$REPO5/README"
+git -C "$REPO5" add README
+git -C "$REPO5" commit -qm "Initial commit"
+git -C "$REPO5" tag v2.0.0
+printf 'feature\n' >"$REPO5/feature.txt"
+git -C "$REPO5" add feature.txt
+git -C "$REPO5" commit -qm "feat: version override"
+
+OUT5="${TMP_ROOT}/changelog5.md"
+bash "$CHANGELOG_SH" "$REPO5" --version 2.1.0 --output "$OUT5" >/dev/null
+assert_contains "$OUT5" "## [2.1.0]" "custom version header"
+
+# Test 7: non-git directory fails
 set +e
 bash "$CHANGELOG_SH" "$TMP_ROOT" --output "${TMP_ROOT}/bad.md" >/dev/null 2>&1
 STATUS=$?

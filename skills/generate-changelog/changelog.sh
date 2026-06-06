@@ -5,6 +5,7 @@ set -euo pipefail
 REPO_ROOT="."
 OUTPUT_FILE="CHANGELOG.md"
 SINCE_TAG=""
+VERSION_OVERRIDE=""
 PREVIEW=0
 
 usage() {
@@ -13,6 +14,7 @@ Usage: bash changelog.sh [options] [repo-root]
 
 Options:
   --since <tag>      Start from a specific tag (default: latest tag)
+  --version <name>   Override release version in the header (e.g. 1.2.0)
   --output <file>    Output file (default: CHANGELOG.md)
   --preview          Print changelog to stdout without writing a file
   -h, --help         Show this help
@@ -23,6 +25,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --since)
       SINCE_TAG="${2:-}"
+      shift 2
+      ;;
+    --version)
+      VERSION_OVERRIDE="${2:-}"
       shift 2
       ;;
     --output)
@@ -66,11 +72,11 @@ fi
 
 if [[ -n "$SINCE_TAG" ]]; then
   RANGE="${SINCE_TAG}..HEAD"
-  VERSION="${SINCE_TAG}-next"
+  VERSION="${VERSION_OVERRIDE:-${SINCE_TAG}-next}"
   [[ "$PREVIEW" -eq 0 ]] && echo "Generating changelog since ${SINCE_TAG}" >&2
 else
   RANGE=""
-  VERSION="Unreleased"
+  VERSION="${VERSION_OVERRIDE:-Unreleased}"
   [[ "$PREVIEW" -eq 0 ]] && echo "Generating changelog from full history (no tags found)" >&2
 fi
 
