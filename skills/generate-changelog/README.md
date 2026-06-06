@@ -7,7 +7,7 @@ Bounty submission for [issue #1](https://github.com/claude-builders-bounty/claud
 ## Quick start
 
 1. `chmod +x skills/generate-changelog/changelog.sh`
-2. `bash skills/generate-changelog/changelog.sh` (or `bash changelog.sh` from this directory)
+2. `bash skills/generate-changelog/changelog.sh` (add `--preview` to print without writing)
 3. Open the generated `CHANGELOG.md`
 
 Sample output from this repo: [`samples/CHANGELOG.sample.md`](samples/CHANGELOG.sample.md).

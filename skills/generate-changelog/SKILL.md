@@ -16,6 +16,7 @@ bash skills/generate-changelog/changelog.sh
 
 - `--since <tag>` — start from a specific tag instead of the latest
 - `--output <file>` — write to a different file (default: `CHANGELOG.md`)
+- `--preview` — print to stdout without writing a file
 
 ## Behavior
 

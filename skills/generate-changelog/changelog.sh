@@ -5,15 +5,17 @@ set -euo pipefail
 REPO_ROOT="."
 OUTPUT_FILE="CHANGELOG.md"
 SINCE_TAG=""
+PREVIEW=0
 
 usage() {
   cat <<'EOF'
 Usage: bash changelog.sh [options] [repo-root]
 
 Options:
-  --since <tag>    Start from a specific tag (default: latest tag)
-  --output <file>  Output file (default: CHANGELOG.md)
-  -h, --help       Show this help
+  --since <tag>      Start from a specific tag (default: latest tag)
+  --output <file>    Output file (default: CHANGELOG.md)
+  --preview          Print changelog to stdout without writing a file
+  -h, --help         Show this help
 EOF
 }
 
@@ -26,6 +28,10 @@ while [[ $# -gt 0 ]]; do
     --output)
       OUTPUT_FILE="${2:-}"
       shift 2
+      ;;
+    --preview)
+      PREVIEW=1
+      shift
       ;;
     -h|--help)
       usage
@@ -61,11 +67,11 @@ fi
 if [[ -n "$SINCE_TAG" ]]; then
   RANGE="${SINCE_TAG}..HEAD"
   VERSION="${SINCE_TAG}-next"
-  echo "Generating changelog since ${SINCE_TAG}"
+  [[ "$PREVIEW" -eq 0 ]] && echo "Generating changelog since ${SINCE_TAG}" >&2
 else
   RANGE=""
   VERSION="Unreleased"
-  echo "Generating changelog from full history (no tags found)"
+  [[ "$PREVIEW" -eq 0 ]] && echo "Generating changelog from full history (no tags found)" >&2
 fi
 
 DATE="$(date -u +%Y-%m-%d)"
@@ -122,7 +128,7 @@ while IFS= read -r line; do
   SECTIONS[$section]+="- ${clean} (${hash:0:7})"$'\n'
 done < <("${git_log[@]}" 2>/dev/null; echo)
 
-{
+render_changelog() {
   printf '# Changelog\n\n'
   printf '## [%s] - %s\n\n' "$VERSION" "$DATE"
   for section in Added Fixed Changed Removed; do
@@ -132,6 +138,12 @@ done < <("${git_log[@]}" 2>/dev/null; echo)
       printf '\n'
     fi
   done
-} >"$OUTPUT_FILE"
+}
 
-echo "Wrote ${OUTPUT_FILE} (${commit_count} commits)"
+if [[ "$PREVIEW" -eq 1 ]]; then
+  render_changelog
+  echo "Previewed ${commit_count} commits (stdout only)" >&2
+else
+  render_changelog >"$OUTPUT_FILE"
+  echo "Wrote ${OUTPUT_FILE} (${commit_count} commits)"
+fi

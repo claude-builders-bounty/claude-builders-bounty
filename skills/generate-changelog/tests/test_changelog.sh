@@ -134,7 +134,30 @@ bash "$CHANGELOG_SH" "$REPO3" --since v2.0.0 --output "$OUT3" >/dev/null
 assert_contains "$OUT3" "after v2" "since tag includes later commits"
 assert_not_contains "$OUT3" "between tags" "since tag excludes earlier commits"
 
-# Test 5: non-git directory fails
+# Test 5: --preview writes to stdout only
+REPO4="${TMP_ROOT}/repo4"
+setup_repo "$REPO4"
+printf 'base\n' >"$REPO4/README"
+git -C "$REPO4" add README
+git -C "$REPO4" commit -qm "Initial commit"
+git -C "$REPO4" tag v1.0.0
+printf 'feature\n' >"$REPO4/feature.txt"
+git -C "$REPO4" add feature.txt
+git -C "$REPO4" commit -qm "feat: preview mode"
+
+PREVIEW_OUT="${TMP_ROOT}/preview.txt"
+bash "$CHANGELOG_SH" "$REPO4" --preview >"$PREVIEW_OUT" 2>/dev/null
+
+assert_contains "$PREVIEW_OUT" "### Added" "preview mode added section"
+assert_contains "$PREVIEW_OUT" "preview mode" "preview mode commit"
+if [[ -f "$REPO4/CHANGELOG.md" ]]; then
+  echo "FAIL: --preview should not write CHANGELOG.md" >&2
+  FAIL=$((FAIL + 1))
+else
+  PASS=$((PASS + 1))
+fi
+
+# Test 6: non-git directory fails
 set +e
 bash "$CHANGELOG_SH" "$TMP_ROOT" --output "${TMP_ROOT}/bad.md" >/dev/null 2>&1
 STATUS=$?
