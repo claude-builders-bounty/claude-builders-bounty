@@ -1,0 +1,67 @@
+name: 'Claude Review'
+description: 'Reviews the current PR with Claude and posts a structured Markdown comment.'
+inputs:
+  github_token:
+    description: 'GitHub token for fetching the PR diff'
+    required: true
+  anthropic_api_key:
+    description: 'Anthropic API key for Claude'
+    required: true
+  confidence_threshold:
+    description: 'Fail this action if confidence is below this value (Low/Medium/High)'
+    required: false
+    default: ''
+outputs:
+  review:
+    description: 'The structured Markdown review that was posted (or generated)'
+  confidence:
+    description: 'Confidence level reported by the review (Low/Medium/High)'
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        # No third-party deps — stdlib only. ANTHROPIC_API_KEY is read from inputs.
+        echo "No deps to install"
+    - name: Generate review
+      id: review
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        PR_URL="${{ github.event.pull_request.html_url }}"
+        echo "Reviewing $PR_URL"
+        OUT=$(python -m claude_review --pr "$PR_URL")
+        echo "$OUT" > review.md
+        CONFIDENCE=$(grep -oE '`Confidence`\s*:\s*\`[A-Za-z]+\`' review.md | head -1 | tr -d '`')
+        echo "confidence=${CONFIDENCE}" >> "$GITHUB_OUTPUT"
+        {
+          echo "review<<EOF"
+          cat review.md
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+    - name: Post review comment
+      if: ${{ steps.review.outputs.confidence != '' }}
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        header: 'claude-review'
+        message: ${{ steps.review.outputs.review }}
+    - name: Check confidence threshold
+      if: ${{ inputs.confidence_threshold != '' }}
+      shell: bash
+      run: |
+        CURRENT="${{ steps.review.outputs.confidence }}"
+        THRESHOLD="${{ inputs.confidence_threshold }}"
+        order() { printf "%s" "$1" | tr 'LMH' '123' | bc 2>/dev/null || echo 0; }
+        if [ "$(order "$CURRENT")" -lt "$(order "$THRESHOLD")" ]; then
+          echo "::error::confidence $CURRENT is below threshold $THRESHOLD"
+          exit 1
+        fi

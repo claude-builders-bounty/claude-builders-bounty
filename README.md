@@ -51,3 +51,77 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+---
+
+# claude-review
+
+A Claude Code sub-agent that takes a GitHub Pull Request as input, analyses the diff with Claude, and posts a structured Markdown review comment.
+
+Built for the `[BOUNTY $150] AGENT: Claude Code sub-agent that reviews a PR and posts a structured comment` task in [#4](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/4).
+
+## Features
+
+- 🤖 **Claude-powered review** — uses `claude-opus-4-7` with a strict JSON schema
+- 🧱 **Pure stdlib Python** — zero third-party dependencies (Python 3.10+)
+- 🔁 **Two interfaces** — CLI (`claude-review --pr ...`) and GitHub Action (`action.yml`)
+- 📊 **Structured output** — Summary / Risks / Suggestions / Confidence
+- 📌 **Sticky PR comment** — uses `marocchino/sticky-pull-request-comment` so the same comment is updated on every push
+- 🛑 **Optional confidence gate** — fail the action if confidence is below Low/Medium/High
+
+## CLI usage
+
+```bash
+# Review a public PR
+python -m claude_review --pr https://github.com/owner/repo/pull/123
+
+# Review a local diff file
+python -m claude_review --diff path/to/changes.diff
+
+# Emit JSON instead of Markdown
+python -m claude_review --pr https://github.com/owner/repo/pull/123 --json
+```
+
+## Required environment
+
+- `ANTHROPIC_API_KEY` — your Claude API key (always required)
+- `GITHUB_TOKEN` — only for private repos or to lift the 60 req/hr unauthenticated GitHub rate limit
+
+## GitHub Action usage
+
+See `examples/workflow.yml` for a complete, copy-paste workflow. The action is composite and uses the agent code from this repo.
+
+## Sample outputs
+
+- `examples/PR-strict-kwargs-201.md` — review of a small Rust fix
+- `examples/PR-anyformat-workshop-39.md` — review of a small Python fix
+
+Both are real PRs that the agent actually produced reviews for during development.
+
+## How it works
+
+1. CLI fetches the PR metadata and the raw `.diff` from the GitHub API.
+2. The diff is truncated to 60k characters to stay within Claude's context window.
+3. A single Claude call (model: `claude-opus-4-7`) with a strict system prompt returns JSON: `{summary, risks, suggestions, confidence}`.
+4. The JSON is rendered to Markdown (or returned as-is with `--json`).
+
+## File layout
+
+```
+claude-review/
+├── README.md                       # this file (combined with main repo README)
+├── action.yml                      # composite GitHub Action
+├── requirements.txt                # empty — stdlib only
+├── claude_review/
+│   ├── __init__.py                 # main module — review logic
+│   └── __main__.py                 # `python -m claude_review` entry point
+└── examples/
+    ├── workflow.yml                # example GitHub workflow using the action
+    ├── PR-strict-kwargs-201.md     # sample review
+    └── PR-anyformat-workshop-39.md # sample review
+```
+
+## License
+
+MIT
