@@ -12,6 +12,10 @@ Bounty submission for [issue #1](https://github.com/claude-builders-bounty/claud
 
 Sample output from this repo: [`samples/CHANGELOG.sample.md`](samples/CHANGELOG.sample.md).
 
+## Claude Code
+
+Copy this folder to `.claude/skills/generate-changelog/` to enable the `/generate-changelog` command.
+
 ## Tests
 
 ```bash

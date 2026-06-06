@@ -96,7 +96,28 @@ bash "$CHANGELOG_SH" "$REPO2" --output "$OUT2" >/dev/null
 assert_contains "$OUT2" "## [Unreleased]" "unreleased when no tags"
 assert_contains "$OUT2" "first feature" "full history included"
 
-# Test 3: non-git directory fails
+# Test 4: --since overrides latest tag
+REPO3="${TMP_ROOT}/repo3"
+setup_repo "$REPO3"
+printf 'base\n' >"$REPO3/README"
+git -C "$REPO3" add README
+git -C "$REPO3" commit -qm "Initial commit"
+printf 'a\n' >"$REPO3/a"
+git -C "$REPO3" add a
+git -C "$REPO3" commit -qm "feat: between tags"
+git -C "$REPO3" tag v2.0.0
+
+printf 'b\n' >"$REPO3/b"
+git -C "$REPO3" add b
+git -C "$REPO3" commit -qm "fix: after v2"
+
+OUT3="${TMP_ROOT}/changelog3.md"
+bash "$CHANGELOG_SH" "$REPO3" --since v2.0.0 --output "$OUT3" >/dev/null
+
+assert_contains "$OUT3" "after v2" "since tag includes later commits"
+assert_not_contains "$OUT3" "between tags" "since tag excludes earlier commits"
+
+# Test 5: non-git directory fails
 set +e
 bash "$CHANGELOG_SH" "$TMP_ROOT" --output "${TMP_ROOT}/bad.md" >/dev/null 2>&1
 STATUS=$?

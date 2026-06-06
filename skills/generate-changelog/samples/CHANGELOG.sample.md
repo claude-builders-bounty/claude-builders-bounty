@@ -4,6 +4,7 @@
 
 ### Added
 
+- add generate-changelog skill (bounty #1) (a353ed8)
 - initial README with bounty board (1aeae2a)
 
 ### Changed
