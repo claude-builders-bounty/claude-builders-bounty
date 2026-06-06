@@ -59,6 +59,18 @@ assert(
   'prompt builder references collected activity counts',
 );
 
+// Append merge passes all branch items through; uneven counts must not drop records.
+const mergeNode = workflow.nodes.find((n) => n.name === 'Merge GitHub Results');
+assert(mergeNode?.parameters?.mode === 'append', 'merge node uses append (not mergeByPosition) for uneven branch sizes');
+const branchA = [{ sha: 'aaa', commit: { author: { date: '2026-06-01T12:00:00Z' }, message: 'a' } }];
+const branchB = [];
+const branchC = [
+  { number: 1, merged_at: '2026-06-02T12:00:00Z', title: 'pr' },
+  { number: 2, merged_at: '2026-06-03T12:00:00Z', title: 'pr2' },
+];
+const appendMerged = [...branchA, ...branchB, ...branchC];
+assert(appendMerged.length === 3, 'append merge retains all items when branch sizes differ');
+
 if (failures.length) {
   console.error('FAILED:\n- ' + failures.join('\n- '));
   process.exit(1);

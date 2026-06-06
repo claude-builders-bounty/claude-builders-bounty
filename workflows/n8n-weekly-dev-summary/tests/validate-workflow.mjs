@@ -70,6 +70,9 @@ assert(
   'GitHub fetch nodes parse JSON responses',
 );
 
+const mergeNode = workflow.nodes.find((n) => n.name === 'Merge GitHub Results');
+assert(mergeNode?.parameters?.mode === 'append', 'Merge GitHub Results uses append mode (sync barrier for parallel fetches)');
+
 const buildPrompt = workflow.nodes.find((n) => n.name === 'Build Claude Prompt');
 assert(buildPrompt?.parameters?.jsCode?.includes('merged_at'), 'filters merged PRs by date');
 assert(buildPrompt?.parameters?.mode === 'runOnceForAllItems', 'Build Claude Prompt runs once after merge');
