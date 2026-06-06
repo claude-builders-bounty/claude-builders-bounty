@@ -76,13 +76,23 @@ declare -A SECTIONS=(
   [Removed]=""
 )
 
-categorize() {
-  local subject
+commit_type() {
+  local subject type
   subject="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
-  case "$subject" in
-    feat*|feature*|add*|implement*|create*|new*) printf 'Added' ;;
-    fix*|bug*|hotfix*|patch*|resolve*) printf 'Fixed' ;;
-    remove*|delete*|deprecat*) printf 'Removed' ;;
+  type="$(printf '%s' "$subject" | sed -E 's/^([a-z]+)(\([^)]*\))?:.*$/\1/')"
+  if [[ "$type" == "$subject" ]]; then
+    type="${subject%% *}"
+  fi
+  printf '%s' "$type"
+}
+
+categorize() {
+  local type
+  type="$(commit_type "$1")"
+  case "$type" in
+    feat|feature|add|implement|create|new) printf 'Added' ;;
+    fix|bugfix|bug|hotfix|patch|resolve) printf 'Fixed' ;;
+    remove|delete|deprecate|drop) printf 'Removed' ;;
     *) printf 'Changed' ;;
   esac
 }
@@ -90,7 +100,7 @@ categorize() {
 clean_subject() {
   local subject="$1"
   printf '%s' "$subject" \
-    | sed -E 's/^(feat|feature|add|implement|create|fix|bugfix|hotfix|patch|resolve|update|change|refactor|migrate|perf|remove|delete|deprecat)(\([^)]+\))?:?[[:space:]]*//I' \
+    | sed -E 's/^(feat|feature|add|implement|create|fix|bugfix|hotfix|patch|resolve|update|change|refactor|migrate|perf|remove|delete|deprecate)(\([^)]+\))?:?[[:space:]]*//I' \
     | sed 's/[[:space:]]*$//' \
     | sed 's/\.$//'
 }

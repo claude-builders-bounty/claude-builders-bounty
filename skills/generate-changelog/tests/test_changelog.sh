@@ -83,7 +83,24 @@ assert_contains "$OUT1" "simplify auth flow" "refactor message cleaned"
 assert_contains "$OUT1" "drop legacy API" "remove message cleaned"
 assert_not_contains "$OUT1" "Initial commit" "pre-tag commit excluded"
 
-# Test 2: no tags uses full history
+# Test 2: scoped conventional commits
+REPO1B="${TMP_ROOT}/repo1b"
+setup_repo "$REPO1B"
+printf 'base\n' >"$REPO1B/README"
+git -C "$REPO1B" add README
+git -C "$REPO1B" commit -qm "Initial commit"
+git -C "$REPO1B" tag v1.0.0
+printf 'feature\n' >"$REPO1B/feature.txt"
+git -C "$REPO1B" add feature.txt
+git -C "$REPO1B" commit -qm "feat(api): add scoped endpoint"
+
+OUT1B="${TMP_ROOT}/changelog1b.md"
+bash "$CHANGELOG_SH" "$REPO1B" --output "$OUT1B" >/dev/null
+
+assert_contains "$OUT1B" "### Added" "scoped feat section"
+assert_contains "$OUT1B" "add scoped endpoint" "scoped feat message cleaned"
+
+# Test 3: no tags uses full history
 REPO2="${TMP_ROOT}/repo2"
 setup_repo "$REPO2"
 printf 'one\n' >"$REPO2/a"
