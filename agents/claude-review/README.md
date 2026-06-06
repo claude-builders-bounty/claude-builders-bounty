@@ -13,8 +13,11 @@ Bounty submission for [issue #4](https://github.com/claude-builders-bounty/claud
 chmod +x claude-review
 claude-review --pr https://github.com/owner/repo/pull/123
 
+# Fetch diff only (no review)
+claude-review --pr https://github.com/owner/repo/pull/123 --diff
+
 # Post review as a PR comment
-claude-review --pr https://github.com/owner/repo/pull/123 --post
+claude-review --pr https://github.com/owner/repo/pull/123 --post-comment
 
 # Direct Python invocation
 python agents/claude-review/claude_review.py --pr https://github.com/owner/repo/pull/123

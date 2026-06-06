@@ -28,12 +28,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", "-o", help="Output file (default: stdout)")
     parser.add_argument(
         "--diff-only",
+        "--diff",
         action="store_true",
+        dest="diff_only",
         help="Only fetch and print the diff, no review",
     )
     parser.add_argument(
         "--post",
+        "--post-comment",
         action="store_true",
+        dest="post",
         help="Post the review as a comment on the pull request",
     )
     return parser.parse_args()

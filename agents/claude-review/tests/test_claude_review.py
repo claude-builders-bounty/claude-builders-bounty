@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -154,6 +155,20 @@ class SummaryFormatTests(unittest.TestCase):
         }
         review = claude_review.analyze_pr(metadata, diff="+++ b/src/app.py\n+pass\n")
         self.assertIn("feature.\n\n**File type breakdown:**", review["summary"])
+
+
+class CliFlagTests(unittest.TestCase):
+    def test_diff_alias_sets_diff_only(self):
+        with unittest.mock.patch("sys.argv", ["claude-review", "--pr", "42", "--diff"]):
+            args = claude_review.parse_args()
+        self.assertTrue(args.diff_only)
+        self.assertFalse(args.post)
+
+    def test_post_comment_alias_sets_post(self):
+        with unittest.mock.patch("sys.argv", ["claude-review", "--pr", "42", "--post-comment"]):
+            args = claude_review.parse_args()
+        self.assertTrue(args.post)
+        self.assertFalse(args.diff_only)
 
 
 class MarkdownFormatTests(unittest.TestCase):
