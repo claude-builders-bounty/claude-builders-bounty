@@ -1,0 +1,278 @@
+{
+  "name": "Weekly Dev Summary \u2014 Claude-powered GitHub Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/commits?since={{ $json.since }}&until={{ $json.until }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.github_token }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        450,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/issues?state=closed&since={{ $json.since }}&filter=all",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.github_token }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        450,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/pulls?state=closed&sort=updated&direction=desc",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.github_token }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        450,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all GitHub API responses into a structured summary\nconst commits = $input.all().filter(n => n.json.commit).map(c => ({\n  message: c.json.commit.message.split('\\n')[0],\n  author: c.json.commit.author.name,\n  date: c.json.commit.author.date\n}));\n\nconst issues = $input.all().filter(n => n.json.title).map(i => ({\n  title: i.json.title,\n  number: i.json.number,\n  closed_at: i.json.closed_at\n}));\n\nconst prs = $input.all().filter(n => n.json.merged_at).map(p => ({\n  title: p.json.title,\n  number: p.json.number,\n  merged_at: p.json.merged_at,\n  author: p.json.user?.login\n}));\n\nconst weekStart = new Date();\nweekStart.setDate(weekStart.getDate() - weekStart.getDay() - (weekStart.getDay() === 0 ? 6 : -1));\n\nconst summary = {\n  repo: $json.repo_url,\n  week: `${weekStart.toISOString().split('T')[0]} to ${new Date().toISOString().split('T')[0]}`,\n  total_commits: commits.length,\n  closed_issues: issues.length,\n  merged_prs: prs.length,\n  highlights: {\n    commits: commits.slice(0, 10),\n    issues: issues.slice(0, 10),\n    prs: prs.slice(0, 10)\n  },\n  language: $json.language || 'EN'\n};\n\nreturn summary;"
+      },
+      "id": "merge-data",
+      "name": "Merge & Structure Data",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        650,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.anthropic_api_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1024
+            },
+            {
+              "name": "system",
+              "value": "You are a technical writer. Generate a concise, engaging weekly development summary from the provided GitHub activity data. The summary should be in {{ $json.language || 'EN' }}. Format in Markdown. Include: 1) a one-line headline, 2) key highlights (2-3 bullets), 3) notable merged PRs with brief descriptions, 4) contributor shoutouts if applicable, 5) a 'looking ahead' note. Keep the tone professional but warm. Max 400 words."
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": JSON.stringify($json.highlights)}]"
+            }
+          ]
+        }
+      },
+      "id": "claude-summary",
+      "name": "Claude: Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook_url }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.content[0].text || $json.content }}"
+            }
+          ]
+        }
+      },
+      "id": "send-discord",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1050,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Every Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge & Structure Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge & Structure Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge & Structure Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge & Structure Data": {
+      "main": [
+        [
+          {
+            "node": "Claude: Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude: Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord/Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "versionId": "1.0.0",
+  "active": false
+}
