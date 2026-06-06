@@ -22,7 +22,6 @@ This pull request titled "Add generate changelog skill" updates 4 file(s) with +
 
 ### Improvement Suggestions
 
-- Changes span 2 file types. Verify cross-language compatibility.
 - Single commit with a large changeset. Split into logical commits for traceability.
 
 ---
