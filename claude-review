@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+# ============================================================
+# claude-review — AI-powered PR code review agent
+#
+# Usage:  claude-review --pr <url> [--model <model>] [--output <file>]
+# Bounty: claude-builders-bounty #4 ($150)
+# ============================================================
+set -euo pipefail
+
+# --- config -------------------------------------------------
+ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+MODEL="claude-sonnet-4-20250514"
+OUTPUT=""
+PR_URL=""
+
+# --- helpers ------------------------------------------------
+usage() {
+  cat <<'EOF'
+Usage: claude-review --pr <github-pr-url> [options]
+
+Options:
+  --pr <url>     GitHub PR URL (required)
+  --model <id>   Claude model (default: claude-sonnet-4-20250514)
+  --output <file> Write review to file instead of stdout
+  --help         Show this help
+
+Examples:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --model claude-opus-4-20250514
+  claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+
+Environment:
+  ANTHROPIC_API_KEY   Required. Get from https://console.anthropic.com
+  ANTHROPIC_BASE_URL  Optional. Custom API endpoint.
+EOF
+  exit 0
+}
+
+red()   { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+green() { printf '\033[32m%s\033[0m\n' "$*" >&2; }
+cyan()  { printf '\033[36m%s\033[0m\n' "$*" >&2; }
+
+# --- parse args ---------------------------------------------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr)     PR_URL="$2"; shift 2 ;;
+    --model)  MODEL="$2"; shift 2 ;;
+    --output) OUTPUT="$2"; shift 2 ;;
+    --help)   usage ;;
+    *)        red "Unknown: $1"; usage ;;
+  esac
+done
+
+if [[ -z "$PR_URL" ]]; then
+  red "Error: --pr is required"
+  usage
+fi
+
+# --- validate API key ---------------------------------------
+if [[ -z "$ANTHROPIC_API_KEY" ]]; then
+  red "Error: ANTHROPIC_API_KEY environment variable is not set."
+  red "  Get your key at https://console.anthropic.com"
+  red "  Then: export ANTHROPIC_API_KEY='sk-ant-...'"
+  exit 1
+fi
+
+# --- parse PR URL -------------------------------------------
+# Support formats:
+#   https://github.com/OWNER/REPO/pull/NUMBER
+#   https://github.com/OWNER/REPO/pull/NUMBER/files
+#   https://github.com/OWNER/REPO/pull/NUMBER/
+PR_PATH=$(echo "$PR_URL" | sed -E 's|https://github\.com/||' | sed -E 's|/pull/| |' | sed -E 's|/files.*||' | sed -E 's|/$||')
+OWNER=$(echo "$PR_PATH" | awk '{print $1}')
+REPO_NUM=$(echo "$PR_PATH" | awk '{print $2}')
+REPO="${REPO_NUM%% *}"
+PR_NUMBER="${REPO_NUM##* }"
+
+if [[ -z "$OWNER" || -z "$REPO" || -z "$PR_NUMBER" ]]; then
+  red "Error: Could not parse PR URL: $PR_URL"
+  red "  Expected format: https://github.com/OWNER/REPO/pull/NUMBER"
+  exit 1
+fi
+
+cyan "Repository: $OWNER/$REPO"
+cyan "PR Number:   #$PR_NUMBER"
+cyan "Model:       $MODEL"
+echo ""
+
+# --- fetch PR diff ------------------------------------------
+PR_API_URL="https://api.github.com/repos/$OWNER/$REPO/pulls/$PR_NUMBER"
+cyan "Fetching PR metadata..."
+
+# Fetch PR title + body
+PR_META=$(curl -sL "$PR_API_URL" \
+  -H "Accept: application/vnd.github.v3+json" \
+  -H "User-Agent: claude-review-agent" 2>/dev/null || true)
+
+PR_TITLE=$(echo "$PR_META" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title','Unknown'))" 2>/dev/null || \
+           echo "$PR_META" | python -c "import sys,json; print(json.load(sys.stdin).get('title','Unknown'))" 2>/dev/null || echo "Unknown")
+PR_BODY=$(echo "$PR_META" | python3 -c "import sys,json; print((json.load(sys.stdin).get('body','') or '')[:500])" 2>/dev/null || \
+          echo "$PR_META" | python -c "import sys,json; print((json.load(sys.stdin).get('body','') or '')[:500])" 2>/dev/null || echo "")
+
+cyan "PR Title: $PR_TITLE"
+
+# Fetch diff
+cyan "Fetching PR diff..."
+DIFF_URL="${PR_API_URL}.diff"
+DIFF=$(curl -sL "$DIFF_URL" \
+  -H "Accept: application/vnd.github.v3.diff" \
+  -H "User-Agent: claude-review-agent" 2>/dev/null || true)
+
+if [[ -z "$DIFF" ]]; then
+  red "Error: Could not fetch diff. Check the PR URL and your network."
+  exit 1
+fi
+
+DIFF_SIZE=$(echo "$DIFF" | wc -l)
+cyan "Diff size: ${DIFF_SIZE} lines"
+
+# Truncate if too large (Claude context limit)
+if [[ "$DIFF_SIZE" -gt 3000 ]]; then
+  cyan "Diff is large (${DIFF_SIZE} lines). Truncating to first 3000 lines..."
+  DIFF=$(echo "$DIFF" | head -3000)
+  DIFF="${DIFF}
+
+...
+
+[Diff truncated — ${DIFF_SIZE} total lines, showing first 3000]"
+fi
+
+# --- construct prompt ---------------------------------------
+SYSTEM_PROMPT="You are a senior code reviewer. Analyze the PR diff and produce a structured Markdown review.
+
+## Output Format (strictly follow this structure):
+
+### Summary
+2-3 sentences summarizing what this PR changes.
+
+### Identified Risks
+- **Risk**: Description of each risk found (use bullet points)
+- If none, write: \"No significant risks identified.\"
+
+### Improvement Suggestions
+- **Suggestion**: Specific, actionable improvements (bullet points)
+- Focus on: error handling, performance, readability, security, test coverage
+- If none, write: \"No suggestions — code looks solid.\"
+
+### Test Coverage Assessment
+- What is tested (list)
+- What is NOT tested but should be (list)
+- Overall assessment: Good / Fair / Needs Improvement
+
+### Final Verdict
+Choose ONE emoji:
+- ✅ **Approve** — ready to merge as-is
+- 💬 **Comment** — minor suggestions but no blockers
+- ❌ **Changes Requested** — must address risks before merging
+
+Be direct. Be specific. Reference exact line numbers from the diff. No flattery."
+
+USER_PROMPT="## PR: ${PR_TITLE}
+
+### PR Description
+${PR_BODY}
+
+### Diff
+\`\`\`diff
+${DIFF}
+\`\`\`
+
+Please review this PR and provide your structured analysis."
+
+# --- call Claude API ----------------------------------------
+cyan "Sending to Claude API (${MODEL})..."
+echo ""
+
+# Escape for JSON
+ESCAPED_SYSTEM=$(echo "$SYSTEM_PROMPT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || \
+                 echo "$SYSTEM_PROMPT" | python -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null)
+ESCAPED_USER=$(echo "$USER_PROMPT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || \
+               echo "$USER_PROMPT" | python -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null)
+
+REQUEST_BODY=$(cat <<ENDBODY
+{
+  "model": "${MODEL}",
+  "max_tokens": 4096,
+  "system": ${ESCAPED_SYSTEM},
+  "messages": [
+    {"role": "user", "content": ${ESCAPED_USER}}
+  ]
+}
+ENDBODY
+)
+
+RESPONSE=$(curl -s "${ANTHROPIC_BASE_URL}/v1/messages" \
+  -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "content-type: application/json" \
+  -d "$REQUEST_BODY" 2>/dev/null || true)
+
+# Check for API errors
+API_ERROR=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',{}).get('message',''))" 2>/dev/null || \
+            echo "$RESPONSE" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',{}).get('message',''))" 2>/dev/null || true)
+
+if [[ -n "$API_ERROR" ]]; then
+  red "Claude API Error: $API_ERROR"
+  exit 1
+fi
+
+# Extract the review text
+REVIEW=$(echo "$RESPONSE" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+for block in d.get('content',[]):
+    if block.get('type') == 'text':
+        print(block['text'])
+" 2>/dev/null || echo "$RESPONSE")
+
+if [[ -z "$REVIEW" ]]; then
+  red "Error: Empty response from Claude API"
+  red "Raw response: $RESPONSE"
+  exit 1
+fi
+
+# --- build final output -------------------------------------
+FINAL=$(cat <<ENDFINAL
+# 🔍 PR Review: ${PR_TITLE}
+
+**PR**: [${OWNER}/${REPO}#${PR_NUMBER}](${PR_URL})
+**Reviewed by**: Claude Code Review Agent (\`${MODEL}\`)
+**Date**: $(date -u +"%Y-%m-%d %H:%M UTC")
+
+---
+
+${REVIEW}
+
+---
+
+*Automated review by [claude-review](https://github.com/claude-builders-bounty/claude-builders-bounty) — AI-generated, human-verified*
+ENDFINAL
+)
+
+# --- output -------------------------------------------------
+if [[ -n "$OUTPUT" ]]; then
+  echo "$FINAL" > "$OUTPUT"
+  green "✅ Review written to $OUTPUT"
+else
+  echo "$FINAL"
+fi
