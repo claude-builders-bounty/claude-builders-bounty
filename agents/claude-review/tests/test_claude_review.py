@@ -299,6 +299,44 @@ class PostReviewCommentTests(unittest.TestCase):
         self.assertEqual(comment_id, 2)
 
 
+class SecurityRiskTests(unittest.TestCase):
+    def _metadata(self, **overrides):
+        base = {
+            "title": "Security-sensitive change",
+            "body": "",
+            "changed_files": [],
+            "total_changes": 10,
+            "commits": 1,
+            "additions": 10,
+            "deletions": 0,
+            "labels": [],
+        }
+        base.update(overrides)
+        return base
+
+    def test_flags_eval_in_diff(self):
+        diff = "+result = eval(user_input)\n"
+        review = claude_review.analyze_pr(self._metadata(), diff)
+        messages = [risk for _, risk in review["risks"]]
+        self.assertTrue(any("eval" in msg.lower() for msg in messages))
+
+    def test_flags_sensitive_env_file_changes(self):
+        metadata = self._metadata(
+            changed_files=[
+                {
+                    "filename": ".env.production",
+                    "status": "modified",
+                    "additions": 2,
+                    "deletions": 0,
+                    "changes": 2,
+                }
+            ]
+        )
+        review = claude_review.analyze_pr(metadata, "")
+        messages = [risk for _, risk in review["risks"]]
+        self.assertTrue(any(".env.production" in msg for msg in messages))
+
+
 class MaxFilesTests(unittest.TestCase):
     def test_truncates_changed_files_when_max_files_set(self):
         metadata = {

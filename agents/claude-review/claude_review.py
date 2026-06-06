@@ -325,6 +325,24 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
     def add_risk(severity: str, message: str) -> None:
         risks.append((severity, message))
 
+    sensitive_files = [
+        file_info["filename"]
+        for file_info in metadata["changed_files"]
+        if re.search(
+            r"(?:^|/)\.env(?:\.|$)|credentials\.json|secrets\.ya?ml|id_rsa$",
+            file_info["filename"],
+            re.I,
+        )
+    ]
+    if sensitive_files:
+        add_risk(
+            "high",
+            "Sensitive credential files modified: "
+            + ", ".join(f"`{name}`" for name in sensitive_files[:3])
+            + (f" (+{len(sensitive_files) - 3} more)" if len(sensitive_files) > 3 else "")
+            + ". Ensure no secrets are committed.",
+        )
+
     if diff:
         if metadata["total_changes"] > 500:
             add_risk(
@@ -380,6 +398,13 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
             add_risk(
                 "high",
                 "Potential hardcoded secrets detected. Use environment variables or a secrets manager.",
+            )
+
+        if re.search(r"^\+.*\b(?:eval|exec)\s*\(", diff, re.M):
+            add_risk(
+                "high",
+                "Dynamic code execution (`eval`/`exec`) detected in new code. "
+                "Avoid unless strictly necessary and heavily validated.",
             )
 
         for file_info in metadata["changed_files"]:
