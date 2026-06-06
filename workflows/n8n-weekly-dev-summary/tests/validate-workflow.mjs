@@ -76,6 +76,10 @@ assert(buildPrompt?.parameters?.jsCode?.includes('collectRecords'), 'collects al
 assert(buildPrompt?.parameters?.jsCode?.includes('rows[0].items'), 'unwraps GitHub search API responses');
 assert(buildPrompt?.parameters?.jsCode?.includes('system:'), 'Claude request includes system prompt');
 assert(buildPrompt?.parameters?.jsCode?.includes('JSON.stringify(activity'), 'sends structured activity JSON to Claude');
+assert(
+  buildPrompt?.parameters?.jsCode?.includes("language === 'FR'"),
+  'Build Claude Prompt switches system instructions for FR language',
+);
 
 const connections = workflow.connections || {};
 assert(Object.keys(connections).includes('Friday 5pm Weekly Trigger'), 'trigger is wired');
