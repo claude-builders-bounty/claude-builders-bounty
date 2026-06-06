@@ -12,6 +12,34 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+# Extensions that represent source code (not docs, images, or config-only assets).
+CODE_EXTENSIONS = frozenset(
+    {
+        ".c",
+        ".cc",
+        ".cpp",
+        ".cs",
+        ".go",
+        ".h",
+        ".hpp",
+        ".java",
+        ".js",
+        ".jsx",
+        ".kt",
+        ".m",
+        ".php",
+        ".py",
+        ".rb",
+        ".rs",
+        ".scala",
+        ".sh",
+        ".swift",
+        ".ts",
+        ".tsx",
+        ".vue",
+    }
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="PR Review Agent")
@@ -337,9 +365,11 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
                     "Consider whether this can be modularized.",
                 )
 
-        if len(ext_summary) > 1:
+        code_exts = [ext for ext in ext_summary if ext in CODE_EXTENSIONS]
+        if len(code_exts) > 1:
             suggestions.append(
-                f"Changes span {len(ext_summary)} file types. Verify cross-language compatibility."
+                f"Changes span {len(code_exts)} code file types "
+                f"({', '.join(sorted(code_exts))}). Verify cross-language compatibility."
             )
 
         if metadata["commits"] == 1 and metadata["total_changes"] > 200:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import sys
 import unittest
 import unittest.mock
@@ -103,6 +104,37 @@ class AnalyzePrTests(unittest.TestCase):
             any("file types" in suggestion for suggestion in review["suggestions"])
         )
 
+    def test_docs_and_images_skip_cross_language_suggestion(self):
+        metadata = self._metadata(
+            changed_files=[
+                {"filename": "README.md", "status": "modified", "additions": 21, "deletions": 0, "changes": 21},
+                {"filename": "demo.png", "status": "added", "additions": 0, "deletions": 0, "changes": 0},
+                {"filename": "hooks/pre-tool-use.py", "status": "added", "additions": 131, "deletions": 0, "changes": 131},
+            ],
+            total_changes=152,
+            additions=152,
+            commits=2,
+        )
+        review = claude_review.analyze_pr(metadata, diff="+++ b/hooks/pre-tool-use.py\n+pass\n")
+        self.assertFalse(
+            any("cross-language" in suggestion for suggestion in review["suggestions"])
+        )
+
+    def test_multiple_code_extensions_trigger_cross_language_suggestion(self):
+        metadata = self._metadata(
+            changed_files=[
+                {"filename": "src/app.py", "status": "modified", "additions": 10, "deletions": 1, "changes": 11},
+                {"filename": "src/app.ts", "status": "modified", "additions": 8, "deletions": 2, "changes": 10},
+            ],
+            total_changes=21,
+            additions=18,
+            deletions=3,
+        )
+        review = claude_review.analyze_pr(metadata, diff="+++ b/src/app.py\n+pass\n+++ b/src/app.ts\n+pass\n")
+        self.assertTrue(
+            any("cross-language" in suggestion for suggestion in review["suggestions"])
+        )
+
     def test_detects_todo_markers(self):
         diff = "+++ b/app.py\n+# TODO: handle edge case\n"
         review = claude_review.analyze_pr(self._metadata(), diff=diff)
@@ -169,6 +201,40 @@ class CliFlagTests(unittest.TestCase):
             args = claude_review.parse_args()
         self.assertTrue(args.post)
         self.assertFalse(args.diff_only)
+
+
+class PostReviewCommentTests(unittest.TestCase):
+    def test_post_review_comment_posts_json_payload(self):
+        captured = {}
+
+        class FakeResponse:
+            def read(self):
+                return b'{"html_url":"https://github.com/acme/widgets/pull/7#issuecomment-1"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=30):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            captured["body"] = json.loads(req.data.decode())
+            return FakeResponse()
+
+        with unittest.mock.patch("claude_review.urllib.request.urlopen", fake_urlopen):
+            claude_review.post_review_comment(
+                "acme",
+                "widgets",
+                7,
+                "## Review\n\nLooks good.",
+                "ghp_test",
+            )
+
+        self.assertIn("/repos/acme/widgets/issues/7/comments", captured["url"])
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(captured["body"]["body"], "## Review\n\nLooks good.")
 
 
 class MarkdownFormatTests(unittest.TestCase):
