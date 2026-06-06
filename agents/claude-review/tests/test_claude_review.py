@@ -55,7 +55,45 @@ class AnalyzePrTests(unittest.TestCase):
         body = "/claim #1\n## Summary\nAdds a changelog generator."
         self.assertEqual(
             claude_review.sanitize_pr_body(body),
-            "## Summary Adds a changelog generator.",
+            "Adds a changelog generator.",
+        )
+
+    def test_sanitize_pr_body_extracts_description_section_only(self):
+        body = (
+            "### Description\n"
+            "This PR adds a widget API.\n"
+            "### What has been done\n"
+            "- Added endpoint\n"
+            "- Added tests"
+        )
+        self.assertEqual(
+            claude_review.sanitize_pr_body(body),
+            "This PR adds a widget API.",
+        )
+
+    def test_sanitize_pr_body_stops_at_included_section(self):
+        body = (
+            "/claim #1\n"
+            "## Summary\nAdds a changelog generator.\n"
+            "## Included\n- Skill documentation\n- Python generator"
+        )
+        self.assertEqual(
+            claude_review.sanitize_pr_body(body),
+            "Adds a changelog generator.",
+        )
+
+    def test_sanitize_pr_body_handles_colon_summary_block(self):
+        body = (
+            "Closes #7\n\n"
+            "Summary:\n"
+            "- Add a toast component.\n"
+            "- Style with tokens.\n\n"
+            "Verification:\n"
+            "- Parsed HTML pages."
+        )
+        self.assertEqual(
+            claude_review.sanitize_pr_body(body),
+            "Add a toast component. Style with tokens.",
         )
 
     def test_single_file_type_skips_cross_language_suggestion(self):

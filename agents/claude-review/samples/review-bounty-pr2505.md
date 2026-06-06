@@ -6,7 +6,7 @@
 
 ### Summary of Changes
 
-This pull request titled "Add generate changelog skill" updates 4 file(s) with +217/-0 lines across 1 commit(s). The author describes the change as: ## Summary Adds a `generate-changelog` skill that creates a structured `CHANGELOG.md` from git history. ## Included - Skill documentation - Python changelog generator - Usage documentation - Sample `C.
+This pull request titled "Add generate changelog skill" updates 4 file(s) with +217/-0 lines across 1 commit(s). The author describes the change as: Adds a `generate-changelog` skill that creates a structured `CHANGELOG.md` from git history.
 
 **File type breakdown:**
 - `.md`: 3 file(s) (73+, 0-)

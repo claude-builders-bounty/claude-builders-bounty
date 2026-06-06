@@ -118,14 +118,111 @@ def fetch_pr_metadata(owner: str, repo: str, pr_number: int, token: str) -> dict
     }
 
 
-def sanitize_pr_body(body: str) -> str:
+_SUMMARY_SECTION_KEYS = frozenset({"summary", "description"})
+_STOP_SECTION_KEYS = frozenset(
+    {
+        "included",
+        "verification",
+        "deliverables",
+        "test plan",
+        "how to test",
+        "what has been done",
+        "changes",
+        "motivation",
+        "acceptance criteria",
+        "execution demo",
+        "screenshots",
+        "checklist",
+    }
+)
+
+
+def _clean_summary_text(text: str) -> str:
     lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"^!\[", stripped):
+            continue
+        if stripped.startswith("http://") or stripped.startswith("https://"):
+            continue
+        cleaned = re.sub(r"^[-*]\s+", "", stripped)
+        cleaned = re.sub(r"^#+\s*", "", cleaned)
+        cleaned = re.sub(r"(?i)^closes\s+#\d+\s*", "", cleaned)
+        cleaned = re.sub(r"(?i)^summary:\s*", "", cleaned)
+        if cleaned:
+            lines.append(cleaned)
+    return " ".join(" ".join(lines).split())
+
+
+def _parse_markdown_sections(body: str) -> dict[str, str]:
+    sections: dict[str, str] = {}
+    current_key: str | None = None
+    current_lines: list[str] = []
+
+    for line in body.splitlines():
+        header_match = re.match(r"^#{1,3}\s+(.+?)\s*$", line.strip())
+        if header_match:
+            if current_key is not None:
+                sections[current_key] = "\n".join(current_lines).strip()
+            current_key = header_match.group(1).strip().lower()
+            current_lines = []
+        elif current_key is not None:
+            current_lines.append(line)
+
+    if current_key is not None:
+        sections[current_key] = "\n".join(current_lines).strip()
+    return sections
+
+
+def sanitize_pr_body(body: str) -> str:
+    if not body:
+        return ""
+
+    cleaned_lines = []
     for line in body.splitlines():
         stripped = line.strip().lower()
         if stripped.startswith("/claim") or stripped.startswith("/opire"):
             continue
-        lines.append(line)
-    return " ".join(" ".join(lines).split())
+        if re.fullmatch(r"closes\s+#\d+", stripped):
+            continue
+        cleaned_lines.append(line)
+    body = "\n".join(cleaned_lines)
+
+    sections = _parse_markdown_sections(body)
+    for key in _SUMMARY_SECTION_KEYS:
+        if key in sections and sections[key]:
+            return _clean_summary_text(sections[key])
+
+    summary_match = re.search(
+        r"(?ims)^summary:\s*\n(.*?)(?=\n(?:verification|test plan|##)|\Z)",
+        body,
+    )
+    if summary_match:
+        return _clean_summary_text(summary_match.group(1))
+
+    description_match = re.search(
+        r"(?ims)^description:\s*\n(.*?)(?=\n(?:what has been done|verification|##)|\Z)",
+        body,
+    )
+    if description_match:
+        return _clean_summary_text(description_match.group(1))
+
+    fallback_lines = []
+    for line in body.splitlines():
+        stripped = line.strip().lower()
+        if re.match(r"^#{1,3}\s+", line.strip()):
+            header = re.sub(r"^#{1,3}\s+", "", line.strip()).lower()
+            if header in _STOP_SECTION_KEYS:
+                break
+            continue
+        if stripped in _STOP_SECTION_KEYS or stripped.rstrip(":") in _STOP_SECTION_KEYS:
+            break
+        if stripped:
+            fallback_lines.append(line)
+
+    return _clean_summary_text("\n".join(fallback_lines))
 
 
 def build_narrative_summary(metadata: dict[str, Any]) -> str:
