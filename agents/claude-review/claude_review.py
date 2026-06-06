@@ -262,21 +262,26 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
         ext_summary[ext]["additions"] += file_info["additions"]
         ext_summary[ext]["deletions"] += file_info["deletions"]
 
-    risks: list[str] = []
+    risks: list[tuple[str, str]] = []
     suggestions: list[str] = []
+
+    def add_risk(severity: str, message: str) -> None:
+        risks.append((severity, message))
 
     if diff:
         if metadata["total_changes"] > 500:
-            risks.append(
+            add_risk(
+                "medium",
                 f"Large diff ({metadata['total_changes']}+ changes). Consider splitting into "
-                "smaller, more focused PRs for easier review."
+                "smaller, more focused PRs for easier review.",
             )
 
         todos = re.findall(r"(\+.*(?:TODO|FIXME|HACK|XXX).*)", diff)
         if todos:
-            risks.append(
+            add_risk(
+                "low",
                 f"{len(todos)} TODO/FIXME/HACK markers found in new code. "
-                "Address them or track as follow-up issues."
+                "Address them or track as follow-up issues.",
             )
 
         debug_prints = re.findall(
@@ -291,8 +296,9 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
             )
         )
         if debug_prints:
-            risks.append(
-                "Debug/console statements detected in new code. Remove before merging."
+            add_risk(
+                "low",
+                "Debug/console statements detected in new code. Remove before merging.",
             )
 
         commented = re.findall(r"(\+#.*$)", diff, re.M)
@@ -302,8 +308,9 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
             if any(keyword in line for keyword in ("import ", "def ", "class ", "function ", "return "))
         ]
         if commented_blocks:
-            risks.append(
-                "Commented-out code blocks detected. Remove dead code rather than commenting it out."
+            add_risk(
+                "low",
+                "Commented-out code blocks detected. Remove dead code rather than commenting it out.",
             )
 
         secrets = re.findall(
@@ -313,15 +320,17 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
             re.I,
         )
         if secrets:
-            risks.append(
-                "Potential hardcoded secrets detected. Use environment variables or a secrets manager."
+            add_risk(
+                "high",
+                "Potential hardcoded secrets detected. Use environment variables or a secrets manager.",
             )
 
         for file_info in metadata["changed_files"]:
             if file_info["additions"] > 200 and file_info["status"] != "removed":
-                risks.append(
+                add_risk(
+                    "medium",
                     f"Large file addition: `{file_info['filename']}` ({file_info['additions']}+ lines). "
-                    "Consider whether this can be modularized."
+                    "Consider whether this can be modularized.",
                 )
 
         if len(ext_summary) > 1:
@@ -361,7 +370,7 @@ def analyze_pr(metadata: dict[str, Any], diff: str | None) -> dict[str, Any]:
 
     return {
         "summary": summary,
-        "risks": risks or ["No significant risks identified."],
+        "risks": risks or [("low", "No significant risks identified.")],
         "suggestions": suggestions or ["No additional suggestions."],
         "confidence": confidence,
     }
@@ -388,7 +397,9 @@ def format_markdown(metadata: dict[str, Any], review: dict[str, Any]) -> str:
         "### Identified Risks",
         "",
     ]
-    lines.extend(f"- [ ] {risk}" for risk in review["risks"])
+    for severity, risk in review["risks"]:
+        label = severity.upper()
+        lines.append(f"- [ ] **[{label}]** {risk}")
     lines.extend(
         [
             "",

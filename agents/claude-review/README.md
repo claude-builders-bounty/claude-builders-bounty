@@ -47,7 +47,7 @@ The sub-agent runs the CLI and returns structured Markdown. See [`.claude/agents
 Every review includes:
 
 - **Summary of Changes** — 2–3 sentences plus file breakdown
-- **Identified Risks** — checklist of potential issues
+- **Identified Risks** — severity-tagged checklist (`HIGH` / `MEDIUM` / `LOW`)
 - **Improvement Suggestions** — actionable recommendations
 - **Confidence Score** — `Low`, `Medium`, or `High`
 

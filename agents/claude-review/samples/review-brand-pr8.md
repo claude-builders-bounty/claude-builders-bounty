@@ -15,7 +15,7 @@ This pull request titled "Add toast notification component" updates 15 file(s) w
 
 ### Identified Risks
 
-- [ ] Large file addition: `pages/toasts.html` (237+ lines). Consider whether this can be modularized.
+- [ ] **[MEDIUM]** Large file addition: `pages/toasts.html` (237+ lines). Consider whether this can be modularized.
 
 ---
 

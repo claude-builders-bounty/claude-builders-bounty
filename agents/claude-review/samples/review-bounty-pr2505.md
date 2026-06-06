@@ -16,7 +16,7 @@ This pull request titled "Add generate changelog skill" updates 4 file(s) with +
 
 ### Identified Risks
 
-- [ ] No significant risks identified.
+- [ ] **[LOW]** No significant risks identified.
 
 ---
 

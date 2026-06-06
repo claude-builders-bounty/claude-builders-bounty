@@ -105,7 +105,12 @@ class AnalyzePrTests(unittest.TestCase):
     def test_detects_todo_markers(self):
         diff = "+++ b/app.py\n+# TODO: handle edge case\n"
         review = claude_review.analyze_pr(self._metadata(), diff=diff)
-        self.assertTrue(any("TODO" in risk for risk in review["risks"]))
+        self.assertTrue(any("TODO" in message for _, message in review["risks"]))
+
+    def test_risks_include_severity_tags(self):
+        diff = "+++ b/app.py\n+api_key = 'supersecretvalue123'\n"
+        review = claude_review.analyze_pr(self._metadata(), diff=diff)
+        self.assertTrue(any(severity == "high" for severity, _ in review["risks"]))
 
     def test_cli_print_not_flagged_as_debug(self):
         diff = (
@@ -114,12 +119,12 @@ class AnalyzePrTests(unittest.TestCase):
             "+print(f\"Wrote {output_path}\")\n"
         )
         review = claude_review.analyze_pr(self._metadata(), diff=diff)
-        self.assertFalse(any("Debug/console" in risk for risk in review["risks"]))
+        self.assertFalse(any("Debug/console" in message for _, message in review["risks"]))
 
     def test_debug_print_flagged(self):
         diff = "+++ b/app.py\n+print('debug state:', value)\n"
         review = claude_review.analyze_pr(self._metadata(), diff=diff)
-        self.assertTrue(any("Debug/console" in risk for risk in review["risks"]))
+        self.assertTrue(any("Debug/console" in message for _, message in review["risks"]))
 
     def test_large_pr_lowers_confidence(self):
         metadata = self._metadata(total_changes=1200, changed_files=[{"filename": f"f{i}.py", "status": "added", "additions": 100, "deletions": 0, "changes": 100} for i in range(20)])
@@ -170,13 +175,14 @@ class MarkdownFormatTests(unittest.TestCase):
         }
         review = {
             "summary": "Updates one file.",
-            "risks": ["No significant risks identified."],
+            "risks": [("low", "No significant risks identified.")],
             "suggestions": ["No additional suggestions."],
             "confidence": "High",
         }
         md = claude_review.format_markdown(metadata, review)
         self.assertIn("### Summary of Changes", md)
         self.assertIn("### Identified Risks", md)
+        self.assertIn("**[LOW]** No significant risks identified.", md)
         self.assertIn("### Improvement Suggestions", md)
         self.assertIn("### Confidence Score: **High**", md)
 

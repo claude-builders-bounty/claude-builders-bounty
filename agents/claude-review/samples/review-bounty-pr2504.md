@@ -17,7 +17,7 @@ This pull request titled "feat: add destructive command blocker hook (Issue #3)"
 
 ### Identified Risks
 
-- [ ] No significant risks identified.
+- [ ] **[LOW]** No significant risks identified.
 
 ---
 
