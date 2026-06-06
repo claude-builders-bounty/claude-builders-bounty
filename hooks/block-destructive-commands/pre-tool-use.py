@@ -45,6 +45,10 @@ DEV_REDIRECT = re.compile(
     re.IGNORECASE,
 )
 WIPEFS = re.compile(r"\bwipefs\b", re.IGNORECASE)
+REMOTE_SHELL = re.compile(
+    r"\b(?:curl|wget)\b[^\n;|&]*\|\s*(?:ba)?sh\b",
+    re.IGNORECASE,
+)
 GIT_PUSH_FORCE_CONFIG = re.compile(
     r"-c\s+push\.force(?:\s*=\s*(?P<val>[^\s;|&]+))?",
     re.IGNORECASE,
@@ -139,6 +143,9 @@ def check_segment(segment: str) -> str | None:
 
     if WIPEFS.search(segment):
         return "Disk signature wipe (wipefs)"
+
+    if REMOTE_SHELL.search(segment):
+        return "Remote script execution (curl|sh / wget|sh)"
 
     return None
 

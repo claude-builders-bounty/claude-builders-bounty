@@ -16,6 +16,7 @@ A [Claude Code](https://code.claude.com/docs/en/hooks) `PreToolUse` hook that in
 | `mkfs` / `mkfs.ext4` | Filesystem format (destroys data) |
 | `wipefs` | Disk signature wipe |
 | `:(){ :|:& };:` fork bomb | Process exhaustion attack |
+| `curl ... \| bash` / `wget ... \| sh` | Remote script execution |
 
 ## Install (2 commands)
 
@@ -25,6 +26,12 @@ bash claude-builders-bounty/hooks/block-destructive-commands/install.sh
 ```
 
 The installer copies the hook to `~/.claude/hooks/` and merges the `PreToolUse` entry into `~/.claude/settings.json` without overwriting your other hooks.
+
+To remove the hook:
+
+```bash
+bash claude-builders-bounty/hooks/block-destructive-commands/install.sh --uninstall
+```
 
 Uses the official Claude Code `hookSpecificOutput` schema (`permissionDecision: deny`) — not the legacy `decision: block` format.
 
@@ -70,7 +77,7 @@ From the repository root:
 
 ```bash
 python3 -m unittest discover -s hooks/block-destructive-commands/tests -v
-# 59 regression tests (including per-segment chained-command checks)
+# 62 regression tests (including per-segment chained-command checks)
 ```
 
 ## License
