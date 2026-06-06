@@ -48,6 +48,10 @@ const fetchNodes = workflow.nodes.filter((n) =>
 assert(fetchNodes.length === 3, 'has three GitHub fetch nodes');
 assert(fetchNodes.every((n) => n.alwaysOutputData === true), 'GitHub fetch nodes always output data');
 
+const mergeNode = workflow.nodes.find((n) => n.name === 'Merge GitHub Results');
+assert(mergeNode?.parameters?.mode === 'append', 'merge node waits for all GitHub fetches');
+assert(mergeNode?.parameters?.numberInputs === 3, 'merge node has three inputs');
+
 const buildRequest = workflow.nodes.find((n) => n.name === 'Build Claude Request');
 assert(buildRequest?.parameters?.mode === 'runOnceForAllItems', 'Build Claude Request runs once after merge');
 assert(buildRequest?.parameters?.jsCode?.includes('collectRecords'), 'collects all GitHub HTTP items');

@@ -50,6 +50,12 @@ try {
     await page.waitForTimeout(4000);
   }
 
+  const signInBtn = page.getByRole('button', { name: /^sign in$/i });
+  if (await signInBtn.count()) {
+    await signInBtn.first().click();
+    await page.waitForTimeout(1000);
+  }
+
   const signinEmail = page.locator('input[type="email"]');
   if (await signinEmail.count()) {
     await signinEmail.first().fill('owner@test.local');
@@ -66,10 +72,10 @@ try {
   await page.waitForTimeout(2000);
   await dismissOverlays(page);
 
-  const executeBtn = page.getByRole('button', { name: /execute workflow/i });
-  if (await executeBtn.count()) {
-    await executeBtn.first().click();
-    await page.waitForTimeout(8000);
+  const testBtn = page.getByRole('button', { name: /test workflow|execute workflow/i });
+  if (await testBtn.count()) {
+    await testBtn.first().click();
+    await page.waitForTimeout(20000);
   }
 
   await dismissOverlays(page);
