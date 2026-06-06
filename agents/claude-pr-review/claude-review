@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""
+claude-review — Claude Code PR review agent.
+Usage: claude-review --pr https://github.com/owner/repo/pull/123
+"""
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.request
+import urllib.error
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    m = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    if not m:
+        sys.exit(f"Error: not a GitHub PR URL: {url}")
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def github_get(path: str, token: str | None) -> dict | str:
+    url = f"https://api.github.com{path}"
+    req = urllib.request.Request(url)
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        sys.exit(f"GitHub API error {e.code} for {path}: {e.read().decode()}")
+    except urllib.error.URLError as e:
+        sys.exit(f"Network error fetching {path}: {e.reason}")
+
+
+def github_diff(owner: str, repo: str, pr_number: int, token: str | None) -> str:
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    req = urllib.request.Request(url)
+    req.add_header("Accept", "application/vnd.github.diff")
+    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        sys.exit(f"GitHub diff error {e.code}: {e.read().decode()}")
+    except urllib.error.URLError as e:
+        sys.exit(f"Network error fetching diff: {e.reason}")
+
+
+def claude_review(pr_meta: dict, diff: str, api_key: str) -> str:
+    prompt = f"""You are an expert code reviewer. Review the following GitHub pull request and produce a structured Markdown report.
+
+## PR Information
+- **Title**: {pr_meta['title']}
+- **Author**: {pr_meta['user']['login']}
+- **Base → Head**: {pr_meta['base']['label']} ← {pr_meta['head']['label']}
+- **Files changed**: {pr_meta.get('changed_files', '?')}
+- **Additions**: +{pr_meta.get('additions', '?')}  **Deletions**: -{pr_meta.get('deletions', '?')}
+- **Description**: {pr_meta.get('body') or '(none)'}
+
+## Diff
+```diff
+{diff}
+```
+
+Produce a review in exactly this Markdown format:
+
+## Summary
+(2–3 sentences describing what this PR does)
+
+## Identified Risks
+- (risk 1)
+- (risk 2)
+...
+
+## Improvement Suggestions
+- (suggestion 1)
+- (suggestion 2)
+...
+
+## Confidence Score
+**[Low | Medium | High]** — (one-sentence justification)
+"""
+
+    payload = json.dumps({
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 2048,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=payload,
+        method="POST",
+    )
+    req.add_header("Content-Type", "application/json")
+    req.add_header("x-api-key", api_key)
+    req.add_header("anthropic-version", "2023-06-01")
+
+    try:
+        with urllib.request.urlopen(req) as r:
+            resp = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        sys.exit(f"Anthropic API error {e.code}: {e.read().decode()}")
+    except urllib.error.URLError as e:
+        sys.exit(f"Network error calling Anthropic API: {e.reason}")
+
+    blocks = resp.get("content", [])
+    if not blocks or blocks[0].get("type") != "text":
+        sys.exit("Anthropic API returned no text content")
+    return blocks[0]["text"]
+
+
+def post_github_comment(owner: str, repo: str, pr_number: int, body: str, token: str) -> None:
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
+    payload = json.dumps({"body": body}).encode()
+    req = urllib.request.Request(url, data=payload, method="POST")
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req) as r:
+            data = json.loads(r.read())
+        print(f"Review posted: {data['html_url']}", file=sys.stderr)
+    except urllib.error.HTTPError as e:
+        sys.exit(f"Failed to post comment ({e.code}): {e.read().decode()}")
+    except urllib.error.URLError as e:
+        sys.exit(f"Network error posting comment: {e.reason}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Claude PR review agent")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--output", help="Write output to file instead of stdout")
+    parser.add_argument("--post-comment", action="store_true",
+                        help="Post review as a GitHub PR comment (requires GITHUB_TOKEN)")
+    args = parser.parse_args()
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        sys.exit("Error: ANTHROPIC_API_KEY environment variable is required")
+
+    github_token = os.environ.get("GITHUB_TOKEN")
+
+    if args.post_comment and not github_token:
+        sys.exit("Error: --post-comment requires GITHUB_TOKEN environment variable")
+
+    owner, repo, pr_number = parse_pr_url(args.pr)
+    print(f"Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+
+    pr_meta = github_get(f"/repos/{owner}/{repo}/pulls/{pr_number}", github_token)
+    diff = github_diff(owner, repo, pr_number, github_token)
+
+    DIFF_LIMIT = 12000
+    if len(diff) > DIFF_LIMIT:
+        print(f"Warning: diff is {len(diff)} chars; truncating to {DIFF_LIMIT} ({len(diff) - DIFF_LIMIT} chars omitted)", file=sys.stderr)
+        diff = diff[:DIFF_LIMIT]
+
+    print("Sending to Claude for review...", file=sys.stderr)
+    review = claude_review(pr_meta, diff, api_key)
+
+    header = f"# Claude PR Review: {pr_meta['title']}\n\n> PR: {args.pr}\n\n"
+    output = header + review
+
+    if args.post_comment:
+        post_github_comment(owner, repo, pr_number, output, github_token)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(output)
+        print(f"Review written to {args.output}", file=sys.stderr)
+    elif not args.post_comment:
+        print(output)
+
+
+if __name__ == "__main__":
+    main()
