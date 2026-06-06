@@ -45,6 +45,8 @@ assert(serialized.includes('api.anthropic.com/v1/messages'), 'calls Claude API')
 
 const buildPrompt = workflow.nodes.find((n) => n.name === 'Build Claude Prompt');
 assert(buildPrompt?.parameters?.jsCode?.includes('merged_at'), 'filters merged PRs by date');
+assert(buildPrompt?.parameters?.mode === 'runOnceForAllItems', 'Build Claude Prompt runs once after merge');
+assert(buildPrompt?.parameters?.jsCode?.includes('collectRecords'), 'collects all GitHub HTTP items');
 
 const connections = Object.keys(workflow.connections || {});
 assert(connections.includes('Friday 5pm Weekly Trigger'), 'trigger is wired');

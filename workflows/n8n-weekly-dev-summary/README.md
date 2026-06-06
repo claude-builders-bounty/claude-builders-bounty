@@ -55,6 +55,7 @@ Friday 5pm Trigger → Load Config → parallel GitHub fetches (commits, issues,
 
 ```bash
 node tests/validate-workflow.mjs
+node tests/collect-github-data.test.mjs
 jq empty weekly-dev-summary.json
 ```
 
