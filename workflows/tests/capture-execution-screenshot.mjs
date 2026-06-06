@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const out = join(__dirname, '..', 'assets', 'n8n-execution-screenshot.png');
 
 async function dismissOverlays(page) {
-  for (const label of [/skip/i, /close/i, /dismiss/i, /got it/i, /later/i]) {
+  for (const label of [/skip/i, /close/i, /dismiss/i, /got it/i, /later/i, /not now/i, /remind me later/i]) {
     const btn = page.getByRole('button', { name: label });
     if (await btn.count()) {
       await btn.first().click({ force: true }).catch(() => {});
@@ -72,10 +72,10 @@ try {
   await page.waitForTimeout(2000);
   await dismissOverlays(page);
 
-  const testBtn = page.getByRole('button', { name: /test workflow|execute workflow/i });
+  const testBtn = page.locator('button').filter({ hasText: /test workflow/i });
   if (await testBtn.count()) {
-    await testBtn.first().click();
-    await page.waitForTimeout(20000);
+    await testBtn.first().click({ force: true });
+    await page.waitForTimeout(30000);
   }
 
   await dismissOverlays(page);

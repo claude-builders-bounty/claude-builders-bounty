@@ -31,7 +31,7 @@ Friday 5pm Trigger → Load Configuration → parallel GitHub fetches (commits, 
   → Merge → Build Claude Request → Claude API → Discord webhook
 ```
 
-GitHub fetch nodes use **Always Output Data** so a quiet week still produces a summary.
+GitHub fetch nodes use **Always Output Data** so a quiet week still produces a summary. The merge node uses **Append** mode with three inputs to wait for all parallel fetches before building the Claude prompt.
 
 ## Validation
 
