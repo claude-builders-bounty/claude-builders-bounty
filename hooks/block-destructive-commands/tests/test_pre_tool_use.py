@@ -131,13 +131,65 @@ class CheckCommandTests(unittest.TestCase):
             "rm -r build",
             "git push origin main",
             "git push --force-with-lease origin main",
+            "git push --force-with-lease --force-if-includes origin main",
             "DELETE FROM users WHERE id = 1",
             "echo 'DELETE FROM backup' > notes.txt",
             "cat notes.txt | grep DELETE FROM",
+            "git checkout feature/force-push-fix",
         )
         for command in allowed:
             with self.subTest(command=command):
                 self.assertIsNone(self.hook.check_command(command))
+
+    def test_blocks_git_push_force_flag_at_end(self):
+        self.assertEqual(
+            self.hook.check_command("git push origin main --force"),
+            "Git force push (git push --force)",
+        )
+
+    def test_blocks_rm_rf_in_pipeline(self):
+        self.assertEqual(
+            self.hook.check_command("echo test | rm -rf /tmp/build"),
+            "Recursive force delete (rm -rf)",
+        )
+
+    def test_blocks_rm_with_env_prefix(self):
+        self.assertEqual(
+            self.hook.check_command("sudo rm -rf /var/cache"),
+            "Recursive force delete (rm -rf)",
+        )
+
+    def test_blocks_drop_table_in_shell_quotes(self):
+        self.assertEqual(
+            self.hook.check_command("psql -c \"DROP TABLE audit_events\""),
+            "SQL DROP TABLE",
+        )
+
+    def test_blocks_truncate_table_statement(self):
+        self.assertEqual(
+            self.hook.check_command("mysql -e 'TRUNCATE TABLE sessions'"),
+            "SQL TRUNCATE",
+        )
+
+    def test_allows_delete_from_in_quoted_echo(self):
+        self.assertIsNone(
+            self.hook.check_command("echo \"DELETE FROM users WHERE id = 1\"")
+        )
+
+    def test_check_command_empty_string(self):
+        self.assertIsNone(self.hook.check_command(""))
+
+    def test_blocks_git_push_force_with_set_upstream(self):
+        self.assertEqual(
+            self.hook.check_command("git push --set-upstream origin main --force"),
+            "Git force push (git push --force)",
+        )
+
+    def test_blocks_git_push_f_flag_at_end(self):
+        self.assertEqual(
+            self.hook.check_command("git push origin main -f"),
+            "Git force push (git push -f)",
+        )
 
 
 class HookIntegrationTests(unittest.TestCase):
@@ -236,6 +288,47 @@ class HookIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "")
         self.assertFalse(self.log_file.exists())
+
+    def test_denial_uses_official_hook_schema(self):
+        result = self.run_hook(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git push --force origin main"},
+                "cwd": "/workspace/demo",
+            }
+        )
+
+        output = json.loads(result.stdout)
+        hook_output = output["hookSpecificOutput"]
+        self.assertEqual(hook_output["hookEventName"], "PreToolUse")
+        self.assertEqual(hook_output["permissionDecision"], "deny")
+        self.assertIn("force push", hook_output["permissionDecisionReason"].lower())
+
+    def test_log_entry_includes_iso_timestamp(self):
+        self.run_hook(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "DROP TABLE users"},
+                "cwd": "/workspace/demo",
+            }
+        )
+
+        log_line = self.log_file.read_text(encoding="utf-8").strip()
+        self.assertRegex(log_line, r"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]")
+        self.assertIn("DROP TABLE users", log_line)
+        self.assertIn("/workspace/demo", log_line)
+
+    def test_uses_payload_cwd_for_project_path(self):
+        self.run_hook(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "TRUNCATE logs"},
+                "cwd": "/custom/project/path",
+            }
+        )
+
+        log_line = self.log_file.read_text(encoding="utf-8")
+        self.assertIn("/custom/project/path", log_line)
 
 
 if __name__ == "__main__":

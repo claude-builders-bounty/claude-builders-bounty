@@ -49,7 +49,7 @@ From the repository root:
 
 ```bash
 python3 -m unittest discover -s hooks/block-destructive-commands/tests -v
-# 30+ regression tests
+# 33 regression tests
 ```
 
 ## License

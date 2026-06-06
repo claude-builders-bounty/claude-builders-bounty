@@ -15,8 +15,8 @@ LOG_FILE = os.path.join(LOG_DIR, "blocked.log")
 BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"rm\s+--recursive\s+--force", re.IGNORECASE), "Recursive force delete (rm --recursive --force)"),
     (re.compile(r"drop\s+table", re.IGNORECASE), "SQL DROP TABLE"),
-    (re.compile(r"git\s+push\s+--force(?!-with-lease)", re.IGNORECASE), "Git force push (git push --force)"),
-    (re.compile(r"git\s+push\s+-f\b", re.IGNORECASE), "Git force push (git push -f)"),
+    (re.compile(r"\bgit\s+push\b.*?\s--force(?!\-\w)", re.IGNORECASE), "Git force push (git push --force)"),
+    (re.compile(r"\bgit\s+push\b.*?\s-f\b", re.IGNORECASE), "Git force push (git push -f)"),
     (re.compile(r"\btruncate\b", re.IGNORECASE), "SQL TRUNCATE"),
 ]
 
