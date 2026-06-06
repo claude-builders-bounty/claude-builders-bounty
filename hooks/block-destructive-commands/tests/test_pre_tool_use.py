@@ -311,6 +311,44 @@ class CheckCommandTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.hook.check_command(command))
 
+    def test_blocks_mkfs(self):
+        for command in (
+            "mkfs.ext4 /dev/sda1",
+            "sudo mkfs -t xfs /dev/nvme0n1p1",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Filesystem format (mkfs)",
+                )
+
+    def test_blocks_dev_redirect_overwrite(self):
+        for command in (
+            "echo zero > /dev/sda",
+            "cat payload >> /dev/nvme0n1",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Raw device overwrite (> /dev/*)",
+                )
+
+    def test_blocks_wipefs(self):
+        self.assertEqual(
+            self.hook.check_command("wipefs -a /dev/sdb1"),
+            "Disk signature wipe (wipefs)",
+        )
+
+    def test_blocks_mkfs_and_wipefs_in_chains(self):
+        chained = (
+            "ls; mkfs.ext4 /dev/sda1",
+            "echo ok && wipefs -a /dev/sdb",
+            "git status; echo x > /dev/sda",
+        )
+        for command in chained:
+            with self.subTest(command=command):
+                self.assertIsNotNone(self.hook.check_command(command))
+
 
 class HookIntegrationTests(unittest.TestCase):
     def setUp(self):

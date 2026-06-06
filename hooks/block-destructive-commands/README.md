@@ -12,6 +12,9 @@ A [Claude Code](https://code.claude.com/docs/en/hooks) `PreToolUse` hook that in
 | `TRUNCATE` | SQL table truncation |
 | `DELETE FROM ...` (without `WHERE`) | Unconditional SQL row deletion |
 | `dd ... of=/dev/*` | Raw disk overwrite |
+| `> /dev/sd*` / `>> /dev/nvme*` | Shell redirect to raw block device |
+| `mkfs` / `mkfs.ext4` | Filesystem format (destroys data) |
+| `wipefs` | Disk signature wipe |
 | `:(){ :|:& };:` fork bomb | Process exhaustion attack |
 
 ## Install (2 commands)
@@ -67,7 +70,7 @@ From the repository root:
 
 ```bash
 python3 -m unittest discover -s hooks/block-destructive-commands/tests -v
-# 51 regression tests
+# 55 regression tests
 ```
 
 ## License

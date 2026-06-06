@@ -36,6 +36,12 @@ GIT_FORCE_REFSPEC = re.compile(
 )
 DD_DISK = re.compile(r"\bdd\b.*\bof=/dev/", re.IGNORECASE)
 FORK_BOMB = re.compile(r":\(\s*\)\s*\{.*:\s*\|.*:.*&.*\}")
+MKFS = re.compile(r"\bmkfs(?:\.\w+)?\b", re.IGNORECASE)
+DEV_REDIRECT = re.compile(
+    r">\s*/dev/(?:sd|hd|nvme|mmcblk|vd|xvd)",
+    re.IGNORECASE,
+)
+WIPEFS = re.compile(r"\bwipefs\b", re.IGNORECASE)
 
 
 def is_rm_rf(command: str) -> bool:
@@ -91,6 +97,15 @@ def check_command(command: str) -> str | None:
 
     if FORK_BOMB.search(command):
         return "Fork bomb"
+
+    if MKFS.search(command):
+        return "Filesystem format (mkfs)"
+
+    if DEV_REDIRECT.search(command):
+        return "Raw device overwrite (> /dev/*)"
+
+    if WIPEFS.search(command):
+        return "Disk signature wipe (wipefs)"
 
     return None
 
