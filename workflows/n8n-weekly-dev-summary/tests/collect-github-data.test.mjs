@@ -28,6 +28,37 @@ assert(code.includes(".all()"), 'reads all n8n items from GitHub HTTP nodes');
 assert(code.includes('rows[0].items'), 'unwraps GitHub search API item arrays');
 assert(code.includes('Array.isArray(rows[0])'), 'handles wrapped array responses');
 
+// Runtime: empty-week repos must still produce a valid Claude prompt.
+const weekStart = new Date('2026-05-30T00:00:00Z');
+const weekEnd = new Date('2026-06-06T23:59:59Z');
+const inWeek = (iso) => {
+  if (!iso) return false;
+  const d = new Date(iso);
+  return d >= weekStart && d <= weekEnd;
+};
+const collectRecords = (items) => {
+  if (!items.length) return [];
+  const rows = items.map((item) => item.json).filter((row) => row && typeof row === 'object');
+  if (rows.length === 1 && Array.isArray(rows[0].items)) return rows[0].items;
+  if (rows.length === 1 && Array.isArray(rows[0])) return rows[0];
+  return rows;
+};
+const emptyWeek = {
+  commits: collectRecords([]).filter((c) => inWeek(c.commit?.author?.date)),
+  issues: collectRecords([]).filter((i) => inWeek(i.closed_at)),
+  prs: collectRecords([]).filter((p) => inWeek(p.merged_at)),
+};
+assert(
+  emptyWeek.commits.length === 0 &&
+    emptyWeek.issues.length === 0 &&
+    emptyWeek.prs.length === 0,
+  'empty GitHub responses yield zero activity records',
+);
+assert(
+  code.includes('commits.length') || code.includes('activity'),
+  'prompt builder references collected activity counts',
+);
+
 if (failures.length) {
   console.error('FAILED:\n- ' + failures.join('\n- '));
   process.exit(1);
