@@ -137,7 +137,7 @@ try {
   const raw = execSync('n8n execute --id=weekly-github-dev-summary --rawOutput', {
     env,
     stdio: 'pipe',
-    timeout: 120000,
+    timeout: 300000,
   }).toString();
 
   const result = JSON.parse(raw);
