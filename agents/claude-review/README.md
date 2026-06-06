@@ -67,7 +67,7 @@ cp agents/claude-review/.github/workflows/claude-review.yml .github/workflows/cl
 cp claude-review .
 ```
 
-The included workflow uses `pull_request` (not `pull_request_target`) and checks out the trusted base branch. It runs `claude-review --pr <url> --post` (or falls back to `python3 agents/claude-review/claude_review.py`) and posts the review as a PR comment automatically.
+The included workflow uses `pull_request` (not `pull_request_target`) and checks out the trusted base branch. It runs `claude-review --pr <url> --post` (or falls back to `python3 agents/claude-review/claude_review.py`) and posts the review as a PR comment automatically. Re-runs update the existing claude-review comment instead of posting duplicates.
 
 ## Tested on real PRs
 

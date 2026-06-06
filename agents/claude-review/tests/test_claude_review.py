@@ -223,7 +223,9 @@ class PostReviewCommentTests(unittest.TestCase):
             captured["body"] = json.loads(req.data.decode())
             return FakeResponse()
 
-        with unittest.mock.patch("claude_review.urllib.request.urlopen", fake_urlopen):
+        with unittest.mock.patch(
+            "claude_review.find_existing_review_comment", return_value=None
+        ), unittest.mock.patch("claude_review.urllib.request.urlopen", fake_urlopen):
             claude_review.post_review_comment(
                 "acme",
                 "widgets",
@@ -235,6 +237,50 @@ class PostReviewCommentTests(unittest.TestCase):
         self.assertIn("/repos/acme/widgets/issues/7/comments", captured["url"])
         self.assertEqual(captured["method"], "POST")
         self.assertEqual(captured["body"]["body"], "## Review\n\nLooks good.")
+
+    def test_post_review_comment_updates_existing_comment(self):
+        captured = {}
+
+        class FakeResponse:
+            def read(self):
+                return b'{"html_url":"https://github.com/acme/widgets/pull/7#issuecomment-1"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=30):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            captured["body"] = json.loads(req.data.decode())
+            return FakeResponse()
+
+        with unittest.mock.patch(
+            "claude_review.find_existing_review_comment", return_value=999
+        ), unittest.mock.patch("claude_review.urllib.request.urlopen", fake_urlopen):
+            claude_review.post_review_comment(
+                "acme",
+                "widgets",
+                7,
+                f"## Review\n\n{claude_review.REVIEW_MARKER}",
+                "ghp_test",
+            )
+
+        self.assertIn("/repos/acme/widgets/issues/comments/999", captured["url"])
+        self.assertEqual(captured["method"], "PATCH")
+
+    def test_find_existing_review_comment_returns_matching_id(self):
+        comments = [
+            {"id": 1, "body": "Looks good to me."},
+            {"id": 2, "body": f"## Review\n\n{claude_review.REVIEW_MARKER}"},
+        ]
+        with unittest.mock.patch("claude_review.gh_api", return_value=comments):
+            comment_id = claude_review.find_existing_review_comment(
+                "acme", "widgets", 7, "ghp_test"
+            )
+        self.assertEqual(comment_id, 2)
 
 
 class MarkdownFormatTests(unittest.TestCase):
