@@ -178,17 +178,12 @@
     },
     {
       "parameters": {
-        "mode": "combine",
-        "mergeByFields": {
-          "values": []
-        },
-        "combinationMode": "multiplex",
-        "options": {}
+        "jsCode": "// Collect all inputs from the 3 GitHub API branches\nconst allItems = $input.all();\n\n// The Merge node sends all items combined; separate them by type.\n// We identify: config (has GITHUB_OWNER), commits (have .commit + .sha),\n// PRs (have .pull_request), issues (have .state + .title but no .pull_request).\nlet config = {};\nlet commits = [];\nlet issues = [];\nlet prs = [];\n\nfor (const item of allItems) {\n  const d = item.json;\n  if (d.GITHUB_OWNER) {\n    config = d;\n    continue;\n  }\n  if (Array.isArray(d)) {\n    for (const row of d) {\n      if (row.commit && row.sha) commits.push(row);\n      else if (row.pull_request) prs.push(row);\n      else if (row.state !== undefined && row.title) issues.push(row);\n    }\n  }\n}\n\n// Filter PRs to only merged\nconst mergedPrs = prs.filter(pr => pr.merged_at);\n\n// Filter issues to only actual issues (GitHub issues endpoint returns PRs too)\nconst realIssues = issues.filter(i => !i.pull_request);\n\nreturn [{ json: {\n  config,\n  commits,\n  issues: realIssues,\n  mergedPrs,\n  COMMITS_COUNT: commits.length,\n  ISSUES_COUNT: realIssues.length,\n  PRS_COUNT: mergedPrs.length,\n}}];"
       },
       "id": "merge-data",
       "name": "Merge All Data",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         880,
         380
@@ -196,7 +191,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const allItems = $input.all();\nlet config={},commitsRaw=null,issuesRaw=null,prsRaw=null;\nfor(const item of allItems){\n  const d=item.json;\n  if(d.GITHUB_OWNER) config=d;\n  if(Array.isArray(d)){\n    if(d.length>0&&d[0].commit&&d[0].sha) commitsRaw=d;\n    else if(d.length>0&&d[0].pull_request) prsRaw=d;\n    else if(d.length>0&&d[0].state!==undefined&&d[0].title) issuesRaw=d;\n  }\n}\nconst commits=commitsRaw||[];\nconst issues=(issuesRaw||[]).filter(i=>!i.pull_request);\nconst mergedPrs=(prsRaw||[]).filter(pr=>pr.merged_at);\nconst cl=commits.slice(0,30).map(c=>{\n  const m=c.commit.message.split('\\n')[0];\n  const a=c.commit.author?.name||'unknown';\n  return '- '+m+' ('+a+')';\n}).join('\\n');\nconst il=issues.slice(0,20).map(i=>{\n  const lb=i.labels.map(l=>l.name).join(', ');\n  return '- #'+i.number+' '+i.title+(lb?' ['+lb+']':'');\n}).join('\\n');\nconst pl=mergedPrs.slice(0,20).map(p=>\n  '- PR #'+p.number+': '+p.title+' (by '+(p.user?.login||'unknown')+')'\n).join('\\n');\nconst lang=config.SUMMARY_LANGUAGE==='FR'\n  ? 'Ecris le resume en francais.'\n  : 'Write the summary in English.';\nconst prompt=`You are a technical project manager. Based on the following GitHub activity for the week of ${config.WEEK_START} to ${config.WEEK_END}, write a clear weekly summary.\n\nCOMMITS (${commits.length} total):\n${cl||'(none)'}\n\nCLOSED ISSUES (${issues.length} total):\n${il||'(none)'}\n\nMERGED PULL REQUESTS (${mergedPrs.length} total):\n${pl||'(none)'}\n\n${lang}\n\nStructure:\n1. **Overview** - One sentence on the main theme\n2. **Key Accomplishments** - Bullet points\n3. **Pull Requests Merged** - Brief descriptions\n4. **Issues Resolved** - List\n5. **Looking Ahead** - Brief note\n\nKeep it under 300 words. Be specific with numbers and names.`;\nreturn [{json:{...config,COMMITS_COUNT:commits.length,ISSUES_COUNT:issues.length,\n  PRS_COUNT:mergedPrs.length,PROMPT:prompt,\n  WEEK_LABEL:config.WEEK_START+' - '+config.WEEK_END}}];"
+        "jsCode": "const { config, commits, issues, mergedPrs } = $input.first().json;\n\nconst cl = commits.slice(0, 30).map(c => {\n  const m = c.commit.message.split('\\n')[0];\n  const a = c.commit.author?.name || 'unknown';\n  return '- ' + m + ' (' + a + ')';\n}).join('\\n');\n\nconst il = issues.slice(0, 20).map(i => {\n  const lb = i.labels.map(l => l.name).join(', ');\n  return '- #' + i.number + ' ' + i.title + (lb ? ' [' + lb + ']' : '');\n}).join('\\n');\n\nconst pl = mergedPrs.slice(0, 20).map(p =>\n  '- PR #' + p.number + ': ' + p.title + ' (by ' + (p.user?.login || 'unknown') + ')'\n).join('\\n');\n\nconst lang = config.SUMMARY_LANGUAGE === 'FR'\n  ? 'Ecris le resume en francais.'\n  : 'Write the summary in English.';\n\nconst prompt = `You are a technical project manager. Based on the following GitHub activity for the week of ${config.WEEK_START} to ${config.WEEK_END}, write a clear weekly summary.\n\nCOMMITS (${commits.length} total):\n${cl || '(none)'}\n\nCLOSED ISSUES (${issues.length} total):\n${il || '(none)'}\n\nMERGED PULL REQUESTS (${mergedPrs.length} total):\n${pl || '(none)'}\n\n${lang}\n\nStructure:\n1. **Overview** - One sentence on the main theme\n2. **Key Accomplishments** - Bullet points\n3. **Pull Requests Merged** - Brief descriptions\n4. **Issues Resolved** - List\n5. **Looking Ahead** - Brief note\n\nKeep it under 300 words. Be specific with numbers and names.`;\n\nreturn [{ json: {\n  ...config,\n  COMMITS_COUNT: commits.length,\n  ISSUES_COUNT: issues.length,\n  PRS_COUNT: mergedPrs.length,\n  PROMPT: prompt,\n  WEEK_LABEL: config.WEEK_START + ' - ' + config.WEEK_END\n}}];"
       },
       "id": "format-data",
       "name": "Format Activity Data",
