@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Block Destructive Bash Commands — Pre-Tool-Use Hook for Claude Code
+# =============================================================================
+# Description:
+#   Intercepts bash tool invocations and blocks commands that could cause
+#   catastrophic damage to the system. Allows safe commands through normally.
+#
+# Installation:
+#   Place this file in .claude/hooks/pre-tool-use in your project root.
+#   Make sure it is executable (chmod +x .claude/hooks/pre-tool-use).
+#
+# Hook Environment Variables (set by Claude Code):
+#   CLAUDE_HOOK_TOOL_NAME   — name of the tool being invoked (e.g. "Bash")
+#   CLAUDE_HOOK_TOOL_INPUT  — JSON string of the tool's input parameters
+#   CLAUDE_HOOK_RESULT      — set to "blocked" when a previous hook blocked
+#   CLAUDE_HOOK_TOOL_USE_ID — unique ID for this tool use
+# =============================================================================
+
+set -euo pipefail
+
+# --- Only intercept Bash tool invocations ---
+if [[ "${CLAUDE_HOOK_TOOL_NAME:-}" != "Bash" ]]; then
+    exit 0
+fi
+
+# --- Extract the command from JSON input ---
+# The input is JSON like: {"command": "rm -rf /", "timeout": 30000}
+# We parse it safely without jq dependency
+COMMAND=$(echo "${CLAUDE_HOOK_TOOL_INPUT:-}" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('command', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$COMMAND" ]]; then
+    exit 0
+fi
+
+# =============================================================================
+# BLOCK LIST — Commands that are never allowed
+# =============================================================================
+
+# Normalize: strip leading/trailing whitespace, collapse multiple spaces
+NORMALIZED=$(echo "$COMMAND" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -s ' ')
+
+# Check if command starts with sudo — strip it for pattern matching
+STRIPPED_CMD="$NORMALIZED"
+if [[ "$STRIPPED_CMD" =~ ^sudo[[:space:]]+(.*) ]]; then
+    STRIPPED_CMD="${BASH_REMATCH[1]}"
+fi
+
+BLOCK_REASON=""
+
+# --- 1. rm -rf on critical paths ---
+# Blocks rm -rf /*, rm -rf /, rm -rf /etc, rm -rf ~, rm -rf $HOME, etc.
+if echo "$STRIPPED_CMD" | grep -qP '^rm\s+.*(-rf|--recursive)\s+.*'; then
+    # Check if targeting a dangerous path
+    if echo "$STRIPPED_CMD" | grep -qP '(^|\s)/\s|(^|\s)/\*\s?$|(^|\s)/etc(\s|/)|(^|\s)/bin(\s|/)|(^|\s)/boot(\s|/)|(^|\s)/dev(\s|/)|(^|\s)/lib(\s|/)|(^|\s)/sys(\s|/)|(^|\s)/proc(\s|/)|(^|\s)/usr(\s|/)|(^|\s)/var(\s|/)|(^|\s)~(\s|$)|(^|\s)\$HOME(\s|$)|(^|\s)/root(\s|$|/)'; then
+        BLOCK_REASON="rm -rf on system-critical path — would destroy the operating system or user data."
+    fi
+    # Check for wildcard that could expand to dangerous scope
+    if echo "$STRIPPED_CMD" | grep -qP 'rm\s+.*-rf\s+\*\s*$'; then
+        BLOCK_REASON="rm -rf * could delete all files in the current directory (and below)."
+    fi
+fi
+
+# --- 2. dd — raw disk writes ---
+if echo "$STRIPPED_CMD" | grep -qP '^dd\s+.*(of=|if=).*'; then
+    if echo "$STRIPPED_CMD" | grep -qP '(of=|if=)\s*/dev/'; then
+        BLOCK_REASON="dd to/from /dev/* — can overwrite the entire disk or partition table."
+    fi
+fi
+
+# --- 3. mkfs / mke2fs / mkfs.* — filesystem creation/destruction ---
+if echo "$STRIPPED_CMD" | grep -qP '^mkf?s?(\.\w+)?\s+'; then
+    if echo "$STRIPPED_CMD" | grep -qP '\s+/dev/'; then
+        BLOCK_REASON="mkfs on a device — destroys all data on the target partition."
+    fi
+fi
+
+# --- 4. Fork bomb pattern ---
+if echo "$COMMAND" | grep -qP ':\s*\(\)\s*\{'; then
+    BLOCK_REASON="Fork bomb detected — would exhaust system process limit and crash the machine."
+fi
+
+# --- 5. chmod -R 777 / or chmod 000 ---
+if echo "$STRIPPED_CMD" | grep -qP '^chmod\s+(-R|--recursive)?\s*777\s+/'; then
+    BLOCK_REASON="chmod -R 777 / — makes every file on the system world-writable, destroying security."
+fi
+if echo "$STRIPPED_CMD" | grep -qP '^chmod\s+(-R|--recursive)?\s*000\s+'; then
+    if echo "$STRIPPED_CMD" | grep -qP '(^|\s)/(\s|$)|(^|\s)/etc|(^|\s)/bin|(^|\s)/boot|(^|\s)/usr|(^|\s)/var'; then
+        BLOCK_REASON="chmod 000 on system directories — would make the system unbootable."
+    fi
+fi
+
+# --- 6. chown -R / (changing ownership of root) ---
+if echo "$STRIPPED_CMD" | grep -qP '^chown\s+(-R|--recursive)?\s+\w+\s+/'; then
+    BLOCK_REASON="chown -R on / — would change ownership of every file on the system."
+fi
+
+# --- 7. > /dev/sda or direct disk writes via redirect ---
+if echo "$COMMAND" | grep -qP '>\s+/dev/(sd[a-z]|nvme|mmcblk|hd[a-z])'; then
+    BLOCK_REASON="Direct disk write to /dev/* — would corrupt the partition table or filesystem."
+fi
+
+# --- 8. mv / /* to a new location (moving root filesystem contents) ---
+if echo "$STRIPPED_CMD" | grep -qP '^mv\s+/\s+\w+'; then
+    BLOCK_REASON="Moving / to another location would break the entire filesystem hierarchy."
+fi
+
+# --- 9. cat /dev/zero > /dev/sda or similar destructive redirects ---
+if echo "$STRIPPED_CMD" | grep -qP 'cat\s+/dev/(zero|urandom)\s*[>|]'; then
+    BLOCK_REASON="Streaming /dev/zero or /dev/urandom to a device — overwrites the target."
+fi
+
+# --- 10. wget/curl pipe to bash with sudo/root destructive potential ---
+if echo "$STRIPPED_CMD" | grep -qP '(curl|wget)\s+.*\||(curl|wget)\s+.*\|.*(rm|dd|mkfs|chmod|:\(\)|> )'; then
+    BLOCK_REASON="Remote script piped to a destructive command — potential remote code execution vector."
+fi
+
+# --- 11. Teardown / poweroff / halt / shutdown (immediate, no delay) ---
+if echo "$STRIPPED_CMD" | grep -qP '^(poweroff|halt|shutdown\s+-h\s+now|shutdown\s+-P\s+now|reboot\s+(-f|--force)?|systemctl\s+poweroff|init\s+0)'; then
+    BLOCK_REASON="Command would shut down or reboot the machine immediately."
+fi
+
+# --- 12. Writing directly to /proc/sys — kernel parameter destruction ---
+if echo "$COMMAND" | grep -qP 'echo\s+.*>\s*/proc/sys/'; then
+    BLOCK_REASON="Writing to /proc/sys/ changes kernel runtime parameters — potentially destabilizing."
+fi
+
+# --- Block if reason was found ---
+if [[ -n "$BLOCK_REASON" ]]; then
+    echo "[BLOCKED] Destructive command blocked by pre-tool-use hook."
+    echo "  Reason: $BLOCK_REASON"
+    echo "  Command: $COMMAND"
+    echo ""
+    echo "  If you need to run this command, run it manually after verifying it is safe."
+    exit 1
+fi
+
+# --- Command is safe — allow it ---
+exit 0
