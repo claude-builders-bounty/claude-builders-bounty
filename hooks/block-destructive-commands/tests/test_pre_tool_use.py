@@ -191,6 +191,12 @@ class CheckCommandTests(unittest.TestCase):
             "Git force push (git push -f)",
         )
 
+    def test_blocks_git_push_force_with_c_option(self):
+        self.assertEqual(
+            self.hook.check_command("git -C /repo push --force origin main"),
+            "Git force push (git push --force)",
+        )
+
     def test_blocks_chained_destructive_commands(self):
         chained = (
             "git status; rm -rf /",
