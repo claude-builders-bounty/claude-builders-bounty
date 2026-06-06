@@ -31,6 +31,21 @@ class CheckCommandTests(unittest.TestCase):
             "Recursive force delete (rm -rf)",
         )
 
+    def test_blocks_rm_fr(self):
+        self.assertEqual(
+            self.hook.check_command("rm -fr /tmp/build"),
+            "Recursive force delete (rm -rf)",
+        )
+
+    def test_blocks_rm_r_f_separate_flags(self):
+        self.assertEqual(
+            self.hook.check_command("rm -r -f /tmp/build"),
+            "Recursive force delete (rm -rf)",
+        )
+
+    def test_allows_rm_f_only(self):
+        self.assertIsNone(self.hook.check_command("rm -f README.md"))
+
     def test_blocks_drop_table(self):
         self.assertEqual(
             self.hook.check_command("sqlite3 db.sqlite 'DROP TABLE users'"),

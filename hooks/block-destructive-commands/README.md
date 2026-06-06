@@ -6,7 +6,7 @@ A [Claude Code](https://code.claude.com/docs/en/hooks) `PreToolUse` hook that in
 
 | Pattern | Why |
 |---------|-----|
-| `rm -rf` / `rm --recursive --force` | Recursive force delete |
+| `rm -rf` / `rm -fr` / `rm -r -f` / `rm --recursive --force` | Recursive force delete (any flag order) |
 | `DROP TABLE` | SQL table destruction |
 | `git push --force` / `git push -f` | Rewrites remote history (allows `--force-with-lease`) |
 | `TRUNCATE` | SQL table truncation |
@@ -14,14 +14,14 @@ A [Claude Code](https://code.claude.com/docs/en/hooks) `PreToolUse` hook that in
 
 ## Install (2 commands)
 
-From the repository root:
-
 ```bash
-mkdir -p ~/.claude/hooks && cp hooks/block-destructive-commands/pre-tool-use.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use.py
-cp hooks/block-destructive-commands/settings.json ~/.claude/settings.json
+git clone https://github.com/claude-builders-bounty/claude-builders-bounty
+bash claude-builders-bounty/hooks/block-destructive-commands/install.sh
 ```
 
-Claude Code loads `~/.claude/settings.json` automatically on the next session.
+The installer copies the hook to `~/.claude/hooks/` and merges the `PreToolUse` entry into `~/.claude/settings.json` without overwriting your other hooks.
+
+Uses the official Claude Code `hookSpecificOutput` schema (`permissionDecision: deny`) — not the legacy `decision: block` format.
 
 ## How it works
 

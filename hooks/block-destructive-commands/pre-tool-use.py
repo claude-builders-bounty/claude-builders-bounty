@@ -13,7 +13,6 @@ LOG_DIR = os.path.join(os.path.expanduser("~"), ".claude", "hooks")
 LOG_FILE = os.path.join(LOG_DIR, "blocked.log")
 
 BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"rm\s+-[a-zA-Z]*r[a-zA-Z]*f", re.IGNORECASE), "Recursive force delete (rm -rf)"),
     (re.compile(r"rm\s+--recursive\s+--force", re.IGNORECASE), "Recursive force delete (rm --recursive --force)"),
     (re.compile(r"drop\s+table", re.IGNORECASE), "SQL DROP TABLE"),
     (re.compile(r"git\s+push\s+--force(?!-with-lease)", re.IGNORECASE), "Git force push (git push --force)"),
@@ -24,6 +23,15 @@ BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 DELETE_FROM = re.compile(r"delete\s+from", re.IGNORECASE)
 WHERE_CLAUSE = re.compile(r"\bwhere\b", re.IGNORECASE)
 SHELL_LITERAL = re.compile(r"^\s*(echo|cat|printf|tee)\b", re.IGNORECASE)
+
+
+def is_rm_rf(command: str) -> bool:
+    """True when rm uses both recursive (-r) and force (-f) flags in any order."""
+    for match in re.finditer(r"\brm\s+((?:-\S+\s+)*-\S+)", command):
+        flags = "".join(re.findall(r"-([A-Za-z]+)", match.group(1))).lower()
+        if "r" in flags and "f" in flags:
+            return True
+    return False
 
 
 def log_blocked_attempt(command: str, project_path: str) -> None:
@@ -48,6 +56,9 @@ def deny(reason: str) -> None:
 
 
 def check_command(command: str) -> str | None:
+    if is_rm_rf(command):
+        return "Recursive force delete (rm -rf)"
+
     for pattern, reason in BLOCKED_PATTERNS:
         if pattern.search(command):
             return reason
