@@ -9,5 +9,6 @@
 
 ### Changed
 
+- docs: refresh sample output and add --since test (78148e7)
 - Initial commit (a80a580)
 
