@@ -262,5 +262,18 @@ assert_contains "$OUT9B" "patch bug" "appended release includes new commit"
 assert_contains "$OUT9B" "## [1.1.0]" "previous release preserved"
 assert_contains "$OUT9B" "first release" "previous release content preserved"
 
+# Test 12: no commits since tag still emits a valid release header
+REPO10="${TMP_ROOT}/repo10"
+setup_repo "$REPO10"
+printf 'base\n' >"$REPO10/README"
+git -C "$REPO10" add README
+git -C "$REPO10" commit -qm "feat: tagged release"
+git -C "$REPO10" tag v1.0.0
+
+OUT10="${TMP_ROOT}/changelog10.md"
+bash "$CHANGELOG_SH" "$REPO10" --output "$OUT10" >/dev/null
+assert_contains "$OUT10" "## [v1.0.0-next]" "empty release keeps version header"
+assert_not_contains "$OUT10" "### Added" "empty release omits empty sections"
+
 echo "Tests: ${PASS} passed, ${FAIL} failed"
 [[ "$FAIL" -eq 0 ]]
