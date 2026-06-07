@@ -16,6 +16,7 @@ BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"rm\s+--recursive\s+--force", re.IGNORECASE), "Recursive force delete (rm --recursive --force)"),
     (re.compile(r"drop\s+table", re.IGNORECASE), "SQL DROP TABLE"),
     (re.compile(r"drop\s+database", re.IGNORECASE), "SQL DROP DATABASE"),
+    (re.compile(r"drop\s+schema", re.IGNORECASE), "SQL DROP SCHEMA"),
     (
         re.compile(r"\bgit\b.*?\bpush\b.*?\s--force(?!\-\w)", re.IGNORECASE),
         "Git force push (git push --force)",
@@ -49,6 +50,7 @@ REMOTE_SHELL = re.compile(
     r"\b(?:curl|wget)\b[^\n;|&]*\|\s*(?:ba)?sh\b",
     re.IGNORECASE,
 )
+GIT_RESET_HARD = re.compile(r"\bgit\b.*?\breset\b.*?\s--hard\b", re.IGNORECASE)
 GIT_PUSH_FORCE_CONFIG = re.compile(
     r"-c\s+push\.force(?:\s*=\s*(?P<val>[^\s;|&]+))?",
     re.IGNORECASE,
@@ -115,6 +117,9 @@ def check_segment(segment: str) -> str | None:
                 return reason
         elif pattern.search(segment):
             return reason
+
+    if GIT_RESET_HARD.search(segment):
+        return "Git hard reset (git reset --hard)"
 
     if is_git_force_via_config(segment):
         return "Git force push (git -c push.force)"

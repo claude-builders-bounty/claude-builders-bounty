@@ -7,7 +7,8 @@ A [Claude Code](https://code.claude.com/docs/en/hooks) `PreToolUse` hook that in
 | Pattern | Why |
 |---------|-----|
 | `rm -rf` / `rm -fr` / `rm -r -f` / `rm --recursive --force` | Recursive force delete (any flag order) |
-| `DROP TABLE` / `DROP DATABASE` | SQL schema destruction |
+| `DROP TABLE` / `DROP DATABASE` / `DROP SCHEMA` | SQL schema destruction |
+| `git reset --hard` | Discards uncommitted and untracked local changes |
 | `git push --force` / `git push -f` / `git push +<ref>` / `git -c push.force=true push` | Rewrites remote history (allows `--force-with-lease` and `-c push.force=false`) |
 | `TRUNCATE` | SQL table truncation |
 | `DELETE FROM ...` (without `WHERE`) | Unconditional SQL row deletion |
@@ -77,7 +78,7 @@ From the repository root:
 
 ```bash
 python3 -m unittest discover -s hooks/block-destructive-commands/tests -v
-# 62 regression tests (including per-segment chained-command checks)
+# 65 regression tests (including per-segment chained-command checks)
 ```
 
 ## License

@@ -58,6 +58,28 @@ class CheckCommandTests(unittest.TestCase):
             "SQL DROP DATABASE",
         )
 
+    def test_blocks_drop_schema(self):
+        self.assertEqual(
+            self.hook.check_command("psql -c 'DROP SCHEMA public CASCADE'"),
+            "SQL DROP SCHEMA",
+        )
+
+    def test_blocks_git_reset_hard(self):
+        blocked = (
+            "git reset --hard HEAD~1",
+            "git -C /repo reset --hard origin/main",
+            "git reset --hard && git clean -fd",
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Git hard reset (git reset --hard)",
+                )
+
+    def test_allows_git_reset_soft(self):
+        self.assertIsNone(self.hook.check_command("git reset --soft HEAD~1"))
+
     def test_blocks_git_push_force(self):
         self.assertEqual(
             self.hook.check_command("git push --force origin main"),
