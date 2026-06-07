@@ -5,6 +5,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm not found; enabling via corepack..."
+  corepack enable
+  corepack prepare pnpm@9 --activate
+fi
+
 echo "Scaffolding Next.js 15 App Router project in $WORKDIR..."
 timeout 180 npx --yes create-next-app@15 "$WORKDIR/app" \
   --typescript \
