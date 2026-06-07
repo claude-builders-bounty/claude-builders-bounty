@@ -1,0 +1,181 @@
+# PR Review Agent 🤖
+
+A **Claude Code** sub-agent (Hermes skill) that reviews GitHub pull requests and produces a structured Markdown review with:
+
+- 📋 **Summary of Changes** — 2–3 sentence overview
+- ⚠️ **Identified Risks** — Potential issues and concerns
+- 💡 **Improvement Suggestions** — Actionable recommendations
+- ✅ **Confidence Score** — Low / Medium / High
+
+Works as a **CLI tool**, a **GitHub Action**, and a **Claude Code skill**.
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Python 3.10+
+- A [GitHub personal access token](https://github.com/settings/tokens) (classic, with `repo` scope for private repos, or `public_repo` for public)
+
+### CLI Usage
+
+```bash
+# Set your GitHub token
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+
+# Review a PR
+python3 review.py --pr https://github.com/owner/repo/pull/123
+
+# Save to file
+python3 review.py --pr https://github.com/owner/repo/pull/123 --output review.md
+
+# JSON output
+python3 review.py --pr https://github.com/owner/repo/pull/123 --format json
+
+# Short form (owner/repo/number)
+python3 review.py --pr owner/repo/123
+```
+
+### AI-Powered Reviews (Optional)
+
+Set `ANTHROPIC_API_KEY` for smarter reviews using Claude:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxx
+python3 review.py --pr https://github.com/owner/repo/pull/123
+```
+
+Without the API key, the agent uses built-in heuristic analysis (pattern matching, diff size assessment, code smell detection).
+
+---
+
+## 🔧 GitHub Action Setup
+
+Add to your `.github/workflows/pr-review.yml`:
+
+```yaml
+name: PR Review Agent
+on:
+  pull_request:
+    types: [opened, synchronize]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 skills/pr-review-agent/review.py \
+            --pr "https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}" \
+            --output review.md
+      - name: Post Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('review.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
+```
+
+Set `ANTHROPIC_API_KEY` in your repository secrets for AI-powered reviews.
+
+---
+
+## 📦 Files
+
+```
+skills/pr-review-agent/
+├── review.py              # Main agent script (CLI + library)
+├── skill.json             # Skill manifest for Hermes Agent
+├── SKILL.md               # Claude Code skill definition
+├── README.md              # This file
+└── sample-outputs/
+    ├── pr-2581-review.md  # Sample review output #1
+    └── pr-2585-review.md  # Sample review output #2
+.github/workflows/
+└── pr-review.yml          # GitHub Action workflow
+```
+
+---
+
+## 🧠 How It Works
+
+1. **Fetch**: Gets PR metadata and diff from GitHub API
+2. **Analyze**: If `ANTHROPIC_API_KEY` is set, calls Claude for AI analysis
+3. **Fallback**: Uses built-in heuristics (pattern matching, diff size, code smells)
+4. **Output**: Produces structured Markdown or JSON
+
+### Heuristic Analysis (no API key)
+
+The built-in analyzer checks for:
+- Hardcoded secrets / credentials
+- TODO / FIXME markers
+- Debug print statements
+- Destructive DB operations
+- Dynamic code execution
+- Very long lines
+- N+1 query patterns
+- Overall diff size and scope assessment
+
+---
+
+## 🧪 Tested On
+
+| PR | Description | Output |
+|----|-------------|--------|
+| [#2581](https://github.com/claude-builders-bounty/claude-builders-bounty/pull/2581) | CHANGELOG generator skill | [View](sample-outputs/pr-2581-review.md) |
+| [#2585](https://github.com/claude-builders-bounty/claude-builders-bounty/pull/2585) | CLAUDE.md template for Next.js + SQLite | [View](sample-outputs/pr-2585-review.md) |
+
+---
+
+## 📄 Output Example
+
+```markdown
+## 🤖 PR Review
+
+> **PR**: [Add user authentication module](https://github.com/owner/repo/pull/123)
+> **Author**: @developer
+
+---
+
+### 📋 Summary of Changes
+
+This PR implements JWT-based authentication with login, registration, and token refresh endpoints. It adds ~500 lines across 8 files including middleware, controllers, and database migrations.
+
+### ⚠️ Identified Risks
+
+- JWT secret appears hardcoded in auth config
+- No rate limiting on login endpoint
+- Password reset uses a 6-digit numeric token (too short)
+
+### 💡 Improvement Suggestions
+
+- Move JWT secret to environment variable
+- Add rate limiting middleware to auth routes
+- Increase reset token to 32+ bytes
+- Add integration tests for auth flows
+
+---
+
+### ✅ Confidence Score: **Medium**
+
+*Review generated by PR Review Agent*
+```
+
+---
+
+## 📝 License
+
+MIT
