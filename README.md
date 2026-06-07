@@ -1,53 +1,98 @@
-# Claude Builders Bounty 🤖
+# claude-review
 
-> A community bounty board for Claude Code builders.
+A Claude Code sub-agent that reviews a GitHub PR and posts a structured Markdown comment.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup
 
----
+```bash
+# No dependencies needed — uses Node.js built-ins + gh CLI
+# Ensure gh is authenticated:
+gh auth status
+```
 
-## How it works
+## Usage
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### CLI
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+# Review a PR (output to stdout + file)
+./claude-review --pr https://github.com/owner/repo/pull/123
 
----
+# Review and post as PR comment
+./claude-review --pr https://github.com/owner/repo/pull/123 --post
+```
 
-## Active Bounties
+### GitHub Action
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+The included workflow `.github/workflows/claude-review.yml` automatically reviews every new PR and posts the review as a comment.
 
----
+## Output Format
 
-## Rules
+Every review includes:
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+1. **Summary** — 2-3 sentence description of what the PR does
+2. **Identified Risks** — Security issues, large changes, error handling gaps (with severity: High/Medium/Low)
+3. **Improvement Suggestions** — Missing error handling, TODOs, console.logs, type safety
+4. **Confidence Score** — High / Medium / Low
 
----
+## Detection Capabilities
 
-## Community
+| Category | Detects |
+|----------|---------|
+| Security | eval(), innerHTML, document.write, hardcoded credentials, shell exec, raw SQL |
+| Code quality | Empty catch blocks, missing error handling, TODO/FIXME, console.log, `any` types |
+| PR hygiene | Large file changes (>100 lines), massive PRs (>20 files, >500 additions) |
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Sample Outputs
 
----
+### Sample 1: Documentation PR (vercel/next.js#94536)
 
-*Started by the Claude builder community · March 2026 · MIT License*
+```
+## PR Review: docs: align redirect comment with website docs
+
+**Author:** @louzhedong
+**Changes:** +1 / -0 across 1 file(s)
+
+### Summary
+Align the inline redirect comment with the website docs. Touches redirect.ts.
+This PR is primarily additive.
+
+### Identified Risks
+No significant risks identified.
+
+### Improvement Suggestions
+No suggestions — changes look clean.
+
+### Confidence: **High**
+```
+
+### Sample 2: Feature PR (claude-builders-bounty#2587)
+
+```
+## PR Review: feat: opinionated CLAUDE.md for Next.js 15 + SQLite SaaS
+
+**Author:** @AmitabhainArunachala
+**Changes:** +256 / -0 across 1 file(s)
+
+### Summary
+Production-ready CLAUDE.md template for Next.js + SQLite SaaS.
+Touches CLAUDE.md. This PR is primarily additive.
+
+### Identified Risks
+- **Medium**: Large change (256 added lines) — consider splitting (CLAUDE.md)
+
+### Improvement Suggestions
+- Async operations without try/catch — consider adding error handling
+
+### Confidence: **Medium**
+```
+
+## Requirements
+
+- Node.js 22+
+- [gh CLI](https://cli.github.com/) authenticated with repo access
+- For GitHub Action: `pull-requests: write` permission
+
+## License
+
+MIT

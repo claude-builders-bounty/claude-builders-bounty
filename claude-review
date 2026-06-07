@@ -1,0 +1,277 @@
+#!/usr/bin/env node
+// claude-review: Claude Code sub-agent for PR review
+// Usage: claude-review --pr https://github.com/owner/repo/pull/123
+
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+function run(cmd) {
+  try {
+    return execSync(cmd, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+  } catch (e) {
+    console.error(`Command failed: ${cmd}`);
+    console.error(e.stderr || e.message);
+    process.exit(1);
+  }
+}
+
+function parseArgs() {
+  const args = process.argv.slice(2);
+  let prUrl = null;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--pr' && args[i + 1]) {
+      prUrl = args[i + 1];
+      i++;
+    } else if (args[i].startsWith('https://github.com/') && args[i].includes('/pull/')) {
+      prUrl = args[i];
+    }
+  }
+  if (!prUrl) {
+    console.error('Usage: claude-review --pr https://github.com/owner/repo/pull/123');
+    process.exit(1);
+  }
+  return { prUrl };
+}
+
+function extractPrInfo(url) {
+  const match = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (!match) {
+    console.error('Invalid PR URL format');
+    process.exit(1);
+  }
+  return { owner: match[1], repo: match[2], number: match[3] };
+}
+
+function main() {
+  const { prUrl } = parseArgs();
+  const { owner, repo, number } = extractPrInfo(prUrl);
+  const repoFull = `${owner}/${repo}`;
+
+  console.log(`Reviewing ${repoFull}#${number}...`);
+
+  // Fetch PR details
+  const prJson = run(`gh pr view ${number} --repo ${repoFull} --json title,body,author,baseRefName,headRefName,additions,deletions,changedFiles,files`);
+
+  const pr = JSON.parse(prJson);
+  const files = pr.files || [];
+
+  // Fetch the diff
+  const diff = run(`gh pr diff ${number} --repo ${repoFull}`);
+
+  // Fetch existing review comments (to avoid duplicating)
+  let existingComments = '';
+  try {
+    existingComments = run(`gh api repos/${owner}/${repo}/pulls/${number}/comments --jq '.[].body' 2>/dev/null`);
+  } catch (e) { /* no existing comments is fine */ }
+
+  // Analyze diff
+  const summary = analyzeDiff(diff, pr);
+
+  // Generate structured review
+  const review = generateReview(summary, pr, diff);
+
+  // Output to stdout
+  console.log('\n' + review.markdown);
+
+  // Write to file
+  const outFile = `review-${owner}-${repo}-${number}.md`;
+  fs.writeFileSync(outFile, review.markdown);
+  console.log(`\nReview written to ${outFile}`);
+
+  // Post as PR comment if --post flag
+  if (process.argv.includes('--post')) {
+    try {
+      run(`gh pr comment ${number} --repo ${repoFull} --body-file ${outFile}`);
+      console.log('Review posted as PR comment.');
+    } catch (e) {
+      console.error('Failed to post comment:', e.message);
+    }
+  }
+}
+
+function analyzeDiff(diff, pr) {
+  const lines = diff.split('\n');
+  const additions = [];
+  const deletions = [];
+  const files = new Set();
+  let currentFile = '';
+
+  for (const line of lines) {
+    if (line.startsWith('+++ b/') || line.startsWith('--- a/')) {
+      const f = line.replace(/^[+-]{3} [ab]\//, '');
+      if (!f.startsWith('/dev/null')) files.add(f);
+      currentFile = f;
+    } else if (line.startsWith('+') && !line.startsWith('+++')) {
+      additions.push({ file: currentFile, line: line.substring(1) });
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      deletions.push({ file: currentFile, line: line.substring(1) });
+    }
+  }
+
+  return {
+    files: [...files],
+    additions: additions,
+    deletions: deletions,
+    stats: {
+      filesChanged: pr.changedFiles || files.size,
+      additions: pr.additions || additions.length,
+      deletions: pr.deletions || deletions.length,
+    }
+  };
+}
+
+function generateReview(analysis, pr, diff) {
+  const risks = identifyRisks(analysis, diff);
+  const suggestions = identifySuggestions(analysis, diff);
+  const confidence = calculateConfidence(risks, suggestions, analysis);
+
+  let md = `## PR Review: ${pr.title || 'Untitled'}\n\n`;
+  md += `**Author:** @${pr.author?.login || 'unknown'}\n`;
+  md += `**Branch:** ${pr.headRefName} → ${pr.baseRefName}\n`;
+  md += `**Changes:** +${analysis.stats.additions} / -${analysis.stats.deletions} across ${analysis.stats.filesChanged} file(s)\n\n`;
+
+  md += `### Summary\n\n`;
+  md += generateSummary(analysis, pr) + '\n\n';
+
+  md += `### Identified Risks\n\n`;
+  if (risks.length === 0) {
+    md += 'No significant risks identified.\n\n';
+  } else {
+    for (const r of risks) {
+      md += `- **${r.severity}**: ${r.description}`;
+      if (r.file) md += ` (\`${r.file}\`)`;
+      md += '\n';
+    }
+    md += '\n';
+  }
+
+  md += `### Improvement Suggestions\n\n`;
+  if (suggestions.length === 0) {
+    md += 'No suggestions — changes look clean.\n\n';
+  } else {
+    for (const s of suggestions) {
+      md += `- ${s.description}`;
+      if (s.file) md += ` (\`${s.file}\`)`;
+      md += '\n';
+    }
+    md += '\n';
+  }
+
+  md += `### Confidence: **${confidence}**\n\n`;
+  md += `---\n*Generated by [claude-review](https://github.com/AmitabhainArunachala/claude-builders-bounty)*\n`;
+
+  return { markdown: md, risks, suggestions, confidence };
+}
+
+function generateSummary(analysis, pr) {
+  const parts = [];
+  if (pr.body) parts.push(pr.body.substring(0, 200));
+  if (analysis.files.length > 0) {
+    const fileList = analysis.files.slice(0, 5).join(', ');
+    parts.push(`Touches ${fileList}${analysis.files.length > 5 ? ` and ${analysis.files.length - 5} more` : ''}.`);
+  }
+  const addLines = analysis.additions.length;
+  const delLines = analysis.deletions.length;
+  if (addLines > delLines * 3) parts.push('This PR is primarily additive.');
+  else if (delLines > addLines * 3) parts.push('This PR is primarily removing code.');
+  else parts.push('This PR contains a balanced mix of additions and removals.');
+  return parts.join(' ');
+}
+
+function identifyRisks(analysis, diff) {
+  const risks = [];
+  const allAdded = analysis.additions.map(a => a.line).join('\n').toLowerCase();
+
+  // Security patterns
+  const secPatterns = [
+    { pattern: /eval\s*\(/, desc: 'Use of eval() — potential code injection risk', severity: 'High' },
+    { pattern: /innerHTML/, desc: 'Direct innerHTML assignment — XSS risk', severity: 'High' },
+    { pattern: /document\.write/, desc: 'document.write usage — XSS risk', severity: 'Medium' },
+    { pattern: /password|secret|api_key|token/i, desc: 'Possible hardcoded credential detected', severity: 'High' },
+    { pattern: /\.exec\s*\(/, desc: 'Shell exec usage — command injection risk', severity: 'High' },
+    { pattern: /SELECT\s+.*\s+FROM/i, desc: 'Raw SQL query — verify no SQL injection', severity: 'Medium' },
+  ];
+
+  for (const sp of secPatterns) {
+    if (sp.pattern.test(allAdded)) {
+      const matchingFile = analysis.additions.find(a => sp.pattern.test(a.line.toLowerCase()));
+      risks.push({
+        severity: sp.severity,
+        description: sp.desc,
+        file: matchingFile ? matchingFile.file : null,
+      });
+    }
+  }
+
+  // Large file changes
+  const fileChanges = {};
+  for (const a of analysis.additions) {
+    fileChanges[a.file] = (fileChanges[a.file] || 0) + 1;
+  }
+  for (const [file, count] of Object.entries(fileChanges)) {
+    if (count > 100) {
+      risks.push({ severity: 'Medium', description: `Large change (${count} added lines) — consider splitting`, file });
+    }
+  }
+
+  // Error handling
+  const hasEmptyCatch = /catch\s*\([^)]*\)\s*\{\s*\}/.test(allAdded);
+  if (hasEmptyCatch) {
+    risks.push({ severity: 'Medium', description: 'Empty catch block — errors may be silently swallowed', file: null });
+  }
+
+  return risks;
+}
+
+function identifySuggestions(analysis, diff) {
+  const suggestions = [];
+  const allAdded = analysis.additions.map(a => a.line);
+
+  // Missing error handling
+  const hasAsync = allAdded.some(l => /async\s|await\s|\.then\(/.test(l));
+  const hasTryCatch = allAdded.some(l => /try\s*\{/.test(l));
+  if (hasAsync && !hasTryCatch) {
+    suggestions.push({ description: 'Async operations without try/catch — consider adding error handling', file: null });
+  }
+
+  // TODO/FIXME
+  const todos = allAdded.filter(l => /TODO|FIXME|HACK|XXX/.test(l));
+  if (todos.length > 0) {
+    suggestions.push({ description: `${todos.length} TODO/FIXME comment(s) left in code`, file: null });
+  }
+
+  // Console.log in production code
+  const consoleLogs = allAdded.filter(l => /console\.(log|debug|info)/.test(l) && !/test|spec/.test(l));
+  if (consoleLogs.length > 2) {
+    suggestions.push({ description: `${consoleLogs.length} console.log statements — consider using a proper logger`, file: null });
+  }
+
+  // Type safety
+  const anyTypes = allAdded.filter(l => /:\s*any\b/.test(l));
+  if (anyTypes.length > 0) {
+    suggestions.push({ description: `${anyTypes.length} \`any\` type annotation(s) — consider more specific types`, file: null });
+  }
+
+  return suggestions;
+}
+
+function calculateConfidence(risks, suggestions, analysis) {
+  let score = 80; // base
+  const highRisks = risks.filter(r => r.severity === 'High').length;
+  const medRisks = risks.filter(r => r.severity === 'Medium').length;
+  score -= highRisks * 15;
+  score -= medRisks * 5;
+  score -= Math.min(suggestions.length * 3, 15);
+
+  if (analysis.stats.filesChanged > 20) score -= 10;
+  if (analysis.stats.additions > 500) score -= 10;
+
+  score = Math.max(10, Math.min(100, score));
+
+  if (score >= 80) return 'High';
+  if (score >= 50) return 'Medium';
+  return 'Low';
+}
+
+main();
