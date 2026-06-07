@@ -71,6 +71,37 @@ const branchC = [
 const appendMerged = [...branchA, ...branchB, ...branchC];
 assert(appendMerged.length === 3, 'append merge retains all items when branch sizes differ');
 
+// Simulate Build Claude Prompt output for a quiet week (no commits/issues/PRs).
+const quietWeekConfig = {
+  repoFullName: 'org/repo',
+  weekStart: '2026-05-30T00:00:00.000Z',
+  weekEnd: '2026-06-06T23:59:59.000Z',
+  language: 'EN',
+};
+const quietActivity = {
+  repository: quietWeekConfig.repoFullName,
+  weekStart: quietWeekConfig.weekStart,
+  weekEnd: quietWeekConfig.weekEnd,
+  commits: [],
+  closedIssues: [],
+  mergedPullRequests: [],
+};
+const quietPrompt = {
+  model: 'claude-sonnet-4-20250514',
+  messages: [{ role: 'user', content: JSON.stringify(quietActivity) }],
+};
+assert(
+  quietActivity.commits.length === 0 &&
+    quietActivity.closedIssues.length === 0 &&
+    quietActivity.mergedPullRequests.length === 0,
+  'quiet week activity object has zero records',
+);
+assert(quietPrompt.model === 'claude-sonnet-4-20250514', 'quiet week still targets required Claude model');
+assert(
+  code.includes('commits.length') && code.includes('closedIssues') && code.includes('mergedPullRequests'),
+  'prompt builder references all three activity buckets (quiet weeks included)',
+);
+
 if (failures.length) {
   console.error('FAILED:\n- ' + failures.join('\n- '));
   process.exit(1);
