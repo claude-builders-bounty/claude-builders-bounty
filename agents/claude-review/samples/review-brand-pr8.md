@@ -6,7 +6,7 @@
 
 ### Summary of Changes
 
-This pull request titled "Add toast notification component" updates 15 file(s) with +255/-1 lines across 1 commit(s). The author describes the change as: Add a vanilla JS toast component page with success, warning, and error variants. Style the component with existing token variables from tokens.css. Add 5s auto-dismiss with fade-out and manual dismiss.
+This pull request titled "Add toast notification component" updates 15 file(s) with +255/-1 lines across 1 commit(s). The author describes the change as: Add a vanilla JS toast component page with success, warning, and error variants. Style the component with existing token variables from tokens.css. Add 5s auto-dismiss with fade-out and manual...
 
 **File type breakdown:**
 - `.html`: 15 file(s) (255+, 1-)
