@@ -11,14 +11,20 @@ const workflow = JSON.parse(
   readFileSync(join(__dirname, '..', 'weekly-dev-summary.json'), 'utf8'),
 );
 
+const loadConfig = workflow.nodes.find((n) => n.name === 'Load Config');
 const buildPrompt = workflow.nodes.find((n) => n.name === 'Build Claude Prompt');
 const code = buildPrompt?.parameters?.jsCode || '';
+const loadCode = loadConfig?.parameters?.jsCode || '';
 
 const failures = [];
 function assert(condition, message) {
   if (!condition) failures.push(message);
 }
 
+assert(
+  loadCode.includes('weekStart.toISOString()') && loadCode.includes('weekEnd: now.toISOString()'),
+  'Load Config emits ISO8601 week boundaries for GitHub since filters',
+);
 assert(
   buildPrompt?.parameters?.mode === 'runOnceForAllItems',
   'Build Claude Prompt runs once after merge (avoids duplicate Claude calls)',

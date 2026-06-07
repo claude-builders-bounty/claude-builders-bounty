@@ -70,6 +70,33 @@ assert(
   'GitHub fetch nodes parse JSON responses',
 );
 
+const loadConfig = workflow.nodes.find((n) => n.name === 'Load Config');
+assert(loadConfig?.parameters?.jsCode?.includes('weekStart.toISOString()'), 'Load Config emits ISO8601 weekStart');
+assert(loadConfig?.parameters?.jsCode?.includes('weekEnd: now.toISOString()'), 'Load Config emits ISO8601 weekEnd');
+
+const commitsFetch = workflow.nodes.find((n) => n.name === 'Fetch Commits');
+const issuesFetch = workflow.nodes.find((n) => n.name === 'Fetch Closed Issues');
+const prsFetch = workflow.nodes.find((n) => n.name === 'Fetch Merged PRs');
+const sinceFromConfig = "$('Load Config').first().json.weekStart";
+assert(
+  commitsFetch?.parameters?.queryParameters?.parameters?.some(
+    (p) => p.name === 'since' && p.value?.includes(sinceFromConfig),
+  ),
+  'Fetch Commits filters by Load Config weekStart',
+);
+assert(
+  issuesFetch?.parameters?.queryParameters?.parameters?.some(
+    (p) => p.name === 'since' && p.value?.includes(sinceFromConfig),
+  ),
+  'Fetch Closed Issues filters by Load Config weekStart',
+);
+assert(
+  prsFetch?.parameters?.queryParameters?.parameters?.some(
+    (p) => p.name === 'q' && p.value?.includes('weekStart.slice(0, 10)'),
+  ),
+  'Fetch Merged PRs search query uses Load Config weekStart date',
+);
+
 const mergeNode = workflow.nodes.find((n) => n.name === 'Merge GitHub Results');
 assert(mergeNode?.parameters?.mode === 'append', 'Merge GitHub Results uses append mode (sync barrier for parallel fetches)');
 
