@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# claude-review — Claude-powered PR review agent
+# Usage: ./claude-review <PR_URL> [--output md|json]
+
+set -euo pipefail
+
+PR_URL="${1:-}"
+OUTPUT_FORMAT="${2:-md}"
+
+if [ -z "$PR_URL" ]; then
+  echo "Usage: $0 <PR_URL> [--output md|json]"
+  echo "Example: $0 https://github.com/owner/repo/pull/123"
+  exit 1
+fi
+
+# Parse owner/repo/number from URL
+OWNER=$(echo "$PR_URL" | sed -n 's|https://github.com/\([^/]*\)/\([^/]*\)/pull/\([0-9]*\).*|\1|p')
+REPO=$(echo "$PR_URL" | sed -n 's|https://github.com/\([^/]*\)/\([^/]*\)/pull/\([0-9]*\).*|\2|p')
+PR_NUM=$(echo "$PR_URL" | sed -n 's|https://github.com/\([^/]*\)/\([^/]*\)/pull/\([0-9]*\).*|\3|p')
+
+if [ -z "$OWNER" ] || [ -z "$REPO" ] || [ -z "$PR_NUM" ]; then
+  echo "Error: Could not parse PR URL. Expected format: https://github.com/owner/repo/pull/123"
+  exit 1
+fi
+
+# Check for required tokens
+if [ -z "${GITHUB_TOKEN:-}" ]; then
+  echo "Error: GITHUB_TOKEN environment variable not set"
+  exit 1
+fi
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+  echo "Error: ANTHROPIC_API_KEY environment variable not set"
+  exit 1
+fi
+
+echo "🔍 Reviewing PR #$PR_NUM ($OWNER/$REPO)..."
+
+# Fetch PR details
+PR_DATA=$(curl -sf -H "Authorization: Bearer *** -H "Accept: application/vnd.github.v3+json" \
+  "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR_NUM")
+
+PR_TITLE=$(echo "$PR_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('title',''))")
+PR_BODY=$(echo "$PR_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('body','') or '')")
+PR_AUTHOR=$(echo "$PR_DATA" | python3 -c "import json,sys; print(json.load(sys.stdin).get('user',{}).get('login',''))")
+
+# Fetch PR diff
+PR_DIFF=$(curl -sfL -H "Authorization: Bearer *** -H "Accept: application/vnd.github.v3.diff" \
+  "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR_NUM")
+
+# Fetch changed files
+PR_FILES=$(curl -sf -H "Authorization: Bearer *** -H "Accept: application/vnd.github.v3+json" \
+  "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR_NUM/files" | \
+  python3 -c "import json,sys; files=json.load(sys.stdin); print('\n'.join([f['filename'] for f in files]))" 2>/dev/null || echo "N/A")
+
+echo "📝 PR: $PR_TITLE by @$PR_AUTHOR"
+echo "📄 Files changed: $(echo "$PR_FILES" | wc -l)"
+echo ""
+
+# Build Claude prompt
+CLAUDE_PROMPT=$(cat << PROMPT
+You are a senior code reviewer. Review the following pull request and provide structured feedback.
+
+## PR Information
+- Title: $PR_TITLE
+- Author: @$PR_AUTHOR
+- Description: ${PR_BODY:-No description provided}
+
+## Files Changed
+$PR_FILES
+
+## Diff
+\`\`\`diff
+$PR_DIFF
+\`\`\`
+
+## Review Requirements
+Provide your review in the following format:
+
+## Summary
+(1-2 sentence overview of the PR)
+
+## Risks
+- List any security, performance, or correctness risks
+- Rate each: 🟢 Low / 🟡 Medium / 🔴 High
+
+## Suggestions
+- Specific improvement recommendations with code examples where applicable
+
+## Test Coverage
+- Are there tests? What's tested? What's missing?
+
+## Verdict
+🟢 **Approve** | 🟡 **Changes Requested** | 🔴 **Blocked**
+PROMPT
+)
+
+echo "🤖 Sending to Claude for review..."
+echo ""
+
+CLAUDE_RESPONSE=$(curl -sf -X POST "https://api.anthropic.com/v1/messages" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -d "$(python3 -c "
+import json
+prompt = '''$CLAUDE_PROMPT'''
+data = {
+    'model': 'claude-sonnet-4-20250514',
+    'max_tokens': 4096,
+    'messages': [{'role': 'user', 'content': prompt}]
+}
+print(json.dumps(data))
+")" 2>/dev/null)
+
+REVIEW_TEXT=$(echo "$CLAUDE_RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('content',[{}])[0].get('text','Review failed'))" 2>/dev/null || echo "Error: Claude API call failed")
+
+if [ "$OUTPUT_FORMAT" = "json" ]; then
+  python3 -c "
+import json
+review = json.dumps({
+  'pr': $PR_NUM,
+  'repo': '$OWNER/$REPO',
+  'title': '$PR_TITLE',
+  'author': '$PR_AUTHOR',
+  'review': '''$REVIEW_TEXT'''
+}, indent=2)
+print(review)
+"
+else
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  CLAUDE CODE REVIEW — PR #$PR_NUM"
+  echo "  $OWNER/$REPO"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo "$REVIEW_TEXT"
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+fi
