@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-const text = readFileSync(new URL("./CLAUDE.md", import.meta.url), "utf8");
+const claudePath = process.argv[2]
+  ? resolve(process.argv[2])
+  : new URL("./CLAUDE.md", import.meta.url);
+
+const text = readFileSync(claudePath, "utf8");
 
 const requiredSections = [
   "## Stack & Versions",

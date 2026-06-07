@@ -20,7 +20,7 @@ npx --yes create-next-app@15 "$WORKDIR/app" \
 
 cp "$ROOT/CLAUDE.md" "$WORKDIR/app/CLAUDE.md"
 
-node "$ROOT/validate-template.mjs"
+node "$ROOT/validate-template.mjs" "$WORKDIR/app/CLAUDE.md"
 
 test -f "$WORKDIR/app/CLAUDE.md"
 test -d "$WORKDIR/app/src/app"
