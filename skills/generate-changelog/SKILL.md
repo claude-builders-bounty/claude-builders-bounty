@@ -40,5 +40,5 @@ bash skills/generate-changelog/changelog.sh
 | `feat:`, `add:`, `implement:`, `create:` | Added |
 | `fix:`, `bug:`, `hotfix:`, `patch:`, `resolve:` | Fixed |
 | `update:`, `change:`, `refactor:`, `migrate:`, `perf:` | Changed |
-| `remove:`, `delete:`, `deprecat:` | Removed |
+| `remove:`, `delete:`, `deprecate:` | Removed |
 | `feat!:`, `fix!:` (breaking suffix) | Breaking + primary section |

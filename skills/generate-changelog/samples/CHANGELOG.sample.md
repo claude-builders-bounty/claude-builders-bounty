@@ -19,6 +19,7 @@
 
 ### Changed
 
+- refresh CHANGELOG sample with latest fix commit (37702a9)
 - sync PROOF.md with 24 tests and root changelog.sh (d015773)
 - add PROOF.md and CI guard for changelog bounty (56102e5)
 - document --version flag in generate-changelog SKILL.md (a115b01)
