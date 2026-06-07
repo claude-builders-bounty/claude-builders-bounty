@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Bounty Implementations
+
+- [`claude-review-agent`](./claude-review-agent) - CLI agent for issue #4 that reviews a GitHub PR URL and prints a structured Markdown comment.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
