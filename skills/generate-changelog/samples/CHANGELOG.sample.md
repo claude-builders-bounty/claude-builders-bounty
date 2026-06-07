@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- strip colon after conventional commit prefix in changelog bullets (9f749e0)
 - strip docs/chore/ci prefixes in changelog bullets (fef62ca)
 - improve commit prefix parsing and upstream CI visibility (1aa639a)
 
