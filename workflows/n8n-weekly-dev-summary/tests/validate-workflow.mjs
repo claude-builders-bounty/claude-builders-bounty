@@ -102,6 +102,10 @@ assert(mergeNode?.parameters?.mode === 'append', 'Merge GitHub Results uses appe
 
 const buildPrompt = workflow.nodes.find((n) => n.name === 'Build Claude Prompt');
 assert(buildPrompt?.parameters?.jsCode?.includes('merged_at'), 'filters merged PRs by date');
+assert(
+  buildPrompt?.parameters?.jsCode?.includes('!i.pull_request'),
+  'closed issues filter excludes pull requests (GitHub /issues returns both)',
+);
 assert(buildPrompt?.parameters?.mode === 'runOnceForAllItems', 'Build Claude Prompt runs once after merge');
 assert(buildPrompt?.parameters?.jsCode?.includes('collectRecords'), 'collects all GitHub HTTP items');
 assert(buildPrompt?.parameters?.jsCode?.includes('rows[0].items'), 'unwraps GitHub search API responses');
