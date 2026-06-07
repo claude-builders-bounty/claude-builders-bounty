@@ -189,7 +189,24 @@ bash "$ROOT_CHANGELOG_SH" "$REPO6" --output "$OUT6" >/dev/null
 assert_contains "$OUT6" "### Added" "root wrapper produces Added section"
 assert_contains "$OUT6" "root wrapper" "root wrapper categorizes feat commit"
 
-# Test 8: non-git directory fails
+# Test 8: docs/chore prefixes are stripped from bullet text
+REPO7="${TMP_ROOT}/repo7"
+setup_repo "$REPO7"
+printf 'base\n' >"$REPO7/README"
+git -C "$REPO7" add README
+git -C "$REPO7" commit -qm "Initial commit"
+git -C "$REPO7" tag v1.0.0
+printf 'doc\n' >"$REPO7/doc.txt"
+git -C "$REPO7" add doc.txt
+git -C "$REPO7" commit -qm "docs: update setup guide"
+
+OUT7="${TMP_ROOT}/changelog7.md"
+bash "$CHANGELOG_SH" "$REPO7" --output "$OUT7" >/dev/null
+assert_contains "$OUT7" "### Changed" "docs commit lands in Changed"
+assert_contains "$OUT7" "update setup guide" "docs prefix stripped from bullet"
+assert_not_contains "$OUT7" "docs: update setup guide" "docs prefix not shown in output"
+
+# Test 9: non-git directory fails
 set +e
 bash "$CHANGELOG_SH" "$TMP_ROOT" --output "${TMP_ROOT}/bad.md" >/dev/null 2>&1
 STATUS=$?

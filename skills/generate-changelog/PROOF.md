@@ -14,7 +14,7 @@ Maps each acceptance criterion to the exact command or artifact in this PR.
 ## Commands
 
 ```bash
-# Regression tests (24 cases)
+# Regression tests (27 cases)
 bash skills/generate-changelog/tests/test_changelog.sh
 
 # Generate changelog for current repo (repo-root entrypoint)
@@ -24,4 +24,4 @@ bash changelog.sh
 bash changelog.sh --preview
 ```
 
-Expected test output ends with `Tests: 24 passed, 0 failed`.
+Expected test output ends with `Tests: 27 passed, 0 failed`.
