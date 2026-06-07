@@ -1,0 +1,260 @@
+{
+  "name": "Weekly Dev Summary - Claude + GitHub",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repo }}/commits",
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "n8n-nodes-base.httpQueryAuth"
+      },
+      "id": "github-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repo }}/issues",
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "n8n-nodes-base.httpQueryAuth"
+      },
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repo }}/pulls",
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "n8n-nodes-base.httpQueryAuth"
+      },
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 600]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "jsonOutput": "={{ \n  {\n    \"repo\": $json.repo,\n    \"since\": $json.since,\n    \"until\": $json.until,\n    \"commits\": $items(\"Get Commits\").length,\n    \"issues_closed\": $items(\"Get Closed Issues\").length,\n    \"prs_merged\": $items(\"Get Merged PRs\").length,\n    \"commits_list\": $items(\"Get Commits\").map(item => ({ message: item.json.commit.message.split('\\n')[0], author: item.json.commit.author.name, date: item.json.commit.author.date })),\n    \"issues_list\": $items(\"Get Closed Issues\").map(item => ({ title: item.json.title, number: item.json.number, assignee: item.json.assignee?.login || 'unassigned' })),\n    \"prs_list\": $items(\"Get Merged PRs\").filter(item => item.json.merged_at).map(item => ({ title: item.json.title, number: item.json.number, author: item.json.user?.login || 'unknown' }))\n  }\n}"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a technical writer generating a weekly development summary. Write in {{ $json.language || 'EN' }}."
+            },
+            {
+              "role": "user",
+              "content": "=Generate a weekly narrative summary for the GitHub repo {{ $json.repo }} covering {{ $json.since }} to {{ $json.until }}.\n\n## Stats\n- Commits: {{ $json.commits }}\n- Issues closed: {{ $json.issues_closed }}\n- PRs merged: {{ $json.prs_merged }}\n\n## Recent Commits\n{{ $json.commits_list.slice(0,10).map(c => '- ' + c.message + ' (' + c.author + ')').join('\\n') }}\n\n## Closed Issues\n{{ $json.issues_list.slice(0,10).map(i => '- #' + i.number + ' ' + i.title).join('\\n') }}\n\n## Merged PRs\n{{ $json.prs_list.slice(0,10).map(p => '- #' + p.number + ' ' + p.title + ' by ' + p.author).join('\\n') }}\n\nPlease write:\n1. A one-paragraph executive summary\n2. Key highlights this week\n3. Notable changes or breaking updates\n4. Contributors to thank\n\nKeep it professional, concise, and informative."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 2000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "n8n-nodes-base.httpQueryAuth"
+      },
+      "id": "claude-api",
+      "name": "Claude API - Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "n8n-nodes-base.httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ '📊 Weekly Dev Summary\\n\\nRepo: ' + $json.repo + '\\nPeriod: ' + $json.since + ' to ' + $json.until + '\\n\\n' + $json.summary }}"
+            }
+          ]
+        },
+        "url": "={{ $json.webhook_url }}"
+      },
+      "id": "discord-webhook",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "values": [
+          {
+            "name": "repo",
+            "value": "owner/repo-name"
+          },
+          {
+            "name": "since",
+            "value": "={{ (new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).toISOString() }}"
+          },
+          {
+            "name": "until",
+            "value": "={{ new Date().toISOString() }}"
+          },
+          {
+            "name": "language",
+            "value": "EN"
+          },
+          {
+            "name": "webhook_url",
+            "value": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+          }
+        ]
+      },
+      "id": "config-vars",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [250, 450]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Fri 5pm)": {
+      "main": [
+        [{ "node": "Configuration", "type": "main", "index": 0 }]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [{ "node": "Get Commits", "type": "main", "index": 0 }]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [{ "node": "Get Closed Issues", "type": "main", "index": 0 }]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [{ "node": "Get Merged PRs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [{ "node": "Aggregate Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Closed Issues": {
+      "main": [
+        [{ "node": "Aggregate Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Merged PRs": {
+      "main": [
+        [{ "node": "Aggregate Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [{ "node": "Claude API - Generate Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API - Generate Summary": {
+      "main": [
+        [{ "node": "Send to Discord/Slack", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "active": false,
+  "settings": {},
+  "tags": [],
+  "id": "weekly-dev-summary-auto"
+}
