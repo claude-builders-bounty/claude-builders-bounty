@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""
+pre-tool-use hook — blocks dangerous bash commands for Claude Code.
+
+Blocks: rm -rf, DROP TABLE, git push --force, TRUNCATE, DELETE FROM without WHERE
+Logs all blocked attempts to ~/.claude/hooks/blocked.log
+
+Install: cp this file to ~/.claude/hooks/pre-tool-use && chmod +x
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+HOOK_LOG = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+DANGEROUS_PATTERNS = [
+    (
+        re.compile(r'\brm\s+(-[rRf]+\w*|-\w*[rRf]+)\s+/', re.IGNORECASE),
+        "rm -rf /: Destructive recursive delete. Use `rm` with explicit file paths, never `/`."
+    ),
+    (
+        re.compile(r'\bDROP\s+(TABLE|DATABASE)\b', re.IGNORECASE),
+        "DROP TABLE/DATABASE: Destructive SQL operation. Use a migration tool or archive instead."
+    ),
+    (
+        re.compile(r'\bgit\s+push\s+.*(--force|-f)\b(?!\s*--force-with-lease)', re.IGNORECASE),
+        "git push --force: Destructive. Use `git push --force-with-lease` or create a new branch."
+    ),
+    (
+        re.compile(r'\bTRUNCATE\s+', re.IGNORECASE),
+        "TRUNCATE: Destructive SQL operation. Use DELETE FROM with a WHERE clause instead."
+    ),
+]
+
+
+def has_where_clause(command):
+    """Check if a DELETE FROM statement has a WHERE clause."""
+    cleaned = re.sub(r"'[^']*'", '', command)
+    cleaned = re.sub(r'"[^"]*"', '', cleaned)
+    return bool(re.search(r'\bWHERE\b', cleaned, re.IGNORECASE))
+
+
+def check_delete_from(command):
+    """Special check for DELETE FROM without WHERE clause."""
+    if re.search(r'\bDELETE\s+FROM\b', command, re.IGNORECASE):
+        if not has_where_clause(command):
+            return "DELETE FROM without WHERE: Destructive SQL operation. Add a WHERE clause."
+    return None
+
+
+def log_blocked(command, reason, cwd):
+    """Log a blocked command attempt."""
+    try:
+        os.makedirs(os.path.dirname(HOOK_LOG), exist_ok=True)
+        timestamp = datetime.now().isoformat()
+        with open(HOOK_LOG, 'a', encoding='utf-8') as f:
+            f.write(f"[{timestamp}] project={cwd} | reason={reason} | cmd={command}\n")
+    except Exception:
+        pass
+
+
+def main():
+    try:
+        raw = sys.stdin.read()
+        if not raw.strip():
+            sys.exit(0)
+
+        data = json.loads(raw)
+
+        # Only check Bash tool commands
+        tool_name = data.get("tool_name", "")
+        if tool_name != "Bash":
+            print(json.dumps(data))
+            sys.exit(0)
+
+        # Extract the command
+        args = data.get("args", {})
+        command = ""
+        if isinstance(args, dict):
+            command = args.get("command", "")
+        if not command:
+            print(json.dumps(data))
+            sys.exit(0)
+
+        cwd = os.getcwd()
+
+        # Check DELETE FROM (special case)
+        delete_error = check_delete_from(command)
+        if delete_error:
+            log_blocked(command, delete_error, cwd)
+            result = {
+                "error": delete_error,
+                "systemMessage": (
+                    "⚠️  Command blocked by pre-tool-use hook.\n\n"
+                    f"Reason: {delete_error}\n\n"
+                    f"Blocked command logged to: {HOOK_LOG}"
+                )
+            }
+            print(json.dumps(result))
+            sys.exit(0)
+
+        # Check all other patterns
+        for pattern, error_msg in DANGEROUS_PATTERNS:
+            if pattern.search(command):
+                log_blocked(command, error_msg, cwd)
+                result = {
+                    "error": error_msg,
+                    "systemMessage": (
+                        "⚠️  Command blocked by pre-tool-use hook.\n\n"
+                        f"Reason: {error_msg}\n\n"
+                        f"Blocked command logged to: {HOOK_LOG}"
+                    )
+                }
+                print(json.dumps(result))
+                sys.exit(0)
+
+        # Command is safe — pass through
+        print(json.dumps(data))
+
+    except (json.JSONDecodeError, Exception):
+        pass
+    finally:
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
