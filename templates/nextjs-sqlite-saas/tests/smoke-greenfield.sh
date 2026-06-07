@@ -6,7 +6,7 @@ WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
 echo "Scaffolding Next.js 15 App Router project in $WORKDIR..."
-npx --yes create-next-app@15 "$WORKDIR/app" \
+timeout 180 npx --yes create-next-app@15 "$WORKDIR/app" \
   --typescript \
   --tailwind \
   --eslint \
@@ -24,6 +24,7 @@ node "$ROOT/validate-template.mjs" "$WORKDIR/app/CLAUDE.md"
 
 test -f "$WORKDIR/app/CLAUDE.md"
 test -d "$WORKDIR/app/src/app"
+test -f "$WORKDIR/app/src/app/layout.tsx"
 grep -q "Next.js 15" "$WORKDIR/app/CLAUDE.md"
 grep -q "better-sqlite3" "$WORKDIR/app/CLAUDE.md"
 grep -q "src/app/" "$WORKDIR/app/CLAUDE.md"

@@ -4,7 +4,14 @@ Opinionated [Claude Code](https://docs.anthropic.com/en/docs/claude-code) contex
 
 ## Setup (3 steps)
 
-1. Scaffold a Next.js 15 App Router project with TypeScript, Tailwind, and `src/` directory.
+1. Scaffold a Next.js 15 App Router project:
+
+   ```bash
+   pnpm create next-app@15 my-saas \
+     --typescript --tailwind --eslint --app --src-dir \
+     --import-alias "@/*" --use-pnpm
+   ```
+
 2. Copy `CLAUDE.md` to the project root.
 3. Open the project in Claude Code — it will follow the conventions without clarifying questions for routine tasks.
 

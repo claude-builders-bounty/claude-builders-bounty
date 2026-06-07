@@ -17,6 +17,7 @@ const requiredSections = [
   "## Patterns to Follow",
   "## What We Don't Do (And Why)",
   "## When to Ask Clarifying Questions",
+  "## Environment Variables",
   "## Auth and Authorization",
   "## Route Handlers and APIs",
   "## Testing Rules",
