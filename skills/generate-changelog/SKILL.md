@@ -24,12 +24,13 @@ bash skills/generate-changelog/changelog.sh
 - `--version <name>` — override the release header (e.g. `1.2.0`)
 - `--output <file>` — write to a different file (default: `CHANGELOG.md`)
 - `--preview` — print to stdout without writing a file
+- `--append` — prepend a new release section to an existing `CHANGELOG.md`
 
 ## Behavior
 
 1. Detects the latest git tag (or uses `--since`)
 2. Collects commits after that tag
-3. Categorizes conventional commits into **Added**, **Fixed**, **Changed**, and **Removed**
+3. Categorizes conventional commits into **Breaking**, **Added**, **Fixed**, **Changed**, and **Removed**
 4. Writes a Keep a Changelog-style `CHANGELOG.md`
 
 ## Classification
@@ -40,3 +41,4 @@ bash skills/generate-changelog/changelog.sh
 | `fix:`, `bug:`, `hotfix:`, `patch:`, `resolve:` | Fixed |
 | `update:`, `change:`, `refactor:`, `migrate:`, `perf:` | Changed |
 | `remove:`, `delete:`, `deprecat:` | Removed |
+| `feat!:`, `fix!:` (breaking suffix) | Breaking + primary section |

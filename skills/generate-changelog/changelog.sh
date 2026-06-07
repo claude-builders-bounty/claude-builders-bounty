@@ -7,6 +7,7 @@ OUTPUT_FILE="CHANGELOG.md"
 SINCE_TAG=""
 VERSION_OVERRIDE=""
 PREVIEW=0
+APPEND=0
 
 usage() {
   cat <<'EOF'
@@ -17,6 +18,7 @@ Options:
   --version <name>   Override release version in the header (e.g. 1.2.0)
   --output <file>    Output file (default: CHANGELOG.md)
   --preview          Print changelog to stdout without writing a file
+  --append           Prepend the new release to an existing CHANGELOG.md
   -h, --help         Show this help
 EOF
 }
@@ -37,6 +39,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --preview)
       PREVIEW=1
+      shift
+      ;;
+    --append)
+      APPEND=1
       shift
       ;;
     -h|--help)
@@ -86,16 +92,28 @@ declare -A SECTIONS=(
   [Fixed]=""
   [Changed]=""
   [Removed]=""
+  [Breaking]=""
 )
 
 commit_type() {
   local subject type
   subject="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
-  type="$(printf '%s' "$subject" | sed -E 's/^([a-z]+)(\([^)]*\))?:.*$/\1/')"
+  type="$(printf '%s' "$subject" | sed -E 's/^([a-z]+)(\([^)]*\))?!?:.*$/\1/')"
   if [[ "$type" == "$subject" ]]; then
     type="${subject%% *}"
   fi
   printf '%s' "$type"
+}
+
+is_breaking_change() {
+  local subject="$1"
+  if printf '%s' "$subject" | grep -Eq '^[a-zA-Z]+(\([^)]*\))?!'; then
+    return 0
+  fi
+  if printf '%s' "$subject" | grep -Eq '[Bb][Rr][Ee][Aa][Kk][Ii][Nn][Gg][[:space:]]+[Cc][Hh][Aa][Nn][Gg][Ee]'; then
+    return 0
+  fi
+  return 1
 }
 
 categorize() {
@@ -112,7 +130,7 @@ categorize() {
 clean_subject() {
   local subject="$1"
   printf '%s' "$subject" \
-    | sed -E 's/^(feat|feature|add|implement|create|fix|bugfix|hotfix|patch|resolve|update|change|refactor|migrate|perf|remove|delete|deprecate|docs|chore|ci|test)(\([^)]+\))?:?[[:space:]]*//I' \
+    | sed -E 's/^(feat|feature|add|implement|create|fix|bugfix|hotfix|patch|resolve|update|change|refactor|migrate|perf|remove|delete|deprecate|docs|chore|ci|test)(\([^)]+\))?!?[[:space:]]*//I' \
     | sed 's/[[:space:]]*$//' \
     | sed 's/\.$//'
 }
@@ -131,13 +149,15 @@ while IFS= read -r line; do
   section="$(categorize "$subject")"
   clean="$(clean_subject "$subject")"
   [[ -z "$clean" ]] && clean="$subject"
+  if is_breaking_change "$subject"; then
+    SECTIONS[Breaking]+="- ${clean} (${hash:0:7})"$'\n'
+  fi
   SECTIONS[$section]+="- ${clean} (${hash:0:7})"$'\n'
 done < <("${git_log[@]}" 2>/dev/null; echo)
 
-render_changelog() {
-  printf '# Changelog\n\n'
+render_release() {
   printf '## [%s] - %s\n\n' "$VERSION" "$DATE"
-  for section in Added Fixed Changed Removed; do
+  for section in Breaking Added Fixed Changed Removed; do
     if [[ -n "${SECTIONS[$section]}" ]]; then
       printf '### %s\n\n' "$section"
       printf '%b' "${SECTIONS[$section]}"
@@ -146,10 +166,44 @@ render_changelog() {
   done
 }
 
+render_changelog() {
+  printf '# Changelog\n\n'
+  render_release
+}
+
+write_changelog() {
+  local release_file
+  release_file="$(mktemp)"
+  render_release >"$release_file"
+
+  if [[ "$APPEND" -eq 1 && -f "$OUTPUT_FILE" ]]; then
+    if grep -q '^# Changelog' "$OUTPUT_FILE"; then
+      {
+        printf '# Changelog\n\n'
+        cat "$release_file"
+        awk 'BEGIN {skip=0} /^# Changelog/ {skip=1; next} skip==1 && NF==0 {skip=2; next} skip>=1 {print}' "$OUTPUT_FILE"
+      } >"${OUTPUT_FILE}.tmp"
+      mv "${OUTPUT_FILE}.tmp" "$OUTPUT_FILE"
+    else
+      {
+        printf '# Changelog\n\n'
+        cat "$release_file"
+        cat "$OUTPUT_FILE"
+      } >"${OUTPUT_FILE}.tmp"
+      mv "${OUTPUT_FILE}.tmp" "$OUTPUT_FILE"
+    fi
+    rm -f "$release_file"
+    echo "Appended release to ${OUTPUT_FILE} (${commit_count} commits)"
+  else
+    render_changelog >"$OUTPUT_FILE"
+    rm -f "$release_file"
+    echo "Wrote ${OUTPUT_FILE} (${commit_count} commits)"
+  fi
+}
+
 if [[ "$PREVIEW" -eq 1 ]]; then
   render_changelog
   echo "Previewed ${commit_count} commits (stdout only)" >&2
 else
-  render_changelog >"$OUTPUT_FILE"
-  echo "Wrote ${OUTPUT_FILE} (${commit_count} commits)"
+  write_changelog
 fi

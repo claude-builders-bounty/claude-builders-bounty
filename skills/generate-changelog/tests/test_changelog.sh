@@ -218,5 +218,48 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# Test 10: breaking change commits get a Breaking section
+REPO8="${TMP_ROOT}/repo8"
+setup_repo "$REPO8"
+printf 'base\n' >"$REPO8/README"
+git -C "$REPO8" add README
+git -C "$REPO8" commit -qm "Initial commit"
+git -C "$REPO8" tag v1.0.0
+printf 'feature\n' >"$REPO8/feature.txt"
+git -C "$REPO8" add feature.txt
+git -C "$REPO8" commit -qm "feat!: remove legacy auth API"
+
+OUT8="${TMP_ROOT}/changelog8.md"
+bash "$CHANGELOG_SH" "$REPO8" --output "$OUT8" >/dev/null
+assert_contains "$OUT8" "### Breaking" "breaking section present"
+assert_contains "$OUT8" "remove legacy auth API" "breaking change message cleaned"
+assert_contains "$OUT8" "### Added" "breaking feat still categorized as Added"
+
+# Test 11: --append prepends a release while preserving prior entries
+REPO9="${TMP_ROOT}/repo9"
+setup_repo "$REPO9"
+printf 'base\n' >"$REPO9/README"
+git -C "$REPO9" add README
+git -C "$REPO9" commit -qm "Initial commit"
+git -C "$REPO9" tag v1.0.0
+printf 'feature\n' >"$REPO9/feature.txt"
+git -C "$REPO9" add feature.txt
+git -C "$REPO9" commit -qm "feat: first release"
+
+OUT9="${TMP_ROOT}/changelog9.md"
+bash "$CHANGELOG_SH" "$REPO9" --version 1.1.0 --output "$OUT9" >/dev/null
+git -C "$REPO9" tag v1.1.0
+printf 'fix\n' >"$REPO9/fix.txt"
+git -C "$REPO9" add fix.txt
+git -C "$REPO9" commit -qm "fix: patch bug"
+
+OUT9B="${TMP_ROOT}/changelog9b.md"
+cp "$OUT9" "$OUT9B"
+bash "$CHANGELOG_SH" "$REPO9" --since v1.1.0 --version 1.2.0 --append --output "$OUT9B" >/dev/null
+assert_contains "$OUT9B" "## [1.2.0]" "appended release header"
+assert_contains "$OUT9B" "patch bug" "appended release includes new commit"
+assert_contains "$OUT9B" "## [1.1.0]" "previous release preserved"
+assert_contains "$OUT9B" "first release" "previous release content preserved"
+
 echo "Tests: ${PASS} passed, ${FAIL} failed"
 [[ "$FAIL" -eq 0 ]]
