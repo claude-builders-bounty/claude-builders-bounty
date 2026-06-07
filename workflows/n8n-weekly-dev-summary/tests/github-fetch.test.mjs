@@ -1,14 +1,27 @@
 #!/usr/bin/env node
 /**
  * Integration test: GitHub API fetch logic used by the workflow.
- * Requires GITHUB_TOKEN (optional GITHUB_REPO).
+ * Uses GITHUB_TOKEN, or falls back to `gh auth token` when available.
+ * Optional GITHUB_REPO (default: claude-builders-bounty/claude-builders-bounty).
  */
+import { execSync } from 'node:child_process';
+
 const repo = process.env.GITHUB_REPO || 'claude-builders-bounty/claude-builders-bounty';
-const token = process.env.GITHUB_TOKEN;
+
+function resolveToken() {
+  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
+  try {
+    return execSync('gh auth token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+
+const token = resolveToken();
 const [owner, name] = repo.split('/');
 
 if (!token) {
-  console.error('SKIP: GITHUB_TOKEN not set');
+  console.error('SKIP: GITHUB_TOKEN not set and gh CLI is not authenticated');
   process.exit(0);
 }
 

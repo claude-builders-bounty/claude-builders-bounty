@@ -59,7 +59,7 @@ npm test
 jq empty weekly-dev-summary.json
 ```
 
-Optional live GitHub API check (requires `GITHUB_TOKEN`):
+Optional live GitHub API check (uses `GITHUB_TOKEN` or `gh auth token`):
 
 ```bash
 npm run test:github
