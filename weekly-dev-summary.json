@@ -1,0 +1,218 @@
+{
+  "name": "Weekly Dev Summary (Claude AI)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "cron-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "options": {},
+        "url": "={{ $json.owner }}/{{ $json.repo }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials.githubApi.token }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": 50
+            }
+          ]
+        }
+      },
+      "id": "github-commits",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "options": {},
+        "url": "={{ $json.owner }}/{{ $json.repo }}/pulls?state=closed&sort=updated&direction=desc&per_page=20",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials.githubApi.token }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "github-prs",
+      "name": "GitHub PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "options": {},
+        "url": "={{ $json.owner }}/{{ $json.repo }}/issues?state=closed&sort=updated&direction=desc&per_page=20&labels=bug",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials.githubApi.token }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "github-issues",
+      "name": "GitHub Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();\nconst repos = (items[0].json.repos || 'owner/repo').split(',');\nconst results = [];\nfor (const repo of repos) {\n  const [owner, repoName] = repo.trim().split('/');\n  results.push({\n    owner,\n    repo: repoName,\n    since: weekAgo\n  });\n}\nreturn results;"
+      },
+      "id": "setup-repos",
+      "name": "Setup Repos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.all();\nconst prs = $(\"GitHub PRs\").all();\nconst issues = $(\"GitHub Issues\").all();\n\nconst summary = {\n  repo: commits[0].json.owner + '/' + commits[0].json.repo,\n  week_start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],\n  week_end: new Date().toISOString().split('T')[0],\n  total_commits: commits.length,\n  total_prs_merged: prs.filter(p => p.json.merged_at).length,\n  total_issues_closed: issues.length,\n  authors: [...new Set(commits.map(c => c.json.commit?.author?.name || 'Unknown'))],\n  commit_messages: commits.map(c => `- ${c.json.commit?.message?.split('\\n')[0] || ''}`).join('\\n'),\n  pr_summary: prs.filter(p => p.json.merged_at).map(p => `- #${p.json.number} ${p.json.title}`).join('\\n'),\n  raw_commits: JSON.stringify(commits.map(c => ({\n    message: c.json.commit?.message?.split('\\n')[0],\n    author: c.json.commit?.author?.name,\n    date: c.json.commit?.author?.date,\n    url: c.json.html_url\n  }))),\n  raw_prs: JSON.stringify(prs.filter(p => p.json.merged_at).map(p => ({\n    title: p.json.title,\n    number: p.json.number,\n    url: p.json.html_url,\n    merged: p.json.merged_at\n  })))\n};\nreturn [summary];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "options": {},
+        "url": "https://api.claude.ai/v1/complete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 4096
+            },
+            {
+              "name": "system",
+              "value": "You are a technical lead writing a weekly engineering summary. Be concise, insightful, and actionable."
+            },
+            {
+              "name": "messages",
+              "value": "=[\n  {\n    \"role\": \"user\",\n    \"content\": `Create a weekly development summary for the past week (${$json.week_start} to ${$json.week_end}).\n\nRepository: ${$json.repo}\n\n## Commits (${$json.total_commits})\n${$json.commit_messages}\n\n## Merged PRs (${$json.total_prs_merged})\n${$json.pr_summary}\n\n## Issues Closed (${$json.total_issues_closed})\n\nPlease format as:\n\n# Weekly Dev Summary — ${$json.repo}\n> ${$json.week_start} to ${$json.week_end}\n\n## Highlights\n(2-3 bullet points on key achievements)\n\n## Commits\nAuthor breakdown and notable changes\n\n## Pull Requests\nMerged PRs with descriptions\n\n## Issues & Bug Fixes\nClosed issues summary\n\n## Action Items\nSuggested focus for next week`\n    }\n  ]\n"
+            }
+          ]
+        }
+      },
+      "id": "claude-summarize",
+      "name": "Claude Summarize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response.content?.[0]?.text || response.completion || JSON.stringify(response);\nreturn [{ summary: content, generated_at: new Date().toISOString() }];"
+      },
+      "id": "extract-summary",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "subject": "=Weekly Dev Summary — {{ $json.repo }} ({{ $json.week_start }})",
+        "htmlBody": "={{ $json.summary.replace(/\\n/g, '<br>') }}",
+        "options": {}
+      },
+      "id": "email-output",
+      "name": "Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Setup Repos", "type": "main", "index": 0 }]]
+    },
+    "Setup Repos": {
+      "main": [[{ "node": "GitHub Commits", "type": "main", "index": 0 }]]
+    },
+    "GitHub Commits": {
+      "main": [[{ "node": "Aggregate Data", "type": "main", "index": 0 }]]
+    },
+    "GitHub PRs": {
+      "main": [[{ "node": "Aggregate Data", "type": "main", "index": 0 }]]
+    },
+    "GitHub Issues": {
+      "main": [[{ "node": "Aggregate Data", "type": "main", "index": 0 }]]
+    },
+    "Aggregate Data": {
+      "main": [[{ "node": "Claude Summarize", "type": "main", "index": 0 }]]
+    },
+    "Claude Summarize": {
+      "main": [[{ "node": "Extract Summary", "type": "main", "index": 0 }]]
+    },
+    "Extract Summary": {
+      "main": [[{ "node": "Email Report", "type": "main", "index": 0 }]]
+    }
+  }
+}
