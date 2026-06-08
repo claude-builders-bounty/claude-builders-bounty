@@ -20,8 +20,16 @@ Maps each acceptance criterion to the exact command or artifact in this PR.
 bash skills/generate-changelog/tests/test_changelog.sh
 
 # Verify PR sample matches current repo history (ignores release date line)
-bash changelog.sh --preview 2>/dev/null | grep -v '^## \[.*\] - ' \
-  | diff -u <(grep -v '^## \[.*\] - ' skills/generate-changelog/samples/CHANGELOG.sample.md) -
+preview="$(mktemp)"
+bash changelog.sh --preview 2>/dev/null >"$preview"
+grep -v '^## \[.*\] - ' "$preview" >"${preview}.body"
+if git diff-tree --no-commit-id --name-only -r HEAD \
+  | grep -q '^skills/generate-changelog/samples/CHANGELOG\.sample\.md$'; then
+  head_hash="$(git rev-parse --short HEAD)"
+  grep -v "(${head_hash})" "${preview}.body" >"${preview}.trim"
+  mv "${preview}.trim" "${preview}.body"
+fi
+diff -u <(grep -v '^## \[.*\] - ' skills/generate-changelog/samples/CHANGELOG.sample.md) "${preview}.body"
 
 # Generate changelog for current repo (repo-root entrypoint)
 bash changelog.sh
