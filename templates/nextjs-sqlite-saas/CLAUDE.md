@@ -71,6 +71,7 @@ pnpm db:seed              # seed dev data (blocked in production)
 │   │   ├── auth.ts               # session read/write helpers
 │   │   ├── env.ts                # Zod-validated env vars
 │   │   └── utils.ts              # pure helpers (cn, formatCurrency)
+│   ├── middleware.ts             # auth redirect for (app)/ routes only
 │   ├── server/
 │   │   ├── actions/              # 'use server' mutations
 │   │   └── jobs/                 # cron / background tasks (idempotent)
