@@ -16,7 +16,10 @@ Maps each acceptance criterion to the exact command or artifact in this PR.
 ## Commands
 
 ```bash
-# Regression tests (44 cases)
+# Full CI validation (44 regression cases + 8 peer-review acceptance cases)
+bash skills/generate-changelog/tests/run-ci-checks.sh
+
+# Regression tests only (44 cases)
 bash skills/generate-changelog/tests/test_changelog.sh
 
 # Verify PR sample matches repo history through the last sample refresh commit
@@ -43,4 +46,4 @@ bash changelog.sh --preview
 bash changelog.sh --since v1.0.0 --version 1.1.0 --append
 ```
 
-Expected test output ends with `Tests: 44 passed, 0 failed`.
+Expected CI output ends with `Tests: 44 passed, 0 failed`, `OK: peer review acceptance tests passed`, and `OK: all CI validation checks passed`.

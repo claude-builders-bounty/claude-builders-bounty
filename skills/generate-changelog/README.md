@@ -19,5 +19,5 @@ Copy this folder to `.claude/skills/generate-changelog/` to enable the `/generat
 ## Tests
 
 ```bash
-bash skills/generate-changelog/tests/test_changelog.sh
+bash skills/generate-changelog/tests/run-ci-checks.sh
 ```
