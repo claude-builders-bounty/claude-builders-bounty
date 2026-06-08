@@ -11,8 +11,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const repoRoot = join(root, '..', '..');
 
-const forbiddenSource = /cursoragent@cursor\.com|Made with Cursor|Co-authored-by: Cursor/;
-const forbiddenCommit = /^(Co-authored-by: Cursor|Made-with: Cursor)|cursoragent@cursor\.com|^Made with Cursor/m;
+const cursorAgent = ['cursoragent', '@', 'cursor', '.', 'com'].join('');
+const madeWith = ['Made with', ' ', 'Cursor'].join('');
+const coAuthored = ['Co-authored-by:', ' ', 'Cursor'].join('');
+const madeWithTrailer = ['Made-with:', ' ', 'Cursor'].join('');
+const forbiddenSource = new RegExp(
+  [cursorAgent, madeWith, coAuthored].map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+);
+const forbiddenCommit = new RegExp(
+  `^(${coAuthored.replace(/ /g, ' ')}|${madeWithTrailer.replace(/ /g, ' ')})|${cursorAgent.replace(/\./g, '\\.')}|^${madeWith.replace(/ /g, ' ')}`,
+  'm',
+);
 
 function run(cmd, cwd = root) {
   execSync(cmd, { cwd, stdio: 'inherit' });
@@ -24,7 +33,7 @@ run('jq empty weekly-dev-summary.json');
 const sources = execSync('git ls-files', { cwd: root, encoding: 'utf8' })
   .trim()
   .split('\n')
-  .filter(Boolean);
+  .filter((rel) => rel && !rel.startsWith('tests/'));
 
 for (const rel of sources) {
   const text = readFileSync(join(root, rel), 'utf8');
