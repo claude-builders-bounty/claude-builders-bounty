@@ -37,7 +37,10 @@ if grep -rE 'cursoragent@cursor\.com|Made with Cursor|Co-authored-by: Cursor' \
   exit 1
 fi
 
-if git log -1 --format='%B' | grep -qE '^Co-authored-by: Cursor <cursoragent@cursor\.com>$|^Made with Cursor$'; then
+git fetch --depth=100 https://github.com/claude-builders-bounty/claude-builders-bounty.git \
+  main:refs/remotes/upstream/main 2>/dev/null || true
+
+if git log -1 --format='%B' | grep -qE 'cursoragent@cursor\.com|Made with Cursor|Co-authored-by: Cursor'; then
   echo 'Forbidden agent attribution trailer found in HEAD commit message'
   exit 1
 fi

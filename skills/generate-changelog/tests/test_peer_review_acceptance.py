@@ -136,6 +136,33 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             text = output.read_text(encoding="utf-8")
             self.assertIn("wrapper check", text)
 
+    def test_repo_root_preview_prints_changelog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            (repo / "README").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "README"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "Initial commit"], cwd=repo, check=True)
+            subprocess.run(["git", "tag", "v1.0.0"], cwd=repo, check=True)
+            (repo / "fix.txt").write_text("fix\n", encoding="utf-8")
+            subprocess.run(["git", "add", "fix.txt"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "fix: preview check"], cwd=repo, check=True)
+
+            result = subprocess.run(
+                ["bash", str(REPO_ROOT / "changelog.sh"), str(repo), "--preview"],
+                cwd=REPO_ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("# Changelog", result.stdout)
+            self.assertIn("### Fixed", result.stdout)
+            self.assertIn("preview check", result.stdout)
+            self.assertNotIn("Initial commit", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

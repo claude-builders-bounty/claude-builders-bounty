@@ -46,4 +46,4 @@ bash changelog.sh --preview
 bash changelog.sh --since v1.0.0 --version 1.1.0 --append
 ```
 
-Expected CI output ends with `Tests: 44 passed, 0 failed`, `OK: peer review acceptance tests passed`, and `OK: all CI validation checks passed`.
+Expected CI output ends with `Tests: 44 passed, 0 failed`, `Ran 9 tests — OK`, `OK: peer review acceptance tests passed`, and `OK: all CI validation checks passed`.
