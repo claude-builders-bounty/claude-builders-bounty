@@ -207,6 +207,16 @@ class CheckCommandTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.hook.check_command(command))
 
+    def test_allows_hyphenated_truncate_script_names(self):
+        allowed = (
+            "npm run truncate-logs",
+            "./truncate-logs --dry-run",
+            "pnpm exec truncate-old-sessions",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
+
     def test_allows_delete_from_in_quoted_echo(self):
         self.assertIsNone(
             self.hook.check_command("echo \"DELETE FROM users WHERE id = 1\"")

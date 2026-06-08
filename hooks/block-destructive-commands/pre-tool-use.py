@@ -25,9 +25,10 @@ BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"\bgit\b.*?\bpush\b.*?\s-f\b", re.IGNORECASE),
         "Git force push (git push -f)",
     ),
-    (re.compile(r"\btruncate\b", re.IGNORECASE), "SQL TRUNCATE"),
 ]
 
+# SQL TRUNCATE — exclude hyphen/underscore command names (e.g. npm run truncate-logs).
+TRUNCATE_SQL = re.compile(r"\btruncate\b(?![-/_\w])", re.IGNORECASE)
 # Unix truncate(1) uses flag options; avoid blocking file truncation utilities.
 TRUNCATE_UTIL = re.compile(r"\btruncate\s+(?:-[a-zA-Z]|--)", re.IGNORECASE)
 
@@ -112,11 +113,11 @@ def check_segment(segment: str) -> str | None:
         return "Recursive force delete (rm -rf)"
 
     for pattern, reason in BLOCKED_PATTERNS:
-        if reason == "SQL TRUNCATE":
-            if pattern.search(segment) and not TRUNCATE_UTIL.search(segment):
-                return reason
-        elif pattern.search(segment):
+        if pattern.search(segment):
             return reason
+
+    if TRUNCATE_SQL.search(segment) and not TRUNCATE_UTIL.search(segment):
+        return "SQL TRUNCATE"
 
     if GIT_RESET_HARD.search(segment):
         return "Git hard reset (git reset --hard)"
