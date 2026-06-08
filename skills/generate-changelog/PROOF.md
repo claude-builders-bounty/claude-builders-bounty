@@ -19,15 +19,17 @@ Maps each acceptance criterion to the exact command or artifact in this PR.
 # Regression tests (44 cases)
 bash skills/generate-changelog/tests/test_changelog.sh
 
-# Verify PR sample matches current repo history (ignores release date line)
+# Verify PR sample matches repo history through the last sample refresh commit
 preview="$(mktemp)"
 bash changelog.sh --preview 2>/dev/null >"$preview"
 grep -v '^## \[.*\] - ' "$preview" >"${preview}.body"
-if git diff-tree --no-commit-id --name-only -r HEAD \
-  | grep -q '^skills/generate-changelog/samples/CHANGELOG\.sample\.md$'; then
-  head_hash="$(git rev-parse --short HEAD)"
-  grep -v "(${head_hash})" "${preview}.body" >"${preview}.trim"
-  mv "${preview}.trim" "${preview}.body"
+last_sample_commit="$(git log -1 --format=%H -- skills/generate-changelog/samples/CHANGELOG.sample.md || true)"
+if [[ -n "$last_sample_commit" ]]; then
+  while IFS= read -r hash; do
+    short_hash="$(git rev-parse --short "$hash")"
+    grep -v "(${short_hash})" "${preview}.body" >"${preview}.trim"
+    mv "${preview}.trim" "${preview}.body"
+  done < <(git rev-list "${last_sample_commit}^..HEAD")
 fi
 diff -u <(grep -v '^## \[.*\] - ' skills/generate-changelog/samples/CHANGELOG.sample.md) "${preview}.body"
 
