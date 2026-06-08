@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 """Peer-review acceptance cases for bounty #3 destructive-command hook."""
 
+from __future__ import annotations
+
 import importlib.util
+import json
+import os
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-HOOK_PATH = Path(__file__).resolve().parents[1] / "pre-tool-use.py"
+HOOK_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
+HOOK_PATH = HOOK_DIR / "pre-tool-use.py"
 
 
 def load_hook_module():
@@ -17,7 +26,7 @@ def load_hook_module():
 
 
 class PeerReviewAcceptanceTests(unittest.TestCase):
-    """16 manual peer-review cases — bounty patterns block, safe variants allow."""
+    """Maps bounty #3 acceptance criteria to repo artifacts and CLI behavior."""
 
     @classmethod
     def setUpClass(cls):
@@ -58,6 +67,128 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
                     self.hook.check_command(command),
                     f"expected allow: {command!r}",
                 )
+
+    def test_hook_script_uses_official_schema(self):
+        self.assertTrue(HOOK_PATH.is_file())
+        text = HOOK_PATH.read_text(encoding="utf-8")
+        self.assertIn("PreToolUse", text)
+        self.assertIn("hookSpecificOutput", text)
+        self.assertIn("permissionDecision", text)
+        self.assertIn("blocked.log", text)
+
+    def test_install_script_supports_two_command_setup(self):
+        install = HOOK_DIR / "install.sh"
+        self.assertTrue(install.is_file())
+        text = install.read_text(encoding="utf-8")
+        self.assertIn("PreToolUse", text)
+        self.assertIn("settings.json", text)
+        self.assertIn("--uninstall", text)
+
+    def test_readme_documents_install_and_blocked_log(self):
+        readme = (HOOK_DIR / "README.md").read_text(encoding="utf-8")
+        self.assertIn("git clone", readme)
+        self.assertIn("install.sh", readme)
+        self.assertIn("blocked.log", readme)
+        self.assertIn("hookSpecificOutput", readme)
+
+    def test_settings_json_registers_bash_pretooluse_hook(self):
+        settings = json.loads((HOOK_DIR / "settings.json").read_text(encoding="utf-8"))
+        pre_tool_use = settings["hooks"]["PreToolUse"]
+        bash_hooks = [item for item in pre_tool_use if item.get("matcher") == "Bash"]
+        self.assertTrue(bash_hooks)
+        commands = [
+            hook.get("command", "")
+            for item in bash_hooks
+            for hook in item.get("hooks", [])
+        ]
+        self.assertTrue(any("pre-tool-use.py" in command for command in commands))
+
+    def test_ci_workflow_runs_unified_validation(self):
+        workflow = REPO_ROOT / ".github/workflows/test-block-destructive-commands.yml"
+        self.assertTrue(workflow.is_file())
+        text = workflow.read_text(encoding="utf-8")
+        self.assertIn("run-ci-checks.sh", text)
+        self.assertIn("hooks/block-destructive-commands", text)
+
+    def test_makefile_exposes_test_and_ci_validate(self):
+        makefile = (HOOK_DIR / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("test:", makefile)
+        self.assertIn("ci-validate:", makefile)
+        self.assertIn("run-ci-checks.sh", makefile)
+
+    def test_run_ci_checks_script_exists_and_is_executable(self):
+        script = HOOK_DIR / "tests/run-ci-checks.sh"
+        self.assertTrue(script.is_file())
+        self.assertTrue(script.stat().st_mode & 0o111)
+
+    def test_run_ci_checks_guards_attribution_and_peer_review(self):
+        script = (HOOK_DIR / "tests/run-ci-checks.sh").read_text(encoding="utf-8")
+        self.assertIn("peer review acceptance tests passed", script)
+        self.assertIn("git log -1 --format='%B'", script)
+        self.assertIn("Ran ${peer_review_tests} tests — OK", script)
+        self.assertIn("Forbidden agent attribution trailer found in HEAD commit message", script)
+
+    def test_bounty_acceptance_suite_exists(self):
+        bounty_test = HOOK_DIR / "tests/test_bounty_acceptance.py"
+        self.assertTrue(bounty_test.is_file())
+        text = bounty_test.read_text(encoding="utf-8")
+        self.assertIn("rm -rf /tmp", text)
+        self.assertIn("git push --force-with-lease", text)
+
+    def test_hook_cli_blocks_destructive_command(self):
+        with tempfile.TemporaryDirectory() as temp_home:
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            result = subprocess.run(
+                [sys.executable, str(HOOK_PATH)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "rm -rf /tmp/build"},
+                        "cwd": "/workspace/demo",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            output = json.loads(result.stdout)
+            hook_output = output["hookSpecificOutput"]
+            self.assertEqual(hook_output["hookEventName"], "PreToolUse")
+            self.assertEqual(hook_output["permissionDecision"], "deny")
+            self.assertIn("rm -rf", hook_output["permissionDecisionReason"])
+
+            log_file = Path(temp_home) / ".claude" / "hooks" / "blocked.log"
+            self.assertTrue(log_file.is_file())
+            self.assertIn("rm -rf /tmp/build", log_file.read_text(encoding="utf-8"))
+            self.assertIn("/workspace/demo", log_file.read_text(encoding="utf-8"))
+
+    def test_hook_cli_allows_safe_command(self):
+        with tempfile.TemporaryDirectory() as temp_home:
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            result = subprocess.run(
+                [sys.executable, str(HOOK_PATH)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "git status"},
+                        "cwd": "/workspace/demo",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout.strip(), "")
+            log_file = Path(temp_home) / ".claude" / "hooks" / "blocked.log"
+            self.assertFalse(log_file.exists())
 
 
 if __name__ == "__main__":

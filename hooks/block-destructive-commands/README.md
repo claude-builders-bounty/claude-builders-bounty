@@ -79,14 +79,18 @@ From this directory:
 ```bash
 make test
 # or: python3 -m unittest discover -s tests -v
-# 73 regression tests (bounty + peer-review acceptance + integration checks)
+# 84 regression tests (bounty + peer-review acceptance + integration checks)
 ```
 
 From the repository root:
 
 ```bash
 make -C hooks/block-destructive-commands test
+bash hooks/block-destructive-commands/tests/run-ci-checks.sh
 ```
+
+The CI runner executes all regression tests, peer-review acceptance checks, and
+attribution guards used by GitHub Actions.
 
 ## License
 
