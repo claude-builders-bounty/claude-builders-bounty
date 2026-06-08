@@ -8,6 +8,30 @@ You're in the right place.
 
 ---
 
+## Destructive Bash Command Hook
+
+This repository includes a Claude Code `pre-tool-use` hook that blocks dangerous Bash commands before they run.
+
+### Install
+
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/block_destructive_bash.py ~/.claude/hooks/block_destructive_bash.py
+```
+
+Add it to your Claude Code hook configuration as a `PreToolUse` hook for Bash.
+
+### What It Blocks
+
+- `rm -rf`
+- `DROP TABLE`
+- `git push --force`
+- `TRUNCATE`
+- `DELETE FROM` without a `WHERE` clause
+
+Every blocked attempt is appended to `~/.claude/hooks/blocked.log` with the timestamp, project path, reason, and attempted command.
+
+---
+
 ## How it works
 
 **To post a bounty**
