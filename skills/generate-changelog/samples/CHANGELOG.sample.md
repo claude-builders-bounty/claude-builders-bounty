@@ -13,6 +13,9 @@
 
 ### Changed
 
+- compare sample against preview since last sample refresh (1e414ec)
+- allow sample refresh commits in preview diff check (4d6a61f)
+- refresh changelog sample after CI guard commit (fba4f0d)
 - guard against stale CHANGELOG sample in PR (e5c8497)
 - refresh sample output and tighten prefix classification tests (3fb01fd)
 - refresh changelog sample with current repo history (3ccd757)
