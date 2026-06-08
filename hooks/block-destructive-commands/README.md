@@ -74,11 +74,18 @@ Example entry:
 
 ## Tests
 
+From this directory:
+
+```bash
+make test
+# or: python3 -m unittest discover -s tests -v
+# 71 regression tests (bounty acceptance + chained-command + integration checks)
+```
+
 From the repository root:
 
 ```bash
-python3 -m unittest discover -s hooks/block-destructive-commands/tests -v
-# 68 regression tests (including per-segment chained-command checks)
+make -C hooks/block-destructive-commands test
 ```
 
 ## License
