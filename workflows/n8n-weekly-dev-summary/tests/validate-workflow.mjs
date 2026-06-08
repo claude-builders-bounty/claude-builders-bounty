@@ -117,6 +117,11 @@ assert(buildPrompt?.parameters?.jsCode?.includes('system:'), 'Claude request inc
 assert(buildPrompt?.parameters?.jsCode?.includes('JSON.stringify(activity'), 'sends structured activity JSON to Claude');
 assert(
   buildPrompt?.parameters?.jsCode?.includes("language === 'FR'"),
+  'Build Claude Prompt switches user instructions for FR language',
+);
+assert(
+  buildPrompt?.parameters?.jsCode?.includes('systemPrompt') &&
+    buildPrompt?.parameters?.jsCode?.includes('résumez l'),
   'Build Claude Prompt switches system instructions for FR language',
 );
 
