@@ -47,3 +47,5 @@ bash changelog.sh --since v1.0.0 --version 1.1.0 --append
 ```
 
 Expected CI output ends with `Tests: 44 passed, 0 failed`, `Ran 9 tests — OK`, `OK: peer review acceptance tests passed`, and `OK: all CI validation checks passed`.
+
+The CI runner also rejects forbidden agent attribution strings in changelog sources and in the HEAD commit message; keep delivery commits free of Cursor co-author trailers.
