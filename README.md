@@ -34,6 +34,20 @@ You're in the right place.
 
 ---
 
+## n8n Weekly Dev Summary Workflow
+
+The `workflows/` directory includes an importable n8n workflow that:
+
+- Runs every Friday at 17:00.
+- Fetches GitHub commits, closed issues, and merged PRs for the previous seven days.
+- Calls Claude with `claude-sonnet-4-20250514`.
+- Posts a narrative summary to Slack via webhook.
+- Uses environment variables for repository, destination, and language configuration.
+
+See `workflows/README.md` for setup.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
