@@ -84,6 +84,11 @@ if (!/Expected behavior:.*Claude Code/i.test(text)) {
   process.exit(1);
 }
 
+if (!/middleware\.ts/.test(text)) {
+  console.error("Missing middleware.ts in folder structure or auth guidance.");
+  process.exit(1);
+}
+
 console.log(
   `Template validation passed with ${opinionatedCount} explicit reasons and ${smokeTestSteps} smoke-test steps.`,
 );
