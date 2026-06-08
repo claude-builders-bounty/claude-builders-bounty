@@ -1,53 +1,57 @@
-# Claude Builders Bounty 🤖
+# claude-review — AI PR Review Agent
 
-> A community bounty board for Claude Code builders.
+A Claude Code sub-agent that analyzes PR diffs and produces structured code reviews.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
 
----
+### Prerequisites
+- Python 3.6+
 
-## How it works
+### Usage
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+Review a PR:
+  python3 claude_review.py --pr https://github.com/owner/repo/pull/123
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Review a local diff:
+  python3 claude_review.py --diff /path/to/changes.diff
 
----
+Save output to file:
+  python3 claude_review.py --pr https://github.com/owner/repo/pull/123 -o review.md
 
-## Active Bounties
+## Output
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### Summary of Changes
+[2-3 sentence summary]
+
+### Identified Risks
+- Risk items...
+
+### Improvement Suggestions
+- Suggestions...
 
 ---
+**Confidence Score:** Medium
 
-## Rules
+## GitHub Action
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Add .github/workflows/pr-review.yml to auto-review PRs:
 
----
+```yaml
+name: AI PR Review
+on: [pull_request_target]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sL https://raw.githubusercontent.com/rock2089/claude-review-agent/main/claude_review.py -o review.py
+          python3 review.py --pr ${{ github.event.pull_request.html_url }}
+```
 
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## Env Variables
+- GITHUB_TOKEN - for GitHub API access
+- ANTHROPIC_API_KEY - optional AI-powered reviews (falls back to diff analysis)
