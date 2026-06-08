@@ -88,6 +88,9 @@ The included workflow uses `pull_request` (not `pull_request_target`) and checks
 
 ```bash
 python3 -m unittest agents/claude-review/tests/test_claude_review.py
+
+# Full CI validation (unit tests + attribution guards)
+bash agents/claude-review/tests/run-ci-checks.sh
 ```
 
 Pull requests that touch this agent also run the same suite via `.github/workflows/test-claude-review.yml`.
