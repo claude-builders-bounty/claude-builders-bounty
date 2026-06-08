@@ -29,7 +29,18 @@ assert(interval?.field === 'weeks' && interval?.triggerAtDay?.includes(5) && int
 
 assert(serialized.includes('/commits') && serialized.includes('/issues') && serialized.includes('search/issues'),
   'fetches commits, closed issues, and merged PRs from GitHub API');
+assert(serialized.includes('api.anthropic.com/v1/messages'), 'calls Claude Messages API');
 assert(serialized.includes('claude-sonnet-4-20250514'), 'uses required Claude model');
+assert(
+  workflow.nodes.some((n) => n.name === 'Claude API' && n.type === 'n8n-nodes-base.httpRequest'),
+  'Claude API node posts to Anthropic',
+);
+
+const loadConfig = workflow.nodes.find((n) => n.name === 'Load Config');
+assert(
+  loadConfig?.parameters?.jsCode?.includes('GitHub-safe characters only'),
+  'Load Config validates GITHUB_REPO format before API calls',
+);
 assert(
   serialized.includes('DISCORD_WEBHOOK_URL') &&
     serialized.includes('SLACK_WEBHOOK_URL') &&
@@ -49,6 +60,30 @@ assert(buildCode.includes("language === 'FR'"), 'FR language branch in prompt bu
 assert(
   buildCode.includes('Rédigez un résumé') && buildCode.includes('résumez l'),
   'FR user and system instructions localized',
+);
+assert(buildCode.includes('!i.pull_request'), 'closed issues filter excludes pull requests');
+assert(buildCode.includes('system:') && buildCode.includes('claudeRequest'), 'Claude request includes system prompt');
+
+const connections = workflow.connections || {};
+function targets(source, index = 0) {
+  return (connections[source]?.main?.[index] || []).map((edge) => edge.node);
+}
+const pipeline = [
+  ['Friday 5pm Weekly Trigger', 'Load Config'],
+  ['Load Config', 'Fetch Commits'],
+  ['Merge GitHub Results', 'Build Claude Prompt'],
+  ['Build Claude Prompt', 'Claude API'],
+  ['Claude API', 'Format Summary'],
+  ['Format Summary', 'Route Delivery'],
+];
+for (const [source, target] of pipeline) {
+  assert(targets(source).includes(target), `${source} connects to ${target}`);
+}
+assert(
+  targets('Route Delivery', 0).includes('Send Discord') &&
+    targets('Route Delivery', 1).includes('Send Slack') &&
+    targets('Route Delivery', 2).includes('Send Email'),
+  'Route Delivery connects to Discord, Slack, and Email nodes',
 );
 
 const setupSteps = [...readme.matchAll(/^### \d+\./gm)];
