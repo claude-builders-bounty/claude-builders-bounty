@@ -1,0 +1,238 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "d1f3d810-7294-4db6-8bdf-839d6088f140",
+      "name": "Weekly Friday Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -980,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "owner",
+              "name": "owner",
+              "type": "string",
+              "value": "={{$env.GITHUB_OWNER || \"owner\"}}"
+            },
+            {
+              "id": "repo",
+              "name": "repo",
+              "type": "string",
+              "value": "={{$env.GITHUB_REPO || \"repo\"}}"
+            },
+            {
+              "id": "language",
+              "name": "language",
+              "type": "string",
+              "value": "={{$env.SUMMARY_LANGUAGE || \"EN\"}}"
+            },
+            {
+              "id": "destinationWebhookUrl",
+              "name": "destinationWebhookUrl",
+              "type": "string",
+              "value": "={{$env.SLACK_WEBHOOK_URL || $env.DISCORD_WEBHOOK_URL || \"\"}}"
+            },
+            {
+              "id": "since",
+              "name": "since",
+              "type": "string",
+              "value": "={{$now.minus({days: 7}).toISO()}}"
+            },
+            {
+              "id": "until",
+              "name": "until",
+              "type": "string",
+              "value": "={{$now.toISO()}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e0fef55c-e115-4c5c-9922-8ce29d6df17a",
+      "name": "Repository Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -740,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const config = $node[\"Repository Config\"].json;\nconst owner = config.owner;\nconst repo = config.repo;\nconst since = config.since;\nconst until = config.until;\nconst headers = {\n  Accept: \"application/vnd.github+json\",\n  \"X-GitHub-Api-Version\": \"2022-11-28\",\n};\nif ($env.GITHUB_TOKEN) {\n  headers.Authorization = `Bearer ${$env.GITHUB_TOKEN}`;\n}\nasync function github(path) {\n  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}${path}`, { headers });\n  if (!response.ok) {\n    throw new Error(`GitHub API ${response.status}: ${await response.text()}`);\n  }\n  return await response.json();\n}\nconst [commits, closedIssuesRaw, closedPrsRaw] = await Promise.all([\n  github(`/commits?since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}&per_page=100`),\n  github(`/issues?state=closed&since=${encodeURIComponent(since)}&per_page=100`),\n  github(`/pulls?state=closed&sort=updated&direction=desc&per_page=100`),\n]);\nconst windowStart = new Date(since);\nconst closedIssues = closedIssuesRaw.filter(issue => !issue.pull_request);\nconst mergedPrs = closedPrsRaw.filter(pr => pr.merged_at && new Date(pr.merged_at) >= windowStart);\nconst activity = {\n  repository: `${owner}/${repo}`,\n  window: { since, until },\n  commits: commits.map(commit => ({\n    sha: commit.sha?.slice(0, 7),\n    message: commit.commit?.message?.split(\"\\n\")[0],\n    author: commit.commit?.author?.name,\n    date: commit.commit?.author?.date,\n    url: commit.html_url\n  })),\n  closedIssues: closedIssues.map(issue => ({\n    number: issue.number,\n    title: issue.title,\n    closedBy: issue.closed_by?.login,\n    closedAt: issue.closed_at,\n    url: issue.html_url\n  })),\n  mergedPrs: mergedPrs.map(pr => ({\n    number: pr.number,\n    title: pr.title,\n    author: pr.user?.login,\n    mergedAt: pr.merged_at,\n    url: pr.html_url\n  }))\n};\nconst languageInstruction = config.language === \"FR\"\n  ? \"Write the summary in French.\"\n  : \"Write the summary in English.\";\nreturn [{\n  json: {\n    activity,\n    claudeRequest: {\n      model: \"claude-sonnet-4-20250514\",\n      max_tokens: 1200,\n      temperature: 0.2,\n      messages: [\n        {\n          role: \"user\",\n          content: `You are generating a weekly narrative development summary for ${activity.repository}. ${languageInstruction}\\n\\nUse this JSON activity data to write:\\n1. A 2-3 sentence executive summary\\n2. Merged PR highlights\\n3. Closed issue highlights\\n4. Commit trends\\n5. Suggested follow-ups for next week\\n\\nKeep it concise and specific.\\n\\nActivity JSON:\\n${JSON.stringify(activity, null, 2)}`\n        }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "ee0f28d4-4ae4-45b7-8091-1e6c3edfd829",
+      "name": "Fetch GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$env.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.claudeRequest}}",
+        "options": {}
+      },
+      "id": "32e1b65c-7f8d-4603-9580-c699263eb367",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const response = $input.first().json;\nconst config = $node[\"Repository Config\"].json;\nconst text = response.content?.map(part => part.text).filter(Boolean).join(\"\\n\\n\") || \"No summary text returned from Claude.\";\nreturn [{\n  json: {\n    summary: text,\n    slackPayload: {\n      text: `Weekly development summary for ${config.owner}/${config.repo}`,\n      blocks: [\n        {\n          type: \"header\",\n          text: { type: \"plain_text\", text: `Weekly summary: ${config.owner}/${config.repo}` }\n        },\n        {\n          type: \"section\",\n          text: { type: \"mrkdwn\", text }\n        }\n      ]\n    }\n  }\n}];"
+      },
+      "id": "21612b34-03d7-4b27-a09c-585565d6c550",
+      "name": "Format Slack Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node[\"Repository Config\"].json.destinationWebhookUrl}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.slackPayload}}",
+        "options": {}
+      },
+      "id": "8890d638-38b8-4dcb-a9ab-49f694594795",
+      "name": "Send Slack Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        380,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Friday Trigger": {
+      "main": [
+        [
+          {
+            "node": "Repository Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repository Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Activity": {
+      "main": [
+        [
+          {
+            "node": "Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Slack Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slack Payload": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "97b9b43a-7b40-4997-a5eb-02f26398edfb",
+  "triggerCount": 1,
+  "tags": [
+    {
+      "name": "github"
+    },
+    {
+      "name": "claude"
+    },
+    {
+      "name": "weekly-summary"
+    }
+  ]
+}
