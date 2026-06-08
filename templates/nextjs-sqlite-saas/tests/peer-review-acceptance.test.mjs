@@ -1,0 +1,111 @@
+#!/usr/bin/env node
+/**
+ * Peer-review acceptance cases for bounty #2 (issue #2).
+ * Codifies manual review checklist so regressions fail CI.
+ */
+import { readFileSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = join(__dirname, "..");
+const repoRoot = join(root, "..", "..");
+
+const claude = readFileSync(join(root, "CLAUDE.md"), "utf8");
+const readme = readFileSync(join(root, "README.md"), "utf8");
+const validator = readFileSync(join(root, "validate-template.mjs"), "utf8");
+const smokeTest = readFileSync(join(__dirname, "smoke-greenfield.sh"), "utf8");
+const runCiChecks = readFileSync(join(__dirname, "run-ci-checks.sh"), "utf8");
+const workflow = readFileSync(
+  join(repoRoot, ".github/workflows/test-nextjs-sqlite-template.yml"),
+  "utf8",
+);
+
+const failures = [];
+function assert(condition, message) {
+  if (!condition) failures.push(message);
+}
+
+// Issue #2 expected sections
+const expectedSections = [
+  "## Stack & Versions",
+  "## Folder Structure",
+  "## SQL & Migration Conventions",
+  "## Component Patterns",
+  "## What We Don't Do (And Why)",
+  "## Dev Commands",
+  "## Naming Conventions",
+  "## Patterns to Follow",
+  "## When to Ask Clarifying Questions",
+];
+for (const section of expectedSections) {
+  assert(claude.includes(section), `CLAUDE.md includes ${section}`);
+}
+
+// Stack coverage for greenfield Next.js + SQLite SaaS
+for (const keyword of [
+  "Next.js 15",
+  "SQLite",
+  "better-sqlite3",
+  "Turso",
+  "pnpm",
+  "Server Actions",
+  "org_id",
+]) {
+  assert(claude.includes(keyword), `CLAUDE.md covers ${keyword}`);
+}
+
+// Opinionated — every rule has a reason
+const antiPatternRows = [...claude.matchAll(/^\| [^|]+ \| [^|]+ \|$/gm)].filter(
+  (match) => !match[0].includes("Don't") && !match[0].includes("---"),
+).length;
+const stackRationaleRows = [...claude.matchAll(/^\| [^|]+ \| [^|]+ \| [^|]+ \|$/gm)].filter(
+  (match) => !match[0].includes("Layer") && !match[0].includes("---"),
+).length;
+const inlineReasons = claude.match(/\bReason:/g)?.length ?? 0;
+const opinionatedCount = antiPatternRows + stackRationaleRows + inlineReasons;
+
+assert(antiPatternRows >= 16, "at least 16 anti-pattern rows with reasons");
+assert(opinionatedCount >= 20, "at least 20 explicit opinionated reasons");
+assert(
+  /Expected behavior:.*Claude Code/i.test(claude),
+  "greenfield expected Claude Code behavior documented",
+);
+
+// Project structure and migration rules
+assert(/src\/db\/migrations/.test(claude), "folder tree documents SQL migrations");
+assert(/Append-only/.test(claude), "migration rules require append-only files");
+assert(/middleware\.ts/.test(claude), "auth guidance references middleware.ts");
+
+// Usable without modification — README setup in three steps
+const setupSteps = [...readme.matchAll(/^## Setup \(3 steps\)/gm)];
+assert(setupSteps.length === 1, "README documents three-step setup");
+const numberedSteps = [...readme.matchAll(/^\d+\.\s/gm)];
+assert(numberedSteps.length >= 3 && numberedSteps.length <= 3, "README setup is exactly three steps");
+
+// Structural validator and greenfield smoke test exist
+assert(statSync(join(root, "validate-template.mjs")).isFile(), "validate-template.mjs present");
+assert(statSync(join(__dirname, "smoke-greenfield.sh")).isFile(), "smoke-greenfield.sh present");
+assert(validator.includes("requiredSections"), "validator enforces required sections");
+assert(smokeTest.includes("create-next-app@15"), "smoke test scaffolds Next.js 15 project");
+assert(smokeTest.includes('cp "$ROOT/CLAUDE.md"'), "smoke test copies CLAUDE.md into scaffold");
+assert(runCiChecks.includes("validate-template.mjs"), "run-ci-checks runs structural validator");
+assert(runCiChecks.includes("smoke-greenfield.sh"), "run-ci-checks runs greenfield smoke test");
+assert(runCiChecks.includes("peer-review-acceptance.test.mjs"), "run-ci-checks runs peer-review acceptance");
+assert(
+  runCiChecks.includes("template_commit_messages="),
+  "attribution guard avoids pipefail SIGPIPE from git log | grep",
+);
+
+// CI workflow runs validation and greenfield smoke test
+assert(workflow.includes("run-ci-checks.sh"), "CI runs unified validation script");
+assert(workflow.includes("pull_request_target"), "CI supports upstream fork PR checks");
+
+if (failures.length) {
+  console.error(`FAILED peer-review acceptance:\n- ${failures.join("\n- ")}`);
+  process.exit(1);
+}
+
+console.log(
+  `OK: all peer-review acceptance checks passed (${failures.length === 0 ? expectedSections.length + 14 : 0} criteria).`,
+);
