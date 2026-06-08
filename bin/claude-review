@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""Fetch a GitHub PR diff and produce a structured Markdown review."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import textwrap
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+
+
+PR_URL_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
+DIFF_FILE_RE = re.compile(r"^\+\+\+ b/(.+)$")
+HUNK_RE = re.compile(r"^@@")
+
+CODE_EXTENSIONS = {
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cs",
+    ".go",
+    ".java",
+    ".js",
+    ".jsx",
+    ".kt",
+    ".mjs",
+    ".php",
+    ".py",
+    ".rb",
+    ".rs",
+    ".sh",
+    ".swift",
+    ".ts",
+    ".tsx",
+}
+TEST_PATH_RE = re.compile(r"(^|/)(test|tests|spec|specs|__tests__)/|[._-](test|spec)\.")
+SECURITY_WORD_RE = re.compile(r"auth|token|secret|password|session|permission|role|payment|billing", re.I)
+
+
+@dataclass(frozen=True)
+class PullRequestRef:
+    owner: str
+    repo: str
+    number: int
+
+
+@dataclass
+class DiffStats:
+    files: list[str]
+    additions: int
+    deletions: int
+    hunks: int
+    code_files_changed: int
+    test_files_changed: int
+    docs_files_changed: int
+    workflow_files_changed: int
+    dependency_files_changed: int
+    migration_files_changed: int
+    security_sensitive_files: int
+
+
+def parse_pr_url(url: str) -> PullRequestRef:
+    match = PR_URL_RE.match(url.strip())
+    if not match:
+        raise ValueError("Expected a GitHub pull request URL like https://github.com/owner/repo/pull/123")
+
+    owner, repo, number = match.groups()
+    return PullRequestRef(owner=owner, repo=repo, number=int(number))
+
+
+def request_text(url: str, *, accept: str, token: str | None = None, method: str = "GET", body: bytes | None = None) -> str:
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-review-agent",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8")
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub request failed with HTTP {error.code}: {detail}") from error
+
+
+def fetch_pr_metadata(ref: PullRequestRef, token: str | None) -> dict:
+    api_url = f"https://api.github.com/repos/{ref.owner}/{ref.repo}/pulls/{ref.number}"
+    return json.loads(request_text(api_url, accept="application/vnd.github+json", token=token))
+
+
+def fetch_pr_diff(ref: PullRequestRef, token: str | None) -> str:
+    api_url = f"https://api.github.com/repos/{ref.owner}/{ref.repo}/pulls/{ref.number}"
+    return request_text(api_url, accept="application/vnd.github.diff", token=token)
+
+
+def post_pr_comment(ref: PullRequestRef, body: str, token: str) -> str:
+    api_url = f"https://api.github.com/repos/{ref.owner}/{ref.repo}/issues/{ref.number}/comments"
+    payload = json.dumps({"body": body}).encode()
+    return request_text(api_url, accept="application/vnd.github+json", token=token, method="POST", body=payload)
+
+
+def is_code_file(path: str) -> bool:
+    return Path(path).suffix.lower() in CODE_EXTENSIONS
+
+
+def analyze_diff(diff: str) -> DiffStats:
+    files: list[str] = []
+    additions = 0
+    deletions = 0
+    hunks = 0
+
+    for line in diff.splitlines():
+        if match := DIFF_FILE_RE.match(line):
+            files.append(match.group(1))
+            continue
+
+        if HUNK_RE.match(line):
+            hunks += 1
+            continue
+
+        if line.startswith("+") and not line.startswith("+++"):
+            additions += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            deletions += 1
+
+    return DiffStats(
+        files=files,
+        additions=additions,
+        deletions=deletions,
+        hunks=hunks,
+        code_files_changed=sum(1 for file in files if is_code_file(file)),
+        test_files_changed=sum(1 for file in files if TEST_PATH_RE.search(file)),
+        docs_files_changed=sum(1 for file in files if Path(file).suffix.lower() in {".md", ".mdx", ".rst", ".txt"}),
+        workflow_files_changed=sum(1 for file in files if file.startswith(".github/workflows/")),
+        dependency_files_changed=sum(1 for file in files if Path(file).name in {"package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "Cargo.toml", "Cargo.lock", "requirements.txt", "pyproject.toml"}),
+        migration_files_changed=sum(1 for file in files if "migration" in file.lower() or "schema.prisma" in file.lower()),
+        security_sensitive_files=sum(1 for file in files if SECURITY_WORD_RE.search(file)),
+    )
+
+
+def summarize_files(files: Iterable[str], limit: int = 5) -> str:
+    all_files = list(files)
+    selected = all_files[:limit]
+    if not selected:
+        return "no files"
+
+    suffix = "" if len(selected) == len(all_files) else ", ..."
+    return ", ".join(f"`{file}`" for file in selected) + suffix
+
+
+def build_risks(stats: DiffStats) -> list[str]:
+    risks: list[str] = []
+
+    if stats.code_files_changed and not stats.test_files_changed:
+        risks.append("Runtime code changed without accompanying test files, so regressions may not be caught automatically.")
+
+    if stats.security_sensitive_files:
+        risks.append("The diff touches security- or account-sensitive paths; verify authorization, token, and permission behavior manually.")
+
+    if stats.dependency_files_changed:
+        risks.append("Dependency or lockfile changes can affect install reproducibility and transitive security posture.")
+
+    if stats.workflow_files_changed:
+        risks.append("CI workflow changes can alter release or validation behavior; check branch and secret exposure rules.")
+
+    if stats.migration_files_changed:
+        risks.append("Schema or migration changes need forward/backward compatibility and rollback consideration.")
+
+    if stats.additions + stats.deletions > 500:
+        risks.append("The diff is large enough that focused manual review is recommended before merge.")
+
+    return risks or ["No major risks identified from the diff alone."]
+
+
+def build_suggestions(stats: DiffStats) -> list[str]:
+    suggestions: list[str] = []
+
+    if stats.code_files_changed and not stats.test_files_changed:
+        suggestions.append("Add or update regression tests for the changed behavior before merging.")
+
+    if stats.workflow_files_changed:
+        suggestions.append("Run the modified workflow in a fork or dry-run path to confirm it cannot expose secrets unexpectedly.")
+
+    if stats.dependency_files_changed:
+        suggestions.append("Include package-manager audit or lockfile validation output in the PR discussion.")
+
+    if stats.docs_files_changed and not stats.code_files_changed:
+        suggestions.append("Confirm the documentation examples match the current CLI/API behavior.")
+
+    if not suggestions:
+        suggestions.append("Include the command output or CI check that validates this PR in the PR thread.")
+
+    return suggestions
+
+
+def confidence(stats: DiffStats) -> tuple[str, str]:
+    total_changes = stats.additions + stats.deletions
+
+    if total_changes == 0:
+        return "Low", "No textual diff was available to inspect."
+
+    if total_changes > 500 or stats.security_sensitive_files > 2:
+        return "Low", "The change surface is broad or security-sensitive."
+
+    if stats.code_files_changed and not stats.test_files_changed:
+        return "Medium", "The diff is understandable, but test coverage is not visible in the PR."
+
+    return "High", "The diff is compact and includes validation or non-runtime-only changes."
+
+
+def render_review(metadata: dict | None, diff: str, pr_url: str | None = None) -> str:
+    stats = analyze_diff(diff)
+    files = stats.files
+    title = metadata.get("title") if metadata else None
+    author = metadata.get("user", {}).get("login") if metadata else None
+    head = metadata.get("head", {}).get("sha", "")[:7] if metadata else ""
+
+    changed_files = summarize_files(files)
+    summary_bits = [
+        f"This PR changes {len(files)} file(s) with {stats.additions} additions and {stats.deletions} deletions.",
+        f"The main touched paths are {changed_files}.",
+    ]
+    if title:
+        summary_bits.insert(0, f"`{title}` by @{author} updates head `{head}`." if author else f"`{title}` updates head `{head}`.")
+
+    risks = build_risks(stats)
+    suggestions = build_suggestions(stats)
+    confidence_label, confidence_reason = confidence(stats)
+
+    metadata_line = f"\n> PR: {pr_url}\n" if pr_url else ""
+
+    return "\n".join([
+        "## PR Review",
+        metadata_line.rstrip(),
+        "",
+        "### Summary",
+        " ".join(summary_bits),
+        "",
+        "### Identified Risks",
+        *[f"- {risk}" for risk in risks],
+        "",
+        "### Improvement Suggestions",
+        *[f"- {suggestion}" for suggestion in suggestions],
+        "",
+        f"### Confidence: {confidence_label}",
+        confidence_reason,
+        "",
+    ]).replace("\n\n\n", "\n\n")
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="claude-review",
+        description="Review a GitHub pull request diff and emit a structured Markdown comment.",
+    )
+    parser.add_argument("--pr", help="GitHub pull request URL, for example https://github.com/owner/repo/pull/123")
+    parser.add_argument("--diff", help="Read a local unified diff instead of fetching one from GitHub")
+    parser.add_argument("--output", help="Write Markdown review to this file")
+    parser.add_argument("--post-comment", action="store_true", help="Post the generated review as a PR conversation comment")
+    parser.add_argument("--token-env", default="GITHUB_TOKEN", help="Environment variable containing a GitHub token")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+
+    if not args.pr and not args.diff:
+        parser.error("provide --pr or --diff")
+
+    token = os.environ.get(args.token_env)
+    metadata = None
+    pr_ref = None
+    pr_url = args.pr
+
+    if args.diff:
+        diff = Path(args.diff).read_text(encoding="utf-8")
+    else:
+        pr_ref = parse_pr_url(args.pr)
+        metadata = fetch_pr_metadata(pr_ref, token)
+        diff = fetch_pr_diff(pr_ref, token)
+
+    review = render_review(metadata, diff, pr_url)
+
+    if args.output:
+        Path(args.output).write_text(review, encoding="utf-8")
+    else:
+        print(review, end="")
+
+    if args.post_comment:
+        if not pr_ref:
+            parser.error("--post-comment requires --pr")
+        if not token:
+            parser.error(f"--post-comment requires ${args.token_env}")
+        post_pr_comment(pr_ref, review, token)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
