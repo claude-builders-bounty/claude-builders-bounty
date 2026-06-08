@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Completed Submissions
+
+- [Changelog Generator Skill](skills/changelog-generator/README.md) — a Claude Code skill for bounty [#1](../../issues/1) that generates a structured `CHANGELOG.md` from git history.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
