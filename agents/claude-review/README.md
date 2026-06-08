@@ -87,9 +87,10 @@ The included workflow uses `pull_request` (not `pull_request_target`) and checks
 ## Tests
 
 ```bash
-python3 -m unittest discover -s agents/claude-review/tests -p 'test_*.py'
+python3 -m unittest agents/claude-review/tests/test_claude_review.py
+python3 -m unittest agents/claude-review/tests/test_peer_review_acceptance.py
 
-# Full CI validation (48 tests + attribution guards)
+# Full CI validation (49 tests + attribution guards)
 bash agents/claude-review/tests/run-ci-checks.sh
 ```
 

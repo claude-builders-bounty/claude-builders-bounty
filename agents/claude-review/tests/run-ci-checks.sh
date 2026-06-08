@@ -6,8 +6,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 cd "$REPO_ROOT"
 
-python3 -m unittest discover -s agents/claude-review/tests -p 'test_*.py' -v
-echo 'OK: all peer-review acceptance checks passed'
+python3 -m unittest agents/claude-review/tests/test_claude_review.py -v
+python3 -m unittest agents/claude-review/tests/test_peer_review_acceptance.py -v
+echo 'OK: peer review acceptance tests passed'
 test -x ./claude-review
 git diff --check
 

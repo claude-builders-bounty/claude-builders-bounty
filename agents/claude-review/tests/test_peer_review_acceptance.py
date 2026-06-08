@@ -45,6 +45,17 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertTrue(cli.is_file())
         self.assertTrue(cli.stat().st_mode & 0o111)
 
+    def test_cli_help_documents_pr_flag(self):
+        result = subprocess.run(
+            [str(REPO_ROOT / "claude-review"), "--help"],
+            capture_output=True,
+            text=True,
+            cwd=REPO_ROOT,
+            check=True,
+        )
+        self.assertIn("--pr", result.stdout)
+        self.assertIn("--post-comment", result.stdout)
+
     def test_github_action_workflow_exists(self):
         workflow = AGENT_DIR / ".github/workflows/claude-review.yml"
         self.assertTrue(workflow.is_file())
