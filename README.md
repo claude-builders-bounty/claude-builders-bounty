@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Completed Submissions
+
+- [Destructive Command Guard](README-destructive-command-guard.md) — a Claude Code `PreToolUse` hook for bounty [#3](../../issues/3). It blocks risky Bash commands before execution, including `rm -rf`, forced git pushes, and destructive SQL statements.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
