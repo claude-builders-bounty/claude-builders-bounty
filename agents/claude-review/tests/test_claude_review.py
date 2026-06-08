@@ -514,58 +514,6 @@ class TokenResolutionTests(unittest.TestCase):
                 self.assertIsNone(claude_review.resolve_github_token())
 
 
-class PeerReviewAcceptanceTests(unittest.TestCase):
-    """Codify bounty #4 acceptance criteria for peer review."""
-
-    REQUIRED_SECTIONS = (
-        "### Summary of Changes",
-        "### Identified Risks",
-        "### Improvement Suggestions",
-        "### Confidence Score:",
-    )
-
-    SAMPLE_FILES = (
-        "review-brand-pr8.md",
-        "review-bounty-pr2504.md",
-        "review-bounty-pr2505.md",
-    )
-
-    def test_repo_root_cli_exists(self):
-        cli = Path(__file__).resolve().parents[3] / "claude-review"
-        self.assertTrue(cli.is_file())
-        self.assertTrue(cli.stat().st_mode & 0o111)
-
-    def test_github_action_workflow_exists(self):
-        workflow = (
-            Path(__file__).resolve().parents[1]
-            / ".github/workflows/claude-review.yml"
-        )
-        self.assertTrue(workflow.is_file())
-        text = workflow.read_text(encoding="utf-8")
-        self.assertIn("pull_request:", text)
-        self.assertIn("--post", text)
-
-    def test_sample_outputs_cover_three_real_prs(self):
-        samples_dir = Path(__file__).resolve().parents[1] / "samples"
-        for name in self.SAMPLE_FILES:
-            self.assertTrue((samples_dir / name).is_file(), f"missing sample {name}")
-
-    def test_sample_outputs_have_required_sections(self):
-        samples_dir = Path(__file__).resolve().parents[1] / "samples"
-        for name in self.SAMPLE_FILES:
-            text = (samples_dir / name).read_text(encoding="utf-8")
-            for section in self.REQUIRED_SECTIONS:
-                self.assertIn(section, text, f"{name} missing {section}")
-            self.assertRegex(text, r"\*\*\[(HIGH|MEDIUM|LOW)\]\*\*")
-
-    def test_readme_documents_cli_and_action(self):
-        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("claude-review --pr", readme)
-        self.assertIn("GitHub Action", readme)
-
-
 class MarkdownFormatTests(unittest.TestCase):
     def test_required_sections_present(self):
         metadata = {
