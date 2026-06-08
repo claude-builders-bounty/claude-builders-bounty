@@ -8,7 +8,12 @@ SKILL_DIR="${REPO_ROOT}/skills/generate-changelog"
 cd "$REPO_ROOT"
 
 bash "${SKILL_DIR}/tests/test_changelog.sh"
+
+peer_review_tests="$(
+  grep -Ec '^[[:space:]]*def test_' "${SKILL_DIR}/tests/test_peer_review_acceptance.py"
+)"
 python3 -m unittest "${SKILL_DIR}/tests/test_peer_review_acceptance.py" -v
+echo "Ran ${peer_review_tests} tests — OK"
 echo 'OK: peer review acceptance tests passed'
 
 preview="$(mktemp)"

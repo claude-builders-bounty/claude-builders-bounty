@@ -33,6 +33,7 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
     def test_skill_definition_enables_generate_changelog_command(self):
         skill_md = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("name: generate-changelog", skill_md)
+        self.assertIn("/generate-changelog", skill_md)
         self.assertIn("bash changelog.sh", skill_md)
 
     def test_repo_root_changelog_sh_exists(self):

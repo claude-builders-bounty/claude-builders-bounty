@@ -16,7 +16,7 @@ Maps each acceptance criterion to the exact command or artifact in this PR.
 ## Commands
 
 ```bash
-# Full CI validation (44 regression cases + 8 peer-review acceptance cases)
+# Full CI validation (44 regression cases + 9 peer-review acceptance cases)
 bash skills/generate-changelog/tests/run-ci-checks.sh
 
 # Regression tests only (44 cases)
