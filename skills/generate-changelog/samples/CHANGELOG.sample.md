@@ -13,6 +13,7 @@
 
 ### Changed
 
+- guard against stale CHANGELOG sample in PR (e5c8497)
 - refresh sample output and tighten prefix classification tests (3fb01fd)
 - refresh changelog sample with current repo history (3ccd757)
 - Initial commit (a80a580)
