@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Completed Submissions
+
+- [n8n Weekly Dev Summary Workflow](workflows/n8n-weekly-dev-summary/README.md) — a workflow for bounty [#5](../../issues/5) that fetches weekly GitHub commits, asks Claude for a digest, and posts it to Slack.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
