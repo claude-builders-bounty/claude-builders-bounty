@@ -71,6 +71,10 @@ assert(
 );
 
 const loadConfig = workflow.nodes.find((n) => n.name === 'Load Config');
+assert(
+  loadConfig?.parameters?.jsCode?.includes('GitHub-safe characters only'),
+  'Load Config validates GITHUB_REPO format (prevents malformed owner/repo injection)',
+);
 assert(loadConfig?.parameters?.jsCode?.includes('weekStart.toISOString()'), 'Load Config emits ISO8601 weekStart');
 assert(loadConfig?.parameters?.jsCode?.includes('weekEnd: now.toISOString()'), 'Load Config emits ISO8601 weekEnd');
 
