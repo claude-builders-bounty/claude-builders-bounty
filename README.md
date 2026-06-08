@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Completed Submissions
+
+- [PR Reviewer Agent](agents/pr-reviewer/README.md) — a CLI reviewer for bounty [#4](../../issues/4). It reads a GitHub PR diff and emits structured Markdown with a summary, risks, testing gaps, and a suggested PR comment.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
