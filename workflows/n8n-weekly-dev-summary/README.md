@@ -56,6 +56,7 @@ Friday 5pm Trigger → Load Config → parallel GitHub fetches (commits, issues,
 
 ```bash
 npm test
+npm run test:ci   # mirrors GitHub Actions validation (attribution + diff --check)
 jq empty weekly-dev-summary.json
 ```
 
