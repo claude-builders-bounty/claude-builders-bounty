@@ -57,12 +57,33 @@ jobs:
       - name: Report commit status for upstream PR
         if: always()
         uses: actions/github-script@v7
+        env:
+          UPSTREAM_STATUS_TOKEN: ${{ secrets.UPSTREAM_STATUS_TOKEN }}
         with:
+          github-token: ${{ secrets.UPSTREAM_STATUS_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
+            const upstream = { owner: 'claude-builders-bounty', repo: 'claude-builders-bounty' };
             const pr = context.payload.pull_request;
-            const sha = pr?.head?.sha || context.sha;
-            const owner = pr?.base?.repo?.owner?.login || context.repo.owner;
-            const repo = pr?.base?.repo?.name || context.repo.repo;
+            let sha = pr?.head?.sha || context.sha;
+            let owner = pr?.base?.repo?.owner?.login || upstream.owner;
+            let repo = pr?.base?.repo?.name || upstream.repo;
+
+            if (!pr && context.eventName === 'push') {
+              const { data: pulls } = await github.rest.pulls.list({
+                owner: upstream.owner,
+                repo: upstream.repo,
+                head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
+                state: 'open',
+                per_page: 1,
+              });
+              const openPr = pulls[0];
+              if (openPr) {
+                sha = openPr.head.sha;
+                owner = openPr.base.repo.owner.login;
+                repo = openPr.base.repo.name;
+              }
+            }
+
             const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             await github.rest.repos.createCommitStatus({
