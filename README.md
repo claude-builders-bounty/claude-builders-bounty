@@ -34,6 +34,19 @@ You're in the right place.
 
 ---
 
+## Submitted Solutions
+
+### Generate a CHANGELOG from git history
+
+1. Open a git repository.
+2. Run `bash scripts/changelog.sh`.
+3. Review the generated `CHANGELOG.md`.
+
+The Claude Code skill is in `skills/generate-changelog/`, and a sample output
+from this repository is available in `examples/sample-changelog.md`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
