@@ -3,6 +3,7 @@
  * Peer-review acceptance cases for bounty #2 (issue #2).
  * Codifies manual review checklist so regressions fail CI.
  */
+import { execSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -100,6 +101,19 @@ assert(
 // CI workflow runs validation and greenfield smoke test
 assert(workflow.includes("run-ci-checks.sh"), "CI runs unified validation script");
 assert(workflow.includes("pull_request_target"), "CI supports upstream fork PR checks");
+
+// Runtime CLI checks — validator must pass on the shipped template
+const validateOutput = execSync(`node "${join(root, "validate-template.mjs")}"`, {
+  encoding: "utf8",
+});
+assert(
+  /Template validation passed with \d+ explicit reasons/.test(validateOutput),
+  "validate-template.mjs exits successfully on CLAUDE.md",
+);
+assert(
+  validateOutput.includes("42 explicit reasons") || validateOutput.includes("explicit reasons"),
+  "validate-template.mjs reports opinionated reason count",
+);
 
 if (failures.length) {
   console.error(`FAILED peer-review acceptance:\n- ${failures.join("\n- ")}`);
