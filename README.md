@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Completed Submissions
+
+- [Next.js + SQLite SaaS CLAUDE.md Template](templates/nextjs-sqlite-saas/README.md) — a project guidance template for bounty [#2](../../issues/2).
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
