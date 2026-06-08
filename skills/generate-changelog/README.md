@@ -10,7 +10,7 @@ Bounty submission for [issue #1](https://github.com/claude-builders-bounty/claud
 2. `bash changelog.sh` (use `--version 1.2.0` to set the release header, or `--preview` to print without writing)
 3. Open the generated `CHANGELOG.md`
 
-Sample output generated from upstream `main`: [`samples/CHANGELOG.sample.md`](samples/CHANGELOG.sample.md).
+Sample output generated from this repository: [`samples/CHANGELOG.sample.md`](samples/CHANGELOG.sample.md).
 
 ## Claude Code
 

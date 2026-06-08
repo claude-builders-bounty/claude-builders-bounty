@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] - 2026-06-07
+## [Unreleased] - 2026-06-08
 
 ### Added
 
@@ -9,5 +9,6 @@
 
 ### Changed
 
+- refresh changelog sample with current repo history (3ccd757)
 - Initial commit (a80a580)
 

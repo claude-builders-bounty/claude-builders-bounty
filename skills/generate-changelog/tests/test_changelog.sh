@@ -262,7 +262,31 @@ assert_contains "$OUT9B" "patch bug" "appended release includes new commit"
 assert_contains "$OUT9B" "## [1.1.0]" "previous release preserved"
 assert_contains "$OUT9B" "first release" "previous release content preserved"
 
-# Test 12: no commits since tag still emits a valid release header
+# Test 12: new/bug/drop prefixes are stripped from bullet text
+REPO11="${TMP_ROOT}/repo11"
+setup_repo "$REPO11"
+printf 'base\n' >"$REPO11/README"
+git -C "$REPO11" add README
+git -C "$REPO11" commit -qm "Initial commit"
+git -C "$REPO11" tag v1.0.0
+printf 'a\n' >"$REPO11/a"
+git -C "$REPO11" add a
+git -C "$REPO11" commit -qm "new: add onboarding flow"
+printf 'b\n' >"$REPO11/b"
+git -C "$REPO11" add b
+git -C "$REPO11" commit -qm "bug: fix login redirect"
+printf 'c\n' >"$REPO11/c"
+git -C "$REPO11" add c
+git -C "$REPO11" commit -qm "drop: remove beta flag"
+
+OUT11="${TMP_ROOT}/changelog11.md"
+bash "$CHANGELOG_SH" "$REPO11" --output "$OUT11" >/dev/null
+assert_contains "$OUT11" "add onboarding flow" "new prefix stripped"
+assert_not_contains "$OUT11" "new: add onboarding flow" "new prefix not shown"
+assert_contains "$OUT11" "fix login redirect" "bug prefix stripped"
+assert_contains "$OUT11" "remove beta flag" "drop prefix stripped"
+
+# Test 13: no commits since tag still emits a valid release header
 REPO10="${TMP_ROOT}/repo10"
 setup_repo "$REPO10"
 printf 'base\n' >"$REPO10/README"

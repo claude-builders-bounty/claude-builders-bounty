@@ -130,7 +130,7 @@ categorize() {
 clean_subject() {
   local subject="$1"
   printf '%s' "$subject" \
-    | sed -E 's/^(feat|feature|add|implement|create|fix|bugfix|hotfix|patch|resolve|update|change|refactor|migrate|perf|remove|delete|deprecate|docs|chore|ci|test)(\([^)]+\))?!?:[[:space:]]*//I' \
+    | sed -E 's/^(feat|feature|add|implement|create|new|fix|bugfix|bug|hotfix|patch|resolve|update|change|refactor|migrate|perf|remove|delete|deprecate|drop|docs|chore|ci|test)(\([^)]+\))?!?:[[:space:]]*//I' \
     | sed 's/[[:space:]]*$//' \
     | sed 's/\.$//'
 }
