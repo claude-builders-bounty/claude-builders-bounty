@@ -54,8 +54,8 @@ const antiPatternRows = [...text.matchAll(/^\| [^|]+ \| [^|]+ \|$/gm)].filter(
   (match) => !match[0].includes("Don't") && !match[0].includes("---"),
 ).length;
 
-if (antiPatternRows < 10) {
-  console.error(`Expected at least 10 anti-pattern rows, found ${antiPatternRows}.`);
+if (antiPatternRows < 16) {
+  console.error(`Expected at least 16 anti-pattern rows, found ${antiPatternRows}.`);
   process.exit(1);
 }
 
