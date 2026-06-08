@@ -1,0 +1,1 @@
+bash changelog.sh --since v1.0.0
