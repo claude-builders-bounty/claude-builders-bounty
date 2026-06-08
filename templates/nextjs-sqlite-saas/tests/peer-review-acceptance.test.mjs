@@ -97,6 +97,10 @@ assert(
   runCiChecks.includes("template_commit_messages="),
   "attribution guard avoids pipefail SIGPIPE from git log | grep",
 );
+assert(
+  runCiChecks.includes("git log -1 --format='%B'"),
+  "attribution guard rejects forbidden trailers in HEAD commit message",
+);
 
 // CI workflow runs validation and greenfield smoke test
 assert(workflow.includes("run-ci-checks.sh"), "CI runs unified validation script");
@@ -115,11 +119,14 @@ assert(
   "validate-template.mjs reports opinionated reason count",
 );
 
+const peerReviewSource = readFileSync(fileURLToPath(import.meta.url), "utf8");
+const peerReviewCaseCount = [...peerReviewSource.matchAll(/^\s*assert\(/gm)].length;
+
 if (failures.length) {
   console.error(`FAILED peer-review acceptance:\n- ${failures.join("\n- ")}`);
   process.exit(1);
 }
 
 console.log(
-  `OK: all peer-review acceptance checks passed (${failures.length === 0 ? expectedSections.length + 14 : 0} criteria).`,
+  `OK: all peer-review acceptance checks passed (${peerReviewCaseCount} criteria).`,
 );
