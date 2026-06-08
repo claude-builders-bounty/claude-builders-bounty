@@ -37,8 +37,8 @@ bash skills/generate-changelog/changelog.sh
 
 | Commit prefix | Section |
 |---------------|---------|
-| `feat:`, `add:`, `implement:`, `create:` | Added |
-| `fix:`, `bug:`, `hotfix:`, `patch:`, `resolve:` | Fixed |
-| `update:`, `change:`, `refactor:`, `migrate:`, `perf:` | Changed |
-| `remove:`, `delete:`, `deprecate:` | Removed |
+| `feat:`, `add:`, `implement:`, `create:`, `new:` | Added |
+| `fix:`, `bug:`, `bugfix:`, `hotfix:`, `patch:`, `resolve:` | Fixed |
+| `update:`, `change:`, `refactor:`, `migrate:`, `perf:`, `docs:`, `chore:`, `ci:`, `test:` | Changed |
+| `remove:`, `delete:`, `deprecate:`, `drop:` | Removed |
 | `feat!:`, `fix!:` (breaking suffix) | Breaking + primary section |

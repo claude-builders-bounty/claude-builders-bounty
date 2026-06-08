@@ -281,6 +281,9 @@ git -C "$REPO11" commit -qm "drop: remove beta flag"
 
 OUT11="${TMP_ROOT}/changelog11.md"
 bash "$CHANGELOG_SH" "$REPO11" --output "$OUT11" >/dev/null
+assert_contains "$OUT11" "### Added" "new commit lands in Added"
+assert_contains "$OUT11" "### Fixed" "bug commit lands in Fixed"
+assert_contains "$OUT11" "### Removed" "drop commit lands in Removed"
 assert_contains "$OUT11" "add onboarding flow" "new prefix stripped"
 assert_not_contains "$OUT11" "new: add onboarding flow" "new prefix not shown"
 assert_contains "$OUT11" "fix login redirect" "bug prefix stripped"
