@@ -78,7 +78,7 @@ From the repository root:
 
 ```bash
 python3 -m unittest discover -s hooks/block-destructive-commands/tests -v
-# 66 regression tests (including per-segment chained-command checks)
+# 68 regression tests (including per-segment chained-command checks)
 ```
 
 ## License

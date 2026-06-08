@@ -14,9 +14,6 @@ LOG_FILE = os.path.join(LOG_DIR, "blocked.log")
 
 BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"rm\s+--recursive\s+--force", re.IGNORECASE), "Recursive force delete (rm --recursive --force)"),
-    (re.compile(r"drop\s+table", re.IGNORECASE), "SQL DROP TABLE"),
-    (re.compile(r"drop\s+database", re.IGNORECASE), "SQL DROP DATABASE"),
-    (re.compile(r"drop\s+schema", re.IGNORECASE), "SQL DROP SCHEMA"),
     (
         re.compile(r"\bgit\b.*?\bpush\b.*?\s--force(?!\-\w)", re.IGNORECASE),
         "Git force push (git push --force)",
@@ -34,7 +31,18 @@ TRUNCATE_UTIL = re.compile(r"\btruncate\s+(?:-[a-zA-Z]|--)", re.IGNORECASE)
 
 DELETE_FROM = re.compile(r"delete\s+from", re.IGNORECASE)
 WHERE_CLAUSE = re.compile(r"\bwhere\b", re.IGNORECASE)
-SHELL_LITERAL = re.compile(r"^\s*(echo|cat|printf|tee)\b", re.IGNORECASE)
+SQL_CLIENT = re.compile(
+    r"\b(?:sqlite3|psql|mysql|mariadb|sqlcmd|mysqladmin)\b",
+    re.IGNORECASE,
+)
+NON_SQL_TOOLS = re.compile(
+    r"^\s*(?:echo|cat|printf|tee|grep|egrep|fgrep|rg|sed|awk|python3?|node|ruby|perl|head|tail|less|more|vim|nvim)\b",
+    re.IGNORECASE,
+)
+SHELL_C = re.compile(
+    r"\b(?:sh|bash|zsh|dash)\s+-c\s+(?:'([^']*)'|\"([^\"]*)\"|(\S+))",
+    re.IGNORECASE,
+)
 GIT_FORCE_REFSPEC = re.compile(
     r"\bgit\b.*?\bpush\b(?:\s+[^\s;|&]+)*\s+\+[^\s;|&]+",
     re.IGNORECASE,
@@ -51,6 +59,9 @@ REMOTE_SHELL = re.compile(
     r"\b(?:curl|wget)\b[^\n;|&]*\|\s*(?:ba)?sh\b",
     re.IGNORECASE,
 )
+DROP_TABLE = re.compile(r"drop\s+table", re.IGNORECASE)
+DROP_DATABASE = re.compile(r"drop\s+database", re.IGNORECASE)
+DROP_SCHEMA = re.compile(r"drop\s+schema", re.IGNORECASE)
 GIT_RESET_HARD = re.compile(r"\bgit\b.*?\breset\b.*?\s--hard\b", re.IGNORECASE)
 GIT_PUSH_FORCE_CONFIG = re.compile(
     r"-c\s+push\.force(?:\s*=\s*(?P<val>[^\s;|&]+))?",
@@ -76,6 +87,43 @@ def is_git_force_via_config(command: str) -> bool:
         if value not in GIT_PUSH_FORCE_CONFIG_FALSE:
             return True
     return False
+
+
+def stripped_segment(segment: str) -> str:
+    """Remove leading sudo/env prefixes so bare SQL statements are detectable."""
+    stripped = segment.strip()
+    stripped = re.sub(r"^\s*sudo\s+", "", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(r"^(\w+=\S*\s+)+", "", stripped)
+    return stripped
+
+
+def embedded_shell_sql(segment: str, pattern: re.Pattern[str]) -> bool:
+    """True when a shell -c wrapper embeds a matching SQL statement."""
+    match = SHELL_C.search(segment)
+    if not match:
+        return False
+    inner = next(group for group in match.groups() if group is not None)
+    return bool(pattern.search(inner))
+
+
+def should_block_sql_statement(
+    segment: str,
+    pattern: re.Pattern[str],
+    *,
+    util_exclude: re.Pattern[str] | None = None,
+) -> bool:
+    """Block SQL only in execution contexts, not search/display utilities."""
+    if not pattern.search(segment):
+        return False
+    if util_exclude and util_exclude.search(segment):
+        return False
+    if SQL_CLIENT.search(segment):
+        return True
+    if embedded_shell_sql(segment, pattern):
+        return True
+    if NON_SQL_TOOLS.match(segment):
+        return False
+    return bool(pattern.match(stripped_segment(segment)))
 
 
 def is_rm_rf(command: str) -> bool:
@@ -116,7 +164,16 @@ def check_segment(segment: str) -> str | None:
         if pattern.search(segment):
             return reason
 
-    if TRUNCATE_SQL.search(segment) and not TRUNCATE_UTIL.search(segment):
+    if should_block_sql_statement(segment, DROP_TABLE):
+        return "SQL DROP TABLE"
+
+    if should_block_sql_statement(segment, DROP_DATABASE):
+        return "SQL DROP DATABASE"
+
+    if should_block_sql_statement(segment, DROP_SCHEMA):
+        return "SQL DROP SCHEMA"
+
+    if should_block_sql_statement(segment, TRUNCATE_SQL, util_exclude=TRUNCATE_UTIL):
         return "SQL TRUNCATE"
 
     if GIT_RESET_HARD.search(segment):
@@ -131,7 +188,7 @@ def check_segment(segment: str) -> str | None:
     if (
         DELETE_FROM.search(segment)
         and not WHERE_CLAUSE.search(segment)
-        and not SHELL_LITERAL.match(segment)
+        and should_block_sql_statement(segment, DELETE_FROM)
     ):
         return "SQL DELETE FROM without WHERE clause"
 

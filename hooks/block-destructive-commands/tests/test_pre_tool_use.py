@@ -444,6 +444,27 @@ class CheckCommandTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.hook.check_command(command))
 
+    def test_allows_search_tools_with_sql_text(self):
+        allowed = (
+            'grep "DELETE FROM users" schema.sql',
+            'rg "DROP TABLE" migrations/',
+            'sed -n "/DELETE FROM/p" dump.sql',
+            'python3 -c "print(\'DELETE FROM users\')"',
+            "echo DROP TABLE users",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
+
+    def test_blocks_shell_c_sql_execution(self):
+        blocked = (
+            "sh -c 'DROP TABLE users'",
+            'bash -c "DELETE FROM sessions"',
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertIsNotNone(self.hook.check_command(command))
+
 
 class InstallScriptTests(unittest.TestCase):
     INSTALL_SCRIPT = Path(__file__).resolve().parents[1] / "install.sh"
