@@ -39,6 +39,11 @@ test('ci workflow avoids privileged fork checkout pattern', () => {
   if (/pull_request_target:[\s\S]*uses:\s*actions\/checkout/.test(ciWorkflow)) {
     throw new Error('privileged trigger must not checkout fork code in CI workflow');
   }
+  for (const path of ['package.json', 'Makefile']) {
+    if (!ciWorkflow.includes(`- '${path}'`)) {
+      throw new Error(`CI workflow paths must include repo-root ${path} for fleet test wiring`);
+    }
+  }
 });
 
 test('github collect helper covers pagination and error rejection', () => {
