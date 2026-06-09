@@ -19,9 +19,9 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 90 tests in ...s
+Ran 91 tests in ...s
 OK
-Ran 4 delivery verification tests — OK
+Ran 5 delivery verification tests — OK
 Ran 15 tests — OK
 OK: peer review acceptance tests passed
 OK: all CI validation checks passed
@@ -34,6 +34,10 @@ Branch: `feat/issue-3-destructive-command-hook-v2` (PR #2556)
 Verified by hands-on takeover after fleet engineer agent failed on wrong branch
 (`bounty-4-claude-review-agent`, zero diff). Checkout, `npm test`, and `make ci-validate`
 all green on this branch.
+
+Latest takeover (2026-06-09): added `test_npm_test_entry_point_runs_green` to
+`test_delivery_verification.py` so fleet delivery validates the root `npm test`
+entry point end-to-end (91 unittest + 5 delivery + 15 peer-review + attribution).
 
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty

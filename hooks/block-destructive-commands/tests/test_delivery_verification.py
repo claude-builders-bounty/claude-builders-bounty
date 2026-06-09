@@ -97,6 +97,28 @@ class DeliveryVerificationTests(unittest.TestCase):
             log_file = Path(temp_home) / ".claude" / "hooks" / "blocked.log"
             self.assertFalse(log_file.exists())
 
+    def test_npm_test_entry_point_runs_green(self):
+        """Fleet delivery runs `npm test` from the repo root — verify it passes."""
+        if os.environ.get("HOOK_CI_INNER_RUN"):
+            self.skipTest("already inside npm test CI runner")
+
+        env = os.environ.copy()
+        env["HOOK_CI_INNER_RUN"] = "1"
+        result = subprocess.run(
+            ["npm", "test"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            env=env,
+            check=False,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=result.stdout + result.stderr,
+        )
+        self.assertIn("OK: all CI validation checks passed", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
