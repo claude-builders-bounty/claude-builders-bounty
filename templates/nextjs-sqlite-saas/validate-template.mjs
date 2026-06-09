@@ -89,6 +89,40 @@ if (!/middleware\.ts/.test(text)) {
   process.exit(1);
 }
 
+const rscExample = text.match(
+  /\/\/ src\/app\/\(app\)\/\[orgSlug\]\/invoices\/page\.tsx[\s\S]*?```/,
+)?.[0] ?? "";
+if (/listInvoices\(orgSlug\)/.test(rscExample)) {
+  console.error("RSC example must not call listInvoices(orgSlug); use orgId after requireOrgMember.");
+  process.exit(1);
+}
+if (!/requireOrgMember\(orgSlug\)/.test(rscExample) || !/listInvoices\(orgId\)/.test(rscExample)) {
+  console.error("RSC example must call requireOrgMember(orgSlug) then listInvoices(orgId).");
+  process.exit(1);
+}
+
+const voidActionExample = text.match(
+  /\/\/ src\/server\/actions\/void-invoice\.ts[\s\S]*?```/,
+)?.[0] ?? "";
+if (!voidActionExample) {
+  console.error("Missing void-invoice.ts server action example.");
+  process.exit(1);
+}
+if (!/requireOrgMember/.test(voidActionExample) || !/voidInvoice\(\{ orgId/.test(voidActionExample)) {
+  console.error("void-invoice action must use requireOrgMember and org-scoped voidInvoice mutation.");
+  process.exit(1);
+}
+if (!/actionVoidInvoice/.test(text) || !text.includes("void-invoice.ts")) {
+  console.error("actionVoidInvoice must be paired with void-invoice.ts example.");
+  process.exit(1);
+}
+
+const greenfieldStep4 = greenfieldSection.match(/^4\.\s.+$/m)?.[0] ?? "";
+if (!/requireOrgMember/.test(greenfieldStep4)) {
+  console.error("Greenfield step 4 must mention requireOrgMember.");
+  process.exit(1);
+}
+
 console.log(
   `Template validation passed with ${opinionatedCount} explicit reasons and ${smokeTestSteps} smoke-test steps.`,
 );

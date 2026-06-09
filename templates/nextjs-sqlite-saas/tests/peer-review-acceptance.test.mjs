@@ -146,6 +146,41 @@ assert(
   "validate-template.mjs reports opinionated reason count",
 );
 
+// Semantic auth consistency — examples must not teach IDOR or slug-scoped queries
+const rscExample = claude.match(
+  /\/\/ src\/app\/\(app\)\/\[orgSlug\]\/invoices\/page\.tsx[\s\S]*?```/,
+)?.[0] ?? "";
+assert(
+  !/listInvoices\(orgSlug\)/.test(rscExample),
+  "RSC example must not call listInvoices(orgSlug)",
+);
+assert(
+  /requireOrgMember\(orgSlug\)/.test(rscExample) && /listInvoices\(orgId\)/.test(rscExample),
+  "RSC example resolves membership then queries by orgId",
+);
+
+const voidActionExample = claude.match(
+  /\/\/ src\/server\/actions\/void-invoice\.ts[\s\S]*?```/,
+)?.[0] ?? "";
+assert(voidActionExample.length > 0, "void-invoice.ts server action example present");
+assert(
+  /requireOrgMember/.test(voidActionExample) && /voidInvoice\(\{ orgId/.test(voidActionExample),
+  "void-invoice action uses requireOrgMember and org-scoped voidInvoice mutation",
+);
+assert(
+  /actionVoidInvoice/.test(claude) &&
+    claude.includes("void-invoice.ts") &&
+    voidActionExample.includes("actionVoidInvoice"),
+  "actionVoidInvoice paired with void-invoice.ts example",
+);
+
+const greenfieldSection = claude.split("## Greenfield Smoke Test")[1]?.split(/^## /m)[0] ?? "";
+const greenfieldStep4 = greenfieldSection.match(/^4\.\s.+$/m)?.[0] ?? "";
+assert(
+  /requireOrgMember/.test(greenfieldStep4),
+  "Greenfield step 4 mentions requireOrgMember",
+);
+
 if (failures.length) {
   console.error(`FAILED peer-review acceptance:\n- ${failures.join("\n- ")}`);
   process.exit(1);

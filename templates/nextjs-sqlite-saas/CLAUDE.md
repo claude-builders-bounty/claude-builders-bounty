@@ -173,6 +173,7 @@ Files in `src/app/` and most of `src/components/features/` are Server Components
 ```tsx
 // src/app/(app)/[orgSlug]/invoices/page.tsx
 import { listInvoices } from '@/db/queries/invoices';
+import { requireOrgMember } from '@/lib/auth';
 import { InvoiceTable } from '@/components/features/invoice-table';
 
 export default async function InvoicesPage({
@@ -181,8 +182,9 @@ export default async function InvoicesPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const invoices = await listInvoices(orgSlug);
-  return <InvoiceTable invoices={invoices} />;
+  const { orgId } = await requireOrgMember(orgSlug);
+  const invoices = await listInvoices(orgId);
+  return <InvoiceTable invoices={invoices} orgSlug={orgSlug} />;
 }
 ```
 
@@ -198,12 +200,20 @@ Add `"use client"` only for: React state, effects, event handlers, or browser AP
 import { useTransition } from 'react';
 import { actionVoidInvoice } from '@/server/actions/void-invoice';
 
-export function VoidInvoiceButton({ invoiceId }: { invoiceId: string }) {
+export function VoidInvoiceButton({
+  orgSlug,
+  invoiceId,
+}: {
+  orgSlug: string;
+  invoiceId: string;
+}) {
   const [pending, startTransition] = useTransition();
   return (
     <button
       disabled={pending}
-      onClick={() => startTransition(() => actionVoidInvoice(invoiceId))}
+      onClick={() =>
+        startTransition(() => actionVoidInvoice({ orgSlug, invoiceId }))
+      }
     >
       Void
     </button>
@@ -243,6 +253,29 @@ export async function actionCreateInvoice(input: z.infer<typeof schema>) {
 ```
 
 **Action checklist:** validate → authorize → mutate → revalidate affected paths → return structured result. Never throw raw error strings to the client.
+
+```tsx
+// src/server/actions/void-invoice.ts
+'use server';
+
+import { z } from 'zod';
+import { requireOrgMember } from '@/lib/auth';
+import { voidInvoice } from '@/db/queries/invoices';
+import { revalidatePath } from 'next/cache';
+
+const schema = z.object({
+  orgSlug: z.string().min(1),
+  invoiceId: z.string().min(1),
+});
+
+export async function actionVoidInvoice(input: z.infer<typeof schema>) {
+  const data = schema.parse(input);
+  const { orgId } = await requireOrgMember(data.orgSlug);
+  await voidInvoice({ orgId, invoiceId: data.invoiceId });
+  revalidatePath(`/${data.orgSlug}/invoices`);
+  return { ok: true as const };
+}
+```
 
 ### Route-level UI
 
@@ -364,10 +397,10 @@ Reason: testing at the query/action boundary catches most regressions without br
 
 After copying this file to a new Next.js 15 project root, Claude Code should handle these without clarifying questions:
 
-1. Add `src/db/migrations/20260315120000_create_organizations.sql` with `org_id` scoping and soft-delete columns.
+1. Create `organizations` table (`id`, `slug`, soft-delete columns) in `src/db/migrations/20260315120000_create_organizations.sql`; child tables reference `organizations(id)` via `org_id`.
 2. Create `src/db/queries/invoices.ts` with `listInvoices(orgId)` using explicit column lists and `deleted_at IS NULL`.
 3. Add `src/server/actions/create-invoice.ts` with Zod validation, `requireOrgMember`, and `revalidatePath`.
-4. Scaffold `src/app/(app)/[orgSlug]/invoices/page.tsx` as a Server Component that calls `listInvoices`.
+4. Scaffold `src/app/(app)/[orgSlug]/invoices/page.tsx` as a Server Component: resolve `orgSlug` from route params → `requireOrgMember(orgSlug)` → `listInvoices(orgId)`.
 5. Run `pnpm db:migrate` and `pnpm typecheck` — migrations apply in filename order; types stay strict.
 
 **Expected behavior:** Claude Code follows `src/` layout, raw SQL migrations, tenant scoping, and Server Action patterns without asking which ORM, router, or auth model to use.
