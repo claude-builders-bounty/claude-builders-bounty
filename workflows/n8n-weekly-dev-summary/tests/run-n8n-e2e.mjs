@@ -54,12 +54,10 @@ await new Promise((resolve) => server.listen(mockPort, '127.0.0.1', resolve));
 
 const workflow = JSON.parse(readFileSync(join(root, 'weekly-dev-summary.json'), 'utf8'));
 const e2eWorkflow = JSON.parse(
-  JSON.stringify(workflow)
-    .replaceAll('https://api.anthropic.com/v1/messages', `http://127.0.0.1:${mockPort}/v1/messages`)
-    .replaceAll(
-      "={{ $json.config.discordWebhookUrl }}",
-      `={{ 'http://127.0.0.1:${mockPort}/discord' }}`,
-    ),
+  JSON.stringify(workflow).replaceAll(
+    'https://api.anthropic.com/v1/messages',
+    `http://127.0.0.1:${mockPort}/v1/messages`,
+  ),
 );
 
 // n8n CLI/UI execution requires a manual trigger, not a schedule trigger.

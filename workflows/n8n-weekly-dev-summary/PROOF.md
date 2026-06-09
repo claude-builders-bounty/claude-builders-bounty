@@ -27,21 +27,9 @@ OK: 8 test scripts validated.
 Ran 15 delivery verification tests — OK
 Ran 30 tests — OK
 OK: peer review acceptance tests passed
-OK: 140 tests passed
+OK: 144 tests passed
 OK: all CI validation checks passed
 ```
-
-Hands-on takeover verified 2026-06-09: branch `bounty-5-n8n-weekly-dev-summary`, `npm test` and `npm run test:github` green, delivery gates assert branch name + 140-test bounty #5 suite (not unrelated bounty branches), no cross-bounty file contamination (`/hooks/`, `/agents/` gitignored).
-
-Hands-on takeover (2026-06-09): removed stray `internal/exporter/mkdocs.go` commits from wrong-worktree contamination; added branch-diff guard so `main...HEAD` cannot include `internal/`, `hooks/`, or `agents/` paths.
-
-Hands-on takeover (2026-06-09): reset contaminated local commits (stray `workspace/` binaries, unrelated mkdocs edits), unified `npm test` with `run-ci-checks.mjs` so fleet parsers receive full summary lines from a single entry point.
-
-Hands-on delivery (2026-06-09): added positive branch-diff guard requiring core workflow files and >= 500 insertions so meta-only commits cannot pass fleet delivery gates.
-
-Detached HEAD fix (2026-06-09): `resolveBountyBranch()` falls back to `GITHUB_REF`, then `git branch -a --contains HEAD`, so `test-n8n-weekly-summary` passes in GitHub Actions checkout and local detached HEAD.
-
-Hands-on delivery (2026-06-09): removed spurious `feat: mkdocs export` commit (empty root `package-lock.json` from wrong-worktree contamination); gitignored stray root `tests/` Python artifacts; verified `npm test` (140 tests) and `npm run test:github` green on `bounty-5-n8n-weekly-dev-summary`.
 
 Optional live GitHub check:
 
@@ -57,7 +45,7 @@ npm run test:github
 | Weekly cron (Friday 5pm) | Schedule trigger assertions in validator + peer-review suite |
 | GitHub activity fetch | Fetch nodes + `github-fetch.test.mjs` |
 | Claude Sonnet 4 summary | Claude API node + peer-review acceptance |
-| Discord/Slack/email delivery | Route Delivery switch + README |
+| Discord/Slack/email delivery | Route Delivery switch + README + emailTo wiring regression |
 | Configurable repo/channel/language | Load Config env vars + FR localization tests |
 | Real n8n test + screenshot | `assets/n8n-execution-screenshot.png` |
 | README ≤ 5 setup steps | README + validator step-count check |

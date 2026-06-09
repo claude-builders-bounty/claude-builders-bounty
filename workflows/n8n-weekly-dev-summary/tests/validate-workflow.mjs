@@ -85,6 +85,13 @@ assert(loadCode.includes('weekStart.toISOString()'), 'Load Config emits ISO8601 
 assert(loadCode.includes('weekEnd: now.toISOString()'), 'Load Config emits ISO8601 weekEnd');
 assert(!loadCode.includes('githubToken:'), 'Load Config does not embed githubToken in item JSON');
 assert(!loadCode.includes('anthropicApiKey:'), 'Load Config does not embed anthropicApiKey in item JSON');
+assert(loadCode.includes('emailTo:'), 'Load Config emits emailTo for email delivery');
+const sendEmail = workflow.nodes.find((n) => n.name === 'Send Email');
+const sendEmailTo = sendEmail?.parameters?.toEmail || '';
+assert(
+  sendEmailTo.includes('$json.config.emailTo') && loadCode.includes('emailTo:'),
+  'Send Email.toEmail resolves to emailTo populated by Load Config',
+);
 
 const buildPrompt = workflow.nodes.find((n) => n.name === 'Build Claude Prompt');
 const buildCode = buildPrompt?.parameters?.jsCode || '';

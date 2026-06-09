@@ -89,6 +89,13 @@ assert(
     serialized.includes('SUMMARY_EMAIL_TO'),
   'supports Discord, Slack, and email delivery',
 );
+assert(loadCode.includes('emailTo:'), 'Load Config emits emailTo for email delivery');
+const sendEmail = workflow.nodes.find((n) => n.name === 'Send Email');
+const sendEmailTo = sendEmail?.parameters?.toEmail || '';
+assert(
+  sendEmailTo.includes('$json.config.emailTo') && loadCode.includes('emailTo:'),
+  'Send Email.toEmail resolves to emailTo populated by Load Config',
+);
 assert(
   serialized.includes('GITHUB_REPO') &&
     serialized.includes('DELIVERY_CHANNEL') &&
