@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# Mirrors .github/workflows/test-nextjs-sqlite-template.yml validation steps locally.
+# Template CI runner — invoked by scripts/run-ci-checks.sh at repo root.
+#
+# Steps (mirror .github/workflows/test-nextjs-sqlite-template.yml):
+#   1. ensure_git_base_ref — fetch merge-base for branch-diff attribution scans
+#   2. validate-template.mjs — structural CLAUDE.md checks (sections, reasons, counts)
+#   3. smoke-greenfield.sh — scaffold fresh Next.js 15 app and copy CLAUDE.md
+#   4. delivery-verification.test.mjs — npm/Makefile wiring and summary ordering
+#   5. peer-review-acceptance.test.mjs — bounty #2 acceptance checklist
+#   6. git diff --check + attribution guard — reject agent trailers in sources/commits
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -7,6 +15,7 @@ TEMPLATE_DIR="${REPO_ROOT}/templates/nextjs-sqlite-saas"
 
 cd "$REPO_ROOT"
 
+# Shallow fleet checkouts may lack upstream/main; deepen history before branch diffs.
 ensure_git_base_ref() {
   if ! git rev-parse --verify upstream/main >/dev/null 2>&1; then
     git fetch --depth=100 https://github.com/claude-builders-bounty/claude-builders-bounty.git \

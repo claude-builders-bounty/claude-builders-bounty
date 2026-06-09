@@ -1,20 +1,32 @@
 #!/usr/bin/env node
 /**
- * Validates toolchain env required to run template CI locally or in GitHub Actions.
+ * Validates toolchain binaries required to run template CI locally or in GitHub Actions.
+ *
+ * Security: uses spawnSync with a fixed argv whitelist (no shell, no user input,
+ * no env-var interpolation). Only `--version` probes are executed.
  */
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
-const required = [
-  { name: "node", check: () => execSync("node --version", { encoding: "utf8" }).trim() },
-  { name: "bash", check: () => execSync("bash --version", { encoding: "utf8" }).split("\n")[0] },
-  { name: "git", check: () => execSync("git --version", { encoding: "utf8" }).trim() },
+/** @type {ReadonlyArray<{ name: string; argv: readonly string[] }>} */
+const REQUIRED_TOOLS = [
+  { name: "node", argv: ["node", "--version"] },
+  { name: "bash", argv: ["bash", "--version"] },
+  { name: "git", argv: ["git", "--version"] },
 ];
 
-for (const tool of required) {
-  try {
-    tool.check();
-  } catch {
-    console.error(`env-check failed: ${tool.name} is required but not available on PATH`);
+// Minimal environment: PATH only, so NODE_OPTIONS / shell injection cannot alter probes.
+const safeEnv = { PATH: process.env.PATH ?? "" };
+
+for (const { name, argv } of REQUIRED_TOOLS) {
+  const [command, ...args] = argv;
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    shell: false,
+    env: safeEnv,
+  });
+
+  if (result.error || result.status !== 0) {
+    console.error(`env-check failed: ${name} is required but not available on PATH`);
     process.exit(1);
   }
 }

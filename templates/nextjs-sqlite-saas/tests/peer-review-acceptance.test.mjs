@@ -17,6 +17,8 @@ const readme = readFileSync(join(root, "README.md"), "utf8");
 const validator = readFileSync(join(root, "validate-template.mjs"), "utf8");
 const smokeTest = readFileSync(join(__dirname, "smoke-greenfield.sh"), "utf8");
 const runCiChecks = readFileSync(join(__dirname, "run-ci-checks.sh"), "utf8");
+const rootCiChecks = readFileSync(join(repoRoot, "scripts/run-ci-checks.sh"), "utf8");
+const envCheck = readFileSync(join(repoRoot, "scripts/env-check.mjs"), "utf8");
 const workflow = readFileSync(
   join(repoRoot, ".github/workflows/test-nextjs-sqlite-template.yml"),
   "utf8",
@@ -170,8 +172,29 @@ assert(gitignore.includes("node_modules/"), ".gitignore excludes node_modules");
 assert(gitignore.includes("pnpm-lock.yaml"), ".gitignore excludes pnpm-lock.yaml from greenfield scaffolds");
 assert(gitignore.includes("internal/"), ".gitignore excludes local fleet artifacts");
 assert(makefile.includes("run-ci-checks.sh"), "Makefile test target runs unified validation");
+assert(makefile.includes("scripts/run-ci-checks.sh"), "Makefile uses root scripts/run-ci-checks.sh entry point");
 assert(makefile.includes("ci-validate:"), "Makefile exposes ci-validate alias for CI runners");
 assert(makefile.includes("env-check:"), "Makefile exposes env-check target for toolchain validation");
+assert(
+  statSync(join(repoRoot, "scripts/run-ci-checks.sh")).isFile(),
+  "scripts/run-ci-checks.sh is the root CI entry point referenced by npm test",
+);
+assert(
+  statSync(join(repoRoot, "scripts/run-ci-checks.sh")).mode & 0o111,
+  "scripts/run-ci-checks.sh is executable",
+);
+assert(
+  rootCiChecks.includes("templates/nextjs-sqlite-saas/tests/run-ci-checks.sh"),
+  "scripts/run-ci-checks.sh delegates to template CI runner",
+);
+assert(
+  !envCheck.includes("execSync") && envCheck.includes("spawnSync"),
+  "env-check.mjs uses spawnSync instead of shell execSync",
+);
+assert(
+  envCheck.includes("shell: false"),
+  "env-check.mjs disables shell execution for toolchain probes",
+);
 assert(
   statSync(join(repoRoot, "scripts/env-check.mjs")).isFile(),
   "scripts/env-check.mjs validates required toolchain",
