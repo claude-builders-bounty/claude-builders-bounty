@@ -24,14 +24,16 @@ Expected CI runner output (suite counts may grow; total must stay in sync):
 OK: 13 nodes, all acceptance checks passed.
 OK: GitHub data collection handles n8n item splitting.
 OK: 8 test scripts validated.
-Ran 13 delivery verification tests — OK
+Ran 14 delivery verification tests — OK
 Ran 30 tests — OK
 OK: peer review acceptance tests passed
-OK: 138 tests passed
+OK: 139 tests passed
 OK: all CI validation checks passed
 ```
 
-Hands-on takeover verified 2026-06-09: branch `bounty-5-n8n-weekly-dev-summary`, `npm test` and `npm run test:github` green, delivery gates assert branch name + 138-test bounty #5 suite (not unrelated bounty branches), no cross-bounty file contamination (`/hooks/`, `/agents/` gitignored).
+Hands-on takeover verified 2026-06-09: branch `bounty-5-n8n-weekly-dev-summary`, `npm test` and `npm run test:github` green, delivery gates assert branch name + 139-test bounty #5 suite (not unrelated bounty branches), no cross-bounty file contamination (`/hooks/`, `/agents/` gitignored).
+
+Hands-on takeover (2026-06-09): removed stray `internal/exporter/mkdocs.go` commits from wrong-worktree contamination; added branch-diff guard so `main...HEAD` cannot include `internal/`, `hooks/`, or `agents/` paths.
 
 Hands-on takeover (2026-06-09, cursor-auto): reset contaminated local commits (stray `workspace/` binaries, unrelated mkdocs edits), unified `npm test` with `run-ci-checks.mjs` so fleet parsers receive full summary lines from a single entry point.
 

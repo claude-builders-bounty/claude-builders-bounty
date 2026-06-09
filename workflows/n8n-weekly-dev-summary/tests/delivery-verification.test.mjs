@@ -179,6 +179,30 @@ test('tracked files belong to bounty #5 n8n workflow only', () => {
   }
 });
 
+test('branch diff excludes unrelated paths from other bounties', () => {
+  let baseRef = 'main';
+  try {
+    execSync('git rev-parse --verify main', { cwd: repoRoot, stdio: 'pipe' });
+  } catch {
+    baseRef = 'origin/main';
+    execSync('git rev-parse --verify origin/main', { cwd: repoRoot, stdio: 'pipe' });
+  }
+  const changed = execSync(`git diff --name-only ${baseRef}...HEAD`, {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  })
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+  for (const path of changed) {
+    for (const prefix of ['internal/', 'hooks/', 'agents/']) {
+      if (path.startsWith(prefix)) {
+        throw new Error(`unrelated ${prefix} path in PR diff: ${path}`);
+      }
+    }
+  }
+});
+
 test('repo root npm test entry point runs green', () => {
   if (process.env.N8N_CI_INNER_RUN) return;
   const output = execSync('npm test', {
