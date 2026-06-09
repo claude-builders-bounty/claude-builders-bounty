@@ -186,6 +186,7 @@ assert(workflow.includes("Makefile"), "CI triggers on Makefile changes");
 assert(workflow.includes("package.json"), "CI triggers on package.json changes");
 assert(workflow.includes("package-lock.json"), "CI triggers on package-lock.json changes");
 assert(workflow.includes(".gitignore"), "CI triggers on .gitignore changes");
+assert(workflow.includes("scripts/"), "CI triggers on scripts/ changes");
 assert(
   /permissions:\s*\n\s*contents:\s*read/.test(workflow),
   "CI workflow uses read-only contents permission",
