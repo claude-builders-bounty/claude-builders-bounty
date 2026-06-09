@@ -269,6 +269,29 @@ assert(
   "Forms section includes useActionState client form example",
 );
 
+// Peer-review security: parameterized query example
+const queryExample = claude.match(/\/\/ src\/db\/queries\/invoices\.ts[\s\S]*?```/)?.[0] ?? "";
+assert(
+  queryExample.length > 0 &&
+    /WHERE org_id = \?/.test(queryExample) &&
+    /\.all\(orgId\)/.test(queryExample),
+  "invoices.ts example uses parameterized org_id binding",
+);
+
+// Peer-review tests: migration and component test examples
+const migrationTestExample = claude.match(/\/\/ tests\/db\/migrations\.test\.ts[\s\S]*?```/)?.[0] ?? "";
+assert(
+  migrationTestExample.length > 0 && /_migrations/.test(migrationTestExample),
+  "Testing Rules include migrations.test.ts example",
+);
+const componentTestExample = claude.match(
+  /\/\/ tests\/components\/create-invoice-form\.test\.tsx[\s\S]*?```/,
+)?.[0] ?? "";
+assert(
+  componentTestExample.length > 0 && /CreateInvoiceForm/.test(componentTestExample),
+  "Testing Rules include create-invoice-form component test example",
+);
+
 if (failures.length) {
   console.error(`FAILED peer-review acceptance:\n- ${failures.join("\n- ")}`);
   process.exit(1);

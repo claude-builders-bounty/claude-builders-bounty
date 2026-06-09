@@ -162,6 +162,26 @@ if (!/useActionState/.test(text) || !/CreateInvoiceForm/.test(text)) {
   process.exit(1);
 }
 
+const queryExample = text.match(/\/\/ src\/db\/queries\/invoices\.ts[\s\S]*?```/)?.[0] ?? "";
+if (!queryExample || !/WHERE org_id = \?/.test(queryExample) || !/\.all\(orgId\)/.test(queryExample)) {
+  console.error("invoices.ts example must use parameterized org_id binding.");
+  process.exit(1);
+}
+
+const migrationTestExample = text.match(/\/\/ tests\/db\/migrations\.test\.ts[\s\S]*?```/)?.[0] ?? "";
+if (!migrationTestExample || !/_migrations/.test(migrationTestExample)) {
+  console.error("Testing Rules must include migrations.test.ts example.");
+  process.exit(1);
+}
+
+const componentTestExample = text.match(
+  /\/\/ tests\/components\/create-invoice-form\.test\.tsx[\s\S]*?```/,
+)?.[0] ?? "";
+if (!componentTestExample || !/CreateInvoiceForm/.test(componentTestExample)) {
+  console.error("Testing Rules must include create-invoice-form component test example.");
+  process.exit(1);
+}
+
 console.log(
   `Template validation passed with ${opinionatedCount} explicit reasons and ${smokeTestSteps} smoke-test steps.`,
 );

@@ -154,6 +154,45 @@ CREATE INDEX IF NOT EXISTS idx_invoices_org_created
 - **Transactions for multi-table writes:** `db.transaction(() => { ... })` (better-sqlite3) or batched calls (libsql).
 - **Parameterized queries only.** Never interpolate user input into SQL strings.
 
+```ts
+// src/db/queries/invoices.ts — parameterized reads; orgId is always bound, never concatenated
+import { getDb } from '@/lib/db';
+import Database from 'better-sqlite3';
+
+export type Invoice = {
+  id: string;
+  orgId: string;
+  amountCents: number;
+  status: string;
+};
+
+export function listInvoices(orgId: string): Invoice[] {
+  const db = getDb() as Database.Database;
+  const rows = db
+    .prepare(
+      `SELECT id, org_id, amount_cents, status
+       FROM invoices
+       WHERE org_id = ? AND deleted_at IS NULL
+       ORDER BY created_at DESC, id DESC
+       LIMIT 100`,
+    )
+    .all(orgId) as Array<{
+      id: string;
+      org_id: string;
+      amount_cents: number;
+      status: string;
+    }>;
+  return rows.map((row) => ({
+    id: row.id,
+    orgId: row.org_id,
+    amountCents: row.amount_cents,
+    status: row.status,
+  }));
+}
+```
+
+Reason: `?` placeholders keep user-derived `orgId` out of SQL strings; explicit column lists surface schema drift at compile time.
+
 ### Timestamps
 
 Store as **ISO 8601 UTC strings** (`TEXT`) via `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`. Convert to `Date` only at UI boundaries. Reason: SQLite date functions work on ISO strings; mixing integer epochs causes subtle bugs.
@@ -563,6 +602,67 @@ describe('actionCreateInvoice', () => {
     const result = await actionCreateInvoice({ orgSlug: 'acme', amountCents: 1000 });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.invoice).toBeDefined();
+  });
+});
+```
+
+```ts
+// tests/db/migrations.test.ts — fresh in-memory DB; assert every migration file is recorded
+import { describe, it, expect } from 'vitest';
+import Database from 'better-sqlite3';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+describe('migrations', () => {
+  it('applies all SQL files and records them in _migrations', () => {
+    const db = new Database(':memory:');
+    db.exec(`
+      CREATE TABLE _migrations (
+        filename TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      );
+    `);
+    const migrationsDir = join(process.cwd(), 'src/db/migrations');
+    const files = readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
+    const insert = db.prepare('INSERT INTO _migrations (filename) VALUES (?)');
+    for (const filename of files) {
+      db.exec(readFileSync(join(migrationsDir, filename), 'utf8'));
+      insert.run(filename);
+    }
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM _migrations').get() as { count: number }
+    ).count;
+    expect(count).toBe(files.length);
+  });
+});
+```
+
+```tsx
+// tests/components/create-invoice-form.test.tsx — RTL for client islands; mock server actions
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { CreateInvoiceForm } from '@/components/features/create-invoice-form';
+
+vi.mock('@/server/actions/create-invoice', () => ({
+  actionCreateInvoice: vi.fn(),
+}));
+
+describe('CreateInvoiceForm', () => {
+  it('surfaces server action validation errors', async () => {
+    const { actionCreateInvoice } = await import('@/server/actions/create-invoice');
+    vi.mocked(actionCreateInvoice).mockResolvedValueOnce({
+      ok: false,
+      error: 'Invalid input',
+    });
+
+    render(<CreateInvoiceForm orgSlug="acme" />);
+    await userEvent.type(screen.getByRole('spinbutton'), '-1');
+    await userEvent.click(screen.getByRole('button', { name: /create/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid input');
   });
 });
 ```
