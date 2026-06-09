@@ -5,7 +5,8 @@
 From the repository root:
 
 ```bash
-make ci-validate
+npm test
+# or: make ci-validate
 ```
 
 Or from this directory:
@@ -18,9 +19,9 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 84 tests in ...s
+Ran 86 tests in ...s
 OK
-Ran 13 tests — OK
+Ran 15 tests — OK
 OK: peer review acceptance tests passed
 OK: all CI validation checks passed
 ```

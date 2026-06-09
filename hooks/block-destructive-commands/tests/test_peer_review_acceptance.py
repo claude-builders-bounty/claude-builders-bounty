@@ -116,6 +116,17 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("ci-validate:", makefile)
         self.assertIn("run-ci-checks.sh", makefile)
 
+    def test_repo_root_makefile_exposes_test_and_ci_validate(self):
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("test:", makefile)
+        self.assertIn("ci-validate:", makefile)
+        self.assertIn("run-ci-checks.sh", makefile)
+
+    def test_package_json_exposes_npm_test_entry_point(self):
+        package = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
+        self.assertIn("run-ci-checks.sh", package["scripts"]["test"])
+        self.assertIn("run-ci-checks.sh", package["scripts"]["test:ci"])
+
     def test_run_ci_checks_script_exists_and_is_executable(self):
         script = HOOK_DIR / "tests/run-ci-checks.sh"
         self.assertTrue(script.is_file())

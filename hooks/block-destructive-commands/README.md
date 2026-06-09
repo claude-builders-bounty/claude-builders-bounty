@@ -85,8 +85,9 @@ make test
 From the repository root:
 
 ```bash
-make -C hooks/block-destructive-commands test
-bash hooks/block-destructive-commands/tests/run-ci-checks.sh
+npm test
+# or: make ci-validate
+# or: make -C hooks/block-destructive-commands test
 ```
 
 The CI runner executes all regression tests, peer-review acceptance checks, and
