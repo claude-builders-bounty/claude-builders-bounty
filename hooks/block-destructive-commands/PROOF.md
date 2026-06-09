@@ -22,10 +22,16 @@ make ci-validate
 Ran 95 tests in ...s
 OK
 Ran 5 delivery verification tests — OK
-Ran 18 tests — OK
+Ran 19 tests — OK
 OK: peer review acceptance tests passed
 OK: all CI validation checks passed
 ```
+
+## Branch scope
+
+`git diff main...HEAD` must include only hook-related paths (no `internal/exporter/*`
+or other unrelated files). Peer-review acceptance test
+`test_branch_diff_scoped_to_hook_only` enforces this.
 
 ## Hands-on verification (2026-06-09)
 

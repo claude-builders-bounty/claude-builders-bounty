@@ -218,6 +218,35 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             log_file = Path(temp_home) / ".claude" / "hooks" / "blocked.log"
             self.assertFalse(log_file.exists())
 
+    def test_branch_diff_scoped_to_hook_only(self):
+        """Peer review: PR diff must not include unrelated paths (e.g. internal/exporter)."""
+        result = subprocess.run(
+            ["git", "diff", "main...HEAD", "--name-only"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        changed = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+        allowed_prefixes = (
+            "hooks/block-destructive-commands/",
+            ".github/workflows/test-block-destructive-commands.yml",
+            "package.json",
+            "Makefile",
+            ".gitignore",
+        )
+        for path in changed:
+            self.assertFalse(
+                path.startswith("internal/"),
+                f"unrelated path in PR diff: {path!r}",
+            )
+            self.assertTrue(
+                any(path == prefix or path.startswith(prefix) for prefix in allowed_prefixes),
+                f"unexpected path in PR diff: {path!r}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
