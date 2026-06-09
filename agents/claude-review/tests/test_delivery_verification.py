@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 CI_SCRIPT = AGENT_DIR / "tests" / "run-ci-checks.sh"
 PEER_REVIEW_TEST = AGENT_DIR / "tests" / "test_peer_review_acceptance.py"
 UNIT_TEST = AGENT_DIR / "tests" / "test_claude_review.py"
+PROOF_DOC = AGENT_DIR / "PROOF.md"
 
 
 def count_test_methods(path: Path) -> int:
@@ -62,6 +63,22 @@ class DeliveryVerificationTests(unittest.TestCase):
         )
         self.assertIn("--pr", result.stdout)
         self.assertIn("--diff-file", result.stdout)
+
+    def test_ci_runner_total_matches_discovered_test_counts(self):
+        unit_tests = count_test_methods(UNIT_TEST)
+        delivery_tests = count_test_methods(Path(__file__))
+        peer_review_tests = count_test_methods(PEER_REVIEW_TEST)
+        expected_total = unit_tests + delivery_tests + peer_review_tests
+
+        ci_text = CI_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("total_tests=$((unit_tests + delivery_tests + peer_review_tests))", ci_text)
+        self.assertIn('echo "OK: ${total_tests} tests passed"', ci_text)
+
+        proof = PROOF_DOC.read_text(encoding="utf-8")
+        self.assertIn(f"Ran {unit_tests} unit tests — OK", proof)
+        self.assertIn(f"Ran {delivery_tests} delivery verification tests — OK", proof)
+        self.assertIn(f"Ran {peer_review_tests} tests — OK", proof)
+        self.assertIn(f"OK: {expected_total} tests passed", proof)
 
 
 if __name__ == "__main__":
