@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import tempfile
 import textwrap
@@ -74,6 +75,29 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         workflow = REPO_ROOT / ".github/workflows/test-claude-review.yml"
         text = workflow.read_text(encoding="utf-8")
         self.assertIn("run-ci-checks.sh", text)
+
+    def test_ci_workflow_triggers_on_test_entry_points(self):
+        workflow = (REPO_ROOT / ".github/workflows/test-claude-review.yml").read_text(encoding="utf-8")
+        for path in ("Makefile", "package.json", "package-lock.json", ".gitignore"):
+            self.assertIn(path, workflow, f"CI must trigger on {path}")
+
+    def test_repo_root_test_entry_points_delegate_to_ci_runner(self):
+        package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("run-ci-checks.sh", package_json["scripts"]["test"])
+        self.assertIn("run-ci-checks.sh", package_json["scripts"]["test:ci"])
+        self.assertIn("run-ci-checks.sh", makefile)
+        self.assertIn("ci-validate:", makefile)
+        self.assertTrue((REPO_ROOT / "package-lock.json").is_file())
+        self.assertIn("node_modules/", gitignore)
+        self.assertIn("internal/", gitignore)
+
+    def test_ci_runner_includes_delivery_verification_suite(self):
+        ci_script = (AGENT_DIR / "tests" / "run-ci-checks.sh").read_text(encoding="utf-8")
+        self.assertIn("test_delivery_verification.py", ci_script)
+        self.assertIn("delivery verification tests", ci_script)
+        self.assertIn("peer review acceptance tests passed", ci_script)
 
     def test_sub_agent_definition_has_required_sections(self):
         agent_md = AGENT_DIR / ".claude/agents/claude-review.md"
