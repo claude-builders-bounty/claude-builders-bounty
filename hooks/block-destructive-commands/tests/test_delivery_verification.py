@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -23,6 +24,15 @@ UNIT_TEST = HOOK_DIR / "tests" / "test_pre_tool_use.py"
 def count_test_methods(path: Path) -> int:
     text = path.read_text(encoding="utf-8")
     return len(re.findall(r"^\s*def test_", text, flags=re.MULTILINE))
+
+
+def load_peer_review_helpers():
+    path = HOOK_DIR / "tests" / "test_peer_review_acceptance.py"
+    spec = importlib.util.spec_from_file_location("test_peer_review_acceptance", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 class DeliveryVerificationTests(unittest.TestCase):
@@ -96,6 +106,18 @@ class DeliveryVerificationTests(unittest.TestCase):
             self.assertEqual(result.stdout.strip(), "")
             log_file = Path(temp_home) / ".claude" / "hooks" / "blocked.log"
             self.assertFalse(log_file.exists())
+
+    def test_branch_diff_excludes_unrelated_exporter_paths(self):
+        """Fleet delivery regressed when stray mkdocs export polluted main...HEAD diff."""
+        peer_review = load_peer_review_helpers()
+        base_ref = peer_review.resolve_branch_diff_base_ref()
+        changed = peer_review.list_branch_changed_files(base_ref)
+
+        for path in changed:
+            self.assertFalse(
+                path.startswith("internal/"),
+                f"unrelated exporter path in PR diff: {path!r}",
+            )
 
     def test_npm_test_entry_point_runs_green(self):
         """Fleet delivery runs `npm test` from the repo root — verify it passes."""

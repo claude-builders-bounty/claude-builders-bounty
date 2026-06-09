@@ -21,7 +21,7 @@ make ci-validate
 ```
 Ran 103 tests in ...s
 OK
-Ran 5 delivery verification tests — OK
+Ran 6 delivery verification tests — OK
 Ran 21 tests — OK
 OK: peer review acceptance tests passed
 OK: all CI validation checks passed
@@ -33,14 +33,14 @@ OK: all CI validation checks passed
 or other unrelated files). Peer-review acceptance test
 `test_branch_diff_scoped_to_hook_only` enforces this.
 
-## Hands-on verification (2026-06-09)
+## Hands-on verification (2026-06-09, takeover)
 
 Branch: `feat/issue-3-destructive-command-hook-v2` (PR #2556)
 
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty
 git checkout feat/issue-3-destructive-command-hook-v2
-npm test                    # 103 unittest + 5 delivery + 21 peer-review + attribution checks
+npm test                    # 103 unittest + 6 delivery + 21 peer-review + attribution checks
 make ci-validate            # same as npm test
 ```
 
