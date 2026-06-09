@@ -9,8 +9,13 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
+const repoRoot = join(root, '..', '..');
 const workflow = JSON.parse(readFileSync(join(root, 'weekly-dev-summary.json'), 'utf8'));
 const readme = readFileSync(join(root, 'README.md'), 'utf8');
+const ciWorkflow = readFileSync(
+  join(repoRoot, '.github', 'workflows', 'test-n8n-weekly-summary.yml'),
+  'utf8',
+);
 const serialized = JSON.stringify(workflow);
 
 const failures = [];
@@ -49,6 +54,30 @@ assert(
 assert(
   loadCode.includes('$env.ANTHROPIC_API_KEY') && loadCode.includes('Set ANTHROPIC_API_KEY'),
   'Load Config requires ANTHROPIC_API_KEY from n8n env (no hardcoded key)',
+);
+assert(
+  !loadCode.includes('githubToken:') &&
+    !loadCode.includes('anthropicApiKey:') &&
+    !loadCode.includes('discordWebhookUrl:') &&
+    !loadCode.includes('slackWebhookUrl:'),
+  'Load Config keeps secrets out of n8n execution item JSON',
+);
+assert(
+  serialized.includes('$env.ANTHROPIC_API_KEY') &&
+    serialized.includes('$env.DISCORD_WEBHOOK_URL') &&
+    serialized.includes('$env.SLACK_WEBHOOK_URL'),
+  'delivery and Claude nodes read webhook/API secrets from $env only',
+);
+assert(!ciWorkflow.includes('pull_request_target'), 'CI workflow avoids pull_request_target fork secret exposure');
+for (const name of ['Fetch Commits', 'Fetch Closed Issues', 'Fetch Merged PRs']) {
+  const node = workflow.nodes.find((n) => n.name === name);
+  assert(node?.onError !== 'continueRegularOutput', `${name} fails fast instead of swallowing GitHub HTTP errors`);
+}
+const fetchCommits = workflow.nodes.find((n) => n.name === 'Fetch Commits');
+assert(fetchCommits?.parameters?.jsCode?.includes('fetchGitHubPages'), 'GitHub fetch nodes paginate beyond 100 items');
+assert(
+  workflow.nodes.find((n) => n.name === 'Claude API')?.onError === 'continueRegularOutput',
+  'Claude API continues on transient Anthropic failures',
 );
 assert(
   readme.includes('Security:') && readme.includes('$env'),

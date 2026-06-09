@@ -6,6 +6,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { isGitHubError, collectRecords } from './lib/github-collect.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -19,6 +20,36 @@ function test(name, fn) {
 function countAsserts(path) {
   return (readFileSync(path, 'utf8').match(/\bassert\(/g) || []).length;
 }
+
+test('ci workflow avoids privileged fork checkout pattern', () => {
+  const ciWorkflow = readFileSync(
+    join(repoRoot, '.github', 'workflows', 'test-n8n-weekly-summary.yml'),
+    'utf8',
+  );
+  if (ciWorkflow.includes('pull_request_target')) {
+    throw new Error('test-n8n-weekly-summary.yml must not use pull_request_target with test checkout');
+  }
+  if (/pull_request_target:[\s\S]*uses:\s*actions\/checkout/.test(ciWorkflow)) {
+    throw new Error('privileged trigger must not checkout fork code in CI workflow');
+  }
+});
+
+test('github collect helper covers pagination and error rejection', () => {
+  const helperPath = join(__dirname, 'lib', 'github-collect.mjs');
+  if (!statSync(helperPath).isFile()) {
+    throw new Error('tests/lib/github-collect.mjs must exist for shared collection logic');
+  }
+  if (!isGitHubError({ message: 'bad', documentation_url: 'https://docs.github.com' })) {
+    throw new Error('isGitHubError must detect GitHub API error payloads');
+  }
+  const kept = collectRecords([{ json: { records: [
+    { sha: 'abc', commit: { message: 'x' } },
+    { message: 'Not Found', documentation_url: 'https://docs.github.com' },
+  ] } }]);
+  if (kept.length !== 1 || kept[0].sha !== 'abc') {
+    throw new Error('collectRecords must drop GitHub error objects from activity counts');
+  }
+});
 
 test('regression suite has minimum coverage', () => {
   const validate = countAsserts(join(__dirname, 'validate-workflow.mjs'));

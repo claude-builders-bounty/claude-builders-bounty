@@ -17,7 +17,7 @@ function assert(condition, message) {
 
 const requiredScripts = [
   { file: 'validate-workflow.mjs', mustInclude: ['weekly-dev-summary.json', 'assert('] },
-  { file: 'collect-github-data.test.mjs', mustInclude: ['collectRecords', 'Merge GitHub Results'] },
+  { file: 'collect-github-data.test.mjs', mustInclude: ['collectRecords', 'lib/github-collect.mjs'] },
   { file: 'delivery-verification.test.mjs', mustInclude: ['Fleet delivery verification', 'test('] },
   { file: 'peer-review-acceptance.test.mjs', mustInclude: ['Peer-review acceptance', 'assert('] },
   { file: 'run-ci-checks.mjs', mustInclude: ['validate-workflow.mjs', 'delivery-verification.test.mjs'] },
@@ -65,6 +65,14 @@ const githubFetch = readFileSync(join(__dirname, 'github-fetch.test.mjs'), 'utf8
 assert(
   githubFetch.includes('process.env.GITHUB_TOKEN') && githubFetch.includes('gh auth token'),
   'github-fetch.test.mjs resolves token from env or gh CLI (no hardcoded credentials)',
+);
+assert(
+  githubFetch.includes('process.exit(1)') && !githubFetch.includes('process.exit(0)'),
+  'github-fetch.test.mjs fails when token is unavailable (no silent skip)',
+);
+assert(
+  githubFetch.includes('fetchGitHubPages'),
+  'github-fetch.test.mjs exercises shared paginated GitHub fetch helper',
 );
 
 const capture = readFileSync(join(__dirname, 'capture-execution-screenshot.mjs'), 'utf8');

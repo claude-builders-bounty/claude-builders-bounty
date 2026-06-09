@@ -11,8 +11,10 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const workflowPath = join(__dirname, '..', 'weekly-dev-summary.json');
 const readmePath = join(__dirname, '..', 'README.md');
+const ciWorkflowPath = join(__dirname, '..', '..', '..', '.github', 'workflows', 'test-n8n-weekly-summary.yml');
 const workflow = JSON.parse(readFileSync(workflowPath, 'utf8'));
 const readme = readFileSync(readmePath, 'utf8');
+const ciWorkflow = readFileSync(ciWorkflowPath, 'utf8');
 
 const failures = [];
 
@@ -33,7 +35,7 @@ assert(
   'every node has id, name, type, and position for n8n canvas import',
 );
 assert(nodeTypes.includes('n8n-nodes-base.scheduleTrigger'), 'has schedule trigger');
-assert(nodeTypes.filter((t) => t === 'n8n-nodes-base.httpRequest').length >= 4, 'has GitHub + Claude + delivery HTTP nodes');
+assert(nodeTypes.filter((t) => t === 'n8n-nodes-base.httpRequest').length >= 3, 'has Claude + delivery HTTP nodes');
 assert(nodeNames.includes('Claude API'), 'has Claude API node');
 
 const trigger = workflow.nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger');
@@ -58,72 +60,65 @@ assert(serialized.includes('/commits'), 'fetches commits');
 assert(serialized.includes('/issues'), 'fetches issues');
 assert(serialized.includes('search/issues'), 'fetches merged PRs via GitHub search API');
 assert(serialized.includes('api.anthropic.com/v1/messages'), 'calls Claude API');
-assert(serialized.includes("'Bearer ' +"), 'GitHub Authorization uses Bearer expression');
+assert(serialized.includes('$env.GITHUB_TOKEN'), 'GitHub token read from env at runtime');
 
 const fetchNodes = workflow.nodes.filter((n) =>
   ['Fetch Commits', 'Fetch Closed Issues', 'Fetch Merged PRs'].includes(n.name),
 );
 assert(fetchNodes.length === 3, 'has three GitHub fetch nodes');
-assert(fetchNodes.every((n) => n.alwaysOutputData === true), 'GitHub fetch nodes always output data (empty week safe)');
 assert(
-  fetchNodes.every((n) => n.parameters?.options?.response?.response?.responseFormat === 'json'),
-  'GitHub fetch nodes parse JSON responses',
+  fetchNodes.every((n) => n.type === 'n8n-nodes-base.code'),
+  'GitHub fetch nodes use Code with pagination (not raw HTTP swallowing errors)',
+);
+assert(
+  fetchNodes.every((n) => n.parameters?.jsCode?.includes('fetchGitHubPages')),
+  'GitHub fetch nodes paginate API responses',
 );
 
 const loadConfig = workflow.nodes.find((n) => n.name === 'Load Config');
+const loadCode = loadConfig?.parameters?.jsCode || '';
 assert(
-  loadConfig?.parameters?.jsCode?.includes('GitHub-safe characters only'),
+  loadCode.includes('GitHub-safe characters only'),
   'Load Config validates GITHUB_REPO format (prevents malformed owner/repo injection)',
 );
-assert(loadConfig?.parameters?.jsCode?.includes('weekStart.toISOString()'), 'Load Config emits ISO8601 weekStart');
-assert(loadConfig?.parameters?.jsCode?.includes('weekEnd: now.toISOString()'), 'Load Config emits ISO8601 weekEnd');
-
-const commitsFetch = workflow.nodes.find((n) => n.name === 'Fetch Commits');
-const issuesFetch = workflow.nodes.find((n) => n.name === 'Fetch Closed Issues');
-const prsFetch = workflow.nodes.find((n) => n.name === 'Fetch Merged PRs');
-const sinceFromConfig = "$('Load Config').first().json.weekStart";
-assert(
-  commitsFetch?.parameters?.queryParameters?.parameters?.some(
-    (p) => p.name === 'since' && p.value?.includes(sinceFromConfig),
-  ),
-  'Fetch Commits filters by Load Config weekStart',
-);
-assert(
-  issuesFetch?.parameters?.queryParameters?.parameters?.some(
-    (p) => p.name === 'since' && p.value?.includes(sinceFromConfig),
-  ),
-  'Fetch Closed Issues filters by Load Config weekStart',
-);
-assert(
-  prsFetch?.parameters?.queryParameters?.parameters?.some(
-    (p) => p.name === 'q' && p.value?.includes('weekStart.slice(0, 10)'),
-  ),
-  'Fetch Merged PRs search query uses Load Config weekStart date',
-);
-
-const mergeNode = workflow.nodes.find((n) => n.name === 'Merge GitHub Results');
-assert(mergeNode?.parameters?.mode === 'append', 'Merge GitHub Results uses append mode (sync barrier for parallel fetches)');
+assert(loadCode.includes('weekStart.toISOString()'), 'Load Config emits ISO8601 weekStart');
+assert(loadCode.includes('weekEnd: now.toISOString()'), 'Load Config emits ISO8601 weekEnd');
+assert(!loadCode.includes('githubToken:'), 'Load Config does not embed githubToken in item JSON');
+assert(!loadCode.includes('anthropicApiKey:'), 'Load Config does not embed anthropicApiKey in item JSON');
 
 const buildPrompt = workflow.nodes.find((n) => n.name === 'Build Claude Prompt');
+const buildCode = buildPrompt?.parameters?.jsCode || '';
 assert(buildPrompt?.parameters?.jsCode?.includes('merged_at'), 'filters merged PRs by date');
 assert(
-  buildPrompt?.parameters?.jsCode?.includes('!i.pull_request'),
+  buildCode.includes('!i.pull_request'),
   'closed issues filter excludes pull requests (GitHub /issues returns both)',
 );
 assert(buildPrompt?.parameters?.mode === 'runOnceForAllItems', 'Build Claude Prompt runs once after merge');
-assert(buildPrompt?.parameters?.jsCode?.includes('collectRecords'), 'collects all GitHub HTTP items');
-assert(buildPrompt?.parameters?.jsCode?.includes('rows[0].items'), 'unwraps GitHub search API responses');
-assert(buildPrompt?.parameters?.jsCode?.includes('system:'), 'Claude request includes system prompt');
-assert(buildPrompt?.parameters?.jsCode?.includes('JSON.stringify(activity'), 'sends structured activity JSON to Claude');
+assert(buildCode.includes('collectRecords'), 'collects all GitHub HTTP items');
+assert(buildCode.includes('isGitHubError'), 'collectRecords rejects GitHub error payloads');
+assert(buildCode.includes('system:'), 'Claude request includes system prompt');
+assert(buildCode.includes('JSON.stringify(activity'), 'sends structured activity JSON to Claude');
 assert(
-  buildPrompt?.parameters?.jsCode?.includes("language === 'FR'"),
+  buildCode.includes("language === 'FR'"),
   'Build Claude Prompt switches user instructions for FR language',
 );
 assert(
-  buildPrompt?.parameters?.jsCode?.includes('systemPrompt') &&
-    buildPrompt?.parameters?.jsCode?.includes('résumez l'),
+  buildCode.includes('systemPrompt') &&
+    buildCode.includes('résumez l'),
   'Build Claude Prompt switches system instructions for FR language',
 );
+
+const claude = workflow.nodes.find((n) => n.name === 'Claude API');
+assert(
+  claude?.parameters?.headerParameters?.parameters?.some(
+    (h) => h.name === 'x-api-key' && h.value?.includes('$env.ANTHROPIC_API_KEY'),
+  ),
+  'Claude API reads ANTHROPIC_API_KEY from env (not item JSON)',
+);
+assert(claude?.onError === 'continueRegularOutput', 'Claude API has graceful failure routing');
+
+const mergeNode = workflow.nodes.find((n) => n.name === 'Merge GitHub Results');
+assert(mergeNode?.parameters?.mode === 'append', 'Merge GitHub Results uses append mode (sync barrier for parallel fetches)');
 
 const connections = workflow.connections || {};
 assert(Object.keys(connections).includes('Friday 5pm Weekly Trigger'), 'trigger is wired');
@@ -166,6 +161,9 @@ for (const node of workflow.nodes || []) {
     }
   }
 }
+
+assert(!ciWorkflow.includes('pull_request_target'), 'CI workflow does not use pull_request_target with fork checkout');
+assert(!/pull_request_target:[\s\S]*checkout/.test(ciWorkflow), 'privileged CI trigger never checks out fork code');
 
 const setupSteps = [...readme.matchAll(/^### \d+\./gm)];
 assert(setupSteps.length > 0 && setupSteps.length <= 5, 'README setup uses five steps or fewer');

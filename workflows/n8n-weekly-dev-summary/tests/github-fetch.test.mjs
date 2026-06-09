@@ -5,6 +5,7 @@
  * Optional GITHUB_REPO (default: claude-builders-bounty/claude-builders-bounty).
  */
 import { execSync } from 'node:child_process';
+import { fetchGitHubPages } from './lib/github-collect.mjs';
 
 const repo = process.env.GITHUB_REPO || 'claude-builders-bounty/claude-builders-bounty';
 
@@ -21,43 +22,33 @@ const token = resolveToken();
 const [owner, name] = repo.split('/');
 
 if (!token) {
-  console.error('SKIP: GITHUB_TOKEN not set and gh CLI is not authenticated');
-  process.exit(0);
+  console.error('FAIL: GITHUB_TOKEN not set and gh CLI is not authenticated');
+  process.exit(1);
 }
 
 const weekStart = new Date();
 weekStart.setDate(weekStart.getDate() - 7);
 
-async function gh(path, params = {}) {
-  const url = new URL(`https://api.github.com${path}`);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-  });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
-  return res.json();
-}
-
-const commits = await gh(`/repos/${owner}/${name}/commits`, {
-  since: weekStart.toISOString(),
-  per_page: '100',
-});
-const issues = await gh(`/repos/${owner}/${name}/issues`, {
-  state: 'closed',
-  since: weekStart.toISOString(),
-  per_page: '100',
-});
-const search = await gh('/search/issues', {
-  q: `repo:${repo} is:pr is:merged merged:>=${weekStart.toISOString().slice(0, 10)}`,
-  per_page: '100',
-  sort: 'updated',
-});
+const commits = await fetchGitHubPages(
+  `https://api.github.com/repos/${owner}/${name}/commits`,
+  token,
+  { since: weekStart.toISOString() },
+);
+const issues = await fetchGitHubPages(
+  `https://api.github.com/repos/${owner}/${name}/issues`,
+  token,
+  { state: 'closed', since: weekStart.toISOString() },
+);
+const search = await fetchGitHubPages(
+  'https://api.github.com/search/issues',
+  token,
+  {
+    q: `repo:${repo} is:pr is:merged merged:>=${weekStart.toISOString().slice(0, 10)}`,
+    sort: 'updated',
+  },
+);
 
 const closedIssues = issues.filter((i) => !i.pull_request);
-const mergedPrs = search.items || [];
+const mergedPrs = search;
 
-console.log(`OK: ${repo} — ${commits.length} commits, ${closedIssues.length} closed issues, ${mergedPrs.length} merged PRs (7d window)`);
+console.log(`OK: ${repo} — ${commits.length} commits, ${closedIssues.length} closed issues, ${mergedPrs.length} merged PRs (7d window, paginated)`);

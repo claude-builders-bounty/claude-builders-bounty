@@ -49,9 +49,11 @@ Friday 5pm Trigger → Load Config → parallel GitHub fetches (commits, issues,
 ```
 
 - Fetches the past 7 days of commits, closed issues, and merged PRs (filtered by date)
-- GitHub fetch nodes use **Always Output Data** so a quiet week does not block the merge step
+- GitHub fetch Code nodes **paginate** (`per_page=100` loop) so active repos are not truncated at 100 items
+- GitHub fetch failures **fail fast** (no `continueRegularOutput` swallowing auth/404/rate-limit errors into summaries)
+- Secrets stay in **`$env.*` only** — Load Config never copies tokens or webhook URLs into n8n execution item JSON
 - Builds a structured prompt with contributor stats
-- Generates EN/FR narrative via Claude Sonnet 4
+- Generates EN/FR narrative via Claude Sonnet 4 (Claude API errors fall back to a stats-only summary)
 - Delivers formatted output to your chosen channel
 
 ## Validation
