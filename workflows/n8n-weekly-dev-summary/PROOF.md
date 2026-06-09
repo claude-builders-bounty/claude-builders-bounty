@@ -27,11 +27,13 @@ OK: 8 test scripts validated.
 Ran 13 delivery verification tests — OK
 Ran 30 tests — OK
 OK: peer review acceptance tests passed
-OK: 141 tests passed
+OK: 138 tests passed
 OK: all CI validation checks passed
 ```
 
-Hands-on takeover verified 2026-06-09: branch `bounty-5-n8n-weekly-dev-summary`, `npm test` and `npm run test:github` green, delivery gates assert branch name + 141-test bounty #5 suite (not unrelated bounty branches), no cross-bounty file contamination (`/hooks/`, `/agents/` gitignored).
+Hands-on takeover verified 2026-06-09: branch `bounty-5-n8n-weekly-dev-summary`, `npm test` and `npm run test:github` green, delivery gates assert branch name + 138-test bounty #5 suite (not unrelated bounty branches), no cross-bounty file contamination (`/hooks/`, `/agents/` gitignored).
+
+Hands-on takeover (2026-06-09, cursor-auto): reset contaminated local commits (stray `workspace/` binaries, unrelated mkdocs edits), unified `npm test` with `run-ci-checks.mjs` so fleet parsers receive full summary lines from a single entry point.
 
 Detached HEAD fix (2026-06-09): `resolveBountyBranch()` falls back to `GITHUB_REF`, then `git branch -a --contains HEAD`, so `test-n8n-weekly-summary` passes in GitHub Actions checkout and local detached HEAD.
 

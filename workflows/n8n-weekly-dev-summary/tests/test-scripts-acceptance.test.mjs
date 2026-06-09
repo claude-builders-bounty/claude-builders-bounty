@@ -45,11 +45,11 @@ for (const { file, mustInclude } of requiredScripts) {
 }
 
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-assert(pkg.scripts?.test?.includes('validate-workflow.mjs'), 'npm test runs validate-workflow.mjs');
-assert(pkg.scripts?.test?.includes('collect-github-data.test.mjs'), 'npm test runs collect-github-data.test.mjs');
-assert(pkg.scripts?.test?.includes('test-scripts-acceptance.test.mjs'), 'npm test runs test-scripts-acceptance.test.mjs');
-assert(pkg.scripts?.test?.includes('delivery-verification.test.mjs'), 'npm test runs delivery-verification.test.mjs');
-assert(pkg.scripts?.test?.includes('peer-review-acceptance.test.mjs'), 'npm test runs peer-review-acceptance.test.mjs');
+assert(
+  pkg.scripts?.test?.includes('run-ci-checks.mjs'),
+  'npm test delegates to unified CI runner (run-ci-checks.mjs)',
+);
+assert(pkg.scripts?.test === pkg.scripts?.['test:ci'], 'npm test and test:ci use the same CI runner');
 assert(pkg.scripts?.['test:ci']?.includes('run-ci-checks.mjs'), 'npm run test:ci runs unified CI runner');
 assert(pkg.scripts?.['test:github']?.includes('github-fetch.test.mjs'), 'npm run test:github runs GitHub API test');
 assert(pkg.scripts?.['test:e2e']?.includes('run-n8n-e2e.mjs'), 'npm run test:e2e runs n8n e2e runner');
