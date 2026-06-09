@@ -181,6 +181,49 @@ assert(
   "Greenfield step 4 mentions requireOrgMember",
 );
 
+// Peer-review security: env-based DB connection (no hardcoded paths)
+const envExample = claude.match(/\/\/ src\/lib\/env\.ts[\s\S]*?```/)?.[0] ?? "";
+assert(
+  envExample.length > 0 && /process\.env\.DATABASE_URL/.test(envExample),
+  "env.ts example loads DATABASE_URL from process.env",
+);
+const dbExample = claude.match(/\/\/ src\/lib\/db\.ts[\s\S]*?```/)?.[0] ?? "";
+assert(
+  dbExample.length > 0 &&
+    /env\.DATABASE_URL/.test(dbExample) &&
+    !/['"]\.\/data\/app\.db['"]/.test(dbExample),
+  "db.ts example uses env.DATABASE_URL without hardcoded paths",
+);
+
+// Peer-review correctness: migration integrity validation
+const migrateExample = claude.match(/\/\/ scripts\/migrate\.ts[\s\S]*?```/)?.[0] ?? "";
+assert(
+  migrateExample.length > 0 && /Migration integrity check failed/.test(migrateExample),
+  "migrate.ts example includes post-apply integrity check",
+);
+
+// Peer-review tests: server action unit test example
+const actionTestExample = claude.match(
+  /\/\/ tests\/server\/actions\/create-invoice\.test\.ts[\s\S]*?```/,
+)?.[0] ?? "";
+assert(
+  actionTestExample.length > 0 && /actionCreateInvoice/.test(actionTestExample),
+  "Testing Rules include create-invoice server action unit test",
+);
+const createActionExample = claude.match(
+  /\/\/ src\/server\/actions\/create-invoice\.ts[\s\S]*?```/,
+)?.[0] ?? "";
+assert(
+  createActionExample.length > 0 && /safeParse/.test(createActionExample),
+  "create-invoice action uses safeParse for graceful validation errors",
+);
+
+// Peer-review style: Server Actions + Client Components (useActionState form)
+assert(
+  /useActionState/.test(claude) && /CreateInvoiceForm/.test(claude),
+  "Forms section includes useActionState client form example",
+);
+
 if (failures.length) {
   console.error(`FAILED peer-review acceptance:\n- ${failures.join("\n- ")}`);
   process.exit(1);

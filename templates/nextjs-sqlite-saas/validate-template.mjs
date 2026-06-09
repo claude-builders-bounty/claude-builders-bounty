@@ -123,6 +123,45 @@ if (!/requireOrgMember/.test(greenfieldStep4)) {
   process.exit(1);
 }
 
+const envExample = text.match(/\/\/ src\/lib\/env\.ts[\s\S]*?```/)?.[0] ?? "";
+if (!envExample || !/process\.env\.DATABASE_URL/.test(envExample)) {
+  console.error("env.ts example must load DATABASE_URL from process.env.");
+  process.exit(1);
+}
+
+const dbExample = text.match(/\/\/ src\/lib\/db\.ts[\s\S]*?```/)?.[0] ?? "";
+if (!dbExample || !/env\.DATABASE_URL/.test(dbExample) || /['"]\.\/data\/app\.db['"]/.test(dbExample)) {
+  console.error("db.ts example must use env.DATABASE_URL without hardcoded paths.");
+  process.exit(1);
+}
+
+const migrateExample = text.match(/\/\/ scripts\/migrate\.ts[\s\S]*?```/)?.[0] ?? "";
+if (!migrateExample || !/Migration integrity check failed/.test(migrateExample)) {
+  console.error("migrate.ts example must include post-apply integrity check.");
+  process.exit(1);
+}
+
+const actionTestExample = text.match(
+  /\/\/ tests\/server\/actions\/create-invoice\.test\.ts[\s\S]*?```/,
+)?.[0] ?? "";
+if (!actionTestExample || !/actionCreateInvoice/.test(actionTestExample)) {
+  console.error("Testing Rules must include create-invoice server action unit test example.");
+  process.exit(1);
+}
+
+const createActionExample = text.match(
+  /\/\/ src\/server\/actions\/create-invoice\.ts[\s\S]*?```/,
+)?.[0] ?? "";
+if (!createActionExample || !/safeParse/.test(createActionExample)) {
+  console.error("create-invoice action must use safeParse for graceful validation errors.");
+  process.exit(1);
+}
+
+if (!/useActionState/.test(text) || !/CreateInvoiceForm/.test(text)) {
+  console.error("Forms section must include useActionState client form example.");
+  process.exit(1);
+}
+
 console.log(
   `Template validation passed with ${opinionatedCount} explicit reasons and ${smokeTestSteps} smoke-test steps.`,
 );

@@ -239,16 +239,24 @@ const schema = z.object({
   amountCents: z.number().int().positive(),
 });
 
-export async function actionCreateInvoice(input: z.infer<typeof schema>) {
-  const data = schema.parse(input);
-  const { orgId, userId } = await requireOrgMember(data.orgSlug);
-  const invoice = await createInvoice({
-    orgId,
-    amountCents: data.amountCents,
-    createdBy: userId,
-  });
-  revalidatePath(`/${data.orgSlug}/invoices`);
-  return { ok: true as const, invoice };
+export async function actionCreateInvoice(input: unknown) {
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, error: 'Invalid input' };
+  }
+  const data = parsed.data;
+  try {
+    const { orgId, userId } = await requireOrgMember(data.orgSlug);
+    const invoice = await createInvoice({
+      orgId,
+      amountCents: data.amountCents,
+      createdBy: userId,
+    });
+    revalidatePath(`/${data.orgSlug}/invoices`);
+    return { ok: true as const, invoice };
+  } catch {
+    return { ok: false as const, error: 'Failed to create invoice' };
+  }
 }
 ```
 
@@ -285,6 +293,31 @@ Co-locate `loading.tsx`, `error.tsx`, and `not-found.tsx` in data-fetching route
 
 Prefer **Server Actions + `useActionState`** over client `fetch` to API routes. Auth stays on the server; forms work without JavaScript.
 
+```tsx
+'use client';
+
+import { useActionState } from 'react';
+import { actionCreateInvoice } from '@/server/actions/create-invoice';
+
+export function CreateInvoiceForm({ orgSlug }: { orgSlug: string }) {
+  const [state, formAction, pending] = useActionState(
+    async (_prev: unknown, formData: FormData) => {
+      const amountCents = Number(formData.get('amountCents'));
+      return actionCreateInvoice({ orgSlug, amountCents });
+    },
+    null,
+  );
+  return (
+    <form action={formAction}>
+      <input name="amountCents" type="number" required />
+      <button disabled={pending}>Create</button>
+      {state?.ok === false && <p role="alert">{state.error}</p>}
+      {state?.ok && <p>Invoice created</p>}
+    </form>
+  );
+}
+```
+
 ---
 
 ## Patterns to Follow
@@ -317,6 +350,7 @@ Prefer **Server Actions + `useActionState`** over client `fetch` to API routes. 
 | Commit `data/*.db` or `.env` files | Local state and secrets belong in gitignore |
 | Mix sync and async DB drivers in one module | Different semantics; abstract behind `lib/db.ts` per environment |
 | Hard-delete user content by default | Audit and recovery requirements; use `deleted_at` |
+| Hardcode database paths in source code | Connection details must come from `env.DATABASE_URL` via `src/lib/env.ts` |
 | Add client deps without bundle review | Bundle size is a product concern |
 | Use `any` or `@ts-ignore` | Defeats strict mode; fix the type or add a narrow assertion |
 
@@ -332,6 +366,56 @@ NEXT_PUBLIC_APP_URL="http://localhost:3000" # only NEXT_PUBLIC_* allowed
 ```
 
 All server secrets are read in `src/lib/env.ts`. **`NEXT_PUBLIC_*` is only for client-safe values** (app URL, analytics IDs). Never expose database URLs or session secrets.
+
+```ts
+// src/lib/env.ts
+import { z } from 'zod';
+
+const envSchema = z.object({
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .refine(
+      (url) => url.startsWith('file:') || url.startsWith('libsql:'),
+      'DATABASE_URL must use file: or libsql: scheme',
+    ),
+  SESSION_SECRET: z.string().min(32),
+  NEXT_PUBLIC_APP_URL: z.string().url(),
+});
+
+export const env = envSchema.parse({
+  DATABASE_URL: process.env.DATABASE_URL,
+  SESSION_SECRET: process.env.SESSION_SECRET,
+  NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+});
+```
+
+```ts
+// src/lib/db.ts — sole database entrypoint; never hardcode paths here
+import Database from 'better-sqlite3';
+import { createClient } from '@libsql/client';
+import { env } from './env';
+
+type DbClient = Database.Database | ReturnType<typeof createClient>;
+
+let instance: DbClient | null = null;
+
+export function getDb(): DbClient {
+  if (!instance) {
+    if (env.DATABASE_URL.startsWith('libsql:')) {
+      instance = createClient({ url: env.DATABASE_URL });
+    } else {
+      const filePath = env.DATABASE_URL.replace(/^file:/, '');
+      instance = new Database(filePath);
+      (instance as Database.Database).pragma('journal_mode = WAL');
+      (instance as Database.Database).pragma('foreign_keys = ON');
+    }
+  }
+  return instance;
+}
+```
+
+Reason: every connection reads `env.DATABASE_URL` validated at boot — no `./data/app.db` literals in application code.
 
 ---
 
@@ -382,12 +466,106 @@ Webhook handlers must be **idempotent** (use event IDs or unique constraints). R
 
 ---
 
+## SQL Migration Runner
+
+`scripts/migrate.ts` applies pending files in lexicographic order and records each in `_migrations`. Run via `pnpm db:migrate` — never on dev server startup.
+
+```ts
+// scripts/migrate.ts
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import Database from 'better-sqlite3';
+import { env } from '../src/lib/env';
+
+const MIGRATIONS_DIR = join(process.cwd(), 'src/db/migrations');
+
+function ensureMigrationsTable(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      filename TEXT NOT NULL UNIQUE,
+      applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+  `);
+}
+
+function applyMigrations() {
+  const filePath = env.DATABASE_URL.replace(/^file:/, '');
+  const db = new Database(filePath);
+  db.pragma('foreign_keys = ON');
+  ensureMigrationsTable(db);
+
+  const applied = new Set(
+    (db.prepare('SELECT filename FROM _migrations').all() as { filename: string }[])
+      .map((row) => row.filename),
+  );
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+
+  for (const filename of files) {
+    if (applied.has(filename)) continue;
+    const sql = readFileSync(join(MIGRATIONS_DIR, filename), 'utf8');
+    db.transaction(() => {
+      db.exec(sql);
+      db.prepare('INSERT INTO _migrations (filename) VALUES (?)').run(filename);
+    })();
+  }
+
+  const recorded = (
+    db.prepare('SELECT COUNT(*) as count FROM _migrations').get() as { count: number }
+  ).count;
+  if (recorded !== files.length) {
+    throw new Error(
+      `Migration integrity check failed: ${recorded} applied vs ${files.length} files`,
+    );
+  }
+  db.close();
+}
+
+applyMigrations();
+```
+
+Reason: filename-order application plus a post-run count check catches skipped files, partial applies, and duplicate `_migrations` rows.
+
+---
+
 ## Testing Rules
 
 - **Query modules:** test against an in-memory SQLite database or a temp file; seed minimal schema in `beforeEach`.
-- **Server actions:** call the action function directly with mocked `getSession()` — no HTTP layer.
+- **Server actions:** call the action function directly with mocked `requireOrgMember` — no HTTP layer; assert both success and validation-error paths.
 - **Components:** React Testing Library for client islands; RSC pages are covered indirectly via query/action tests.
 - **Migrations:** apply all migrations to a fresh DB in CI; assert `_migrations` row count matches file count.
+
+```ts
+// tests/server/actions/create-invoice.test.ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { actionCreateInvoice } from '@/server/actions/create-invoice';
+import * as auth from '@/lib/auth';
+
+vi.mock('@/lib/auth');
+
+describe('actionCreateInvoice', () => {
+  beforeEach(() => {
+    vi.mocked(auth.requireOrgMember).mockResolvedValue({
+      orgId: 'org-1',
+      userId: 'user-1',
+    });
+  });
+
+  it('returns structured error for invalid input', async () => {
+    const result = await actionCreateInvoice({ orgSlug: '', amountCents: -1 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBeDefined();
+  });
+
+  it('returns ok with invoice on success', async () => {
+    const result = await actionCreateInvoice({ orgSlug: 'acme', amountCents: 1000 });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.invoice).toBeDefined();
+  });
+});
+```
 
 Reason: testing at the query/action boundary catches most regressions without brittle full-stack E2E for every change.
 
