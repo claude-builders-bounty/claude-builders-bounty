@@ -169,8 +169,10 @@ test('repo root Makefile exposes test and ci-validate', () => {
 
 test('tracked files belong to bounty #5 n8n workflow only', () => {
   const tracked = execSync('git ls-files', { cwd: repoRoot, encoding: 'utf8' });
-  if (tracked.includes('hooks/block-destructive-commands')) {
-    throw new Error('wrong bounty files must not be committed on n8n workflow branch');
+  for (const stray of ['hooks/block-destructive-commands', 'agents/claude-review']) {
+    if (tracked.includes(stray)) {
+      throw new Error(`wrong bounty files must not be committed on n8n workflow branch (${stray})`);
+    }
   }
   if (!tracked.includes('workflows/n8n-weekly-dev-summary/weekly-dev-summary.json')) {
     throw new Error('n8n workflow JSON must be tracked for bounty #5 delivery');
