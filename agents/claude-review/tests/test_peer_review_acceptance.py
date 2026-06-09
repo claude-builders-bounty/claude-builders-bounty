@@ -63,6 +63,18 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("pull_request:", text)
         self.assertIn("--post", text)
 
+    def test_ci_workflow_uses_pull_request_trigger(self):
+        workflow = REPO_ROOT / ".github/workflows/test-claude-review.yml"
+        self.assertTrue(workflow.is_file())
+        text = workflow.read_text(encoding="utf-8")
+        self.assertIn("pull_request:", text)
+        self.assertNotIn("pull_request_target", text, "CI must not use pull_request_target")
+
+    def test_ci_workflow_runs_local_checks_script(self):
+        workflow = REPO_ROOT / ".github/workflows/test-claude-review.yml"
+        text = workflow.read_text(encoding="utf-8")
+        self.assertIn("run-ci-checks.sh", text)
+
     def test_sub_agent_definition_has_required_sections(self):
         agent_md = AGENT_DIR / ".claude/agents/claude-review.md"
         self.assertTrue(agent_md.is_file())
