@@ -9,6 +9,12 @@ cd "$REPO_ROOT"
 
 python3 -m unittest discover -s "${HOOK_DIR}/tests" -v
 
+delivery_tests="$(
+  grep -Ec '^[[:space:]]*def test_' "${HOOK_DIR}/tests/test_delivery_verification.py"
+)"
+python3 -m unittest "${HOOK_DIR}/tests/test_delivery_verification.py" -v
+echo "Ran ${delivery_tests} delivery verification tests — OK"
+
 peer_review_tests="$(
   grep -Ec '^[[:space:]]*def test_' "${HOOK_DIR}/tests/test_peer_review_acceptance.py"
 )"

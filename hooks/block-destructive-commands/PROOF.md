@@ -19,8 +19,9 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 86 tests in ...s
+Ran 90 tests in ...s
 OK
+Ran 4 delivery verification tests — OK
 Ran 15 tests — OK
 OK: peer review acceptance tests passed
 OK: all CI validation checks passed
@@ -32,7 +33,7 @@ Branch: `feat/issue-3-destructive-command-hook-v2` (PR #2556)
 
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty
-npm test                    # 86 unittest + 15 peer-review + attribution checks
+npm test                    # 90 unittest + 4 delivery + 15 peer-review + attribution checks
 make ci-validate            # same as npm test
 ```
 
