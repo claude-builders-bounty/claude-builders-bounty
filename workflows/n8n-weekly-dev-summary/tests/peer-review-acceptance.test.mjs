@@ -97,4 +97,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log(`OK: ${failures.length === 0 ? 'all' : 0} peer-review acceptance checks passed (${workflow.nodes.length} nodes).`);
+console.log('OK: peer review acceptance tests passed');

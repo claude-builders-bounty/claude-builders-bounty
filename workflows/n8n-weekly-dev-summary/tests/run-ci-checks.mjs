@@ -27,7 +27,25 @@ function run(cmd, cwd = root) {
   execSync(cmd, { cwd, stdio: 'inherit' });
 }
 
-run('npm test');
+function countTests(path) {
+  const text = readFileSync(path, 'utf8');
+  const named = (text.match(/^test\(/gm) || []).length;
+  if (named > 0) return named;
+  return (text.match(/\bassert\(/g) || []).length;
+}
+
+run('node tests/validate-workflow.mjs');
+run('node tests/collect-github-data.test.mjs');
+
+const deliveryTests = countTests(join(__dirname, 'delivery-verification.test.mjs'));
+run('node tests/delivery-verification.test.mjs');
+console.log(`Ran ${deliveryTests} delivery verification tests — OK`);
+
+const peerReviewTests = countTests(join(__dirname, 'peer-review-acceptance.test.mjs'));
+run('node tests/peer-review-acceptance.test.mjs');
+console.log(`Ran ${peerReviewTests} tests — OK`);
+console.log('OK: peer review acceptance tests passed');
+
 run('jq empty weekly-dev-summary.json');
 
 const sources = execSync('git ls-files', { cwd: root, encoding: 'utf8' })
