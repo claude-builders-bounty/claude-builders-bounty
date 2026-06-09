@@ -179,14 +179,18 @@ test('tracked files belong to bounty #5 n8n workflow only', () => {
   }
 });
 
-test('branch diff excludes unrelated paths from other bounties', () => {
-  let baseRef = 'main';
+function resolveBaseRef() {
   try {
     execSync('git rev-parse --verify main', { cwd: repoRoot, stdio: 'pipe' });
+    return 'main';
   } catch {
-    baseRef = 'origin/main';
     execSync('git rev-parse --verify origin/main', { cwd: repoRoot, stdio: 'pipe' });
+    return 'origin/main';
   }
+}
+
+test('branch diff excludes unrelated paths from other bounties', () => {
+  const baseRef = resolveBaseRef();
   const changed = execSync(`git diff --name-only ${baseRef}...HEAD`, {
     cwd: repoRoot,
     encoding: 'utf8',
@@ -200,6 +204,34 @@ test('branch diff excludes unrelated paths from other bounties', () => {
         throw new Error(`unrelated ${prefix} path in PR diff: ${path}`);
       }
     }
+  }
+});
+
+test('branch diff includes full bounty #5 deliverable', () => {
+  const baseRef = resolveBaseRef();
+  const changed = new Set(
+    execSync(`git diff --name-only ${baseRef}...HEAD`, { cwd: repoRoot, encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .filter(Boolean),
+  );
+  for (const required of [
+    'workflows/n8n-weekly-dev-summary/weekly-dev-summary.json',
+    'workflows/n8n-weekly-dev-summary/README.md',
+    'workflows/n8n-weekly-dev-summary/assets/n8n-execution-screenshot.png',
+    '.github/workflows/test-n8n-weekly-summary.yml',
+  ]) {
+    if (!changed.has(required)) {
+      throw new Error(`PR diff must include bounty deliverable: ${required}`);
+    }
+  }
+  const shortstat = execSync(`git diff --shortstat ${baseRef}...HEAD`, {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  const insertions = Number((shortstat.match(/(\d+) insertion/) || [])[1] || 0);
+  if (insertions < 500) {
+    throw new Error(`PR diff has ${insertions} insertions (need >= 500 for full workflow delivery)`);
   }
 });
 
