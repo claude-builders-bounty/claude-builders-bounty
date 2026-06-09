@@ -47,6 +47,7 @@ for (const { file, mustInclude } of requiredScripts) {
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 assert(pkg.scripts?.test?.includes('validate-workflow.mjs'), 'npm test runs validate-workflow.mjs');
 assert(pkg.scripts?.test?.includes('collect-github-data.test.mjs'), 'npm test runs collect-github-data.test.mjs');
+assert(pkg.scripts?.test?.includes('test-scripts-acceptance.test.mjs'), 'npm test runs test-scripts-acceptance.test.mjs');
 assert(pkg.scripts?.test?.includes('delivery-verification.test.mjs'), 'npm test runs delivery-verification.test.mjs');
 assert(pkg.scripts?.test?.includes('peer-review-acceptance.test.mjs'), 'npm test runs peer-review-acceptance.test.mjs');
 assert(pkg.scripts?.['test:ci']?.includes('run-ci-checks.mjs'), 'npm run test:ci runs unified CI runner');

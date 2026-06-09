@@ -102,6 +102,18 @@ assert(
 const setupSteps = [...readme.matchAll(/^### \d+\./gm)];
 assert(setupSteps.length > 0 && setupSteps.length <= 5, 'README setup in five steps or fewer');
 
+const ciRunner = readFileSync(join(__dirname, 'run-ci-checks.mjs'), 'utf8');
+assert(
+  ciRunner.includes('test-scripts-acceptance.test.mjs') &&
+    ciRunner.includes('delivery-verification.test.mjs') &&
+    ciRunner.includes('peer review acceptance tests passed'),
+  'CI runner executes test-scripts, delivery verification, and peer-review summary',
+);
+assert(
+  readme.includes('test-scripts-acceptance') || readme.includes('npm test'),
+  'README documents validation test entry points',
+);
+
 const screenshot = statSync(join(root, 'assets', 'n8n-execution-screenshot.png'));
 assert(screenshot.isFile() && screenshot.size > 1024, 'n8n execution screenshot asset present');
 

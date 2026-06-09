@@ -56,9 +56,16 @@ Friday 5pm Trigger → Load Config → parallel GitHub fetches (commits, issues,
 
 ## Validation
 
+Local regression suite (workflow structure, GitHub data merge, test-script hygiene, fleet delivery checks, peer-review acceptance):
+
 ```bash
 npm test
-npm run test:ci   # mirrors GitHub Actions validation (attribution + diff --check)
+```
+
+CI mirror (attribution scan, `git diff --check`, ordered summary lines for fleet delivery gates):
+
+```bash
+npm run test:ci
 jq empty weekly-dev-summary.json
 ```
 
@@ -73,6 +80,8 @@ Optional full n8n execution + screenshot regeneration (requires `n8n` CLI and `G
 ```bash
 npm run test:e2e
 ```
+
+The `tests/test-scripts-acceptance.test.mjs` step statically validates all eight test scripts (shebang, secret hygiene, package.json wiring) before delivery verification runs.
 
 ## Test evidence
 
