@@ -31,8 +31,13 @@ OK: all CI validation checks passed
 
 Branch: `feat/issue-3-destructive-command-hook-v2` (PR #2556)
 
+Verified by hands-on takeover after fleet engineer agent failed on wrong branch
+(`bounty-4-claude-review-agent`, zero diff). Checkout, `npm test`, and `make ci-validate`
+all green on this branch.
+
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty
+git checkout feat/issue-3-destructive-command-hook-v2
 npm test                    # 90 unittest + 4 delivery + 15 peer-review + attribution checks
 make ci-validate            # same as npm test
 ```
