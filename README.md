@@ -1,13 +1,26 @@
-# Changelog Generator
+# Git Changelog Generator
 
-A simple, dependency-free bash script that generates a structured `CHANGELOG.md` from your git history.
+A lightweight, zero-dependency bash script to automatically generate structured, markdown-formatted `CHANGELOG.md` files from your Git commit history. 
 
-## Setup Instructions
+It fetches all commits since the last Git tag (or all commits if no tags exist), groups them by action (`Added`, `Changed`, `Fixed`, `Removed`), and links commits directly to their GitHub pages.
 
-1. Make the script executable:
-   `chmod +x changelog.sh`
+## Setup & Usage (3 steps or fewer)
 
-2. Run the script:
-   `./changelog.sh > CHANGELOG.md`
+1. **Download the script** to your repository root:
+   ```bash
+   curl -o changelog.sh https://raw.githubusercontent.com/sosal123tyu1/claude-builders-bounty/main/changelog.sh
+   ```
 
-3. Done! The script automatically fetches commits since your last git tag (or all commits if no tags exist) and categorizes them into Added, Fixed, Changed, and Removed based on commit messages.
+2. **Make it executable**:
+   ```bash
+   chmod +x changelog.sh
+   ```
+
+3. **Run the generator**:
+   ```bash
+   ./changelog.sh
+   ```
+
+---
+
+*Powered by [sosal123tyu1](https://github.com/sosal123tyu1)*
