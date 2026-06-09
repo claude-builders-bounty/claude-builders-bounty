@@ -102,9 +102,20 @@ assert(
   "attribution guard rejects forbidden trailers in HEAD commit message",
 );
 
+// Root test entry points delegate to the template CI runner
+const makefile = readFileSync(join(repoRoot, "Makefile"), "utf8");
+const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+assert(makefile.includes("run-ci-checks.sh"), "Makefile test target runs unified validation");
+assert(
+  packageJson.scripts?.["test:ci"]?.includes("run-ci-checks.sh"),
+  "package.json test:ci runs unified validation",
+);
+
 // CI workflow runs validation and greenfield smoke test
 assert(workflow.includes("run-ci-checks.sh"), "CI runs unified validation script");
 assert(workflow.includes("pull_request_target"), "CI supports upstream fork PR checks");
+assert(workflow.includes("Makefile"), "CI triggers on Makefile changes");
+assert(workflow.includes("package.json"), "CI triggers on package.json changes");
 
 // Runtime CLI checks — validator must pass on the shipped template
 const validateOutput = execSync(`node "${join(root, "validate-template.mjs")}"`, {
