@@ -1,0 +1,100 @@
+name: Test claude-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "agents/claude-review/**"
+      - "claude-review"
+      - "Makefile"
+      - "package.json"
+      - "package-lock.json"
+      - ".gitignore"
+      - ".github/workflows/test-claude-review.yml"
+  push:
+    paths:
+      - "agents/claude-review/**"
+      - "claude-review"
+      - "Makefile"
+      - "package.json"
+      - "package-lock.json"
+      - ".gitignore"
+      - ".github/workflows/test-claude-review.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run CI validation
+        run: bash agents/claude-review/tests/run-ci-checks.sh
+
+      - name: Report commit status for upstream PR
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          UPSTREAM_STATUS_TOKEN: ${{ secrets.UPSTREAM_STATUS_TOKEN }}
+        with:
+          github-token: ${{ secrets.UPSTREAM_STATUS_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const upstream = { owner: 'claude-builders-bounty', repo: 'claude-builders-bounty' };
+            const pr = context.payload.pull_request;
+            let sha = pr?.head?.sha || context.sha;
+            let owner = pr?.base?.repo?.owner?.login || upstream.owner;
+            let repo = pr?.base?.repo?.name || upstream.repo;
+
+            if (!pr && context.eventName === 'push') {
+              const { data: pulls } = await github.rest.pulls.list({
+                owner: upstream.owner,
+                repo: upstream.repo,
+                head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
+                state: 'open',
+                per_page: 1,
+              });
+              const openPr = pulls[0];
+              if (openPr) {
+                sha = openPr.head.sha;
+                owner = openPr.base.repo.owner.login;
+                repo = openPr.base.repo.name;
+              }
+            }
+
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const payload = {
+              owner,
+              repo,
+              sha,
+              state,
+              context: 'test-claude-review',
+              description: state === 'success'
+                ? 'claude-review unit tests and attribution checks passed'
+                : 'claude-review unit tests or attribution checks failed',
+              target_url: runUrl,
+            };
+
+            try {
+              await github.rest.repos.createCommitStatus(payload);
+            } catch (error) {
+              core.warning(`Upstream status unavailable (${error.status}); reporting on fork commit.`);
+              await github.rest.repos.createCommitStatus({
+                ...payload,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+              });
+            }
