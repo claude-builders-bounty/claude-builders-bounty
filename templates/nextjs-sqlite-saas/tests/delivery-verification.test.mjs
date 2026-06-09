@@ -30,6 +30,16 @@ test("repo root exposes npm test and test:ci entry points", () => {
   }
 });
 
+test("repo root keeps reproducible npm test wiring", () => {
+  const makefile = readFileSync(join(repoRoot, "Makefile"), "utf8");
+  if (!makefile.includes("ci-validate:")) {
+    throw new Error("Makefile must expose ci-validate target");
+  }
+  if (!statSync(join(repoRoot, "package-lock.json")).isFile()) {
+    throw new Error("package-lock.json must exist for reproducible npm test runs");
+  }
+});
+
 test("ci runner declares delivery and peer-review summary lines", () => {
   const ciScript = readFileSync(join(__dirname, "run-ci-checks.sh"), "utf8");
   if (!ciScript.includes("delivery-verification.test.mjs")) {
