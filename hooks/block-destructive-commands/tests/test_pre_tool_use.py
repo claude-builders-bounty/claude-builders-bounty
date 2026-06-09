@@ -695,6 +695,18 @@ class SanitizeLogFieldTests(unittest.TestCase):
             "rm?-rf",
         )
 
+    def test_escapes_unicode_line_separators(self):
+        self.assertEqual(
+            self.hook.sanitize_log_field("rm\u2028-rf"),
+            "rm\\u2028-rf",
+        )
+
+    def test_replaces_del_character(self):
+        self.assertEqual(
+            self.hook.sanitize_log_field("rm\x7f-rf"),
+            "rm?-rf",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -41,7 +41,7 @@ Uses the official Claude Code `hookSpecificOutput` schema (`permissionDecision: 
 1. Intercepts every `Bash` tool call via the `PreToolUse` hook
 2. Splits chained commands on `;`, `&&`, and `||`, then checks each segment independently
 3. **Blocks** matching commands and returns a clear denial message to Claude
-4. **Logs** every blocked attempt to `~/.claude/hooks/blocked.log` with timestamp, command, and project path
+4. **Logs** every blocked attempt to `~/.claude/hooks/blocked.log` with timestamp, command, and project path (command and path are sanitized before write to prevent log injection)
 5. **Allows** safe commands to pass through unchanged
 
 ## Hook protocol
@@ -88,6 +88,10 @@ Example entry:
 [2026-06-06T12:34:56Z] Command: rm -rf /tmp/build | Project: /home/user/project
 ```
 
+Newlines, backslashes, Unicode line separators, and other control characters in the
+command or project path are escaped or replaced before writing so malicious payloads
+cannot forge extra log lines.
+
 ## Tests
 
 From this directory:
@@ -95,7 +99,7 @@ From this directory:
 ```bash
 make test
 # or: python3 -m unittest discover -s tests -v
-# 95 regression tests (bounty + peer-review acceptance + integration checks)
+# 103 regression tests (bounty + peer-review acceptance + integration checks)
 ```
 
 From the repository root:

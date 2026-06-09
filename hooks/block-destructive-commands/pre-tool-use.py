@@ -141,7 +141,10 @@ def sanitize_log_field(value: str) -> str:
         return ""
     sanitized = value.replace("\\", "\\\\")
     sanitized = sanitized.replace("\r", "\\r").replace("\n", "\\n")
-    return "".join(ch if ord(ch) >= 32 or ch == "\t" else "?" for ch in sanitized)
+    sanitized = sanitized.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    return "".join(
+        ch if (ch == "\t" or 32 <= ord(ch) <= 126) else "?" for ch in sanitized
+    )
 
 
 def log_blocked_attempt(command: str, project_path: str) -> None:
