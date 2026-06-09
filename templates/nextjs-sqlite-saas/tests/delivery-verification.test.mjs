@@ -55,6 +55,9 @@ test("ci runner declares delivery and peer-review summary lines", () => {
   if (!ciScript.includes("peer review acceptance tests passed")) {
     throw new Error("run-ci-checks.sh must print peer review acceptance summary");
   }
+  if (!ciScript.includes('echo "OK: ${total_tests} tests passed"')) {
+    throw new Error("run-ci-checks.sh must print aggregate OK: N tests passed summary");
+  }
   const peerReviewIndex = ciScript.indexOf("peer-review-acceptance.test.mjs");
   const ranTestsIndex = ciScript.indexOf('echo "Ran ${peer_review_tests} tests — OK"');
   if (peerReviewIndex < 0 || ranTestsIndex < 0 || ranTestsIndex <= peerReviewIndex) {

@@ -22,6 +22,8 @@ peer_review_tests="$(
 node "${TEMPLATE_DIR}/tests/peer-review-acceptance.test.mjs"
 echo "Ran ${peer_review_tests} tests — OK"
 echo 'OK: peer review acceptance tests passed'
+total_tests=$((delivery_verification_tests + peer_review_tests))
+echo "OK: ${total_tests} tests passed"
 
 git diff --check
 

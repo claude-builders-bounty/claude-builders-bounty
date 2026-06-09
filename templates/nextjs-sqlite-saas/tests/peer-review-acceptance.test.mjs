@@ -132,6 +132,14 @@ assert(workflow.includes("Makefile"), "CI triggers on Makefile changes");
 assert(workflow.includes("package.json"), "CI triggers on package.json changes");
 assert(workflow.includes("package-lock.json"), "CI triggers on package-lock.json changes");
 assert(workflow.includes(".gitignore"), "CI triggers on .gitignore changes");
+assert(
+  /permissions:\s*\n\s*contents:\s*read/.test(workflow),
+  "CI workflow uses read-only contents permission",
+);
+assert(
+  !workflow.includes("github-script") && !workflow.includes("UPSTREAM_STATUS_TOKEN"),
+  "CI workflow does not embed privileged github-script tokens",
+);
 
 // Runtime CLI checks — validator must pass on the shipped template
 const validateOutput = execSync(`node "${join(root, "validate-template.mjs")}"`, {
