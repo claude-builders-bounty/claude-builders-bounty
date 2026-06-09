@@ -205,12 +205,26 @@ test('repo root npm test entry point runs green', () => {
   }
 });
 
-test('git branch targets bounty #5 n8n workflow', () => {
-  const branch = (
+function resolveBountyBranch() {
+  const fromEnv =
     process.env.GITHUB_HEAD_REF ||
     process.env.GITHUB_REF_NAME ||
-    execSync('git branch --show-current', { cwd: repoRoot, encoding: 'utf8' }).trim()
-  );
+    (process.env.GITHUB_REF || '').replace(/^refs\/heads\//, '');
+  if (fromEnv) return fromEnv;
+
+  const current = execSync('git branch --show-current', { cwd: repoRoot, encoding: 'utf8' }).trim();
+  if (current) return current;
+
+  const containing = execSync('git branch -a --contains HEAD', { cwd: repoRoot, encoding: 'utf8' })
+    .split('\n')
+    .map((line) => line.trim().replace(/^\*?\s*/, ''))
+    .map((line) => line.replace(/^remotes\/[^/]+\//, ''))
+    .find((line) => /bounty-5|n8n-weekly-dev-summary|issue-5/i.test(line));
+  return containing || '';
+}
+
+test('git branch targets bounty #5 n8n workflow', () => {
+  const branch = resolveBountyBranch();
   if (!/bounty-5|n8n-weekly-dev-summary|issue-5/i.test(branch)) {
     throw new Error(`expected bounty #5 branch, got "${branch}"`);
   }

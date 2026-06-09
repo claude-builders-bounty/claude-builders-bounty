@@ -33,6 +33,8 @@ OK: all CI validation checks passed
 
 Hands-on takeover verified 2026-06-09: branch `bounty-5-n8n-weekly-dev-summary`, `npm test` and `npm run test:github` green, delivery gates assert branch name + 141-test bounty #5 suite (not unrelated bounty branches), no cross-bounty file contamination (`/hooks/`, `/agents/` gitignored).
 
+Detached HEAD fix (2026-06-09): `resolveBountyBranch()` falls back to `GITHUB_REF`, then `git branch -a --contains HEAD`, so `test-n8n-weekly-summary` passes in GitHub Actions checkout and local detached HEAD.
+
 Optional live GitHub check:
 
 ```bash
