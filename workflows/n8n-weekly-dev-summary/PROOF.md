@@ -24,14 +24,14 @@ Expected CI runner output (suite counts may grow; total must stay in sync):
 OK: 13 nodes, all acceptance checks passed.
 OK: GitHub data collection handles n8n item splitting.
 OK: 8 test scripts validated.
-Ran 12 delivery verification tests — OK
+Ran 13 delivery verification tests — OK
 Ran 30 tests — OK
 OK: peer review acceptance tests passed
-OK: 140 tests passed
+OK: 141 tests passed
 OK: all CI validation checks passed
 ```
 
-Hands-on takeover verified 2026-06-09 (engineer handoff): branch `bounty-5-n8n-weekly-dev-summary`, `npm test` and `npm run test:github` green, no cross-bounty file contamination (`/hooks/`, `/agents/` gitignored).
+Hands-on takeover verified 2026-06-09: branch `bounty-5-n8n-weekly-dev-summary`, `npm test` and `npm run test:github` green, delivery gates assert branch name + 141-test bounty #5 suite (not unrelated bounty branches), no cross-bounty file contamination (`/hooks/`, `/agents/` gitignored).
 
 Optional live GitHub check:
 

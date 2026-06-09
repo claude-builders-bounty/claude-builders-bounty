@@ -192,8 +192,23 @@ test('repo root npm test entry point runs green', () => {
   if (!output.includes('13 nodes, all acceptance checks passed')) {
     throw new Error('repo root npm test must validate n8n weekly-dev-summary workflow');
   }
-  if (/destructive|pretooluse/i.test(output)) {
+  if (!output.includes('OK: peer review acceptance tests passed')) {
+    throw new Error('repo root npm test must run peer-review acceptance suite');
+  }
+  if (/destructive|pretooluse|claude-review|AnalyzePrTests/i.test(output)) {
     throw new Error('repo root npm test must not run unrelated bounty suites');
+  }
+  const totalMatch = output.match(/OK: (\d+) tests passed/);
+  const total = totalMatch ? Number(totalMatch[1]) : 0;
+  if (total < 120) {
+    throw new Error(`repo root npm test reported ${total} tests (need >= 120 for bounty #5)`);
+  }
+});
+
+test('git branch targets bounty #5 n8n workflow', () => {
+  const branch = execSync('git branch --show-current', { cwd: repoRoot, encoding: 'utf8' }).trim();
+  if (!/bounty-5|n8n-weekly-dev-summary|issue-5/i.test(branch)) {
+    throw new Error(`expected bounty #5 branch, got "${branch}"`);
   }
 });
 
