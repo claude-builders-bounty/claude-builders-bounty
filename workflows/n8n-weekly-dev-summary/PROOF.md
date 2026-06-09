@@ -24,10 +24,10 @@ Expected CI runner output (suite counts may grow; total must stay in sync):
 OK: 13 nodes, all acceptance checks passed.
 OK: GitHub data collection handles n8n item splitting.
 OK: 8 test scripts validated.
-Ran 10 delivery verification tests — OK
+Ran 11 delivery verification tests — OK
 Ran 30 tests — OK
 OK: peer review acceptance tests passed
-OK: 138 tests passed
+OK: 139 tests passed
 OK: all CI validation checks passed
 ```
 

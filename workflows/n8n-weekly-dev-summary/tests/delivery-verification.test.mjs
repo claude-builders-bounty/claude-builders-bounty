@@ -3,6 +3,7 @@
  * Fleet delivery verification for bounty #5 (issue #5).
  * Codifies handoff checks: test coverage, CI wiring, importable workflow.
  */
+import { execSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -163,6 +164,18 @@ test('repo root Makefile exposes test and ci-validate', () => {
   const makefile = readFileSync(join(repoRoot, 'Makefile'), 'utf8');
   if (!/^test:/m.test(makefile) || !/^ci-validate:/m.test(makefile)) {
     throw new Error('repo root Makefile must expose test and ci-validate targets');
+  }
+});
+
+test('repo root npm test entry point runs green', () => {
+  if (process.env.N8N_CI_INNER_RUN) return;
+  const output = execSync('npm test', {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: { ...process.env, N8N_CI_INNER_RUN: '1' },
+  });
+  if (!output.includes('OK: all CI validation checks passed')) {
+    throw new Error('repo root npm test must pass full CI runner');
   }
 });
 

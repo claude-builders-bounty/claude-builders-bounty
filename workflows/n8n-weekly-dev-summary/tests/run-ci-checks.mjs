@@ -11,6 +11,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const repoRoot = join(root, '..', '..');
 
+process.env.N8N_CI_INNER_RUN = '1';
+
 const cursorAgent = ['cursoragent', '@', 'cursor', '.', 'com'].join('');
 const madeWith = ['Made with', ' ', 'Cursor'].join('');
 const coAuthored = ['Co-authored-by:', ' ', 'Cursor'].join('');
