@@ -32,11 +32,15 @@ test("repo root exposes npm test and test:ci entry points", () => {
 
 test("repo root keeps reproducible npm test wiring", () => {
   const makefile = readFileSync(join(repoRoot, "Makefile"), "utf8");
+  const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
   if (!makefile.includes("ci-validate:")) {
     throw new Error("Makefile must expose ci-validate target");
   }
   if (!statSync(join(repoRoot, "package-lock.json")).isFile()) {
     throw new Error("package-lock.json must exist for reproducible npm test runs");
+  }
+  if (!gitignore.includes("node_modules/")) {
+    throw new Error(".gitignore must exclude node_modules for clean fleet delivery");
   }
 });
 

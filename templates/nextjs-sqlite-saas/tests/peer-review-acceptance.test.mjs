@@ -131,6 +131,7 @@ assert(workflow.includes("pull_request_target"), "CI supports upstream fork PR c
 assert(workflow.includes("Makefile"), "CI triggers on Makefile changes");
 assert(workflow.includes("package.json"), "CI triggers on package.json changes");
 assert(workflow.includes("package-lock.json"), "CI triggers on package-lock.json changes");
+assert(workflow.includes(".gitignore"), "CI triggers on .gitignore changes");
 
 // Runtime CLI checks — validator must pass on the shipped template
 const validateOutput = execSync(`node "${join(root, "validate-template.mjs")}"`, {
