@@ -25,6 +25,29 @@ def load_hook_module():
     return module
 
 
+def resolve_branch_diff_base_ref() -> str:
+    """Pick a merge-base ref that exists locally (CI shallow clones omit main)."""
+    candidates: list[str] = []
+    github_base = os.environ.get("GITHUB_BASE_REF", "").strip()
+    if github_base:
+        candidates.extend((github_base, f"origin/{github_base}"))
+    candidates.extend(("main", "origin/main", "master", "origin/master"))
+    for ref in candidates:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", ref],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return ref
+    raise RuntimeError(
+        "no git base ref found for branch diff scope check; "
+        "fetch the default branch (e.g. git fetch origin main:main) before running tests"
+    )
+
+
 class PeerReviewAcceptanceTests(unittest.TestCase):
     """Maps bounty #3 acceptance criteria to repo artifacts and CLI behavior."""
 
@@ -220,8 +243,9 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
 
     def test_branch_diff_scoped_to_hook_only(self):
         """Peer review: PR diff must not include unrelated paths (e.g. internal/exporter)."""
+        base_ref = resolve_branch_diff_base_ref()
         result = subprocess.run(
-            ["git", "diff", "main...HEAD", "--name-only"],
+            ["git", "diff", f"{base_ref}...HEAD", "--name-only"],
             cwd=REPO_ROOT,
             text=True,
             capture_output=True,
