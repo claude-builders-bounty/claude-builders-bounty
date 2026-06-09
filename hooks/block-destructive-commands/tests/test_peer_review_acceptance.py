@@ -48,6 +48,24 @@ def resolve_branch_diff_base_ref() -> str:
     )
 
 
+def list_branch_changed_files(base_ref: str) -> list[str]:
+    """List paths changed on HEAD since base_ref (needs full git history for ... syntax)."""
+    triple_dot = subprocess.run(
+        ["git", "diff", f"{base_ref}...HEAD", "--name-only"],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if triple_dot.returncode == 0:
+        return [line.strip() for line in triple_dot.stdout.splitlines() if line.strip()]
+
+    raise RuntimeError(
+        f"git diff {base_ref}...HEAD failed ({triple_dot.stderr.strip()}); "
+        "use fetch-depth: 0 in CI checkout so merge-base exists"
+    )
+
+
 class PeerReviewAcceptanceTests(unittest.TestCase):
     """Maps bounty #3 acceptance criteria to repo artifacts and CLI behavior."""
 
@@ -244,15 +262,7 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
     def test_branch_diff_scoped_to_hook_only(self):
         """Peer review: PR diff must not include unrelated paths (e.g. internal/exporter)."""
         base_ref = resolve_branch_diff_base_ref()
-        result = subprocess.run(
-            ["git", "diff", f"{base_ref}...HEAD", "--name-only"],
-            cwd=REPO_ROOT,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        changed = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        changed = list_branch_changed_files(base_ref)
 
         allowed_prefixes = (
             "hooks/block-destructive-commands/",
