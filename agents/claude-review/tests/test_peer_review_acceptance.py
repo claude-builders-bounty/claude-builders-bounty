@@ -52,9 +52,18 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             "test_main_exits_on_missing_diff_file",
             "test_fetch_pr_diff_returns_none_on_http_error",
             "test_gh_api_exits_on_auth_failure",
+            "test_api_repo_path_url_encodes_special_characters",
+            "test_truncates_changed_files_when_max_files_set",
         )
         for case in required_cases:
             self.assertIn(case, text, f"missing edge-case test {case}")
+
+    def test_peer_review_hardening_helpers_present(self):
+        text = (AGENT_DIR / "claude_review.py").read_text(encoding="utf-8")
+        self.assertIn("def apply_max_files_cap(", text)
+        self.assertIn("def _api_repo_path(", text)
+        self.assertIn("urllib.parse.quote", text)
+        self.assertIn("apply_max_files_cap(metadata, args.max_files)", text)
 
     def test_repo_root_cli_exists(self):
         cli = REPO_ROOT / "claude-review"
