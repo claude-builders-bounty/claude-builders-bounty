@@ -93,6 +93,11 @@ assert(smokeTest.includes('cp "$ROOT/CLAUDE.md"'), "smoke test copies CLAUDE.md 
 assert(runCiChecks.includes("validate-template.mjs"), "run-ci-checks runs structural validator");
 assert(runCiChecks.includes("smoke-greenfield.sh"), "run-ci-checks runs greenfield smoke test");
 assert(runCiChecks.includes("peer-review-acceptance.test.mjs"), "run-ci-checks runs peer-review acceptance");
+assert(runCiChecks.includes("delivery-verification.test.mjs"), "run-ci-checks runs delivery verification");
+assert(
+  runCiChecks.includes("delivery verification tests"),
+  "run-ci-checks prints delivery verification summary",
+);
 assert(
   runCiChecks.includes("template_commit_messages="),
   "attribution guard avoids pipefail SIGPIPE from git log | grep",
@@ -134,14 +139,7 @@ assert(
   "validate-template.mjs reports opinionated reason count",
 );
 
-const peerReviewSource = readFileSync(fileURLToPath(import.meta.url), "utf8");
-const peerReviewCaseCount = [...peerReviewSource.matchAll(/^\s*assert\(/gm)].length;
-
 if (failures.length) {
   console.error(`FAILED peer-review acceptance:\n- ${failures.join("\n- ")}`);
   process.exit(1);
 }
-
-console.log(
-  `OK: all peer-review acceptance checks passed (${peerReviewCaseCount} criteria).`,
-);

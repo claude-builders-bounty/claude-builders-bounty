@@ -10,6 +10,12 @@ cd "$REPO_ROOT"
 node "${TEMPLATE_DIR}/validate-template.mjs"
 bash "${TEMPLATE_DIR}/tests/smoke-greenfield.sh"
 
+delivery_verification_tests="$(
+  grep -Ec '^test\(' "${TEMPLATE_DIR}/tests/delivery-verification.test.mjs"
+)"
+node "${TEMPLATE_DIR}/tests/delivery-verification.test.mjs"
+echo "Ran ${delivery_verification_tests} delivery verification tests — OK"
+
 peer_review_tests="$(
   grep -Ec '^\s*assert\(' "${TEMPLATE_DIR}/tests/peer-review-acceptance.test.mjs"
 )"
