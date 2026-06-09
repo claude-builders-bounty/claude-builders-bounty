@@ -16,7 +16,7 @@ Maps each acceptance criterion to the exact command or artifact in this PR.
 ## Commands
 
 ```bash
-# Unit tests (60 cases) + delivery verification (7 cases) + peer-review acceptance (20 cases) + CI guards
+# Unit tests (60 cases) + delivery verification (8 cases) + peer-review acceptance (22 cases) + CI guards
 npm test
 # or: bash agents/claude-review/tests/run-ci-checks.sh
 
@@ -28,7 +28,7 @@ git diff main...HEAD > /tmp/changes.diff
 ./claude-review --diff-file /tmp/changes.diff --title "local branch"
 ```
 
-Expected test output ends with `Ran 60 unit tests — OK`, `Ran 7 delivery verification tests — OK`, `Ran 20 tests — OK`, `OK: peer review acceptance tests passed`, `OK: 87 tests passed`, and `OK: all CI validation checks passed`.
+Expected test output ends with `Ran 60 unit tests — OK`, `Ran 8 delivery verification tests — OK`, `Ran 22 tests — OK`, `OK: peer review acceptance tests passed`, `OK: 90 tests passed`, and `OK: all CI validation checks passed`.
 
 ## Hands-on delivery (2026-06-09)
 
@@ -40,7 +40,7 @@ Peer-review recommendations addressed:
 - Document fork-PR `--post` token limitation in README
 - Codify hardened helper coverage in peer-review acceptance suite
 - Guard CI `fetch-depth: 0` and branch diff scope in peer-review acceptance suite
+- Add end-to-end `npm test` subprocess gate in delivery verification (bounty #3 pattern)
+- Harden branch diff scope with merge-base ref resolution and CI script executable checks
 
 Verified via `npm test` on branch `bounty-4-claude-review-agent` (PR #2533).
-
-Fork CI green (87 tests): https://github.com/advancedresearcharray/claude-builders-bounty/actions/runs/27207899344

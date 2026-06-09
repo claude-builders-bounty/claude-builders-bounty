@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import unittest
@@ -86,6 +87,29 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertTrue(script.endswith("run-ci-checks.sh"))
         self.assertTrue(CI_SCRIPT.is_file())
         self.assertGreater(CI_SCRIPT.stat().st_size, 0)
+
+    def test_npm_test_entry_point_runs_green(self):
+        """Fleet delivery runs `npm test` from the repo root — verify it passes."""
+        if os.environ.get("CLAUDE_REVIEW_CI_INNER_RUN"):
+            self.skipTest("already inside npm test CI runner")
+
+        env = os.environ.copy()
+        env["CLAUDE_REVIEW_CI_INNER_RUN"] = "1"
+        result = subprocess.run(
+            ["npm", "test"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            env=env,
+            check=False,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=result.stdout + result.stderr,
+        )
+        self.assertIn("OK: peer review acceptance tests passed", result.stdout)
+        self.assertIn("OK: all CI validation checks passed", result.stdout)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import textwrap
@@ -12,6 +13,48 @@ from pathlib import Path
 
 AGENT_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[3]
+CI_SCRIPT = AGENT_DIR / "tests" / "run-ci-checks.sh"
+
+
+def resolve_branch_diff_base_ref() -> str:
+    """Pick a merge-base ref that exists locally (CI shallow clones omit main)."""
+    candidates: list[str] = []
+    github_base = os.environ.get("GITHUB_BASE_REF", "").strip()
+    if github_base:
+        candidates.extend((github_base, f"origin/{github_base}"))
+    candidates.extend(("main", "origin/main", "master", "origin/master"))
+    for ref in candidates:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", ref],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return ref
+    raise RuntimeError(
+        "no git base ref found for branch diff scope check; "
+        "fetch the default branch (e.g. git fetch origin main:main) before running tests"
+    )
+
+
+def list_branch_changed_files(base_ref: str) -> list[str]:
+    """List paths changed on HEAD since base_ref (needs full git history for ... syntax)."""
+    triple_dot = subprocess.run(
+        ["git", "diff", f"{base_ref}...HEAD", "--name-only"],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if triple_dot.returncode == 0:
+        return [line.strip() for line in triple_dot.stdout.splitlines() if line.strip()]
+
+    raise RuntimeError(
+        f"git diff {base_ref}...HEAD failed ({triple_dot.stderr.strip()}); "
+        "use fetch-depth: 0 in CI checkout so merge-base exists"
+    )
 
 
 class PeerReviewAcceptanceTests(unittest.TestCase):
@@ -108,15 +151,8 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
 
     def test_branch_diff_scoped_to_claude_review_only(self):
         """PR must not include unrelated repo paths (e.g. hooks/ or internal/)."""
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "origin/main...HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=REPO_ROOT,
-            check=False,
-        )
-        if result.returncode != 0:
-            self.skipTest("origin/main unavailable for branch scope check")
+        base_ref = resolve_branch_diff_base_ref()
+        changed = list_branch_changed_files(base_ref)
 
         allowed_prefixes = (
             "agents/claude-review/",
@@ -127,14 +163,30 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             "package-lock.json",
             ".gitignore",
         )
-        for path in result.stdout.splitlines():
-            if not path.strip():
-                continue
-            if not any(
-                path == prefix.rstrip("/") or path.startswith(prefix)
-                for prefix in allowed_prefixes
-            ):
-                self.fail(f"branch diff includes out-of-scope path: {path}")
+        for path in changed:
+            self.assertFalse(
+                path.startswith("internal/"),
+                f"unrelated path in PR diff: {path!r}",
+            )
+            self.assertFalse(
+                path.startswith("hooks/"),
+                f"unrelated path in PR diff: {path!r}",
+            )
+            self.assertTrue(
+                any(path == prefix.rstrip("/") or path.startswith(prefix) for prefix in allowed_prefixes),
+                f"branch diff includes out-of-scope path: {path}",
+            )
+
+    def test_run_ci_checks_script_exists_and_is_executable(self):
+        self.assertTrue(CI_SCRIPT.is_file())
+        self.assertTrue(CI_SCRIPT.stat().st_mode & 0o111)
+
+    def test_run_ci_checks_guards_attribution_and_peer_review(self):
+        script = CI_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("peer review acceptance tests passed", script)
+        self.assertIn("git log -1 --format='%B'", script)
+        self.assertIn("Ran ${peer_review_tests} tests — OK", script)
+        self.assertIn("Forbidden agent attribution trailer found in HEAD commit message", script)
 
     def test_ci_workflow_triggers_on_test_entry_points(self):
         workflow = (REPO_ROOT / ".github/workflows/test-claude-review.yml").read_text(encoding="utf-8")
