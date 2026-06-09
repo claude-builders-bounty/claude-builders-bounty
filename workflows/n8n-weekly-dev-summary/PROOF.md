@@ -41,6 +41,8 @@ Hands-on delivery (2026-06-09): added positive branch-diff guard requiring core 
 
 Detached HEAD fix (2026-06-09): `resolveBountyBranch()` falls back to `GITHUB_REF`, then `git branch -a --contains HEAD`, so `test-n8n-weekly-summary` passes in GitHub Actions checkout and local detached HEAD.
 
+Hands-on delivery (2026-06-09): removed spurious `feat: mkdocs export` commit (empty root `package-lock.json` from wrong-worktree contamination); gitignored stray root `tests/` Python artifacts; verified `npm test` (140 tests) and `npm run test:github` green on `bounty-5-n8n-weekly-dev-summary`.
+
 Optional live GitHub check:
 
 ```bash
