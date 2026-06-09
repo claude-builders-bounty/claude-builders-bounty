@@ -152,9 +152,15 @@ const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf
 const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
 assert(statSync(join(repoRoot, "package-lock.json")).isFile(), "package-lock.json locks npm test deps");
 assert(gitignore.includes("node_modules/"), ".gitignore excludes node_modules");
+assert(gitignore.includes("pnpm-lock.yaml"), ".gitignore excludes pnpm-lock.yaml from greenfield scaffolds");
 assert(gitignore.includes("internal/"), ".gitignore excludes local fleet artifacts");
 assert(makefile.includes("run-ci-checks.sh"), "Makefile test target runs unified validation");
 assert(makefile.includes("ci-validate:"), "Makefile exposes ci-validate alias for CI runners");
+assert(makefile.includes("env-check:"), "Makefile exposes env-check target for toolchain validation");
+assert(
+  statSync(join(repoRoot, "scripts/env-check.mjs")).isFile(),
+  "scripts/env-check.mjs validates required toolchain",
+);
 assert(
   packageJson.scripts?.test?.includes("run-ci-checks.sh"),
   "package.json test runs unified validation",
@@ -163,9 +169,18 @@ assert(
   packageJson.scripts?.["test:ci"]?.includes("run-ci-checks.sh"),
   "package.json test:ci runs unified validation",
 );
+assert(
+  packageJson.scripts?.["env-check"]?.includes("env-check.mjs"),
+  "package.json env-check validates toolchain before tests",
+);
 
 // CI workflow runs validation and greenfield smoke test
-assert(workflow.includes("run-ci-checks.sh"), "CI runs unified validation script");
+assert(
+  workflow.includes("npm test") || workflow.includes("npm run test"),
+  "CI workflow executes npm test",
+);
+assert(workflow.includes("env-check"), "CI workflow validates environment before tests");
+assert(workflow.includes("run-ci-checks.sh") || workflow.includes("npm test"), "CI runs unified validation");
 assert(workflow.includes("pull_request_target"), "CI supports upstream fork PR checks");
 assert(workflow.includes("Makefile"), "CI triggers on Makefile changes");
 assert(workflow.includes("package.json"), "CI triggers on package.json changes");
@@ -334,6 +349,7 @@ const allowedPrefixes = [
   "package.json",
   "package-lock.json",
   ".gitignore",
+  "scripts/",
 ];
 try {
   const baseRef = resolveBranchDiffBaseRef();

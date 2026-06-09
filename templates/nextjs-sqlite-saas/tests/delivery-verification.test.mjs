@@ -43,6 +43,12 @@ test("repo root keeps reproducible npm test wiring", () => {
   if (!gitignore.includes("node_modules/")) {
     throw new Error(".gitignore must exclude node_modules for clean fleet delivery");
   }
+  if (!gitignore.includes("pnpm-lock.yaml")) {
+    throw new Error(".gitignore must exclude pnpm-lock.yaml from greenfield scaffolds");
+  }
+  if (!makefile.includes("env-check:")) {
+    throw new Error("Makefile must expose env-check target");
+  }
 });
 
 test("ci runner declares delivery and peer-review summary lines", () => {
