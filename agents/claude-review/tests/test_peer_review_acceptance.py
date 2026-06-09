@@ -47,9 +47,11 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         required_cases = (
             "test_empty_diff_parses_no_files",
             "test_main_exits_when_no_token",
+            "test_main_exits_on_invalid_token",
             "test_main_exits_on_invalid_pr_url",
             "test_main_exits_on_missing_diff_file",
             "test_fetch_pr_diff_returns_none_on_http_error",
+            "test_gh_api_exits_on_auth_failure",
         )
         for case in required_cases:
             self.assertIn(case, text, f"missing edge-case test {case}")

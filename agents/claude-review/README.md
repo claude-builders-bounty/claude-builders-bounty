@@ -76,6 +76,8 @@ cp claude-review .
 
 The included workflow uses `pull_request` (not `pull_request_target`). It runs `claude-review --pr <url> --post` (or falls back to `python3 agents/claude-review/claude_review.py`) and posts the review as a PR comment automatically. Re-runs update the existing claude-review comment instead of posting duplicates.
 
+**Note:** On fork-originated pull requests, the default `GITHUB_TOKEN` is read-only for the base repository, so `--post` may return HTTP 403. Use a PAT with `pull-requests: write` on the target repo, or run without `--post` and paste the generated Markdown manually.
+
 ## Tested on real PRs
 
 | PR | Result |
@@ -90,7 +92,7 @@ The included workflow uses `pull_request` (not `pull_request_target`). It runs `
 python3 -m unittest agents/claude-review/tests/test_claude_review.py
 python3 -m unittest agents/claude-review/tests/test_peer_review_acceptance.py
 
-# Full CI validation (61 tests + attribution guards)
+# Full CI validation (81 tests + attribution guards)
 npm test
 # or: make test
 # or: bash agents/claude-review/tests/run-ci-checks.sh

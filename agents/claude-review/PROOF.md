@@ -16,7 +16,7 @@ Maps each acceptance criterion to the exact command or artifact in this PR.
 ## Commands
 
 ```bash
-# Unit tests (56 cases) + delivery verification (6 cases) + peer-review acceptance (16 cases) + CI guards
+# Unit tests (59 cases) + delivery verification (6 cases) + peer-review acceptance (16 cases) + CI guards
 npm test
 # or: bash agents/claude-review/tests/run-ci-checks.sh
 
@@ -28,4 +28,15 @@ git diff main...HEAD > /tmp/changes.diff
 ./claude-review --diff-file /tmp/changes.diff --title "local branch"
 ```
 
-Expected test output ends with `Ran 56 unit tests — OK`, `Ran 6 delivery verification tests — OK`, `Ran 16 tests — OK`, `OK: peer review acceptance tests passed`, `OK: 78 tests passed`, and `OK: all CI validation checks passed`.
+Expected test output ends with `Ran 59 unit tests — OK`, `Ran 6 delivery verification tests — OK`, `Ran 16 tests — OK`, `OK: peer review acceptance tests passed`, `OK: 81 tests passed`, and `OK: all CI validation checks passed`.
+
+## Hands-on delivery (2026-06-09)
+
+Peer-review recommendations addressed:
+
+- URL-encode owner/repo segments in GitHub API paths
+- Recompute line totals when `--max-files` truncates changed files
+- Add invalid-token and API auth-failure regression tests
+- Document fork-PR `--post` token limitation in README
+
+Verified via `npm test` on branch `bounty-4-claude-review-agent` (PR #2533).

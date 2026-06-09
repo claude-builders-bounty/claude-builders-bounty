@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -172,6 +173,31 @@ def metadata_from_diff(
     }
 
 
+def _api_repo_path(owner: str, repo: str, *suffix_parts: str) -> str:
+    """Build a GitHub REST path with URL-encoded owner/repo segments."""
+    base = (
+        f"/repos/{urllib.parse.quote(owner, safe='')}/"
+        f"{urllib.parse.quote(repo, safe='')}"
+    )
+    if suffix_parts:
+        encoded = "/".join(urllib.parse.quote(part, safe="") for part in suffix_parts)
+        return f"{base}/{encoded}"
+    return base
+
+
+def apply_max_files_cap(metadata: dict[str, Any], max_files: int) -> None:
+    """Limit changed-file analysis and keep line totals consistent with the cap."""
+    total_files = len(metadata["changed_files"])
+    if total_files <= max_files:
+        return
+
+    metadata["files_truncated"] = total_files - max_files
+    metadata["changed_files"] = metadata["changed_files"][:max_files]
+    metadata["additions"] = sum(item["additions"] for item in metadata["changed_files"])
+    metadata["deletions"] = sum(item["deletions"] for item in metadata["changed_files"])
+    metadata["total_changes"] = sum(item["changes"] for item in metadata["changed_files"])
+
+
 def resolve_github_token(explicit: str | None = None) -> str | None:
     """Resolve a GitHub token from CLI flag, env var, or gh auth."""
     if explicit:
@@ -209,13 +235,12 @@ def gh_api(path: str, token: str, accept: str = "application/vnd.github.v3+json"
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode()[:500]
-        print(f"API Error {exc.code} for {path}: {body}", file=sys.stderr)
+        print(f"API Error {exc.code} for {path}", file=sys.stderr)
         sys.exit(1)
 
 
 def fetch_pr_diff(owner: str, repo: str, pr_number: int, token: str) -> str | None:
-    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    url = f"https://api.github.com{_api_repo_path(owner, repo, 'pulls', str(pr_number))}"
     req = urllib.request.Request(url)
     req.add_header("Authorization", f"Bearer {token}")
     req.add_header("Accept", "application/vnd.github.v3.diff")
@@ -233,7 +258,8 @@ def fetch_pr_files(owner: str, repo: str, pr_number: int, token: str) -> list[di
     page = 1
     while True:
         batch = gh_api(
-            f"/repos/{owner}/{repo}/pulls/{pr_number}/files?per_page=100&page={page}",
+            f"{_api_repo_path(owner, repo, 'pulls', str(pr_number), 'files')}"
+            f"?per_page=100&page={page}",
             token,
         )
         if not batch:
@@ -246,9 +272,12 @@ def fetch_pr_files(owner: str, repo: str, pr_number: int, token: str) -> list[di
 
 
 def fetch_pr_metadata(owner: str, repo: str, pr_number: int, token: str) -> dict[str, Any]:
-    pr = gh_api(f"/repos/{owner}/{repo}/pulls/{pr_number}", token)
+    pr = gh_api(_api_repo_path(owner, repo, "pulls", str(pr_number)), token)
     files = fetch_pr_files(owner, repo, pr_number, token)
-    commits = gh_api(f"/repos/{owner}/{repo}/pulls/{pr_number}/commits", token)
+    commits = gh_api(
+        _api_repo_path(owner, repo, "pulls", str(pr_number), "commits"),
+        token,
+    )
 
     changed_files = [
         {
@@ -759,7 +788,8 @@ def find_existing_review_comment(
     page = 1
     while True:
         comments = gh_api(
-            f"/repos/{owner}/{repo}/issues/{pr_number}/comments?per_page=100&page={page}",
+            f"{_api_repo_path(owner, repo, 'issues', str(pr_number), 'comments')}"
+            f"?per_page=100&page={page}",
             token,
         )
         if not isinstance(comments, list) or not comments:
@@ -778,11 +808,17 @@ def post_review_comment(
     payload = json.dumps({"body": body}).encode()
     existing_id = find_existing_review_comment(owner, repo, pr_number, token)
     if existing_id is not None:
-        url = f"https://api.github.com/repos/{owner}/{repo}/issues/comments/{existing_id}"
+        url = (
+            "https://api.github.com"
+            f"{_api_repo_path(owner, repo, 'issues', 'comments', str(existing_id))}"
+        )
         method = "PATCH"
         action = "Updated"
     else:
-        url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
+        url = (
+            "https://api.github.com"
+            f"{_api_repo_path(owner, repo, 'issues', str(pr_number), 'comments')}"
+        )
         method = "POST"
         action = "Posted"
     req = urllib.request.Request(url, data=payload, method=method)
@@ -798,8 +834,7 @@ def post_review_comment(
                 file=sys.stderr,
             )
     except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode()[:500]
-        print(f"Error posting comment: {exc.code} {err_body}", file=sys.stderr)
+        print(f"Error posting comment: {exc.code}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -826,10 +861,7 @@ def main() -> None:
         title = args.title or Path(args.diff_file).stem.replace("-", " ").replace("_", " ")
         metadata = metadata_from_diff(diff, title=title, author=args.author)
         if args.max_files is not None and args.max_files > 0:
-            total_files = len(metadata["changed_files"])
-            if total_files > args.max_files:
-                metadata["files_truncated"] = total_files - args.max_files
-                metadata["changed_files"] = metadata["changed_files"][: args.max_files]
+            apply_max_files_cap(metadata, args.max_files)
 
         if args.diff_only:
             print(diff or "No diff available")
@@ -869,10 +901,7 @@ def main() -> None:
 
         metadata = fetch_pr_metadata(owner, repo, pr_number, token)
         if args.max_files is not None and args.max_files > 0:
-            total_files = len(metadata["changed_files"])
-            if total_files > args.max_files:
-                metadata["files_truncated"] = total_files - args.max_files
-                metadata["changed_files"] = metadata["changed_files"][: args.max_files]
+            apply_max_files_cap(metadata, args.max_files)
         diff = fetch_pr_diff(owner, repo, pr_number, token)
 
         if args.diff_only:

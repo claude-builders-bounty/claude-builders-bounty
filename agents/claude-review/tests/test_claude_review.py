@@ -359,19 +359,28 @@ class MaxFilesTests(unittest.TestCase):
             "title": "Big refactor",
             "body": "",
             "changed_files": [
-                {"filename": f"src/{i}.py", "status": "modified", "additions": 1, "deletions": 0, "changes": 1}
+                {
+                    "filename": f"src/{i}.py",
+                    "status": "modified",
+                    "additions": i + 1,
+                    "deletions": 0,
+                    "changes": i + 1,
+                }
                 for i in range(5)
             ],
-            "total_changes": 5,
+            "total_changes": 15,
             "commits": 1,
-            "additions": 5,
+            "additions": 15,
             "deletions": 0,
             "labels": [],
-            "files_truncated": 3,
         }
-        metadata["changed_files"] = metadata["changed_files"][:2]
+        claude_review.apply_max_files_cap(metadata, 2)
         review = claude_review.analyze_pr(metadata, "")
+        self.assertEqual(metadata["files_truncated"], 3)
+        self.assertEqual(metadata["additions"], 3)
+        self.assertEqual(metadata["total_changes"], 3)
         self.assertIn("2 of 5 file(s)", review["summary"])
+        self.assertIn("+3/-0", review["summary"])
 
 
 class DiffFileTests(unittest.TestCase):
@@ -583,6 +592,19 @@ class CliErrorHandlingTests(unittest.TestCase):
                     claude_review.main()
         self.assertEqual(ctx.exception.code, 1)
 
+    def test_main_exits_on_invalid_token(self):
+        with unittest.mock.patch(
+            "sys.argv",
+            ["claude-review", "--pr", "https://github.com/acme/widgets/pull/1", "--token", "bad"],
+        ):
+            with unittest.mock.patch(
+                "claude_review.fetch_pr_metadata",
+                side_effect=SystemExit(1),
+            ):
+                with self.assertRaises(SystemExit) as ctx:
+                    claude_review.main()
+        self.assertEqual(ctx.exception.code, 1)
+
     def test_main_exits_on_invalid_pr_url(self):
         with unittest.mock.patch.dict("os.environ", {"GITHUB_TOKEN": "ghp_test"}, clear=False):
             result = subprocess.run(
@@ -642,6 +664,26 @@ class CliErrorHandlingTests(unittest.TestCase):
 
 
 class GithubApiErrorTests(unittest.TestCase):
+    def test_api_repo_path_url_encodes_special_characters(self):
+        path = claude_review._api_repo_path("acme org", "my.repo", "pulls", "7")
+        self.assertEqual(path, "/repos/acme%20org/my.repo/pulls/7")
+
+    def test_gh_api_exits_on_auth_failure(self):
+        error = urllib.error.HTTPError(
+            url="https://api.github.com/repos/a/b",
+            code=401,
+            msg="Unauthorized",
+            hdrs=None,
+            fp=None,
+        )
+        with unittest.mock.patch(
+            "claude_review.urllib.request.urlopen",
+            side_effect=error,
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                claude_review.gh_api("/repos/a/b", "invalid-token")
+        self.assertEqual(ctx.exception.code, 1)
+
     def test_fetch_pr_diff_returns_none_on_http_error(self):
         error = urllib.error.HTTPError(
             url="https://api.github.com/repos/a/b/pulls/1",
