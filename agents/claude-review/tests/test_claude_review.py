@@ -338,6 +338,19 @@ class SecurityRiskTests(unittest.TestCase):
 
 
 class MaxFilesTests(unittest.TestCase):
+    def test_filter_diff_by_filenames_keeps_only_selected_hunks(self):
+        diff = (
+            "diff --git a/src/a.py b/src/a.py\n"
+            "+++ b/src/a.py\n"
+            "+eval(user_input)\n"
+            "diff --git a/src/b.py b/src/b.py\n"
+            "+++ b/src/b.py\n"
+            "+print('safe')\n"
+        )
+        filtered = claude_review.filter_diff_by_filenames(diff, {"src/a.py"})
+        self.assertIn("src/a.py", filtered)
+        self.assertNotIn("src/b.py", filtered)
+
     def test_truncates_changed_files_when_max_files_set(self):
         metadata = {
             "title": "Big refactor",

@@ -124,6 +124,8 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         readme = (AGENT_DIR / "README.md").read_text(encoding="utf-8")
         self.assertIn("claude-review --pr", readme)
         self.assertIn("GitHub Action", readme)
+        self.assertIn("run-ci-checks.sh", readme)
+        self.assertIn("Attribution guards", readme)
 
     def test_proof_maps_acceptance_criteria(self):
         proof = (AGENT_DIR / "PROOF.md").read_text(encoding="utf-8")

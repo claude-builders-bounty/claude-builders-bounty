@@ -74,7 +74,7 @@ cp agents/claude-review/.github/workflows/claude-review.yml .github/workflows/cl
 cp claude-review .
 ```
 
-The included workflow uses `pull_request` (not `pull_request_target`) and checks out the trusted base branch. It runs `claude-review --pr <url> --post` (or falls back to `python3 agents/claude-review/claude_review.py`) and posts the review as a PR comment automatically. Re-runs update the existing claude-review comment instead of posting duplicates.
+The included workflow uses `pull_request` (not `pull_request_target`). It runs `claude-review --pr <url> --post` (or falls back to `python3 agents/claude-review/claude_review.py`) and posts the review as a PR comment automatically. Re-runs update the existing claude-review comment instead of posting duplicates.
 
 ## Tested on real PRs
 
@@ -90,9 +90,21 @@ The included workflow uses `pull_request` (not `pull_request_target`) and checks
 python3 -m unittest agents/claude-review/tests/test_claude_review.py
 python3 -m unittest agents/claude-review/tests/test_peer_review_acceptance.py
 
-# Full CI validation (49 tests + attribution guards)
-bash agents/claude-review/tests/run-ci-checks.sh
+# Full CI validation (61 tests + attribution guards)
+npm test
+# or: make test
+# or: bash agents/claude-review/tests/run-ci-checks.sh
 ```
+
+### `run-ci-checks.sh`
+
+The CI runner (`agents/claude-review/tests/run-ci-checks.sh`) mirrors `.github/workflows/test-claude-review.yml` locally. It runs, in order:
+
+1. **Unit tests** (`test_claude_review.py`) — parsing, heuristics, markdown format, token resolution, and comment posting.
+2. **Delivery verification** (`test_delivery_verification.py`) — repo wiring (`package.json`, `Makefile`, `PROOF.md`) and CI script totals.
+3. **Peer-review acceptance** (`test_peer_review_acceptance.py`) — bounty acceptance artifacts (CLI, workflow YAML, samples, README).
+4. **Executable check** — repo-root `./claude-review` must be executable.
+5. **Attribution guards** — rejects forbidden agent strings in sources, `HEAD` commit messages, and agent commit history vs `upstream/main`; runs `git diff --check`.
 
 Pull requests that touch this agent also run the same suite via `.github/workflows/test-claude-review.yml`.
 

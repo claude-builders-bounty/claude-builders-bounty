@@ -436,6 +436,17 @@ def _split_diff_by_file(diff: str) -> list[tuple[str, str]]:
     return parts
 
 
+def filter_diff_by_filenames(diff: str, filenames: set[str]) -> str:
+    """Return diff hunks whose path is in filenames."""
+    if not diff or not filenames:
+        return ""
+    filtered: list[str] = []
+    for path, hunk in _split_diff_by_file(diff):
+        if path in filenames:
+            filtered.append(hunk)
+    return "".join(filtered)
+
+
 def filter_diff_for_heuristics(diff: str) -> str:
     """Return diff hunks for production source files (skip tests and docs)."""
     filtered: list[str] = []
@@ -824,6 +835,10 @@ def main() -> None:
             print(diff or "No diff available")
             return
 
+        if diff and metadata.get("files_truncated"):
+            allowed = {item["filename"] for item in metadata["changed_files"]}
+            diff = filter_diff_by_filenames(diff, allowed)
+
         review = analyze_pr(metadata, diff)
         output = format_markdown(metadata, review)
     else:
@@ -869,6 +884,9 @@ def main() -> None:
                 "Warning: Could not fetch diff. Review will be limited to metadata.",
                 file=sys.stderr,
             )
+        elif metadata.get("files_truncated"):
+            allowed = {item["filename"] for item in metadata["changed_files"]}
+            diff = filter_diff_by_filenames(diff, allowed)
 
         metadata["owner"] = owner
         metadata["repo"] = repo
