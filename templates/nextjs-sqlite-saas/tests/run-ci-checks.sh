@@ -7,6 +7,20 @@ TEMPLATE_DIR="${REPO_ROOT}/templates/nextjs-sqlite-saas"
 
 cd "$REPO_ROOT"
 
+ensure_git_base_ref() {
+  if ! git rev-parse --verify upstream/main >/dev/null 2>&1; then
+    git fetch --depth=100 https://github.com/claude-builders-bounty/claude-builders-bounty.git \
+      main:refs/remotes/upstream/main 2>/dev/null || true
+  fi
+  if ! git merge-base upstream/main HEAD >/dev/null 2>&1; then
+    git fetch --deepen=500 origin 2>/dev/null || \
+      git fetch --deepen=500 https://github.com/claude-builders-bounty/claude-builders-bounty.git \
+        main:refs/remotes/upstream/main 2>/dev/null || true
+  fi
+}
+
+ensure_git_base_ref
+
 node "${TEMPLATE_DIR}/validate-template.mjs"
 bash "${TEMPLATE_DIR}/tests/smoke-greenfield.sh"
 
@@ -39,9 +53,6 @@ if git log -1 --format='%B' | grep -qE \
   echo 'Forbidden agent attribution trailer found in HEAD commit message'
   exit 1
 fi
-
-git fetch --depth=100 https://github.com/claude-builders-bounty/claude-builders-bounty.git \
-  main:refs/remotes/upstream/main 2>/dev/null || true
 
 template_commit_messages="$(
   git log upstream/main..HEAD --format='%B' -- templates/nextjs-sqlite-saas/ 2>/dev/null || true

@@ -54,10 +54,19 @@ function listBranchChangedFiles(baseRef) {
       encoding: "utf8",
     });
     return output.split("\n").map((line) => line.trim()).filter(Boolean);
-  } catch (error) {
-    throw new Error(
-      `git diff ${baseRef}...HEAD failed; use fetch-depth: 0 in CI checkout so merge-base exists`,
-    );
+  } catch {
+    // Shallow fleet checkouts may lack merge-base; compare branch tip to base tip instead.
+    try {
+      const output = execSync(`git diff ${baseRef} HEAD --name-only`, {
+        cwd: repoRoot,
+        encoding: "utf8",
+      });
+      return output.split("\n").map((line) => line.trim()).filter(Boolean);
+    } catch {
+      throw new Error(
+        `git diff ${baseRef}...HEAD failed; run ensure_git_base_ref in run-ci-checks.sh before tests`,
+      );
+    }
   }
 }
 
@@ -140,6 +149,12 @@ assert(
 assert(
   runCiChecks.includes("template_commit_messages="),
   "attribution guard avoids pipefail SIGPIPE from git log | grep",
+);
+assert(
+  runCiChecks.includes("ensure_git_base_ref") &&
+    runCiChecks.indexOf("ensure_git_base_ref") <
+      runCiChecks.indexOf("delivery-verification.test.mjs"),
+  "run-ci-checks ensures git merge-base before delivery and peer-review suites",
 );
 assert(
   runCiChecks.includes("git log -1 --format='%B'"),
