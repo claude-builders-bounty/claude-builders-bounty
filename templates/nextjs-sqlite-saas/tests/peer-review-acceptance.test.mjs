@@ -4,7 +4,7 @@
  * Codifies manual review checklist so regressions fail CI.
  */
 import { execSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -38,6 +38,11 @@ const expectedSections = [
   "## Naming Conventions",
   "## Patterns to Follow",
   "## When to Ask Clarifying Questions",
+  "## Environment Variables",
+  "## Auth and Authorization",
+  "## Route Handlers and APIs",
+  "## Testing Rules",
+  "## Greenfield Smoke Test",
 ];
 for (const section of expectedSections) {
   assert(claude.includes(section), `CLAUDE.md includes ${section}`);
@@ -140,6 +145,38 @@ assert(
   !workflow.includes("github-script") && !workflow.includes("UPSTREAM_STATUS_TOKEN"),
   "CI workflow does not embed privileged github-script tokens",
 );
+assert(
+  !/permissions:[\s\S]*\b(write|id-token|packages|deployments|security-events)\b/.test(workflow),
+  "CI workflow grants only read-only permissions (no write or token scopes)",
+);
+
+const workflowDir = join(repoRoot, ".github/workflows");
+for (const filename of readdirSync(workflowDir).filter((name) => name.endsWith(".yml"))) {
+  const contents = readFileSync(join(workflowDir, filename), "utf8");
+  assert(
+    !contents.includes("github-script") && !contents.includes("UPSTREAM_STATUS_TOKEN"),
+    `${filename} does not embed privileged github-script tokens`,
+  );
+}
+
+const templateTestFiles = readdirSync(join(root, "tests")).filter((name) =>
+  /\.(mjs|sh)$/.test(name),
+);
+assert(
+  templateTestFiles.length >= 4,
+  "template ships at least four automated test scripts (structural, smoke, delivery, peer-review)",
+);
+for (const script of [
+  "delivery-verification.test.mjs",
+  "peer-review-acceptance.test.mjs",
+  "smoke-greenfield.sh",
+  "run-ci-checks.sh",
+]) {
+  assert(
+    templateTestFiles.includes(script),
+    `templates/nextjs-sqlite-saas/tests/${script} present for bounty verification`,
+  );
+}
 
 // Runtime CLI checks — validator must pass on the shipped template
 const validateOutput = execSync(`node "${join(root, "validate-template.mjs")}"`, {
