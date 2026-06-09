@@ -92,7 +92,7 @@ The included workflow uses `pull_request` (not `pull_request_target`). It runs `
 python3 -m unittest agents/claude-review/tests/test_claude_review.py
 python3 -m unittest agents/claude-review/tests/test_peer_review_acceptance.py
 
-# Full CI validation (82 tests + attribution guards)
+# Full CI validation (85 tests + attribution guards)
 npm test
 # or: make test
 # or: bash agents/claude-review/tests/run-ci-checks.sh

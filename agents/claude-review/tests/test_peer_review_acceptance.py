@@ -151,6 +151,11 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("run-ci-checks.sh", readme)
         self.assertIn("Attribution guards", readme)
 
+    def test_readme_documents_fork_pr_post_limitation(self):
+        readme = (AGENT_DIR / "README.md").read_text(encoding="utf-8")
+        self.assertIn("fork-originated pull requests", readme)
+        self.assertIn("HTTP 403", readme)
+
     def test_proof_maps_acceptance_criteria(self):
         proof = (AGENT_DIR / "PROOF.md").read_text(encoding="utf-8")
         for criterion in self.PROOF_CRITERIA:

@@ -80,6 +80,13 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn(f"Ran {peer_review_tests} tests — OK", proof)
         self.assertIn(f"OK: {expected_total} tests passed", proof)
 
+    def test_npm_test_script_invokes_ci_runner(self):
+        package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
+        script = package_json["scripts"]["test"]
+        self.assertTrue(script.endswith("run-ci-checks.sh"))
+        self.assertTrue(CI_SCRIPT.is_file())
+        self.assertGreater(CI_SCRIPT.stat().st_size, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -382,6 +382,26 @@ class MaxFilesTests(unittest.TestCase):
         self.assertIn("2 of 5 file(s)", review["summary"])
         self.assertIn("+3/-0", review["summary"])
 
+    def test_apply_max_files_cap_noop_when_under_limit(self):
+        metadata = {
+            "changed_files": [
+                {
+                    "filename": "src/a.py",
+                    "additions": 2,
+                    "deletions": 1,
+                    "changes": 3,
+                }
+            ],
+            "additions": 2,
+            "deletions": 1,
+            "total_changes": 3,
+        }
+        claude_review.apply_max_files_cap(metadata, 5)
+        self.assertNotIn("files_truncated", metadata)
+        self.assertEqual(metadata["additions"], 2)
+        self.assertEqual(metadata["deletions"], 1)
+        self.assertEqual(metadata["total_changes"], 3)
+
 
 class DiffFileTests(unittest.TestCase):
     SAMPLE_DIFF = """diff --git a/src/widget.py b/src/widget.py
