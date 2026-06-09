@@ -135,12 +135,23 @@ def is_rm_rf(command: str) -> bool:
     return False
 
 
+def sanitize_log_field(value: str) -> str:
+    """Prevent log injection by escaping newlines and stripping control chars."""
+    if not value:
+        return ""
+    sanitized = value.replace("\\", "\\\\")
+    sanitized = sanitized.replace("\r", "\\r").replace("\n", "\\n")
+    return "".join(ch if ord(ch) >= 32 or ch == "\t" else "?" for ch in sanitized)
+
+
 def log_blocked_attempt(command: str, project_path: str) -> None:
     os.makedirs(LOG_DIR, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    safe_command = sanitize_log_field(command)
+    safe_project_path = sanitize_log_field(project_path)
     with open(LOG_FILE, "a", encoding="utf-8") as log_file:
         log_file.write(
-            f"[{timestamp}] Command: {command} | Project: {project_path}\n"
+            f"[{timestamp}] Command: {safe_command} | Project: {safe_project_path}\n"
         )
 
 

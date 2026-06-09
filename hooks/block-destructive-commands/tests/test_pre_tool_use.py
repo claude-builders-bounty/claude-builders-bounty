@@ -661,6 +661,40 @@ class HookIntegrationTests(unittest.TestCase):
         log_line = self.log_file.read_text(encoding="utf-8")
         self.assertIn("/custom/project/path", log_line)
 
+    def test_log_sanitizes_newline_injection(self):
+        result = self.run_hook(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "rm -rf /\n[FAKE] injected entry"},
+                "cwd": "/workspace/demo\n[FAKE] path",
+            }
+        )
+
+        self.assertEqual(result.returncode, 0)
+        log_contents = self.log_file.read_text(encoding="utf-8")
+        self.assertEqual(len(log_contents.strip().splitlines()), 1)
+        self.assertNotIn("\n[FAKE]", log_contents)
+        self.assertIn("rm -rf /\\n[FAKE] injected entry", log_contents)
+        self.assertIn("/workspace/demo\\n[FAKE] path", log_contents)
+
+
+class SanitizeLogFieldTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.hook = load_hook_module()
+
+    def test_escapes_newlines_and_backslashes(self):
+        self.assertEqual(
+            self.hook.sanitize_log_field("a\\b\nc"),
+            "a\\\\b\\nc",
+        )
+
+    def test_replaces_control_characters(self):
+        self.assertEqual(
+            self.hook.sanitize_log_field("rm\x00-rf"),
+            "rm?-rf",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

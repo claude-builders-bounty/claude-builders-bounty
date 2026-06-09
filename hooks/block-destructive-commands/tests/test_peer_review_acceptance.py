@@ -241,6 +241,34 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             self.assertIn("rm -rf /tmp/build", log_file.read_text(encoding="utf-8"))
             self.assertIn("/workspace/demo", log_file.read_text(encoding="utf-8"))
 
+    def test_hook_log_sanitizes_injection_attempts(self):
+        with tempfile.TemporaryDirectory() as temp_home:
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            result = subprocess.run(
+                [sys.executable, str(HOOK_PATH)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "rm -rf /\n[FAKE] injected"},
+                        "cwd": "/workspace/demo\n[FAKE] path",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            log_text = (
+                Path(temp_home) / ".claude" / "hooks" / "blocked.log"
+            ).read_text(encoding="utf-8")
+            self.assertEqual(len(log_text.strip().splitlines()), 1)
+            self.assertNotIn("\n[FAKE]", log_text)
+            self.assertIn("rm -rf /\\n[FAKE] injected", log_text)
+            self.assertIn("/workspace/demo\\n[FAKE] path", log_text)
+
     def test_hook_cli_allows_safe_command(self):
         with tempfile.TemporaryDirectory() as temp_home:
             env = os.environ.copy()
