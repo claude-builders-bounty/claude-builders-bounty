@@ -60,6 +60,22 @@ Claude Code sends JSON on stdin. When a command is blocked, the hook prints the 
 
 Safe commands produce no stdout and exit `0`.
 
+## Operator trade-offs
+
+**Silent failures on malformed input or internal errors.** The hook intentionally
+fails open: malformed JSON, empty stdin, non-`Bash` tool calls, and unexpected
+internal errors exit `0` with no stdout so legitimate commands are never blocked
+because the hook crashed. Operators who prefer fail-closed behavior must wrap or
+replace the hook — this implementation prioritizes availability over strict
+enforcement when the hook itself cannot parse input reliably.
+
+**Regex and substring matching limits.** Detection inspects command text with
+regex and substring rules; it does not execute or fully parse shell syntax.
+Obfuscated or indirect commands can evade blocking. For example,
+`x=rm; $x -rf /` stores the destructive utility in a variable and invokes it
+later, so the segment may not match `rm -rf` patterns. Treat this hook as a
+safety net for common destructive patterns, not a complete shell sandbox.
+
 ## Blocked log
 
 ```bash
@@ -79,7 +95,7 @@ From this directory:
 ```bash
 make test
 # or: python3 -m unittest discover -s tests -v
-# 91 regression tests (bounty + peer-review acceptance + integration checks)
+# 93 regression tests (bounty + peer-review acceptance + integration checks)
 ```
 
 From the repository root:

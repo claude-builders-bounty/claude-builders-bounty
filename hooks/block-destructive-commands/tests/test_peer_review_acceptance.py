@@ -91,6 +91,19 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("blocked.log", readme)
         self.assertIn("hookSpecificOutput", readme)
 
+    def test_readme_documents_operator_tradeoffs(self):
+        readme = (HOOK_DIR / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Silent failures on malformed input or internal errors", readme)
+        self.assertIn("fails open", readme)
+        self.assertIn("Regex and substring matching limits", readme)
+        self.assertIn("x=rm; $x -rf /", readme)
+
+    def test_ci_workflow_uses_pull_request_not_target(self):
+        workflow = REPO_ROOT / ".github/workflows/test-block-destructive-commands.yml"
+        text = workflow.read_text(encoding="utf-8")
+        self.assertIn("pull_request:", text)
+        self.assertNotIn("pull_request_target:", text)
+
     def test_settings_json_registers_bash_pretooluse_hook(self):
         settings = json.loads((HOOK_DIR / "settings.json").read_text(encoding="utf-8"))
         pre_tool_use = settings["hooks"]["PreToolUse"]
