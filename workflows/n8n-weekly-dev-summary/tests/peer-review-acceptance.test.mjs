@@ -37,9 +37,22 @@ assert(
 );
 
 const loadConfig = workflow.nodes.find((n) => n.name === 'Load Config');
+const loadCode = loadConfig?.parameters?.jsCode || '';
 assert(
-  loadConfig?.parameters?.jsCode?.includes('GitHub-safe characters only'),
+  loadCode.includes('GitHub-safe characters only'),
   'Load Config validates GITHUB_REPO format before API calls',
+);
+assert(
+  loadCode.includes('$env.GITHUB_TOKEN') && loadCode.includes('Set GITHUB_TOKEN'),
+  'Load Config requires GITHUB_TOKEN from n8n env (no hardcoded token)',
+);
+assert(
+  loadCode.includes('$env.ANTHROPIC_API_KEY') && loadCode.includes('Set ANTHROPIC_API_KEY'),
+  'Load Config requires ANTHROPIC_API_KEY from n8n env (no hardcoded key)',
+);
+assert(
+  readme.includes('Security:') && readme.includes('$env'),
+  'README documents secure env var storage and runtime-only secret access',
 );
 assert(
   serialized.includes('DISCORD_WEBHOOK_URL') &&

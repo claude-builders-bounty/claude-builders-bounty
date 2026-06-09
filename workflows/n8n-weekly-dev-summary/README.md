@@ -26,6 +26,8 @@ Set these in **Settings → Variables** (self-hosted `.env` or n8n Cloud variabl
 
 For email delivery, attach an **SMTP** credential to the **Send Email** node.
 
+**Security:** Store `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, and webhook URLs in n8n **Variables** or your host `.env` — never commit them to git or paste them into workflow nodes. The workflow reads secrets only via `$env.*` at runtime; **Load Config** fails fast if required keys are missing. Use least-privilege GitHub PATs (repo read) and rotate keys if exposed.
+
 ### 3. Verify the schedule
 
 Open **Friday 5pm Weekly Trigger** and confirm timezone/day/hour (default: Friday 17:00, workflow timezone `America/New_York`).

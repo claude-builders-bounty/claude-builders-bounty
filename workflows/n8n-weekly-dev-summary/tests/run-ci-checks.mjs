@@ -36,6 +36,7 @@ function countTests(path) {
 
 run('node tests/validate-workflow.mjs');
 run('node tests/collect-github-data.test.mjs');
+run('node tests/test-scripts-acceptance.test.mjs');
 
 const deliveryTests = countTests(join(__dirname, 'delivery-verification.test.mjs'));
 run('node tests/delivery-verification.test.mjs');

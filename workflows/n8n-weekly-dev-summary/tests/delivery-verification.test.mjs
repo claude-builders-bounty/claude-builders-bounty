@@ -24,13 +24,18 @@ test('regression suite has minimum coverage', () => {
   const validate = countAsserts(join(__dirname, 'validate-workflow.mjs'));
   const collect = countAsserts(join(__dirname, 'collect-github-data.test.mjs'));
   const peerReview = countAsserts(join(__dirname, 'peer-review-acceptance.test.mjs'));
+  const testScripts = countAsserts(join(__dirname, 'test-scripts-acceptance.test.mjs'));
   if (validate < 30) throw new Error(`validate-workflow.mjs has ${validate} asserts (need >= 30)`);
   if (collect < 10) throw new Error(`collect-github-data.test.mjs has ${collect} asserts (need >= 10)`);
-  if (peerReview < 15) throw new Error(`peer-review-acceptance.test.mjs has ${peerReview} asserts (need >= 15)`);
+  if (peerReview < 18) throw new Error(`peer-review-acceptance.test.mjs has ${peerReview} asserts (need >= 18)`);
+  if (testScripts < 20) throw new Error(`test-scripts-acceptance.test.mjs has ${testScripts} asserts (need >= 20)`);
 });
 
 test('ci script exists and declares delivery checks', () => {
   const ciScript = readFileSync(join(__dirname, 'run-ci-checks.mjs'), 'utf8');
+  if (!ciScript.includes('test-scripts-acceptance.test.mjs')) {
+    throw new Error('run-ci-checks.mjs must run test-scripts-acceptance.test.mjs');
+  }
   if (!ciScript.includes('delivery-verification.test.mjs')) {
     throw new Error('run-ci-checks.mjs must run delivery-verification.test.mjs');
   }
