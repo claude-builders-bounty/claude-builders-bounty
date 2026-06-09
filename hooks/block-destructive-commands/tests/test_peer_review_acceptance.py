@@ -168,6 +168,12 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("run-ci-checks.sh", text)
         self.assertIn("hooks/block-destructive-commands", text)
 
+    def test_ci_workflow_fetches_full_git_history(self):
+        """Branch scope check needs merge-base; shallow checkout breaks peer review."""
+        workflow = REPO_ROOT / ".github/workflows/test-block-destructive-commands.yml"
+        text = workflow.read_text(encoding="utf-8")
+        self.assertIn("fetch-depth: 0", text)
+
     def test_makefile_exposes_test_and_ci_validate(self):
         makefile = (HOOK_DIR / "Makefile").read_text(encoding="utf-8")
         self.assertIn("test:", makefile)

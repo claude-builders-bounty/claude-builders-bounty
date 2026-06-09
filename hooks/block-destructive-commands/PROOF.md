@@ -19,10 +19,10 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 95 tests in ...s
+Ran 96 tests in ...s
 OK
 Ran 5 delivery verification tests — OK
-Ran 19 tests — OK
+Ran 20 tests — OK
 OK: peer review acceptance tests passed
 OK: all CI validation checks passed
 ```
@@ -40,7 +40,7 @@ Branch: `feat/issue-3-destructive-command-hook-v2` (PR #2556)
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty
 git checkout feat/issue-3-destructive-command-hook-v2
-npm test                    # 95 unittest + 5 delivery + 18 peer-review + attribution checks
+npm test                    # 96 unittest + 5 delivery + 20 peer-review + attribution checks
 make ci-validate            # same as npm test
 ```
 
@@ -57,8 +57,8 @@ echo '{"tool_name":"Bash","tool_input":{"command":"git status"},"cwd":"/tmp"}' \
   | python3 hooks/block-destructive-commands/pre-tool-use.py
 ```
 
-Fork CI: green on `dca70d6` (test-block-destructive-commands workflow).
-PR status: MERGEABLE/CLEAN against `main`.
+Fork CI: green on `3360b91` (test-block-destructive-commands workflow run 27220883348).
+PR status: MERGEABLE/CLEAN against `main` (head `3360b91`).
 
 ## Acceptance criteria
 
