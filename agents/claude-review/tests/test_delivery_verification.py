@@ -35,7 +35,9 @@ class DeliveryVerificationTests(unittest.TestCase):
         text = CI_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("test_delivery_verification.py", text)
         self.assertIn("delivery verification tests", text)
+        self.assertIn("unit tests — OK", text)
         self.assertIn("peer review acceptance tests passed", text)
+        self.assertIn("tests passed", text)
 
     def test_repo_root_exposes_npm_test_entry_points(self):
         package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))

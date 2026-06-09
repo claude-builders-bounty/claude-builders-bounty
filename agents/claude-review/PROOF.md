@@ -28,4 +28,4 @@ git diff main...HEAD > /tmp/changes.diff
 ./claude-review --diff-file /tmp/changes.diff --title "local branch"
 ```
 
-Expected test output ends with `Ran 5 delivery verification tests — OK`, `Ran 15 tests — OK`, `OK: peer review acceptance tests passed`, and `OK: all CI validation checks passed`.
+Expected test output ends with `Ran 39 unit tests — OK`, `Ran 5 delivery verification tests — OK`, `Ran 15 tests — OK`, `OK: peer review acceptance tests passed`, `OK: 59 tests passed`, and `OK: all CI validation checks passed`.

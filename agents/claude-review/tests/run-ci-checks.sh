@@ -7,7 +7,11 @@ AGENT_DIR="${REPO_ROOT}/agents/claude-review"
 
 cd "$REPO_ROOT"
 
+unit_tests="$(
+  grep -Ec '^[[:space:]]*def test_' "${AGENT_DIR}/tests/test_claude_review.py"
+)"
 python3 -m unittest agents/claude-review/tests/test_claude_review.py -v
+echo "Ran ${unit_tests} unit tests — OK"
 
 delivery_tests="$(
   grep -Ec '^[[:space:]]*def test_' "${AGENT_DIR}/tests/test_delivery_verification.py"
@@ -50,4 +54,6 @@ if printf '%s\n' "$agent_commit_messages" | grep -qE \
   exit 1
 fi
 
+total_tests=$((unit_tests + delivery_tests + peer_review_tests))
+echo "OK: ${total_tests} tests passed"
 echo 'OK: all CI validation checks passed'
