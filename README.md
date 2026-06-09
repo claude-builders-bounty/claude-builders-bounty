@@ -1,53 +1,39 @@
-# Claude Builders Bounty 🤖
+ # Claude Code Destructive Bash Guard
 
-> A community bounty board for Claude Code builders.
+This repository contains a Claude Code `PreToolUse` hook that blocks destructive Bash commands before they run.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Install
 
----
+Run `bash install.sh`.
 
-## How it works
+The installer copies the hook to `~/.claude/hooks/block_destructive_bash.py` and registers it in `~/.claude/settings.json`.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## What It Blocks
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+- `rm -rf` and privileged variants
+- `git push --force`, `git push -f`, and `--force-with-lease`
+- `git reset --hard`
+- `git clean -fd`
+- SQL `DROP DATABASE`, `DROP SCHEMA`, `DROP TABLE`, and `TRUNCATE`
+- SQL `DELETE FROM table` without a `WHERE` clause
+- raw disk writes such as `dd ... of=/dev/sda`
+- filesystem formatting commands such as `mkfs.ext4 /dev/...`
+- broad recursive `chmod -R 777 /`
 
----
+## How It Works
 
-## Active Bounties
+The hook reads the Claude Code hook payload from stdin and inspects `tool_input.command`.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+When a destructive command is detected, it returns a Claude Code denial response with `hookSpecificOutput.hookEventName` set to `PreToolUse` and `hookSpecificOutput.permissionDecision` set to `deny`.
 
----
+Safe commands exit without output, allowing Claude Code to continue normally. Blocked commands are appended to `~/.claude/hooks/blocked.log` as JSONL.
 
-## Rules
+## Test
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Run `python3 -m unittest discover -s tests`.
 
----
+A command like `rm -rf /tmp/build` should return a denial response.
 
-## Community
+A command like `npm test` should produce no output and be allowed.
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+A command like `DELETE FROM users;` should return a denial response and be logged.
