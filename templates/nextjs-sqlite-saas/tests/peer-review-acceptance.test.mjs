@@ -107,6 +107,10 @@ const makefile = readFileSync(join(repoRoot, "Makefile"), "utf8");
 const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 assert(makefile.includes("run-ci-checks.sh"), "Makefile test target runs unified validation");
 assert(
+  packageJson.scripts?.test?.includes("run-ci-checks.sh"),
+  "package.json test runs unified validation",
+);
+assert(
   packageJson.scripts?.["test:ci"]?.includes("run-ci-checks.sh"),
   "package.json test:ci runs unified validation",
 );

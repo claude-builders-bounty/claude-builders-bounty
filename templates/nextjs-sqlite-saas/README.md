@@ -27,7 +27,8 @@ Opinionated [Claude Code](https://docs.anthropic.com/en/docs/claude-code) contex
 
 ```bash
 # Full CI validation (structural checks + greenfield smoke test + peer-review acceptance)
-bash templates/nextjs-sqlite-saas/tests/run-ci-checks.sh
+npm test
+# or: bash templates/nextjs-sqlite-saas/tests/run-ci-checks.sh
 
 # Individual checks
 node templates/nextjs-sqlite-saas/validate-template.mjs
