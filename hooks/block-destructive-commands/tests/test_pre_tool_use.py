@@ -456,6 +456,10 @@ class CheckCommandTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.hook.check_command(command))
 
+    def test_allows_shell_variable_indirection(self):
+        """Documented regex limit: indirect rm via variables is not detected."""
+        self.assertIsNone(self.hook.check_command("x=rm; $x -rf /tmp"))
+
     def test_blocks_shell_c_sql_execution(self):
         blocked = (
             "sh -c 'DROP TABLE users'",

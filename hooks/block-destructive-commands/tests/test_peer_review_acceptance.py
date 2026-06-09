@@ -98,6 +98,10 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("Regex and substring matching limits", readme)
         self.assertIn("x=rm; $x -rf /", readme)
 
+    def test_documented_regex_evasion_limitation(self):
+        """Indirect destructive commands documented in README are not blocked."""
+        self.assertIsNone(self.hook.check_command("x=rm; $x -rf /"))
+
     def test_ci_workflow_uses_pull_request_not_target(self):
         workflow = REPO_ROOT / ".github/workflows/test-block-destructive-commands.yml"
         text = workflow.read_text(encoding="utf-8")
