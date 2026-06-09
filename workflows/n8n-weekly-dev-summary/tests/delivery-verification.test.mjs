@@ -21,6 +21,13 @@ function countAsserts(path) {
   return (readFileSync(path, 'utf8').match(/\bassert\(/g) || []).length;
 }
 
+function countTests(path) {
+  const text = readFileSync(path, 'utf8');
+  const named = (text.match(/^test\(/gm) || []).length;
+  if (named > 0) return named;
+  return countAsserts(path);
+}
+
 test('ci workflow avoids privileged fork checkout pattern', () => {
   const ciWorkflow = readFileSync(
     join(repoRoot, '.github', 'workflows', 'test-n8n-weekly-summary.yml'),
@@ -75,6 +82,32 @@ test('ci script exists and declares delivery checks', () => {
   }
   if (!ciScript.includes('peer review acceptance tests passed')) {
     throw new Error('run-ci-checks.mjs must print peer review acceptance summary');
+  }
+  if (!ciScript.includes('totalTests = validateTests + collectTests + testScriptsTests + deliveryTests + peerReviewTests')) {
+    throw new Error('run-ci-checks.mjs must sum discovered suite counts before final summary');
+  }
+  if (!ciScript.includes('OK: ${totalTests} tests passed')) {
+    throw new Error('run-ci-checks.mjs must print total test count for fleet delivery gates');
+  }
+});
+
+test('ci runner total matches discovered test counts', () => {
+  const validate = countTests(join(__dirname, 'validate-workflow.mjs'));
+  const collect = countTests(join(__dirname, 'collect-github-data.test.mjs'));
+  const testScripts = countTests(join(__dirname, 'test-scripts-acceptance.test.mjs'));
+  const delivery = countTests(join(__dirname, 'delivery-verification.test.mjs'));
+  const peerReview = countTests(join(__dirname, 'peer-review-acceptance.test.mjs'));
+  const expectedTotal = validate + collect + testScripts + delivery + peerReview;
+  if (expectedTotal < 120) {
+    throw new Error(`discovered ${expectedTotal} regression tests (need >= 120)`);
+  }
+  const proofPath = join(root, 'PROOF.md');
+  if (!statSync(proofPath).isFile()) {
+    throw new Error('PROOF.md must document npm test evidence for fleet handoff');
+  }
+  const proof = readFileSync(proofPath, 'utf8');
+  if (!proof.includes(`OK: ${expectedTotal} tests passed`)) {
+    throw new Error(`PROOF.md must include total test summary (${expectedTotal} tests)`);
   }
 });
 

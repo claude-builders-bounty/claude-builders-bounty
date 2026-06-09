@@ -34,8 +34,13 @@ function countTests(path) {
   return (text.match(/\bassert\(/g) || []).length;
 }
 
+const validateTests = countTests(join(__dirname, 'validate-workflow.mjs'));
 run('node tests/validate-workflow.mjs');
+
+const collectTests = countTests(join(__dirname, 'collect-github-data.test.mjs'));
 run('node tests/collect-github-data.test.mjs');
+
+const testScriptsTests = countTests(join(__dirname, 'test-scripts-acceptance.test.mjs'));
 run('node tests/test-scripts-acceptance.test.mjs');
 
 const deliveryTests = countTests(join(__dirname, 'delivery-verification.test.mjs'));
@@ -46,6 +51,9 @@ const peerReviewTests = countTests(join(__dirname, 'peer-review-acceptance.test.
 run('node tests/peer-review-acceptance.test.mjs');
 console.log(`Ran ${peerReviewTests} tests — OK`);
 console.log('OK: peer review acceptance tests passed');
+
+const totalTests = validateTests + collectTests + testScriptsTests + deliveryTests + peerReviewTests;
+console.log(`OK: ${totalTests} tests passed`);
 
 run('jq empty weekly-dev-summary.json');
 
