@@ -8,6 +8,22 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+This repo includes `changelog.sh`, a small Bash utility that generates a structured `CHANGELOG.md` from git history.
+
+Setup in 3 steps:
+
+1. Copy `changelog.sh` into any git repository.
+2. Run `chmod +x changelog.sh` once.
+3. Run `./changelog.sh` or `./changelog.sh path/to/CHANGELOG.md`.
+
+The script finds commits since the latest git tag, categorizes them into `Added`, `Fixed`, `Changed`, and `Removed`, then writes a formatted changelog. If the repository has no tags, it uses all commits.
+
+See `examples/sample-output.md` for output generated from this repository.
+
+---
+
 ## How it works
 
 **To post a bounty**
