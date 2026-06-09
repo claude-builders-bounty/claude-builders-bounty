@@ -27,6 +27,40 @@ function assert(condition, message) {
   if (!condition) failures.push(message);
 }
 
+function resolveBranchDiffBaseRef() {
+  const candidates = [];
+  const githubBase = process.env.GITHUB_BASE_REF?.trim();
+  if (githubBase) {
+    candidates.push(githubBase, `origin/${githubBase}`);
+  }
+  candidates.push("main", "origin/main", "master", "origin/master", "upstream/main");
+  for (const ref of candidates) {
+    try {
+      execSync(`git rev-parse --verify ${ref}`, { cwd: repoRoot, stdio: "pipe" });
+      return ref;
+    } catch {
+      // try next candidate
+    }
+  }
+  throw new Error(
+    "no git base ref found for branch diff scope check; fetch the default branch before running tests",
+  );
+}
+
+function listBranchChangedFiles(baseRef) {
+  try {
+    const output = execSync(`git diff ${baseRef}...HEAD --name-only`, {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    return output.split("\n").map((line) => line.trim()).filter(Boolean);
+  } catch (error) {
+    throw new Error(
+      `git diff ${baseRef}...HEAD failed; use fetch-depth: 0 in CI checkout so merge-base exists`,
+    );
+  }
+}
+
 // Issue #2 expected sections
 const expectedSections = [
   "## Stack & Versions",
@@ -290,6 +324,43 @@ const componentTestExample = claude.match(
 assert(
   componentTestExample.length > 0 && /CreateInvoiceForm/.test(componentTestExample),
   "Testing Rules include create-invoice-form component test example",
+);
+
+// Branch diff scoped to template bounty paths only
+const allowedPrefixes = [
+  "templates/nextjs-sqlite-saas/",
+  ".github/workflows/test-nextjs-sqlite-template.yml",
+  "Makefile",
+  "package.json",
+  "package-lock.json",
+  ".gitignore",
+];
+try {
+  const baseRef = resolveBranchDiffBaseRef();
+  for (const path of listBranchChangedFiles(baseRef)) {
+    assert(!path.startsWith("internal/"), `unrelated path in PR diff: ${path}`);
+    assert(!path.startsWith("hooks/"), `unrelated path in PR diff: ${path}`);
+    assert(
+      allowedPrefixes.some((prefix) => path === prefix.replace(/\/$/, "") || path.startsWith(prefix)),
+      `branch diff includes out-of-scope path: ${path}`,
+    );
+  }
+} catch (error) {
+  if (!process.env.CI) {
+    // Local shallow clones may lack merge-base; skip outside CI.
+  } else {
+    assert(false, error.message);
+  }
+}
+
+const ciScriptPath = join(__dirname, "run-ci-checks.sh");
+assert(statSync(ciScriptPath).mode & 0o111, "run-ci-checks.sh is executable");
+assert(
+  runCiChecks.includes("peer review acceptance tests passed") &&
+    runCiChecks.includes("git log -1 --format='%B'") &&
+    runCiChecks.includes("Ran ${peer_review_tests} tests — OK") &&
+    runCiChecks.includes("Forbidden agent attribution trailer found in HEAD commit message"),
+  "run-ci-checks guards attribution and peer-review summaries",
 );
 
 if (failures.length) {

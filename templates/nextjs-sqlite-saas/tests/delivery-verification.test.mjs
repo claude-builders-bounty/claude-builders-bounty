@@ -3,6 +3,7 @@
  * Fleet delivery verification for bounty #2 (issue #2).
  * Guards npm test wiring, CI summary ordering, and peer-review silence on success.
  */
+import { execSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -92,6 +93,25 @@ test("peer-review and delivery suites have minimum coverage", () => {
   }
   if (delivery < 4) {
     throw new Error(`delivery-verification.test.mjs has ${delivery} tests (need >= 4)`);
+  }
+});
+
+test("npm test entry point runs green", () => {
+  if (process.env.NEXTJS_TEMPLATE_CI_INNER_RUN) {
+    return;
+  }
+
+  const output = execSync("npm test", {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: { ...process.env, NEXTJS_TEMPLATE_CI_INNER_RUN: "1" },
+  });
+
+  if (!output.includes("OK: peer review acceptance tests passed")) {
+    throw new Error("npm test must print peer review acceptance summary");
+  }
+  if (!output.includes("OK: all CI validation checks passed")) {
+    throw new Error("npm test must print all CI validation checks passed");
   }
 });
 
