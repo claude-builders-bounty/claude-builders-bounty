@@ -19,7 +19,25 @@ mkdir -p ~/.claude/hooks
 cp destructive_command_guard.py ~/.claude/hooks/destructive_command_guard.py
 ```
 
-Add this hook to your Claude Code hooks configuration as a `PreToolUse` hook for Bash tool calls.
+Add this to your Claude Code settings file, for example `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/destructive_command_guard.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
 ## Test
 
@@ -31,4 +49,10 @@ python3 test_guard.py
 
 ```text
 Blocked destructive Bash command: rm -rf. Review the command and request explicit human approval before retrying.
+```
+
+## Example Log Entry
+
+```json
+{"timestamp":"2026-06-09T09:52:00+00:00","reason":"rm -rf","command":"rm -rf build","project_path":"/path/to/project"}
 ```

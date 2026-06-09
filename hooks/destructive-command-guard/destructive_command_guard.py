@@ -10,7 +10,7 @@ from pathlib import Path
 BLOCK_PATTERNS = [
     ("rm -rf", re.compile(r"(^|[;&|]\s*)rm\s+-(?:[^\s-]*r[^\s-]*f|[^\s-]*f[^\s-]*r)\b", re.I)),
     ("DROP TABLE", re.compile(r"\bdrop\s+table\b", re.I)),
-    ("git push --force", re.compile(r"\bgit\s+push\b[^\n;&|]*\s(?:--force|-f)\b", re.I)),
+    ("git push --force", re.compile(r"\bgit\s+push\b[^\n;&|]*\s(?:--force|-f)(?=\s|$)", re.I)),
     ("TRUNCATE", re.compile(r"\btruncate\b", re.I)),
     (
         "DELETE FROM without WHERE",

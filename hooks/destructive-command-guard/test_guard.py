@@ -58,6 +58,25 @@ class GuardTests(unittest.TestCase):
             self.assertIn("DELETE FROM without WHERE", reason(blocked.stdout))
             self.assertEqual(decision(allowed.stdout), "allow")
 
+    def test_blocks_required_sql_and_git_patterns(self):
+        cases = [
+            ("psql -c 'DROP TABLE users'", "DROP TABLE"),
+            ("sqlite3 app.db 'TRUNCATE TABLE events'", "TRUNCATE"),
+            ("git push --force origin main", "git push --force"),
+            ("git push -f origin main", "git push --force"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            for command, expected_reason in cases:
+                with self.subTest(command=command):
+                    result = run_hook(command, Path(tmp))
+                    self.assertEqual(decision(result.stdout), "deny")
+                    self.assertIn(expected_reason, reason(result.stdout))
+
+    def test_allows_force_with_lease(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_hook("git push --force-with-lease origin main", Path(tmp))
+            self.assertEqual(decision(result.stdout), "allow")
+
     def test_allows_non_bash_tool_and_normal_bash_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             normal = run_hook("ls -la && git status", Path(tmp))
