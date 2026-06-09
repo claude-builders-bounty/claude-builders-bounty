@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
+const repoRoot = join(root, '..', '..');
 
 const tests = [];
 function test(name, fn) {
@@ -64,6 +65,20 @@ test('n8n execution screenshot asset present', () => {
   const screenshot = statSync(join(root, 'assets', 'n8n-execution-screenshot.png'));
   if (!screenshot.isFile() || screenshot.size <= 1024) {
     throw new Error('n8n execution screenshot missing or too small');
+  }
+});
+
+test('repo root exposes npm test entry point', () => {
+  const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
+  if (!pkg.scripts?.test?.includes('n8n-weekly-dev-summary')) {
+    throw new Error('repo root package.json test script must delegate to n8n workflow CI');
+  }
+});
+
+test('repo root Makefile exposes test and ci-validate', () => {
+  const makefile = readFileSync(join(repoRoot, 'Makefile'), 'utf8');
+  if (!/^test:/m.test(makefile) || !/^ci-validate:/m.test(makefile)) {
+    throw new Error('repo root Makefile must expose test and ci-validate targets');
   }
 });
 
