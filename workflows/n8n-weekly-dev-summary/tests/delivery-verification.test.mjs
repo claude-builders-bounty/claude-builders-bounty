@@ -167,6 +167,16 @@ test('repo root Makefile exposes test and ci-validate', () => {
   }
 });
 
+test('tracked files belong to bounty #5 n8n workflow only', () => {
+  const tracked = execSync('git ls-files', { cwd: repoRoot, encoding: 'utf8' });
+  if (tracked.includes('hooks/block-destructive-commands')) {
+    throw new Error('wrong bounty files must not be committed on n8n workflow branch');
+  }
+  if (!tracked.includes('workflows/n8n-weekly-dev-summary/weekly-dev-summary.json')) {
+    throw new Error('n8n workflow JSON must be tracked for bounty #5 delivery');
+  }
+});
+
 test('repo root npm test entry point runs green', () => {
   if (process.env.N8N_CI_INNER_RUN) return;
   const output = execSync('npm test', {
@@ -176,6 +186,12 @@ test('repo root npm test entry point runs green', () => {
   });
   if (!output.includes('OK: all CI validation checks passed')) {
     throw new Error('repo root npm test must pass full CI runner');
+  }
+  if (!output.includes('13 nodes, all acceptance checks passed')) {
+    throw new Error('repo root npm test must validate n8n weekly-dev-summary workflow');
+  }
+  if (/destructive|pretooluse/i.test(output)) {
+    throw new Error('repo root npm test must not run unrelated bounty suites');
   }
 });
 
