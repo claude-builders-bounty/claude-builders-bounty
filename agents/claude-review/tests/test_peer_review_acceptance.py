@@ -100,6 +100,42 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         text = workflow.read_text(encoding="utf-8")
         self.assertIn("run-ci-checks.sh", text)
 
+    def test_ci_workflow_fetches_full_git_history(self):
+        """Branch attribution scan needs merge-base; shallow checkout breaks peer review."""
+        workflow = REPO_ROOT / ".github/workflows/test-claude-review.yml"
+        text = workflow.read_text(encoding="utf-8")
+        self.assertIn("fetch-depth: 0", text)
+
+    def test_branch_diff_scoped_to_claude_review_only(self):
+        """PR must not include unrelated repo paths (e.g. hooks/ or internal/)."""
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "origin/main...HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        if result.returncode != 0:
+            self.skipTest("origin/main unavailable for branch scope check")
+
+        allowed_prefixes = (
+            "agents/claude-review/",
+            "claude-review",
+            ".github/workflows/test-claude-review.yml",
+            "Makefile",
+            "package.json",
+            "package-lock.json",
+            ".gitignore",
+        )
+        for path in result.stdout.splitlines():
+            if not path.strip():
+                continue
+            if not any(
+                path == prefix.rstrip("/") or path.startswith(prefix)
+                for prefix in allowed_prefixes
+            ):
+                self.fail(f"branch diff includes out-of-scope path: {path}")
+
     def test_ci_workflow_triggers_on_test_entry_points(self):
         workflow = (REPO_ROOT / ".github/workflows/test-claude-review.yml").read_text(encoding="utf-8")
         for path in ("Makefile", "package.json", "package-lock.json", ".gitignore"):
