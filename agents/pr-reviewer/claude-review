@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""claude-review - PR review sub-agent that posts structured comments.
+
+Usage:
+  ./claude-review --pr https://github.com/owner/repo/pull/123
+  ./claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+"""
+import argparse, json, os, re, sys, urllib.request, urllib.error
+from collections import Counter
+
+PARSE_REGEX = re.compile(
+    r'https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/pull/(\d+)'
+)
+
+def api_get(path, token):
+    req = urllib.request.Request(f"https://api.github.com{path}")
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Accept", "application/vnd.github.v3.diff")
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.read().decode("utf-8", errors="replace")
+
+def analyze_diff(diff):
+    if not diff.strip():
+        return {"summary": "No diff content.", "confidence": "Low",
+                "risks": [], "suggestions": []}
+
+    files = re.split(r'(?=^diff --git)', diff, flags=re.MULTILINE)
+    files = [f for f in files if f.strip()]
+
+    total_added = 0
+    total_removed = 0
+    file_types = Counter()
+    risks = []
+    improvements = []
+    added_lines = []
+
+    for blob in files:
+        m = re.search(r' a/(.+?)(?:\s+b/|\s*$)', blob)
+        fname = m.group(1) if m else "unknown"
+        ext = os.path.splitext(fname)[1]
+        file_types[ext] += 1
+        added = blob.count("\n+") - blob.count("\n+++")
+        removed = blob.count("\n-") - blob.count("\n---")
+        total_added += added
+        total_removed += removed
+        for line in blob.split("\n"):
+            if line.startswith("+") and not line.startswith("+++"):
+                added_lines.append((line[1:].strip(), fname))
+
+    risk_patterns = {
+        "TODO|FIXME|XXX|HACK": "Leftover TODO/FIXME markers",
+        "print\(": "Debug print statements",
+        r"console.log": "Debug console.log statements",
+        "password|secret|api.?key|token.*=": "Potential secret hardcoded",
+        "eval\(|exec\(|subprocess\.": "Use of eval/exec/subprocess",
+        r"except:\s*pass|except Exception:\s*pass": "Bare except with pass",
+        r"os\.system|shutil\.rmtree": "Destructive shell operations",
+    }
+    seen = set()
+    for pattern, desc in risk_patterns.items():
+        for line, fname in added_lines:
+            if re.search(pattern, line, re.IGNORECASE):
+                key = (desc, fname)
+                if key not in seen:
+                    seen.add(key)
+                    risks.append(f"{desc} in '{fname}'")
+                break
+
+    if total_added > 500:
+        improvements.append(f"Large diff ({total_added}+ lines). Split into smaller PRs.")
+    if len(files) > 15:
+        improvements.append(f"PR touches {len(files)} files. Reduce scope.")
+    if "test" not in diff.lower():
+        improvements.append("No test changes detected. Add tests.")
+
+    fts = ", ".join(f"{e or '?'} ({n})" for e, n in file_types.most_common(5))
+    summary = f"Reviewing **{len(files)}** files, **+{total_added}/-{total_removed}** lines. Types: {fts}."
+    if risks:
+        summary += f" Found **{len(risks)}** risk(s)."
+    if improvements:
+        summary += f" **{len(improvements)}** suggestion(s)."
+
+    return {
+        "summary": summary,
+        "risks": risks,
+        "suggestions": improvements,
+        "confidence": "High" if total_added < 1000 and not risks else "Medium",
+        "stats": {"files": len(files), "added": total_added, "removed": total_removed},
+    }
+
+def format_md(review, pr_url):
+    badge = {"High": "\U0001f7e2", "Medium": "\U0001f7e1", "Low": "\U0001f534"}
+    lines = [
+        "## AI Code Review\n",
+        f"**PR:** {pr_url}\n",
+        f"**Confidence:** {badge.get(review['confidence'], '\u26aa')} {review['confidence']}\n",
+        "### Summary of Changes",
+        review["summary"] + "\n",
+    ]
+    if review.get("stats"):
+        lines += [
+            f"- Files changed: {review['stats']['files']}",
+            f"- Lines added: +{review['stats']['added']}",
+            f"- Lines removed: -{review['stats']['removed']}\n",
+        ]
+    if review.get("risks"):
+        lines.append("### Identified Risks")
+        for r in review["risks"]:
+            lines.append(f"- \u26a0\ufe0f {r}")
+        lines.append("")
+    if review.get("suggestions"):
+        lines.append("### Improvement Suggestions")
+        for s in review["suggestions"]:
+            lines.append(f"- \U0001f4a1 {s}")
+        lines.append("")
+    return "\n".join(lines)
+
+def main():
+    parser = argparse.ArgumentParser(description="Review a GitHub PR")
+    parser.add_argument("--pr", required=True, help="PR URL")
+    parser.add_argument("--output", help="Output file")
+    args = parser.parse_args()
+
+    token = os.environ.get("GITHUB_TOKEN") or ""
+    m = PARSE_REGEX.match(args.pr)
+    if not m:
+        print("Invalid PR URL", file=sys.stderr)
+        sys.exit(1)
+
+    owner, repo, num = m.group(1), m.group(2), int(m.group(3))
+    print(f"Fetching {owner}/{repo}#{num}...", file=sys.stderr)
+    diff = api_get(f"/repos/{owner}/{repo}/pulls/{num}", token)
+    review = analyze_diff(diff)
+    md = format_md(review, args.pr)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(md)
+        print(f"Review saved to {args.output}", file=sys.stderr)
+    else:
+        print(md)
+
+if __name__ == "__main__":
+    main()
