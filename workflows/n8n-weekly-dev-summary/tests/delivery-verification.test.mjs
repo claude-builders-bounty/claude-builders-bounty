@@ -73,6 +73,16 @@ test('repo root exposes npm test entry point', () => {
   if (!pkg.scripts?.test?.includes('n8n-weekly-dev-summary')) {
     throw new Error('repo root package.json test script must delegate to n8n workflow CI');
   }
+  if (!pkg.scripts?.test?.includes('test:ci')) {
+    throw new Error('repo root package.json test script must run test:ci');
+  }
+});
+
+test('peer-review suite is silent on success for CI summary ordering', () => {
+  const peerReview = readFileSync(join(__dirname, 'peer-review-acceptance.test.mjs'), 'utf8');
+  if (/console\.log\(['"]OK: peer review acceptance tests passed['"]\)/.test(peerReview)) {
+    throw new Error('peer-review-acceptance.test.mjs must not print CI summary (run-ci-checks owns that line)');
+  }
 });
 
 test('repo root Makefile exposes test and ci-validate', () => {

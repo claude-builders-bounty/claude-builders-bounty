@@ -96,5 +96,3 @@ if (failures.length) {
   console.error('FAILED peer-review acceptance:\n- ' + failures.join('\n- '));
   process.exit(1);
 }
-
-console.log('OK: peer review acceptance tests passed');
