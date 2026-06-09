@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 import json
+import subprocess
 import sys
+import tempfile
 import unittest
 import unittest.mock
+import urllib.error
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -523,6 +526,152 @@ class TokenResolutionTests(unittest.TestCase):
             with unittest.mock.patch(
                 "claude_review.subprocess.run",
                 side_effect=FileNotFoundError,
+            ):
+                self.assertIsNone(claude_review.resolve_github_token())
+
+
+class EdgeCaseTests(unittest.TestCase):
+    def test_empty_diff_parses_no_files(self):
+        self.assertEqual(claude_review.parse_diff_filenames(""), [])
+
+    def test_whitespace_only_diff_parses_no_files(self):
+        self.assertEqual(claude_review.parse_diff_filenames("   \n\n  "), [])
+
+    def test_analyze_pr_with_empty_diff_and_no_files(self):
+        metadata = {
+            "title": "Empty PR",
+            "body": "",
+            "changed_files": [],
+            "total_changes": 0,
+            "commits": 0,
+            "additions": 0,
+            "deletions": 0,
+            "labels": [],
+        }
+        review = claude_review.analyze_pr(metadata, diff="")
+        self.assertIn("No file changes were detected", review["summary"])
+        self.assertEqual(review["confidence"], "High")
+
+    def test_filter_diff_by_filenames_empty_inputs(self):
+        self.assertEqual(claude_review.filter_diff_by_filenames("", {"a.py"}), "")
+        diff = "diff --git a/a.py b/a.py\n+++ b/a.py\n+pass\n"
+        self.assertEqual(claude_review.filter_diff_by_filenames(diff, set()), "")
+
+    def test_filter_diff_for_heuristics_empty_diff(self):
+        self.assertEqual(claude_review.filter_diff_for_heuristics(""), "")
+
+    def test_sanitize_pr_body_empty_and_whitespace(self):
+        self.assertEqual(claude_review.sanitize_pr_body(""), "")
+        self.assertEqual(claude_review.sanitize_pr_body("   \n\t  "), "")
+
+    def test_metadata_from_diff_empty_produces_zero_totals(self):
+        metadata = claude_review.metadata_from_diff("", title="No-op", author="bot")
+        self.assertEqual(metadata["changed_files"], [])
+        self.assertEqual(metadata["total_changes"], 0)
+
+
+class CliErrorHandlingTests(unittest.TestCase):
+    CLI = Path(__file__).resolve().parents[3] / "claude-review"
+
+    def test_main_exits_when_no_token(self):
+        with unittest.mock.patch(
+            "sys.argv",
+            ["claude-review", "--pr", "https://github.com/acme/widgets/pull/1"],
+        ):
+            with unittest.mock.patch("claude_review.resolve_github_token", return_value=None):
+                with self.assertRaises(SystemExit) as ctx:
+                    claude_review.main()
+        self.assertEqual(ctx.exception.code, 1)
+
+    def test_main_exits_on_invalid_pr_url(self):
+        with unittest.mock.patch.dict("os.environ", {"GITHUB_TOKEN": "ghp_test"}, clear=False):
+            result = subprocess.run(
+                [str(self.CLI), "--pr", "not-a-valid-pr", "--token", "ghp_test"],
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Cannot parse PR", result.stderr)
+
+    def test_main_exits_on_missing_diff_file(self):
+        result = subprocess.run(
+            [str(self.CLI), "--diff-file", "/tmp/does-not-exist-claude-review.diff"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Error reading diff file", result.stderr)
+
+    def test_main_reviews_empty_diff_file(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".diff", delete=False) as handle:
+            handle.write("")
+            diff_path = handle.name
+        try:
+            result = subprocess.run(
+                [
+                    str(self.CLI),
+                    "--diff-file",
+                    diff_path,
+                    "--title",
+                    "Empty change set",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        finally:
+            Path(diff_path).unlink(missing_ok=True)
+
+        self.assertIn("No file changes were detected", result.stdout)
+        self.assertIn("### Summary of Changes", result.stdout)
+
+    def test_parse_args_requires_pr_or_diff_file(self):
+        with unittest.mock.patch("sys.argv", ["claude-review"]):
+            with self.assertRaises(SystemExit) as ctx:
+                claude_review.parse_args()
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_parse_args_rejects_both_pr_and_diff_file(self):
+        with unittest.mock.patch(
+            "sys.argv",
+            ["claude-review", "--pr", "1", "--diff-file", "changes.diff"],
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                claude_review.parse_args()
+        self.assertEqual(ctx.exception.code, 2)
+
+
+class GithubApiErrorTests(unittest.TestCase):
+    def test_fetch_pr_diff_returns_none_on_http_error(self):
+        error = urllib.error.HTTPError(
+            url="https://api.github.com/repos/a/b/pulls/1",
+            code=404,
+            msg="Not Found",
+            hdrs=None,
+            fp=None,
+        )
+
+        with unittest.mock.patch(
+            "claude_review.urllib.request.urlopen",
+            side_effect=error,
+        ):
+            diff = claude_review.fetch_pr_diff("a", "b", 1, "ghp_test")
+
+        self.assertIsNone(diff)
+
+    def test_gh_auth_token_empty_stdout_returns_none(self):
+        with unittest.mock.patch.dict("os.environ", {}, clear=True):
+            with unittest.mock.patch(
+                "claude_review.subprocess.run",
+                return_value=unittest.mock.Mock(returncode=0, stdout="  \n"),
+            ):
+                self.assertIsNone(claude_review.resolve_github_token())
+
+    def test_gh_auth_token_nonzero_exit_returns_none(self):
+        with unittest.mock.patch.dict("os.environ", {}, clear=True):
+            with unittest.mock.patch(
+                "claude_review.subprocess.run",
+                return_value=unittest.mock.Mock(returncode=1, stdout=""),
             ):
                 self.assertIsNone(claude_review.resolve_github_token())
 

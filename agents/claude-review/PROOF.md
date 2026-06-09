@@ -16,7 +16,7 @@ Maps each acceptance criterion to the exact command or artifact in this PR.
 ## Commands
 
 ```bash
-# Unit tests (40 cases) + delivery verification (6 cases) + peer-review acceptance (15 cases) + CI guards
+# Unit tests (56 cases) + delivery verification (6 cases) + peer-review acceptance (16 cases) + CI guards
 npm test
 # or: bash agents/claude-review/tests/run-ci-checks.sh
 
@@ -28,4 +28,4 @@ git diff main...HEAD > /tmp/changes.diff
 ./claude-review --diff-file /tmp/changes.diff --title "local branch"
 ```
 
-Expected test output ends with `Ran 40 unit tests — OK`, `Ran 6 delivery verification tests — OK`, `Ran 15 tests — OK`, `OK: peer review acceptance tests passed`, `OK: 61 tests passed`, and `OK: all CI validation checks passed`.
+Expected test output ends with `Ran 56 unit tests — OK`, `Ran 6 delivery verification tests — OK`, `Ran 16 tests — OK`, `OK: peer review acceptance tests passed`, `OK: 78 tests passed`, and `OK: all CI validation checks passed`.
