@@ -206,7 +206,11 @@ test('repo root npm test entry point runs green', () => {
 });
 
 test('git branch targets bounty #5 n8n workflow', () => {
-  const branch = execSync('git branch --show-current', { cwd: repoRoot, encoding: 'utf8' }).trim();
+  const branch = (
+    process.env.GITHUB_HEAD_REF ||
+    process.env.GITHUB_REF_NAME ||
+    execSync('git branch --show-current', { cwd: repoRoot, encoding: 'utf8' }).trim()
+  );
   if (!/bounty-5|n8n-weekly-dev-summary|issue-5/i.test(branch)) {
     throw new Error(`expected bounty #5 branch, got "${branch}"`);
   }
