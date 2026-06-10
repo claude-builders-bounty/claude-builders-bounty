@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# claude-review — Claude Code PR review agent
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+#        claude-review --diff <(git diff main...HEAD)
+
+PR_URL=""
+EXTRA_CONTEXT=""
+
+usage() {
+  cat <<EOF
+Usage: claude-review --pr <PR_URL> [--context "<extra instructions>"]
+
+  --pr       GitHub PR URL to review
+  --context  Additional review instructions (optional)
+  --help     Show this message
+
+Examples:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --context "Focus on security"
+  gh pr diff | claude-review --stdin
+EOF
+  exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr)       PR_URL="$2"; shift 2 ;;
+    --context)  EXTRA_CONTEXT="$2"; shift 2 ;;
+    --help)     usage ;;
+    *)          echo "Unknown flag: $1"; usage ;;
+  esac
+done
+
+if [[ -z "$PR_URL" ]]; then
+  echo "Error: --pr is required"
+  usage
+fi
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+DIFF_FILE="$TMPDIR/diff.txt"
+PROMPT_FILE="$TMPDIR/prompt.txt"
+OUTPUT_FILE="$TMPDIR/review.md"
+
+echo "Fetching PR diff..."
+gh pr diff "$PR_URL" --color never > "$DIFF_FILE" 2>/dev/null || {
+  echo "Error: Could not fetch PR diff. Is gh CLI installed and authenticated?"
+  exit 1
+}
+
+DIFF_LINES=$(wc -l < "$DIFF_FILE")
+if [[ "$DIFF_LINES" -eq 0 ]]; then
+  echo "Error: Empty diff — check the PR URL"
+  exit 1
+fi
+
+echo "Diff size: $DIFF_LINES lines"
+
+cat > "$PROMPT_FILE" <<'PROMPT'
+You are a senior code reviewer. Analyze the following PR diff and produce a structured Markdown review.
+
+## Output Format (strict)
+
+### Summary
+2-3 sentences summarizing what this PR changes and why.
+
+### Identified Risks
+- **Risk**: Description
+- **Risk**: Description (or "None identified" if clean)
+
+### Improvement Suggestions
+- **Suggestion**: Description
+- **Suggestion**: Description (or "None — LGTM!" if excellent)
+
+### Confidence Score
+**Score**: Low / Medium / High
+**Reason**: One sentence explaining the confidence level.
+
+## Review Guidelines
+- Be constructive, not harsh
+- Flag only real issues — do not nitpick style unless it causes bugs
+- Security issues are HIGH priority
+- Check for: missing error handling, race conditions, SQL injection, XSS, broken auth, N+1 queries
+- If the PR is small and clean, say so and give High confidence
+
+EXTRA_CONTEXT_PLACEHOLDER
+
+Here is the PR diff:
+
+PROMPT
+
+if [[ -n "$EXTRA_CONTEXT" ]]; then
+  EXTRA_LINE="Additional reviewer instructions: $EXTRA_CONTEXT"
+  sed -i "s/EXTRA_CONTEXT_PLACEHOLDER/$EXTRA_LINE/" "$PROMPT_FILE"
+else
+  sed -i "s/EXTRA_CONTEXT_PLACEHOLDER//" "$PROMPT_FILE"
+fi
+
+echo "Running Claude Code review..."
+
+cat "$DIFF_FILE" | claude -p "$(cat "$PROMPT_FILE")" \
+  --model claude-sonnet-4-20250514 \
+  --max-tokens 4096 \
+  > "$OUTPUT_FILE" 2>/dev/null || {
+  echo "Error: claude command failed. Is Claude Code installed?"
+  exit 1
+}
+
+cat "$OUTPUT_FILE"
