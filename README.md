@@ -58,14 +58,20 @@ The installer copies `hooks/block-destructive-bash.py` to
 - `rm` commands that combine recursive and force flags, such as `rm -rf build`,
   `rm -fr build`, or `rm --recursive --force build`.
 - `git push` with force flags, including `--force`, `-f`, and
-  `--force-with-lease`.
+  `--force-with-lease`, plus force-push refspecs such as `+main` and
+  `git -c push.force=true push`.
+- `git reset --hard`, which can discard local work without confirmation.
+- Direct writes to block devices through commands such as `dd of=/dev/...`,
+  `mkfs.* /dev/...`, and `wipefs /dev/...`.
+- Remote script pipes such as `curl ... | bash` or `wget ... | sh`.
 - SQL execution contexts containing `DROP TABLE`.
 - SQL execution contexts containing `TRUNCATE`.
 - SQL execution contexts containing `DELETE FROM` without a following `WHERE`
   clause.
 
 Normal commands such as `npm test`, `git push origin main`, `rm file.log`,
-`rm -r build`, and `DELETE FROM sessions WHERE id = 1` are allowed.
+`rm -r build`, `truncate -s 0 notes.txt`, `grep 'DROP TABLE' docs.md`, and
+`DELETE FROM sessions WHERE id = 1` are allowed.
 
 ### Block Log
 

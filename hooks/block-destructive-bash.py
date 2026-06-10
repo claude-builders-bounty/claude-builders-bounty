@@ -27,6 +27,10 @@ WRAPPER_COMMANDS = {
 }
 
 SHELL_SEPARATORS = {";", "&&", "||", "|", "\n"}
+COMMAND_SEPARATORS = {";", "&&", "||", "\n"}
+
+REMOTE_FETCH_COMMANDS = {"curl", "wget"}
+SHELL_COMMANDS = {"bash", "fish", "sh", "zsh"}
 
 SQL_CLIENT_TOKENS = {
     "clickhouse-client",
@@ -44,6 +48,11 @@ SQL_TOOL_TOKENS = {
     "turso",
     "wrangler",
 }
+
+TRUNCATE_STATEMENT_RE = re.compile(
+    r"\btruncate\s+(?:table\s+)?(?:[`\"']?[A-Za-z_][\w$.]*[`\"']?)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -148,6 +157,46 @@ def split_shell_segments(tokens: list[str]) -> list[list[str]]:
     return segments
 
 
+def split_command_groups(tokens: list[str]) -> list[list[str]]:
+    groups: list[list[str]] = []
+    current: list[str] = []
+
+    for token in tokens:
+        if token in COMMAND_SEPARATORS:
+            if current:
+                groups.append(current)
+                current = []
+            continue
+        current.append(token)
+
+    if current:
+        groups.append(current)
+
+    return groups
+
+
+def split_pipeline_stages(tokens: list[str]) -> list[list[str]]:
+    stages: list[list[str]] = []
+    current: list[str] = []
+
+    for token in tokens:
+        if token == "|":
+            if current:
+                stages.append(current)
+                current = []
+            continue
+        current.append(token)
+
+    if current:
+        stages.append(current)
+
+    return stages
+
+
+def command_name(token: str) -> str:
+    return token.rsplit("/", 1)[-1]
+
+
 def strip_wrappers(tokens: list[str]) -> list[str]:
     remaining = list(tokens)
 
@@ -187,6 +236,41 @@ def strip_wrappers(tokens: list[str]) -> list[str]:
     return remaining
 
 
+def git_invocation(tokens: list[str]) -> tuple[str, list[str], bool] | None:
+    stripped = strip_wrappers(tokens)
+    if not stripped or command_name(stripped[0]) != "git":
+        return None
+
+    args = stripped[1:]
+    force_push_config = False
+    index = 0
+
+    while index < len(args) and args[index].startswith("-"):
+        option = args[index]
+
+        if option == "-c" and index + 1 < len(args):
+            key_value = args[index + 1].lower()
+            if key_value.startswith("push.force="):
+                force_push_config = key_value.split("=", 1)[1] in {"1", "true", "yes", "on"}
+            index += 2
+            continue
+
+        if option in {"-C", "--git-dir", "--work-tree", "--namespace"} and index + 1 < len(args):
+            index += 2
+            continue
+
+        if option.startswith(("--git-dir=", "--work-tree=", "--namespace=")):
+            index += 1
+            continue
+
+        index += 1
+
+    if index >= len(args):
+        return None
+
+    return args[index], args[index + 1 :], force_push_config
+
+
 def rm_has_recursive_force_flags(tokens: list[str]) -> bool:
     has_recursive = False
     has_force = False
@@ -212,37 +296,85 @@ def rm_has_recursive_force_flags(tokens: list[str]) -> bool:
 
 
 def has_force_push(tokens: list[str]) -> bool:
-    stripped = strip_wrappers(tokens)
-    if not stripped or stripped[0] != "git":
+    parsed = git_invocation(tokens)
+    if parsed is None:
         return False
 
-    args = stripped[1:]
-    while args and args[0].startswith("-"):
-        option = args.pop(0)
-        if option in {"-C", "-c", "--git-dir", "--work-tree", "--namespace"} and args:
-            args.pop(0)
-
-    if not args or args[0] != "push":
+    subcommand, push_args, force_push_config = parsed
+    if subcommand != "push":
         return False
 
-    for arg in args[1:]:
+    if force_push_config:
+        return True
+
+    for arg in push_args:
         if arg == "--":
-            break
+            continue
         if arg in {"-f", "--force", "--force-with-lease", "--force-if-includes"}:
             return True
         if arg.startswith("--force"):
             return True
+        if arg.startswith("+") and arg != "+":
+            return True
     return False
 
 
-def detect_rm_or_git(command: str) -> BlockReason | None:
+def has_hard_reset(tokens: list[str]) -> bool:
+    parsed = git_invocation(tokens)
+    if parsed is None:
+        return False
+
+    subcommand, reset_args, _force_push_config = parsed
+    return subcommand == "reset" and "--hard" in reset_args
+
+
+def has_block_device_write(tokens: list[str]) -> bool:
+    stripped = strip_wrappers(tokens)
+    if not stripped:
+        return False
+
+    name = command_name(stripped[0])
+    args = stripped[1:]
+
+    if name == "dd":
+        return any(arg.startswith("of=/dev/") for arg in args)
+
+    if name == "wipefs" or name.startswith("mkfs"):
+        return any(arg.startswith("/dev/") for arg in args)
+
+    return False
+
+
+def has_remote_script_pipe(tokens: list[str]) -> bool:
+    for group in split_command_groups(tokens):
+        stages = split_pipeline_stages(group)
+        for index, stage in enumerate(stages[:-1]):
+            stripped_stage = strip_wrappers(stage)
+            if not stripped_stage or command_name(stripped_stage[0]) not in REMOTE_FETCH_COMMANDS:
+                continue
+
+            next_stage = strip_wrappers(stages[index + 1])
+            if next_stage and command_name(next_stage[0]) in SHELL_COMMANDS:
+                return True
+
+    return False
+
+
+def detect_destructive_shell(command: str) -> BlockReason | None:
     tokens = shell_tokens(command)
+
+    if has_remote_script_pipe(tokens):
+        return BlockReason(
+            "remote_script_pipe",
+            "piping a downloaded script directly into a shell can execute unreviewed remote code",
+        )
+
     for segment in split_shell_segments(tokens):
         stripped = strip_wrappers(segment)
         if not stripped:
             continue
 
-        if stripped[0] == "rm" and rm_has_recursive_force_flags(stripped):
+        if command_name(stripped[0]) == "rm" and rm_has_recursive_force_flags(stripped):
             return BlockReason(
                 "rm_recursive_force",
                 "rm with both recursive and force flags can delete large directory trees without confirmation",
@@ -252,6 +384,18 @@ def detect_rm_or_git(command: str) -> BlockReason | None:
             return BlockReason(
                 "git_force_push",
                 "git push with force flags can overwrite remote history",
+            )
+
+        if has_hard_reset(segment):
+            return BlockReason(
+                "git_reset_hard",
+                "git reset --hard can discard local work without confirmation",
+            )
+
+        if has_block_device_write(segment):
+            return BlockReason(
+                "block_device_write",
+                "writing directly to block devices can destroy disks or filesystems",
             )
 
     return None
@@ -300,7 +444,10 @@ def split_sql_statements(text: str) -> list[str]:
 
 
 def starts_with_sql(command: str) -> bool:
-    return bool(re.match(r"^\s*(drop\s+table|truncate\b|delete\s+from\b)", command, re.IGNORECASE))
+    stripped = command.lstrip()
+    if re.match(r"(drop\s+table|delete\s+from)\b", stripped, re.IGNORECASE):
+        return True
+    return bool(TRUNCATE_STATEMENT_RE.match(stripped))
 
 
 def has_sql_execution_context(command: str) -> bool:
@@ -322,7 +469,7 @@ def detect_destructive_sql(command: str) -> BlockReason | None:
     if re.search(r"\bdrop\s+table\b", searchable, re.IGNORECASE):
         return BlockReason("drop_table", "DROP TABLE removes a database table")
 
-    if re.search(r"\btruncate\b", searchable, re.IGNORECASE):
+    if TRUNCATE_STATEMENT_RE.search(searchable):
         return BlockReason("truncate", "TRUNCATE removes all rows from a table")
 
     for statement in split_sql_statements(searchable):
@@ -338,7 +485,7 @@ def detect_destructive_sql(command: str) -> BlockReason | None:
 
 
 def evaluate_command(command: str) -> BlockReason | None:
-    return detect_rm_or_git(command) or detect_destructive_sql(command)
+    return detect_destructive_shell(command) or detect_destructive_sql(command)
 
 
 def truncate_for_message(command: str, limit: int = 500) -> str:
