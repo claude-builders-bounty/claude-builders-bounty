@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. Copy `changelog.sh` into the root of any git repository.
+2. Run `bash changelog.sh` to generate `CHANGELOG.md` from commits since the latest git tag.
+3. Review the categorized `Added`, `Fixed`, `Changed`, and `Removed` sections before committing the result.
+
+Optional flags: `--repo DIR`, `--output FILE`, and `--version NAME`. See [docs/sample-changelog.md](docs/sample-changelog.md) for sample output from a tagged repository.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
