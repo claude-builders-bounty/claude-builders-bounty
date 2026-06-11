@@ -1,29 +1,22 @@
-# Claude Code Destructive Command Blocker
+# Destructive Command Blocker Hook
 
-Pre-tool-use hook that blocks dangerous bash commands before execution.
+Pre-tool-use hook for Claude Code that blocks dangerous bash commands.
 
 ## Installation (2 commands)
 
 ```bash
-# 1. Clone this repository
-git clone https://github.com/claude-builders-bounty/claude-builders-bounty.git
-
-# 2. Copy hook to Claude Code hooks directory
 cp hooks/block-destructive.sh ~/.claude/hooks/
+chmod +x ~/.claude/hooks/block-destructive.sh
 ```
 
 ## Features
 
-- Blocks: `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, `DELETE FROM` without WHERE
+- Blocks: `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, `DELETE FROM`
 - Logs all blocked attempts to `~/.claude/hooks/blocked.log`
-- Clear error messages explaining why commands were blocked
+- Clear error messages explaining why commands are blocked
 - Does not interfere with normal bash commands
 
-## Usage
+## How It Works
 
-The hook automatically activates when Claude Code executes bash commands.
-Blocked commands are logged with timestamp, command, and project path.
-
-## License
-
-MIT
+The hook intercepts bash commands before execution and checks against a list of dangerous patterns.
+When a match is found, the command is blocked and logged.
