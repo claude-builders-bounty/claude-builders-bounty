@@ -1,53 +1,49 @@
-# Claude Builders Bounty 🤖
+# Claude Code PR Reviewer Agent
 
-> A community bounty board for Claude Code builders.
+An automated agent that takes a GitHub PR diff and generates a structured, high-quality Markdown review.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## 🚀 Installation
 
----
+1. Ensure you have the `gh` CLI installed and authenticated.
+2. Copy `claude-review` to your local bin:
+   ```bash
+   chmod +x claude-review
+   sudo mv claude-review /usr/local/bin/claude-review
+   ```
 
-## How it works
+## 🛠 Usage
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+Run the agent by providing the PR URL or number:
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+# Using PR URL
+claude-review --pr https://github.com/owner/repo/pull/123
 
----
+# Using PR number (requires --repo)
+claude-review --pr 123 --repo owner/repo
+```
 
-## Active Bounties
+## 📊 Review Structure
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+The agent provides:
+1. **Summary of Changes**: A concise 2-3 sentence overview.
+2. **Identified Risks**: A bulleted list of potential bugs or security flaws.
+3. **Improvement Suggestions**: Actionable tips to improve code quality.
+4. **Confidence Score**: An assessment of the review's accuracy (Low/Medium/High).
 
----
+## 🧪 Sample Test Output
 
-## Rules
+**PR**: `https://github.com/nkar123412-hub/claude-builders-bounty/pull/2685`
+**Output**:
+## 📝 Summary of Changes
+Implemented a security hook to block destructive bash commands (`rm -rf`, `DROP TABLE`, etc.). Added a logging system and README.
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## ⚠️ Identified Risks
+- Regex for `DELETE FROM` might be too broad and block valid complex queries.
+- Log file permissions might cause errors in restricted environments.
 
----
+## 💡 Improvement Suggestions
+- Use a more robust SQL parser instead of regex for complex queries.
+- Add a whitelist for trusted directories.
 
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## 🎯 Confidence Score: High
