@@ -1,0 +1,164 @@
+{
+  "name": "Weekly GitHub Repo Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{REPO}}/commits?since={{moment().subtract(7,'days').format()}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        }
+      },
+      "id": "2",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{REPO}}/issues?state=closed&since={{moment().subtract(7,'days').format()}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        }
+      },
+      "id": "3",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{REPO}}/pulls?state=closed&sort=updated&direction=desc&since={{moment().subtract(7,'days').format()}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        }
+      },
+      "id": "4",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.first().json;\nconst issues = $input.all()[1].json;\nconst prs = $input.all()[2].json;\n\nlet summary = `📊 Weekly Activity Report for ${new Date().toISOString().slice(0,10)}\\n\\n`;\nsummary += `Commits: ${commits.length} new commits this week.\\n`;\nsummary += `Closed Issues: ${issues.length} issues resolved.\\n`;\nsummary += `Merged PRs: ${prs.length} pull requests merged.\\n\\n`;\nsummary += 'Please summarize the following activity in a friendly, narrative style.';\n\nreturn { summary, commits, issues, prs };"
+      },
+      "id": "5",
+      "name": "Format Data",
+      "type": "n8n-nodes-base.code",
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1000
+            },
+            {
+              "name": "messages",
+              "value": "[{\"role\": \"user\", \"content\": \"{{$node['Format Data'].json['summary']}}\"}]"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "{{CLAUDE_API_KEY}}"},
+            {"name": "anthropic-version", "value": "2023-06-01"}
+          ]
+        }
+      },
+      "id": "6",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "n8n@example.com",
+        "toEmail": "{{DESTINATION_EMAIL}}",
+        "subject": "Weekly Repo Summary - {{REPO}}",
+        "text": "{{$node['Call Claude API'].json['content'][0]['text']}}"
+      },
+      "id": "7",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "position": [1050, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [
+        [
+          {"node": "Fetch Commits", "type": "main", "index": 0},
+          {"node": "Fetch Closed Issues", "type": "main", "index": 0},
+          {"node": "Fetch Merged PRs", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [{"node": "Format Data", "type": "main", "index": 0}]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [{"node": "Format Data", "type": "main", "index": 1}]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [{"node": "Format Data", "type": "main", "index": 2}]
+      ]
+    },
+    "Format Data": {
+      "main": [
+        [{"node": "Call Claude API", "type": "main", "index": 0}]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [{"node": "Send Email", "type": "main", "index": 0}]
+      ]
+    }
+  }
+}
