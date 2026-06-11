@@ -34,6 +34,14 @@ You're in the right place.
 
 ---
 
+## Templates
+
+| Template | Description |
+|---|---|
+| [Next.js SQLite SaaS CLAUDE.md](templates/nextjs-sqlite-saas/CLAUDE.md) | Opinionated project instructions for a Next.js 15 App Router SaaS app backed by SQLite. |
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
