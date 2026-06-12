@@ -1,53 +1,53 @@
-# Claude Builders Bounty 🤖
+# Claude PR Review Agent
 
-> A community bounty board for Claude Code builders.
+Claude Code sub-agent that reviews GitHub PRs.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## CLI Usage
 
----
+```bash
+python review_pr.py --pr https://github.com/owner/repo/pull/123
+```
 
-## How it works
+Outputs structured Markdown with summary, risks, suggestions, and confidence score.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## GitHub Action
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Add to your repo:
 
----
+```yaml
+# .github/workflows/pr-review.yml
+name: Claude PR Review
+on:
+  pull_request:
+    types: [opened, synchronize]
 
-## Active Bounties
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python review_pr.py \
+            --pr "\${{ github.event.pull_request.html_url }}" \
+            --github-token "\${{ secrets.GITHUB_TOKEN }}"
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Sample Output
 
----
+```
+## PR Review: https://github.com/owner/repo/pull/123
 
-## Rules
+### Summary
+Changes 3 file(s) (+45/-12 lines). Adds user profile API endpoint.
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+### Identified Risks
+- ⚠️ Debug console.log statements detected.
 
----
+### Improvement Suggestions
+- 💡 No tests detected. Consider adding tests.
 
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+**Confidence Score**: Medium
+```
