@@ -35,4 +35,4 @@ Run the JSON validator before importing:
 python3 workflows/validate_workflow.py
 ```
 
-The bounty asks for a screenshot from a real n8n execution. After importing and running the workflow, attach a screenshot showing the successful execution and webhook delivery to the pull request.
+Local real n8n smoke execution evidence is included in `workflows/evidence/`. The smoke proof uses n8n 1.97.1 and local mock GitHub/Claude/webhook endpoints, with screenshots showing a successful n8n execution and webhook delivery. See `workflows/evidence/README.md` and `workflows/VERIFICATION.md` for the boundary: this proves the n8n workflow chain and webhook delivery in a local smoke environment, not a production Anthropic API call.
