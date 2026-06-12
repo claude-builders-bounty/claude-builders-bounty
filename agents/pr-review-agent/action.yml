@@ -1,0 +1,51 @@
+name: 'Claude Code PR Review'
+description: 'Run the claude-review sub-agent on a pull request and post the result as a comment.'
+inputs:
+  anthropic_api_key:
+    description: 'Anthropic API key used by the agent. Stored as a repo secret.'
+    required: true
+  github_token:
+    description: 'GitHub token with `pull-requests: write` scope for posting the review comment.'
+    required: false
+    default: ${{ github.token }}
+  model:
+    description: 'Claude model to use (default: claude-sonnet-4-20250514).'
+    required: false
+    default: claude-sonnet-4-20250514
+  format:
+    description: 'Output format: markdown or json.'
+    required: false
+    default: markdown
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: ${{ github.event.pull_request.head.repo.full_name }}
+        ref: ${{ github.event.pull_request.head.ref }}
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Install claude-review
+      shell: bash
+      run: |
+        cd "${GITHUB_ACTION_PATH}"
+        npm ci --omit=dev
+        npm run build
+        npm pack
+        npm install -g ./claude-review-*.tgz
+    - name: Generate review
+      id: review
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        CLAUDE_REVIEW_MODEL: ${{ inputs.model }}
+      shell: bash
+      run: |
+        claude-review --pr "${{ github.event.pull_request.html_url }}" --format ${{ inputs.format }} > review.txt
+    - name: Post review as PR comment
+      if: hashFiles('review.txt') != ''
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        header: claude-review
+        message: ${{ steps.review.outputs.text }}
