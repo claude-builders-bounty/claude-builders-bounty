@@ -51,3 +51,29 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Bounty Solutions
+
+### generate-changelog.sh ([Issue #1](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/1))
+
+A bash script that auto-generates structured changelogs from git history.
+
+**Quick start:**
+```bash
+chmod +x generate-changelog.sh
+bash generate-changelog.sh
+```
+
+**Sample output** (from this repo):
+```
+# Changelog
+## [v0.1.0] — 2026-06-12
+### Added
+- feat: add dark mode
+### Fixed
+- fix: login redirect loop
+### Changed
+- docs: update API reference
+### Removed
+- remove: deprecated v1 endpoint
+```
