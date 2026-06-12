@@ -1,0 +1,339 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude - Local Execute Proof",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "schedule-weekly-friday",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -860,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "github-repo",
+              "name": "githubRepo",
+              "type": "string",
+              "value": "={{ $env.GITHUB_REPO || 'claude-builders-bounty/claude-builders-bounty' }}"
+            },
+            {
+              "id": "language",
+              "name": "language",
+              "type": "string",
+              "value": "={{ $env.SUMMARY_LANGUAGE || 'EN' }}"
+            },
+            {
+              "id": "destination",
+              "name": "destinationWebhookUrl",
+              "type": "string",
+              "value": "={{ $env.DESTINATION_WEBHOOK_URL || 'http://127.0.0.1:18767/weekly-dev-summary' }}"
+            },
+            {
+              "id": "api-base",
+              "name": "apiBaseUrl",
+              "type": "string",
+              "value": "={{ $env.SMOKE_API_BASE_URL || 'http://127.0.0.1:18767' }}"
+            },
+            {
+              "id": "since",
+              "name": "since",
+              "type": "string",
+              "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+            },
+            {
+              "id": "until",
+              "name": "until",
+              "type": "string",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.apiBaseUrl }}/repos/{{ $json.githubRepo }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.until }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').item.json.apiBaseUrl }}/repos/{{ $('Config').item.json.githubRepo }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $('Config').item.json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-closed-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').item.json.apiBaseUrl }}/repos/{{ $('Config').item.json.githubRepo }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-merged-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Config').first().json;\nconst sinceMs = Date.parse(config.since);\nconst commits = $items('Fetch Commits').map(item => item.json).flat().map(commit => ({\n  sha: String(commit.sha || '').slice(0, 7),\n  message: commit.commit?.message?.split('\\n')[0] || '',\n  author: commit.commit?.author?.name || commit.author?.login || 'unknown',\n  url: commit.html_url,\n}));\n\nconst closedIssues = $items('Fetch Closed Issues').map(item => item.json).flat()\n  .filter(issue => !issue.pull_request)\n  .filter(issue => Date.parse(issue.closed_at || issue.updated_at || 0) >= sinceMs)\n  .map(issue => ({ number: issue.number, title: issue.title, url: issue.html_url }));\n\nconst mergedPrs = $items('Fetch Merged PRs').map(item => item.json).flat()\n  .filter(pr => pr.merged_at && Date.parse(pr.merged_at) >= sinceMs)\n  .map(pr => ({ number: pr.number, title: pr.title, author: pr.user?.login || 'unknown', url: pr.html_url }));\n\nconst prompt = `Write a concise weekly development narrative in ${config.language}.\\n\\nRepository: ${config.githubRepo}\\nWindow: ${config.since} to ${config.until}\\n\\nCommits (${commits.length}):\\n${JSON.stringify(commits, null, 2)}\\n\\nClosed issues (${closedIssues.length}):\\n${JSON.stringify(closedIssues, null, 2)}\\n\\nMerged PRs (${mergedPrs.length}):\\n${JSON.stringify(mergedPrs, null, 2)}\\n\\nFormat as:\\n1. Executive summary\\n2. What shipped\\n3. Issues resolved\\n4. Contributor highlights\\n5. Risks or follow-ups for next week`;\n\nconst claudeBody = { model: 'claude-sonnet-4-20250514', max_tokens: 1200, messages: [{ role: 'user', content: prompt }] };\nreturn [{ json: { ...config, commits, closedIssues, mergedPrs, prompt, claudeBody } }];"
+      },
+      "id": "prepare-claude-prompt",
+      "name": "Prepare Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.apiBaseUrl }}/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY || 'local-smoke-key' }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.claudeBody }}",
+        "options": {}
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Prepare Claude Prompt').first().json;\nconst response = $json;\nconst text = response.content?.map(part => part.text || '').join('\\n').trim() || 'Claude returned no summary text.';\nreturn [{\n  json: {\n    webhookUrl: config.destinationWebhookUrl,\n    payload: {\n      text,\n      content: text,\n      username: 'Weekly Dev Summary',\n      metadata: {\n        repo: config.githubRepo,\n        language: config.language,\n        commits: config.commits.length,\n        closedIssues: config.closedIssues.length,\n        mergedPrs: config.mergedPrs.length,\n      },\n    },\n  },\n}];"
+      },
+      "id": "format-webhook-message",
+      "name": "Format Webhook Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "send-webhook",
+      "name": "Send Slack or Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary with Claude": {
+      "main": [
+        [
+          {
+            "node": "Format Webhook Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Webhook Message": {
+      "main": [
+        [
+          {
+            "node": "Send Slack or Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
