@@ -32,6 +32,10 @@ You're in the right place.
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
+## Skills
+
+- [Generate changelog](skills/generate-changelog/README.md): Claude Code skill for bounty [#1](../../issues/1).
+
 ---
 
 ## Rules
