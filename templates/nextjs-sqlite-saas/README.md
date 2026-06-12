@@ -7,7 +7,6 @@ This directory contains an opinionated `CLAUDE.md` for a greenfield SaaS project
 - `CLAUDE.md` - the production-ready Claude Code instruction file.
 - `validate-template.mjs` - structural validator for the bounty acceptance criteria.
 - `VALIDATION.md` - reproducible validation notes.
-- `PR_DRAFT.md` - ready-to-use PR body.
 
 ## Use
 
