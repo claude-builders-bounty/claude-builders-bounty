@@ -1,53 +1,58 @@
-# Claude Builders Bounty 🤖
+# Changelog Generator
 
-> A community bounty board for Claude Code builders.
+Auto-generates a structured `CHANGELOG.md` from git history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (1 step)
+
+```bash
+curl -sL https://raw.githubusercontent.com/forevalex/changelog-generator/main/changelog.sh -o changelog.sh
+chmod +x changelog.sh
+```
+
+## Usage (1 command)
+
+```bash
+./changelog.sh [output_file]
+```
+
+- If `[output_file]` is omitted, writes to `CHANGELOG.md`
+- Fetches commits since the last git tag
+- Auto-categorizes into: **Added / Fixed / Changed / Removed / Other**
+- Links commits to your GitHub remote
+
+## Example
+
+```bash
+cd my-project
+./changelog.sh
+```
+
+Outputs:
+```markdown
+## [Unreleased]
+
+### Added
+- feat: add user authentication ([`a1b2c3d`](https://github.com/owner/repo/commit/a1b2c3d)) — devname, 2026-06-01
+
+### Fixed
+- fix: resolve login redirect loop ([`e4f5g6h`](https://github.com/owner/repo/commit/e4f5g6h)) — devname, 2026-06-02
+```
+
+## Categories
+
+| Pattern | Examples |
+|---------|----------|
+| **Added** | `feat`, `add`, `introduce`, `implement`, `create`, `new` |
+| **Fixed** | `fix`, `bug`, `hotfix`, `patch`, `repair`, `correct` |
+| **Changed** | `update`, `refactor`, `perf`, `optimize`, `improve`, `enhance`, `change`, `modify`, `chore`, `deps`, `upgrade`, `migrate`, `style`, `docs`, `test`, `ci` |
+| **Removed** | `remove`, `delete`, `drop`, `deprecat`, `revert`, `undo`, `clean`, `cleanup` |
+| **Other** | Everything else |
+
+## Requirements
+
+- `git`
+- `bash` 4.0+
 
 ---
 
-## How it works
-
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+Made for [claude-builders-bounty #1](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/1)
