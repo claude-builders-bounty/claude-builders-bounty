@@ -13,4 +13,3 @@ This PR changes 1 file(s), adding 9 line(s) and removing 27 line(s). The main to
 - Run the project's formatter, linter, and relevant test suite before merging.
 
 ### Confidence: High
-
