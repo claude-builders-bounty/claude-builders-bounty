@@ -6,13 +6,11 @@ Closes #4.
 
 - Adds a dependency-free `claude-review` CLI that fetches a GitHub PR diff and renders a structured Markdown review.
 - Adds a Claude Code sub-agent definition for the same structured review workflow.
-- Adds a GitHub Actions workflow that generates and posts the same review on pull requests.
 - Includes two reproducible sample outputs from real GitHub PRs and a verification script.
 
 ## Acceptance Criteria
 
 - CLI: `agents/claude-review --pr https://github.com/owner/repo/pull/123`
-- GitHub Action: `.github/workflows/pr-review.yml`
 - Claude Code sub-agent: `.claude/agents/pr-reviewer.md`
 - Structured Markdown output:
   - Summary of changes
@@ -42,7 +40,7 @@ Verified 2 real PR sample outputs.
 
 ```bash
 git checkout bounty-4-pr-review-agent
-git add .claude/agents/pr-reviewer.md .github/workflows/pr-review.yml agents/README.md agents/claude-review agents/samples/cli-1.md agents/samples/fastapi-12592.md agents/scripts/verify-real-prs.sh
+git add .claude/agents/pr-reviewer.md agents/README.md agents/claude-review agents/samples/cli-1.md agents/samples/fastapi-12592.md agents/scripts/verify-real-prs.sh
 git commit -m "Complete Claude PR review agent"
 git push <your-fork> bounty-4-pr-review-agent
 ```

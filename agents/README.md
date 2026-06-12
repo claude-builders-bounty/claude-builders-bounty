@@ -20,11 +20,6 @@ The review includes:
 - Improvement suggestions
 - Confidence score: Low, Medium, or High
 
-## GitHub Action
-
-If you prefer a comment bot, use [.github/workflows/pr-review.yml](../.github/workflows/pr-review.yml).
-It fetches the PR diff, runs the agent, and posts the rendered Markdown back to the pull request.
-
 ## Examples
 
 Sample outputs are in `agents/samples/`.
