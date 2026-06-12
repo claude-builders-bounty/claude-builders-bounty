@@ -1,0 +1,342 @@
+{
+  "name": "Weekly Dev Summary (n8n + Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "11111111-1111-1111-1111-111111111111",
+      "name": "Weekly Cron (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/commits?since={{ $now.minus({ days: 7 }).toISO() }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "22222222-2222-2222-2222-222222222221",
+      "name": "Fetch Commits (last 7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 100]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/issues?state=closed&since={{ $now.minus({ days: 7 }).toISO() }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $now.minus({ days: 7 }).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "22222222-2222-2222-2222-222222222222",
+      "name": "Fetch Closed Issues (last 7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 280]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "22222222-2222-2222-2222-222222222223",
+      "name": "Fetch Merged PRs (last 7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 460]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Build a single text payload summarising this week's GitHub activity\n// from the three upstream HTTP nodes' outputs. Drops PRs that are also\n// issues (GitHub's PR API returns issues with a `pull_request` field).\n\nconst items = $input.all();\nconst byName = Object.fromEntries(items.map(i => [i.json.name ?? '?', i.json]));\n\nconst commitsResp = byName['Fetch Commits (last 7d)'] ?? {};\nconst issuesResp = byName['Fetch Closed Issues (last 7d)'] ?? {};\nconst prsResp = byName['Fetch Merged PRs (last 7d)'] ?? {};\n\nconst commits = Array.isArray(commitsResp) ? commitsResp : (commitsResp.body ? JSON.parse(commitsResp.body) : []);\nconst issues = Array.isArray(issuesResp) ? issuesResp : (issuesResp.body ? JSON.parse(issuesResp.body) : []);\nconst prs = Array.isArray(prsResp) ? prsResp : (prsResp.body ? JSON.parse(prsResp.body) : []);\n\nconst realIssues = issues.filter(i => !i.pull_request);\nconst mergedPrs = prs.filter(p => p.merged_at);\n\nconst commitLines = commits.slice(0, 50).map(c => `- ${(c.commit?.author?.name || c.commit?.author?.login || '?')}: ${(c.commit?.message || '').split('\\n')[0]}`);\nconst issueLines = realIssues.slice(0, 30).map(i => `- [${i.state}] #${i.number} ${i.title}`);\nconst prLines = mergedPrs.slice(0, 30).map(p => `- merged #${p.number} ${p.title} (by @${p.user?.login || '?'})`);\n\nconst payload = [\n  `Repository: ${$env.GITHUB_REPO}`,\n  `Period: last 7 days (since ${$now.minus({ days: 7 }).toISO()})`,\n  '',\n  `Commits (${commits.length} total, showing up to 50):`,\n  ...commitLines,\n  '',\n  `Closed issues (${realIssues.length} total, showing up to 30):`,\n  ...issueLines,\n  '',\n  `Merged PRs (${mergedPrs.length} total, showing up to 30):`,\n  ...prLines,\n].join('\\n');\n\nreturn [{ json: { activity: payload, counts: { commits: commits.length, closedIssues: realIssues.length, mergedPrs: mergedPrs.length } } }];\n"
+      },
+      "id": "33333333-3333-3333-3333-333333333333",
+      "name": "Combine Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"system\": \"You are a friendly, technically literate release-notes writer. Produce a clear narrative summary of a GitHub repository's activity over the past week. Be specific (mention PR numbers, issue numbers, and authors by handle). Highlight anything notable — releases, breaking changes, large refactors, first-time contributors. Do not invent activity. If a section is empty, say so. Output Markdown only, with three sections: Highlights, Pull requests merged, Issues closed.\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Here is the week's GitHub activity for {{ $env.GITHUB_REPO }}. Write a narrative summary in {{ $env.LANGUAGE || 'English }}.\\n\\n\" + $json.activity\n        }\n      ]\n    }\n  ]\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "44444444-4444-4444-4444-444444444444",
+      "name": "Call Claude (claude-sonnet-4)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 280]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Extract the text content from Claude's response envelope.\n// The upstream HTTP node returns the raw JSON; pull the first text block.\n\nconst resp = $json.body ? JSON.parse($json.body) : $json;\nconst text = (resp.content || [])\n  .filter(b => b.type === 'text')\n  .map(b => b.text)\n  .join('\\n\\n')\n  .trim();\n\nreturn [{\n  json: {\n    summary: text || '(empty response from Claude)',\n    usage: resp.usage || null,\n    model: resp.model || null,\n  }\n}];\n"
+      },
+      "id": "55555555-5555-5555-5555-555555555555",
+      "name": "Extract Summary Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DELIVERY_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"📅 *Weekly Dev Summary — {{ $env.GITHUB_REPO }}*\\n\\n\" + $json.summary + \"\\n\\n_Generated by n8n + Claude at \" + $now.toISO() + \"_\"\n}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "66666666-6666-6666-6666-666666666666",
+      "name": "Deliver (Discord/Slack Webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, 280]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Fri 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits (last 7d)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues (last 7d)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs (last 7d)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits (last 7d)": {
+      "main": [
+        [
+          {
+            "node": "Combine Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues (last 7d)": {
+      "main": [
+        [
+          {
+            "node": "Combine Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs (last 7d)": {
+      "main": [
+        [
+          {
+            "node": "Combine Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Activity": {
+      "main": [
+        [
+          {
+            "node": "Call Claude (claude-sonnet-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude (claude-sonnet-4)": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary Text": {
+      "main": [
+        [
+          {
+            "node": "Deliver (Discord/Slack Webhook)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "1.0.0",
+  "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": "Fetches the last 7 days of GitHub activity (commits, closed issues, merged PRs) for a configured repository, calls the Anthropic Claude API to produce a narrative Markdown summary, and posts the result to a Discord or Slack webhook. Runs every Friday at 5pm."
+  },
+  "tags": [
+    {
+      "name": "claude",
+      "id": "tag-claude"
+    },
+    {
+      "name": "github",
+      "id": "tag-github"
+    },
+    {
+      "name": "weekly-summary",
+      "id": "tag-weekly"
+    }
+  ]
+}
