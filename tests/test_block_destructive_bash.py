@@ -54,6 +54,8 @@ def assert_allowed(command: str) -> None:
 def test_blocked_commands() -> None:
     for command in (
         "rm -rf node_modules",
+        "rm -r -f node_modules",
+        "sudo rm -rf /tmp/example",
         "psql -c 'DROP TABLE users'",
         "git push origin main --force",
         "git push --force-with-lease origin main",
@@ -66,6 +68,7 @@ def test_blocked_commands() -> None:
 def test_allowed_commands() -> None:
     for command in (
         "rm -r build",
+        "echo 'rm -rf appears in docs only'",
         "git push origin main",
         "mysql -e 'DELETE FROM users WHERE id = 1;'",
         "echo hello",

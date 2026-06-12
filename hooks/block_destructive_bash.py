@@ -13,7 +13,10 @@ from typing import Any
 
 
 BLOCK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("recursive force delete", re.compile(r"(?i)(^|[;&|()\s])rm\s+(?:-[A-Za-z]*r[A-Za-z]*f|-([A-Za-z]*f[A-Za-z]*r))[^\n]*")),
+    (
+        "recursive force delete",
+        re.compile(r"(?i)(^|[;&|()])\s*(?:sudo\s+)?rm\s+(?=[^\n;&|]*-[A-Za-z]*r)(?=[^\n;&|]*-[A-Za-z]*f)[^\n;&|]*"),
+    ),
     ("DROP TABLE statement", re.compile(r"(?is)\bdrop\s+table\b")),
     ("force push", re.compile(r"(?i)\bgit\s+push\b[^\n;&|]*\s--force(?:-with-lease)?\b")),
     ("TRUNCATE statement", re.compile(r"(?is)\btruncate\b")),

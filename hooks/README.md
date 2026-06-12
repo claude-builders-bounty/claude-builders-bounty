@@ -5,8 +5,7 @@ Claude Code pre-tool-use hook that blocks dangerous bash commands before they ru
 ## Install
 
 ```bash
-mkdir -p ~/.claude/hooks && cp hooks/block_destructive_bash.py ~/.claude/hooks/
-chmod +x ~/.claude/hooks/block_destructive_bash.py
+install -D -m 755 hooks/block_destructive_bash.py ~/.claude/hooks/block_destructive_bash.py
 ```
 
 Add it to your Claude Code settings:
