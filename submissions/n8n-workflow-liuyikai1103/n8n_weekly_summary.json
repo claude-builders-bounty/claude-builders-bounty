@@ -1,0 +1,193 @@
+﻿{
+  "name": "Weekly Dev Summary — Claude + GitHub",
+  "nodes": [
+    {
+      "id": "schedule-trigger",
+      "name": "⏰ 每周触发 (周五17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "📦 获取本周 Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [300, -200],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/commits?since={{ new Date(Date.now() - 7*86400000).toISOString() }}&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "Bearer ={{ $json.github_token }}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "📋 获取本周 Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [300, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/issues?state=closed&since={{ new Date(Date.now() - 7*86400000).toISOString() }}&per_page=50&sort=updated",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "Bearer ={{ $json.github_token }}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "🔄 获取本周 PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [300, 200],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.repo_url }}/pulls?state=closed&sort=updated&direction=desc&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "Bearer ={{ $json.github_token }}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "merge-data",
+      "name": "🔀 合并数据",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [600, 0],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "build-prompt",
+      "name": "📝 构建 Claude Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [900, 0],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "prompt",
+              "value": "=\nYou are a technical writer. Generate a weekly dev summary.\n\nRepo: {{ $json.repo_url }}\nWeek: {{ new Date(Date.now() - 7*86400000).toISOString().split('T')[0] }} to {{ new Date().toISOString().split('T')[0] }}\n\nCommits ({{ ($json.commits || []).length }}):\n{{ $json.commits ? $json.commits.map(c => '- [' + c.sha.substring(0,7) + '] ' + c.commit.message.split('\\n')[0] + ' (' + c.commit.author.name + ')').join('\\n') : 'No commits' }}\n\nClosed Issues ({{ ($json.issues || []).length }}):\n{{ $json.issues ? $json.issues.filter(i => !i.pull_request).map(i => '- #' + i.number + ' ' + i.title).join('\\n') : 'No issues' }}\n\nMerged PRs ({{ ($json.prs || []).length }}):\n{{ $json.prs ? $json.prs.filter(p => p.merged_at).map(p => '- #' + p.number + ' ' + p.title + ' (' + p.user.login + ')').join('\\n') : 'No PRs' }}\n\nGenerate:\n1. Executive summary (2-3 sentences)\n2. Key changes & features added\n3. Bugs fixed\n4. Notable discussions\n5. Looking ahead\n\nLanguage: {{ $json.language || 'EN' }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "call-claude",
+      "name": "🤖 调用 Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [1200, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $json.claude_api_key }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "model", "value": "claude-sonnet-4-20250514"},
+            {"name": "max_tokens", "value": 2000},
+            {"name": "messages", "value": "[{\"role\": \"user\", \"content\": \"={{ $json.prompt }}\"}]"},
+            {"name": "temperature", "value": 0.3}
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "slack-webhook",
+      "name": "📨 Slack/Webhook 发送",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [1500, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {},
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "text", "value": "={{ $json.content ? $json.content[0].text : 'No summary generated' }}"}
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "schedule-trigger": {
+      "main": [
+        [
+          {"node": "github-commits", "type": "main", "index": 0},
+          {"node": "github-issues", "type": "main", "index": 0},
+          {"node": "github-prs", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "github-commits": {"main": [[{"node": "merge-data", "type": "main", "index": 0}]]},
+    "github-issues": {"main": [[{"node": "merge-data", "type": "main", "index": 1}]]},
+    "github-prs": {"main": [[{"node": "merge-data", "type": "main", "index": 2}]]},
+    "merge-data": {"main": [[{"node": "build-prompt", "type": "main", "index": 0}]]},
+    "build-prompt": {"main": [[{"node": "call-claude", "type": "main", "index": 0}]]},
+    "call-claude": {"main": [[{"node": "slack-webhook", "type": "main", "index": 0}]]}
+  },
+  "settings": {
+    "timezone": "Asia/Shanghai",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  }
+}
