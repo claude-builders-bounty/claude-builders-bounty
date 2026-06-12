@@ -1,0 +1,278 @@
+{
+  "name": "Weekly Dev Summary - Claude + GitHub",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "triggerOnWeekDays": [
+                "Friday"
+              ]
+            }
+          ]
+        }
+      },
+      "id": "trigger-node",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "weekly-trigger"
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getCommits",
+        "owner": "={{$json.repo_owner}}",
+        "repository": "={{$json.repo_name}}",
+        "since": "={{ $now.minus({days: 7}).toISO() }}",
+        "until": "={{ $now.toISO() }}"
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 200],
+      "credentials": {
+        "githubApi": {
+          "id": "github-cred",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getIssues",
+        "owner": "={{$json.repo_owner}}",
+        "repository": "={{$json.repo_name}}",
+        "state": "closed",
+        "since": "={{ $now.minus({days: 7}).toISO() }}"
+      },
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "githubApi": {
+          "id": "github-cred",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getPullRequests",
+        "owner": "={{$json.repo_owner}}",
+        "repository": "={{$json.repo_name}}",
+        "state": "merged",
+        "since": "={{ $now.minus({days: 7}).toISO() }}"
+      },
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 400],
+      "credentials": {
+        "githubApi": {
+          "id": "github-cred",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all GitHub data into a summary payload\nconst commits = $input.all()[0]?.json || [];\nconst issues = $input.all()[1]?.json || [];\nconst prs = $input.all()[2]?.json || [];\n\nconst summary = {\n  week_start: $now.minus({days: 7}).toISO(),\n  week_end: $now.toISO(),\n  total_commits: commits.length,\n  total_closed_issues: issues.length,\n  total_merged_prs: prs.length,\n  top_contributors: commits.reduce((acc, c) => {\n    const author = c.author?.login || c.commit?.author?.name || 'unknown';\n    acc[author] = (acc[author] || 0) + 1;\n    return acc;\n  }, {}),\n  notable_prs: prs.slice(0, 5).map(p => ({\n    title: p.title,\n    author: p.user?.login,\n    url: p.html_url,\n    merged_at: p.merged_at\n  })),\n  notable_issues: issues.slice(0, 5).map(i => ({\n    title: i.title,\n    author: i.user?.login,\n    url: i.html_url,\n    closed_at: i.closed_at\n  }))\n};\n\nreturn [{json: summary}];"
+      },
+      "id": "aggregator",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "message": [
+            {
+              "role": "system",
+              "content": "You are a technical writer summarizing a GitHub repository's weekly activity. Create a clear, engaging narrative summary for the development team."
+            },
+            {
+              "role": "user",
+              "content": "=Write a weekly development summary for {{ $json.repo_name }} based on this data:\n\nWeek: {{ $json.week_start }} to {{ $json.week_end }}\n\nCommits: {{ $json.total_commits }}\nClosed Issues: {{ $json.total_closed_issues }}\nMerged PRs: {{ $json.total_merged_prs }}\n\nTop Contributors:\n{{ JSON.stringify($json.top_contributors, null, 2) }}\n\nNotable PRs:\n{{ JSON.stringify($json.notable_prs, null, 2) }}\n\nNotable Closed Issues:\n{{ JSON.stringify($json.notable_issues, null, 2) }}\n\nWrite 3-5 paragraphs. Include highlights, contributor shout-outs, and any concerns. Use markdown formatting."
+            }
+          ]
+        }
+      },
+      "id": "claude-summary",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.anthropicChatModel",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-cred",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format the Claude response into a clean message\nconst claudeResponse = $input.first().json.content?.[0]?.text || $input.first().json.content || $input.first().json.text || 'No summary generated';\n\nconst message = {\n  text: `📊 **Weekly Dev Summary**\n\n${claudeResponse}\n\n---\n_Generated by n8n + Claude Code_`,\n  blocks: [\n    {\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: claudeResponse\n      }\n    }\n  ]\n};\n\nreturn [{json: message}];"
+      },
+      "id": "formatter",
+      "name": "Format Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "channel",
+        "channel": "={{$json.destination_channel}}",
+        "text": "={{$json.text}}",
+        "options": {}
+      },
+      "id": "slack-send",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1250, 200],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-cred",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{$json.notification_email}}",
+        "subject": "Weekly Dev Summary: {{ $json.repo_name }}",
+        "text": "={{$json.text}}",
+        "html": "={{ `<html><body><h1>Weekly Dev Summary: ${$json.repo_name}</h1><pre>${$json.text}</pre></body></html>` }}"
+      },
+      "id": "email-send",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1250, 400],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Message": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "weekly-dev-summary-v1"
+}
