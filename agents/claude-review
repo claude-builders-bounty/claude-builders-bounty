@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown review from a GitHub pull request diff."""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)/?$")
+
+
+@dataclass(frozen=True)
+class FileChange:
+    path: str
+    added: int
+    removed: int
+    hunks: int
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Review a GitHub pull request diff.")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL, for example https://github.com/owner/repo/pull/123")
+    parser.add_argument("--diff-file", help="Read a local diff instead of downloading from GitHub.")
+    parser.add_argument("--output", help="Write the Markdown review to a file as well as stdout.")
+    return parser.parse_args()
+
+
+def pr_diff_url(pr_url: str) -> str:
+    match = PR_RE.match(pr_url)
+    if not match:
+        raise ValueError("Expected a GitHub PR URL like https://github.com/owner/repo/pull/123")
+    return f"{pr_url.rstrip('/')}.diff"
+
+
+def fetch_diff(pr_url: str) -> str:
+    request = urllib.request.Request(
+        pr_diff_url(pr_url),
+        headers={
+            "User-Agent": "Mozilla/5.0 claude-review-agent",
+            "Accept": "text/plain, application/vnd.github.v3.diff",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"Could not fetch PR diff: HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not fetch PR diff: {exc.reason}") from exc
+
+
+def parse_file_changes(diff: str) -> list[FileChange]:
+    changes: list[FileChange] = []
+    current_path: str | None = None
+    added = removed = hunks = 0
+
+    def flush() -> None:
+        nonlocal current_path, added, removed, hunks
+        if current_path is not None:
+            changes.append(FileChange(current_path, added, removed, hunks))
+        current_path = None
+        added = removed = hunks = 0
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            flush()
+            parts = line.split()
+            current_path = parts[3][2:] if len(parts) >= 4 and parts[3].startswith("b/") else parts[-1]
+        elif line.startswith("@@"):
+            hunks += 1
+        elif current_path is not None and line.startswith("+") and not line.startswith("+++"):
+            added += 1
+        elif current_path is not None and line.startswith("-") and not line.startswith("---"):
+            removed += 1
+    flush()
+    return changes
+
+
+def changed_areas(changes: Iterable[FileChange]) -> list[str]:
+    counts: Counter[str] = Counter()
+    for change in changes:
+        parts = change.path.split("/")
+        area = parts[0] if len(parts) == 1 else "/".join(parts[:2])
+        counts[area] += change.added + change.removed
+    return [area for area, _ in counts.most_common(5)]
+
+
+def risk_notes(diff: str, changes: list[FileChange]) -> list[str]:
+    notes: list[str] = []
+    total_lines = sum(c.added + c.removed for c in changes)
+    if total_lines > 500:
+        notes.append(f"Large diff size ({total_lines} changed lines) raises review and regression risk.")
+    if any(c.path.endswith((".lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock")) for c in changes):
+        notes.append("Dependency lockfile changes should be checked for unintended package updates.")
+    if re.search(r"(?i)(password|secret|token|api[_-]?key)\s*[:=]", diff):
+        notes.append("Diff contains credential-like keywords; verify no secrets or test credentials are committed.")
+    if re.search(r"(?i)\b(delete|drop|truncate)\b", diff):
+        notes.append("Data-destructive operations appear in the diff; confirm migration and rollback behavior.")
+    if re.search(r"(?i)(auth|permission|role|session|jwt|oauth)", diff):
+        notes.append("Authentication or authorization logic changed; add negative-path tests for access control.")
+    if any(c.path.startswith((".github/", "infra/", "deploy/", "scripts/")) for c in changes):
+        notes.append("Automation or deployment files changed; validate CI permissions and runtime environment assumptions.")
+    return notes or ["No obvious high-risk patterns were detected from the diff alone."]
+
+
+def suggestions(diff: str, changes: list[FileChange]) -> list[str]:
+    items: list[str] = []
+    if not re.search(r"(?i)(test|spec)", "\n".join(c.path for c in changes)):
+        items.append("Add or update tests that exercise the changed behavior.")
+    if any(c.added > 100 for c in changes):
+        items.append("Consider splitting the largest file changes or adding focused comments around non-obvious logic.")
+    if re.search(r"(?i)(todo|fixme|hack)", diff):
+        items.append("Resolve or document newly introduced TODO/FIXME/HACK markers before merge.")
+    items.append("Run the project's formatter, linter, and relevant test suite before merging.")
+    return items
+
+
+def confidence(changes: list[FileChange], risks: list[str]) -> str:
+    total_lines = sum(c.added + c.removed for c in changes)
+    if total_lines > 800 or len(risks) >= 4:
+        return "Low"
+    if total_lines > 250 or len(risks) >= 2:
+        return "Medium"
+    return "High"
+
+
+def render_review(pr_url: str, diff: str) -> str:
+    changes = parse_file_changes(diff)
+    total_added = sum(c.added for c in changes)
+    total_removed = sum(c.removed for c in changes)
+    areas = changed_areas(changes)
+    risks = risk_notes(diff, changes)
+    improvements = suggestions(diff, changes)
+    conf = confidence(changes, risks)
+
+    summary = (
+        f"This PR changes {len(changes)} file(s), adding {total_added} line(s) and removing {total_removed} line(s). "
+        f"The main touched area(s) are {', '.join(areas) if areas else 'not detected from the diff'}."
+    )
+    if changes:
+        largest = max(changes, key=lambda c: c.added + c.removed)
+        summary += f" The largest change is `{largest.path}` with {largest.added + largest.removed} changed line(s)."
+
+    lines = [
+        "## PR Review",
+        "",
+        f"Source: {pr_url}",
+        "",
+        "### Summary",
+        summary,
+        "",
+        "### Identified Risks",
+    ]
+    lines.extend(f"- {item}" for item in risks)
+    lines.extend(["", "### Improvement Suggestions"])
+    lines.extend(f"- {item}" for item in improvements)
+    lines.extend(["", f"### Confidence: {conf}", ""])
+    return "\n".join(lines)
+
+
+def copy_to_clipboard(text: str) -> None:
+    try:
+        subprocess.run(["pbcopy"], input=text, text=True, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        diff = Path(args.diff_file).read_text(encoding="utf-8") if args.diff_file else fetch_diff(args.pr)
+        if not diff.strip():
+            raise RuntimeError("PR diff was empty.")
+        review = render_review(args.pr, diff)
+        output = review
+        if args.output:
+            Path(args.output).write_text(output, encoding="utf-8")
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+
+    print(output, end="")
+    copy_to_clipboard(output)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
