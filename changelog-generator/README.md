@@ -1,42 +1,33 @@
 # Changelog Generator
 
-Generate a structured `CHANGELOG.md` from git history with one command.
+Auto-generate a structured `CHANGELOG.md` from your git history.
 
-## Setup in 3 steps
+## Setup
 
-1. Copy `changelog-generator/changelog.sh` into any git repository.
-2. Run `bash changelog-generator/changelog.sh` from the repository root.
-3. Commit the generated `CHANGELOG.md`.
+1. Copy `changelog-generator/` into your project
+2. Make the script executable: `chmod +x changelog-generator/changelog.sh`
+3. Run: `bash changelog-generator/changelog.sh`
 
-## What it does
-
-- Finds commits since the latest reachable git tag.
-- Falls back to the full history when the repository has no tags.
-- Ignores merge commits to keep the output readable.
-- Categorizes entries into `Added`, `Fixed`, `Changed`, and `Removed`.
-- Writes a properly formatted `CHANGELOG.md`.
-
-## Options
+## Usage
 
 ```bash
-bash changelog-generator/changelog.sh --since v1.2.0
-bash changelog-generator/changelog.sh --output docs/CHANGELOG.md
-bash changelog-generator/changelog.sh --repo /path/to/project
+# Generate from the latest tag
+bash changelog-generator/changelog.sh
+
+# Custom range and output
+bash changelog-generator/changelog.sh --since v1.0.0 --output docs/CHANGELOG.md
+
+# From a different repo
+bash changelog-generator/changelog.sh --repo ../my-project
 ```
 
-## Categorization rules
+## Claude Code Integration
 
-- `Added`: `feat:`, add, create, introduce, implement, feature.
-- `Fixed`: `fix:`, bug, patch, hotfix, security, vulnerability.
-- `Removed`: remove, delete, deprecate, revert.
-- `Changed`: everything else.
-
-The rules are intentionally simple and shell-only so the generator works in CI, local terminals, and Claude Code sessions without package installation.
-
-## Sample output
-
-See [`../samples/CHANGELOG.sample.md`](../samples/CHANGELOG.sample.md), generated from this repository with:
-
-```bash
-bash changelog-generator/changelog.sh --output samples/CHANGELOG.sample.md
+Place `changelog-generator/SKILL.md` in your project and use:
 ```
+/generate-changelog
+```
+
+## Output
+
+Commits are auto-categorized into **Added**, **Fixed**, **Changed**, and **Removed** based on conventional commit keywords. See `samples/CHANGELOG.sample.md` for example output.
