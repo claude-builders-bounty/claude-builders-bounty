@@ -1,0 +1,289 @@
+{
+  "name": "Weekly Dev Summary (Claude)",
+  "nodes": [
+    {
+      "id": "b0a1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "parameters": {
+        "ruleData": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repoOwner",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "repoName",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "webhookUrl",
+              "value": ""
+            },
+            {
+              "name": "language",
+              "value": "EN"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e7f8a9b0-c1d2-4e3f-8a4b-5c6d7e8f9a0b",
+      "name": "Build GitHub Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "parameters": {
+        "jsCode": "// ============================================================\n// Build GitHub GraphQL query with dynamic date range (past 7 days)\n// ============================================================\n\nconst repoOwner = $json.repoOwner || 'claude-builders-bounty';\nconst repoName  = $json.repoName  || 'claude-builders-bounty';\n\n// Calculate the date 7 days ago for the \"since\" filter\nconst now       = new Date();\nconst pastDate  = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst sinceISO  = pastDate.toISOString();\n\nconst graphqlQuery = `\n  query {\n    repository(owner: \"${repoOwner}\", name: \"${repoName}\") {\n      defaultBranchRef {\n        target {\n          ... on Commit {\n            history(since: \"${sinceISO}\") {\n              totalCount\n              nodes {\n                oid\n                messageHeadline\n                committedDate\n                author {\n                  name\n                  user {\n                    login\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n      issues(\n        first: 50\n        states: CLOSED\n        orderBy: {field: UPDATED_AT, direction: DESC}\n      ) {\n        totalCount\n        nodes {\n          number\n          title\n          state\n          closedAt\n          closedBy {\n            login\n          }\n          labels(first: 5) {\n            nodes {\n              name\n            }\n          }\n        }\n      }\n      pullRequests(\n        first: 50\n        states: MERGED\n        orderBy: {field: UPDATED_AT, direction: DESC}\n      ) {\n        totalCount\n        nodes {\n          number\n          title\n          state\n          mergedAt\n          mergedBy {\n            login\n          }\n          labels(first: 5) {\n            nodes {\n              name\n            }\n          }\n        }\n      }\n    }\n  }\n`;\n\nreturn [{\n  graphqlBody: {\n    query: graphqlQuery\n  },\n  repoOwner: repoOwner,\n  repoName: repoName\n}];"
+      }
+    },
+    {
+      "id": "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4e",
+      "name": "GitHub GraphQL API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/graphql",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": []
+        },
+        "jsonBody": "={{ $json.graphqlBody }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__GITHUB_CREDENTIAL_ID__",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+      "name": "Format Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "parameters": {
+        "jsCode": "// ============================================================\n// Transform GitHub API response into Claude prompt\n// ============================================================\n\nconst data     = $input.first().json;\nconst language = $json.language || 'EN';\nconst repo     = `${$json.repoOwner || 'claude-builders-bounty'}/${$json.repoName || 'claude-builders-bounty'}`;\n\n// Extract commit data\nconst repoData    = data?.data?.repository || {};\nconst commits     = repoData?.defaultBranchRef?.target?.history?.nodes || [];\nconst totalCommits= repoData?.defaultBranchRef?.target?.history?.totalCount || 0;\nconst issues      = repoData?.issues?.nodes || [];\nconst totalIssues = repoData?.issues?.totalCount || 0;\nconst prs         = repoData?.pullRequests?.nodes || [];\nconst totalPRs    = repoData?.pullRequests?.totalCount || 0;\n\n// Format commit list\nconst commitLines = commits\n  .map(c => `- ${c.messageHeadline} (${c.author?.user?.login || c.author?.name || 'unknown'})`)\n  .join('\\n');\n\n// Format issue list\nconst issueLines = issues\n  .map(i => {\n    const labels = i.labels?.nodes?.map(l => `[${l.name}]`).join(' ') || '';\n    const closedBy = i.closedBy?.login ? ` @${i.closedBy.login}` : '';\n    return `- #${i.number} ${i.title}${closedBy} ${labels}`.trim();\n  })\n  .join('\\n');\n\n// Format PR list\nconst prLines = prs\n  .map(p => {\n    const labels = p.labels?.nodes?.map(l => `[${l.name}]`).join(' ') || '';\n    const mergedBy = p.mergedBy?.login ? ` @${p.mergedBy.login}` : '';\n    return `- #${p.number} ${p.title}${mergedBy} ${labels}`.trim();\n  })\n  .join('\\n');\n\nconst today = new Date().toISOString().slice(0, 10);\n\nlet prompt;\nif (language === 'FR') {\n  prompt = `Tu es un rédacteur technique qui génère un résumé hebdomadaire concis pour le dépôt GitHub ${repo}.\n\nRésumé de la semaine (${today}) :\n\n---\n**Commits (${totalCommits})** :\n${commitLines || 'Aucun commit cette semaine.'}\n\n**Issues fermées (${totalIssues})** :\n${issueLines || 'Aucune issue fermée cette semaine.'}\n\n**Pull Requests fusionnées (${totalPRs})** :\n${prLines || 'Aucune PR fusionnée cette semaine.'}\n---\n\nGénère un résumé narratif en français de 3 à 5 paragraphes qui met en évidence les principaux changements, corrections de bugs et avancements. Structure-le ainsi :\n1. Vue d'ensemble de la semaine (ton général)\n2. Changements et nouvelles fonctionnalités\n3. Corrections de bugs et maintenance\n4. Conclusion / prochaines étapes\n\nSois concis mais informatif. Termine par un émoji ✨.`;\n} else {\n  prompt = `You are a technical writer generating a concise weekly summary for the GitHub repository ${repo}.\n\nThis week's data (${today}) :\n\n---\n**Commits (${totalCommits})** :\n${commitLines || 'No commits this week.'}\n\n**Closed Issues (${totalIssues})** :\n${issueLines || 'No issues closed this week.'}\n\n**Merged Pull Requests (${totalPRs})** :\n${prLines || 'No PRs merged this week.'}\n---\n\nGenerate a narrative summary in English of 3 to 5 paragraphs highlighting the key changes, bug fixes, and progress. Structure it as:\n1. Overall week overview (tone)\n2. Changes and new features\n3. Bug fixes and maintenance\n4. Conclusion / next steps\n\nBe concise but informative. End with an emoji ✨.`;\n}\n\nreturn [{\n  prompt: prompt,\n  claudeBody: {\n    model: 'claude-sonnet-4-20250514',\n    max_tokens: 2048,\n    messages: [\n      {\n        role: 'user',\n        content: prompt\n      }\n    ]\n  }\n}];"
+      }
+    },
+    {
+      "id": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "messages-2023-12-15"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": []
+        },
+        "jsonBody": "={{ $json.claudeBody }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__CLAUDE_CREDENTIAL_ID__",
+          "name": "Claude API"
+        }
+      }
+    },
+    {
+      "id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+      "name": "Check Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1450, 300],
+      "parameters": {
+        "conditions": {
+          "number": [],
+          "string": [
+            {
+              "value1": "={{ $json.type }}",
+              "operation": "equal",
+              "value2": "message"
+            }
+          ],
+          "boolean": []
+        },
+        "combineOperation": "all"
+      }
+    },
+    {
+      "id": "e4f5a6b7-c8d9-4e0f-9a1b-2c3d4e5f6a7b",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhookUrl || $node['Configuration'].json.webhookUrl }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": []
+        },
+        "jsonBody": "={{ {\n  content: $json.content[0]?.text || $json.content?.[0]?.text || 'Summary generated.',\n  username: 'Weekly Dev Summary'\n} }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "f5a6b7c8-d9e0-4f1a-9b2c-3d4e5f6a7b8c",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1650, 450],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Build GitHub Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build GitHub Query": {
+      "main": [
+        [
+          {
+            "node": "GitHub GraphQL API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub GraphQL API": {
+      "main": [
+        [
+          {
+            "node": "Format Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Check Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Success": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+  "active": true,
+  "settings": {},
+  "tags": []
+}
