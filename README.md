@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Bounty #4 Submission: Claude Code PR Reviewer
+
+This repository includes a zero-cost MVP for issue #4:
+
+- CLI: `claude-review --pr https://github.com/owner/repo/pull/123`
+- Claude Code sub-agent: `.claude/agents/pr-reviewer.md`
+- GitHub Action that generates and posts a structured PR review comment
+- Sample outputs from two real PRs in `sample-outputs/`
+- Setup and usage notes in `README-pr-reviewer.md`
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
