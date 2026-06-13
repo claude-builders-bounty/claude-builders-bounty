@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+1. Run `bash changelog.sh` or `python generate_changelog.py` from this repository.
+2. Optionally target another repo with `python generate_changelog.py --repo /path/to/repo -o CHANGELOG.md`.
+3. Review the generated `CHANGELOG.md` before committing it.
+
+The script reads commits since the latest git tag, or all commits when no tag exists, and groups them into `Added`, `Fixed`, `Changed`, and `Removed`. See `SAMPLE_CHANGELOG.md` for output generated from this repository.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
