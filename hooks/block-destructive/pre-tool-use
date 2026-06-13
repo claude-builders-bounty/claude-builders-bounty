@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""
+Claude Code Pre-Tool-Use Hook — Block Destructive Commands
+==========================================================
+Blocks dangerous shell commands (rm -rf, DROP TABLE, git push --force,
+TRUNCATE, DELETE FROM without WHERE) before execution.
+
+Install: copy to ~/.claude/hooks/pre-tool-use and chmod +x
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+# ── Configuration ──────────────────────────────────────────────────────────
+
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "blocked.log")
+
+# ── Pattern detection ──────────────────────────────────────────────────────
+
+
+def has_rm_rf(cmd: str) -> bool:
+    """Detect 'rm' with both recursive AND force flags.
+
+    Catches: rm -rf, rm -fr, rm -r -f, rm --recursive --force,
+             rm -r --force, rm --recursive -f, rm --force -r,
+             rm -rf --no-preserve-root, sudo rm -rf, etc.
+    """
+    # Find the rm command and extract all flags/arguments following it
+    rm_match = re.search(r'\brm\b', cmd)
+    if not rm_match:
+        return False
+
+    # Get everything after 'rm' to find flags
+    after_rm = cmd[rm_match.end():]
+
+    # Check for recursive flag: -r, -R, --recursive
+    # Use (?:^|(?<=\s)) to ensure flag starts after whitespace or at string start
+    has_recursive = bool(re.search(r'(?:^|(?<=\s))(?:-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)\b', after_rm))
+    # Check for force flag: -f, --force
+    has_force = bool(re.search(r'(?:^|(?<=\s))(?:-[a-zA-Z]*[fF][a-zA-Z]*|--force)\b', after_rm))
+
+    return has_recursive and has_force
+
+
+def has_drop_table(cmd: str) -> bool:
+    """Detect DROP TABLE (SQL destructive command)."""
+    return bool(re.search(r'\bDROP\s+TABLE\b', cmd, re.IGNORECASE))
+
+
+def has_git_push_force(cmd: str) -> bool:
+    """Detect git push --force or git push -f.
+
+    Does NOT block git push --force-with-lease.
+    """
+    # Match --force but not --force-with-lease
+    if re.search(r'\bgit\s+push\b', cmd, re.IGNORECASE):
+        # Check for --force (standalone, not followed by -with-lease)
+        if re.search(r'(?<![-\w])--force\b(?!-with-lease)', cmd):
+            return True
+        # Check for -f as a standalone flag (not part of --force or -format etc.)
+        # Must be preceded by a space or be at the start of a flag group
+        if re.search(r'\bgit\s+push\s+(?:\S+\s+)*?(?<!\w)-f\b', cmd):
+            return True
+    return False
+
+
+def has_truncate(cmd: str) -> bool:
+    """Detect SQL TRUNCATE (TRUNCATE TABLE or TRUNCATE <tablename>).
+
+    Does NOT block the Linux 'truncate' system command (truncate -s 0 file).
+    """
+    # TRUNCATE followed by TABLE or an identifier (word character)
+    # This avoids matching: truncate -s, truncate --size, truncate --help
+    if re.search(r'\bTRUNCATE\s+(?:TABLE\s+)?\w+', cmd, re.IGNORECASE):
+        return True
+    # Also handle TRUNCATE at end of statement: "TRUNCATE users;"
+    if re.search(r'\bTRUNCATE\s+\w+\s*[;\s]', cmd, re.IGNORECASE):
+        return True
+    return False
+
+
+def has_delete_without_where(cmd: str) -> bool:
+    """Detect DELETE FROM without a WHERE clause.
+
+    Allows: DELETE FROM users WHERE id=1;
+    Blocks: DELETE FROM users;
+    """
+    delete_matches = list(re.finditer(r'\bDELETE\s+FROM\b', cmd, re.IGNORECASE))
+    for m in delete_matches:
+        after_delete = cmd[m.end():]
+        # Check up to the next semicolon or end of string
+        next_semi = after_delete.find(';')
+        statement = after_delete[:next_semi] if next_semi >= 0 else after_delete
+        stripped = statement.strip()
+
+        # If this DELETE FROM is followed by something that doesn't look
+        # like a subquery/alias, check for WHERE
+        if stripped and not re.search(r'\bWHERE\b', stripped, re.IGNORECASE):
+            return True
+
+    # All DELETE FROM statements had WHERE — safe
+    return False
+
+
+DESTRUCTIVE_CHECKS = [
+    ("rm -rf / force-recursive delete", has_rm_rf),
+    ("DROP TABLE (SQL)", has_drop_table),
+    ("git push --force", has_git_push_force),
+    ("TRUNCATE (SQL)", has_truncate),
+    ("DELETE FROM without WHERE (SQL)", has_delete_without_where),
+]
+
+
+# ── Logging ────────────────────────────────────────────────────────────────
+
+def log_blocked(command: str, reason: str, project_path: str):
+    """Append a blocked-command entry to the log file."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    log_dir = os.path.dirname(LOG_FILE)
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except OSError:
+        pass
+    entry = {
+        "timestamp": timestamp,
+        "command": command,
+        "reason": reason,
+        "project_path": project_path,
+    }
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError as e:
+        print(f"[hook:block-destructive] WARNING: failed to write log: {e}", file=sys.stderr)
+
+
+# ── Main hook logic ────────────────────────────────────────────────────────
+
+def main():
+    # Read JSON input from stdin (the tool use payload)
+    try:
+        raw = sys.stdin.read()
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"[hook:block-destructive] WARNING: could not parse input: {e}", file=sys.stderr)
+        sys.exit(0)
+
+    # Claude Code passes tool info; handle multiple possible structures
+    tool_name = (
+        payload.get("name")
+        or payload.get("tool_name")
+        or (payload.get("tool_use") or {}).get("name")
+        or payload.get("type")
+    )
+    tool_input = payload.get("input") or payload.get("args") or {}
+
+    # We only care about Bash / command execution tools
+    if not tool_name or tool_name.lower() not in ("bash", "execute_command", "command", "shell"):
+        sys.exit(0)
+
+    # Extract the command string
+    command = tool_input.get("command") or tool_input.get("cmd") or tool_input.get("code") or ""
+    if not command:
+        sys.exit(0)
+
+    # Determine project path (if available)
+    project_path = (
+        tool_input.get("working_dir")
+        or tool_input.get("cwd")
+        or tool_input.get("directory")
+        or os.getcwd()
+    )
+    try:
+        project_path = os.path.realpath(project_path)
+    except OSError:
+        pass
+
+    # Run checks
+    for reason, check_fn in DESTRUCTIVE_CHECKS:
+        if check_fn(command):
+            log_blocked(command, reason, project_path)
+
+            block_msg = (
+                "\n"
+                "┌─────────────────────────────────────────────────────────────┐\n"
+                "│  ❌ BLOCKED: Destructive Command Detected                   │\n"
+                "├─────────────────────────────────────────────────────────────┤\n"
+                f"│  Reason: {reason:<49}│\n"
+                f"│  Project: {os.path.basename(project_path):<47}│\n"
+                "├─────────────────────────────────────────────────────────────┤\n"
+                "│  This command was blocked by the block-destructive hook.    │\n"
+                "│  Check blocked.log for full details.                        │\n"
+                "│                                                             │\n"
+                "│  To bypass, run the command manually outside Claude Code.   │\n"
+                "└─────────────────────────────────────────────────────────────┘\n"
+            )
+            print(block_msg, file=sys.stderr)
+            sys.exit(1)
+
+    # All checks passed — allow the tool use
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
