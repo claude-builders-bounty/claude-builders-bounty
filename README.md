@@ -22,6 +22,17 @@ You're in the right place.
 
 ---
 
+## Destructive Bash Hook
+
+Install a Claude Code `PreToolUse` hook that blocks `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` without a `WHERE` clause.
+
+1. Run `python3 hooks/install.py`.
+2. Restart Claude Code.
+
+Blocked attempts are logged to `~/.claude/hooks/blocked.log`.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
