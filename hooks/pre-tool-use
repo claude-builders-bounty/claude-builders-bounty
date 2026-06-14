@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""
+pre-tool-use — Claude Code hook that blocks destructive bash commands.
+
+Install:  mkdir -p ~/.claude/hooks && cp hooks/pre-tool-use ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use
+"""
+
+import json, os, re, sys
+from datetime import datetime
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+DANGEROUS: list[tuple[str, str]] = [
+    (r'\brm\s+-rf\b',            '`rm -rf`: recursive force delete — can erase entire filesystems'),
+    (r'\bDROP\s+TABLE\b',        '`DROP TABLE`: destructive SQL operation — deletes a table'),
+    (r'\bgit\s+push\s+--force\b','`git push --force`: force push — rewrites remote history'),
+    (r'\bTRUNCATE\b',             '`TRUNCATE`: destructive SQL operation — empties a table'),
+]
+
+RAW_INPUT = sys.stdin.read()
+if not RAW_INPUT:
+    sys.exit(0)
+
+try:
+    DATA = json.loads(RAW_INPUT)
+except json.JSONDecodeError:
+    sys.exit(0)
+
+TOOL = DATA.get("tool", "")
+if TOOL.lower() != "bash":
+    sys.exit(0)
+
+INPUT_ = DATA.get("input", {})
+if isinstance(INPUT_, dict):
+    COMMAND = INPUT_.get("command", "") or INPUT_.get("code", "")
+elif isinstance(INPUT_, str):
+    COMMAND = INPUT_
+else:
+    COMMAND = str(INPUT_) if INPUT_ else ""
+
+if not COMMAND:
+    sys.exit(0)
+
+# Check patterns
+REASON: str | None = None
+for PATTERN, DESC in DANGEROUS:
+    if re.search(PATTERN, COMMAND, re.IGNORECASE):
+        REASON = DESC
+        break
+
+if not REASON and re.search(r'\bDELETE\s+FROM\b(?![\s\S]*?\bWHERE\b)', COMMAND, re.IGNORECASE):
+    REASON = "`DELETE FROM` without `WHERE`: unsafe SQL — can delete all rows"
+
+if REASON:
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    TS = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a", encoding="utf-8") as F:
+        F.write(f"[{TS}] BLOCKED: {REASON}\n")
+        F.write(f"  Command: {COMMAND[:300]}\n")
+        F.write(f"  Cwd:     {os.getcwd()}\n")
+        F.write("-" * 72 + "\n")
+    print(f"[[BLOCKED]] {REASON}")
+    print(f"  command: {COMMAND[:200]}")
+    sys.exit(1)
+
+sys.exit(0)
