@@ -43,6 +43,20 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+Generate `CHANGELOG.md` from git history in three steps:
+
+1. Clone this repository and enter the project folder
+2. Run `bash changelog.sh`
+3. Open the generated `CHANGELOG.md`
+
+The generator uses commits since the latest git tag. If the repository has no tags, it falls back to all commits. Entries are grouped into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+Example output is available at [`examples/sample-output.md`](examples/sample-output.md).
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
