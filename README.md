@@ -22,6 +22,28 @@ You're in the right place.
 
 ---
 
+## PR Review CLI
+
+Generate a structured Markdown review for a public GitHub pull request.
+
+Setup and usage:
+
+```sh
+chmod +x claude-review
+./claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+The output includes a 2-3 sentence summary, identified risks, improvement suggestions, changed files, and a Low/Medium/High confidence score. The canonical Claude Code sub-agent is available at `.claude/agents/pr-reviewer.md`.
+
+For offline and CI testing, pass a local unified diff:
+
+```sh
+./claude-review --pr https://github.com/owner/repo/pull/123 --diff-file change.diff --title "Local review"
+python -m unittest discover -s tests -v
+```
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |

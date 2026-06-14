@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
+
+
+@dataclass
+class FileChange:
+    path: str
+    additions: int = 0
+    deletions: int = 0
+    hunks: int = 0
+
+
+def fetch_json(url: str) -> dict:
+    request = urllib.request.Request(url, headers=github_headers("application/vnd.github+json"))
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def fetch_text(url: str) -> str:
+    request = urllib.request.Request(url, headers=github_headers("application/vnd.github.v3.diff"))
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def github_headers(accept: str) -> dict[str, str]:
+    headers = {"Accept": accept, "User-Agent": "claude-review"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def parse_pr_url(pr_url: str) -> tuple[str, str, str]:
+    match = PR_RE.match(pr_url.strip())
+    if match is None:
+        raise ValueError("Expected a GitHub pull request URL like https://github.com/owner/repo/pull/123")
+    return match.group(1), match.group(2), match.group(3)
+
+
+def canonical_pr_url(owner: str, repo: str, number: str) -> str:
+    return f"https://github.com/{owner}/{repo}/pull/{number}"
+
+
+def parse_diff(diff: str) -> list[FileChange]:
+    files: list[FileChange] = []
+    current: FileChange | None = None
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            if current is not None:
+                files.append(current)
+            target = line.split(" b/", 1)[-1]
+            current = FileChange(path=target)
+        elif current is not None and line.startswith("@@ "):
+            current.hunks += 1
+        elif current is not None and line.startswith("+") and not line.startswith("+++"):
+            current.additions += 1
+        elif current is not None and line.startswith("-") and not line.startswith("---"):
+            current.deletions += 1
+
+    if current is not None:
+        files.append(current)
+    return files
+
+
+def summarize(pr: dict, files: list[FileChange]) -> str:
+    title = pr.get("title", "Untitled PR")
+    changed = len(files)
+    additions = sum(file.additions for file in files)
+    deletions = sum(file.deletions for file in files)
+    main_paths = ", ".join(file.path for file in files[:3]) or "no files"
+    if changed > 3:
+        main_paths += f", and {changed - 3} more"
+    return (
+        f"This PR, \"{title}\", changes {changed} file(s), with {additions} additions and {deletions} deletions. "
+        f"The main touched path(s) are {main_paths}. "
+        "The review below is based on the public PR metadata and unified diff."
+    )
+
+
+def identify_risks(files: list[FileChange], diff: str) -> list[str]:
+    risks: list[str] = []
+    paths = [file.path.lower() for file in files]
+
+    if any(path.endswith((".env", ".pem", ".key")) or ".env" in path for path in paths):
+        risks.append("Sensitive configuration files appear in the diff; verify no secrets or machine-specific values are committed.")
+    if re.search(
+        r"""(?im)^\+.*\b(api[_-]?key|[a-z0-9_]*(?:token|password|secret)[a-z0-9_]*)\s*[:=]\s*["'][^"']+["']""",
+        diff,
+    ):
+        risks.append("A credential-like literal was added; verify it is a harmless fixture and not a real secret.")
+    if any(path.endswith(("package-lock.json", "pnpm-lock.yaml", "yarn.lock")) for path in paths):
+        risks.append("Dependency lockfiles changed; confirm the package manager update was intentional and reviewed.")
+    if any(".github/workflows/" in path for path in paths):
+        risks.append("CI workflow files changed; check permissions, token scopes, and trigger behavior carefully.")
+    if re.search(r"\b(delete from|drop table|truncate|rm -rf|--force)\b", diff, re.IGNORECASE):
+        risks.append("The diff contains destructive command or SQL terms; confirm they are examples/tests rather than executable unsafe paths.")
+    if sum(file.additions + file.deletions for file in files) > 500:
+        risks.append("Large diff size increases review risk; consider asking for smaller commits or targeted test evidence.")
+    if not risks:
+        risks.append("No high-risk patterns were detected from the diff, but runtime behavior still depends on project tests and maintainer review.")
+
+    return risks
+
+
+def suggest_improvements(files: list[FileChange]) -> list[str]:
+    suggestions = [
+        "Run the repository's documented test and lint commands before merge.",
+        "Confirm the PR description links the relevant issue and explains verification performed.",
+    ]
+
+    if any(file.path.lower().endswith((".ts", ".tsx", ".js", ".jsx", ".py")) for file in files):
+        suggestions.append("Check whether changed behavior needs focused unit or integration coverage.")
+    if any(file.path.lower().endswith((".md", ".mdx")) for file in files):
+        suggestions.append("Preview Markdown-rendered documentation to catch formatting regressions.")
+    return suggestions
+
+
+def confidence(files: list[FileChange], risks: Iterable[str]) -> str:
+    risky = [risk for risk in risks if not risk.startswith("No high-risk")]
+    total_changed = sum(file.additions + file.deletions for file in files)
+    if not files or len(risky) >= 2 or total_changed > 800:
+        return "Low"
+    if risky or total_changed > 250:
+        return "Medium"
+    return "High"
+
+
+def render_markdown(pr_url: str, pr: dict, files: list[FileChange], diff: str) -> str:
+    risks = identify_risks(files, diff)
+    suggestions = suggest_improvements(files)
+    score = confidence(files, risks)
+    file_lines = "\n".join(
+        f"- `{file.path}`: +{file.additions}/-{file.deletions} across {file.hunks} hunk(s)" for file in files
+    )
+
+    return f"""## PR Review
+
+Source: {pr_url}
+
+### Summary of changes
+
+{summarize(pr, files)}
+
+### Identified risks
+
+{chr(10).join(f"- {risk}" for risk in risks)}
+
+### Improvement suggestions
+
+{chr(10).join(f"- {suggestion}" for suggestion in suggestions)}
+
+### Changed files
+
+{file_lines or "- No changed files were detected in the diff."}
+
+### Confidence score
+
+{score}
+"""
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Review a GitHub PR and print a structured Markdown comment.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    parser.add_argument("--diff-file", help="Review a local unified diff instead of fetching it from GitHub")
+    parser.add_argument("--title", help="PR title to use with --diff-file")
+    args = parser.parse_args()
+
+    try:
+        owner, repo, number = parse_pr_url(args.pr)
+        pr_url = canonical_pr_url(owner, repo, number)
+        if args.diff_file:
+            pr = {"title": args.title or f"{owner}/{repo}#{number}"}
+            diff = Path(args.diff_file).read_text(encoding="utf-8")
+        else:
+            api_base = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+            try:
+                pr = fetch_json(api_base)
+            except urllib.error.HTTPError as exc:
+                if exc.code != 403:
+                    raise
+                pr = {"title": f"{owner}/{repo}#{number}"}
+            diff = fetch_text(f"{pr_url}.diff")
+        files = parse_diff(diff)
+        print(render_markdown(pr_url, pr, files, diff))
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, ValueError) as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
