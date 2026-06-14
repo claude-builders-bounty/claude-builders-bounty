@@ -8,6 +8,18 @@ You're in the right place.
 
 ---
 
+## Next.js + SQLite CLAUDE.md Template
+
+`CLAUDE.md` contains opinionated guidance for a production-minded Next.js 15 SaaS, including SQLite deployment constraints, tenant isolation, cache invalidation, migration rollback notes, and server/client boundaries.
+
+Validate the template with:
+
+```bash
+python tests/validate_claude_template.py
+```
+
+---
+
 ## How it works
 
 **To post a bounty**
