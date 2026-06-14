@@ -1,0 +1,299 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "id": "8a38cb47-7349-41b0-9b96-70659274a40e",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "faeaf6bb-65e0-4f6b-8883-58326a2c5cce",
+      "name": "GitHub: Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        100
+      ],
+      "parameters": {
+        "url": "={{ $json.owner }}/{{ $json.repo }}/commits?since={{ $json.since }}&per_page=50",
+        "baseURL": "https://api.github.com",
+        "method": "GET",
+        "authentication": "genericCredential",
+        "sendHeaders": true,
+        "specifyHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary/1.0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "09503cee-0790-4675-9b61-57eb0ea99acb",
+      "name": "GitHub: Get Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        300
+      ],
+      "parameters": {
+        "url": "={{ $json.owner }}/{{ $json.repo }}/issues?state=closed&since={{ $json.since }}&per_page=50",
+        "baseURL": "https://api.github.com",
+        "method": "GET",
+        "authentication": "genericCredential",
+        "sendHeaders": true,
+        "specifyHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary/1.0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "172ae9d3-99fa-45dd-9935-f223d8320a3e",
+      "name": "GitHub: Get PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        500
+      ],
+      "parameters": {
+        "url": "={{ $json.owner }}/{{ $json.repo }}/pulls?state=closed&sort=updated&direction=desc&per_page=50",
+        "baseURL": "https://api.github.com",
+        "method": "GET",
+        "authentication": "genericCredential",
+        "sendHeaders": true,
+        "specifyHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary/1.0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7c0b87cb-3ce4-4226-aa86-85c0e445f638",
+      "name": "Combine & Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const owner = ($input.first().json.owner) || 'octocat';\nconst repo = ($input.first().json.repo) || 'hello-world';\nconst since = $input.first().json.since;\nconst lang = $input.first().json.language || 'EN';\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst sinceStr = since || weekAgo.toISOString().split('T')[0];\nlet commits = [], issues = [], prs = [];\nfor (const item of $input.all()) {\n  if (item.json?.sha) commits.push(item.json);\n  else if (item.json?.pull_request) prs.push(item.json);\n  else if (item.json?.number) issues.push(item.json);\n}\nconst cS = commits.map(c => `- [${c.sha?.substring(0,7)}] ${c.commit?.message?.split('\\n')[0]} (${c.commit?.author?.name})`).join('\\n').substring(0,3000);\nconst iS = issues.filter(i => !i.pull_request).map(i => `- #${i.number} ${i.title}`).join('\\n').substring(0,2000);\nconst pS = prs.filter(i => i.pull_request).map(p => `- #${p.number} ${p.title} (${p.merged ? '✅merged' : '❌closed'})`).join('\\n').substring(0,2000);\nreturn [{ prompt: (lang==='FR'?`Résumé hebdo ${owner}/${repo} semaine du ${sinceStr}\\n\\n## Commits\\n${cS||'Aucun'}\\n\\n## Issues\\n${iS||'Aucune'}\\n\\n## PRs\\n${pS||'Aucune'}\\n\\nRésumé narratif 2-3 paragraphes.`:`Weekly summary ${owner}/${repo} week of ${sinceStr}\\n\\n## Commits\\n${cS||'None'}\\n\\n## Closed Issues\\n${iS||'None'}\\n\\n## Merged PRs\\n${pS||'None'}\\n\\nGenerate a 2-3 paragraph narrative summary.`), owner, repo, since: sinceStr }];"
+      }
+    },
+    {
+      "id": "adf34912-a9ad-4724-8eb0-b10d0f3d8e23",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        300
+      ],
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "authentication": "genericCredential",
+        "sendBody": true,
+        "specifyBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1024
+            },
+            {
+              "name": "messages[0][role]",
+              "value": "user"
+            },
+            {
+              "name": "messages[0][content]",
+              "value": "={{ $json.prompt }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.claudeApi.apiKey }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0f823e14-ee35-4cb7-8ee4-b994ae0f2de4",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst text = r.content?.[0]?.text || 'No summary.';\nreturn [{ text: `📋 *Weekly Dev Summary: ${r.owner||'owner'}/${r.repo||'repo'}*\\n\\n${text}\\n\\n---\\n_Generated by n8n + Claude_`, channel: '#dev-updates' }];"
+      }
+    },
+    {
+      "id": "bc650a8b-1a98-4107-96e1-c67778e51133",
+      "name": "Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ],
+      "parameters": {
+        "channel": "={{ $json.channel }}",
+        "text": "={{ $json.text }}",
+        "otherOptions": {
+          "as_user": true,
+          "link_names": true
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "GitHub: Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub: Get Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub: Get PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub: Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Combine & Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub: Get Issues": {
+      "main": [
+        [
+          {
+            "node": "Combine & Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub: Get PRs": {
+      "main": [
+        [
+          {
+            "node": "Combine & Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine & Format": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "183e468f-5147-41fa-8eb0-e86096ee8716",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
