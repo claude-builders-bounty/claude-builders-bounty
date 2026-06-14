@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""claude-review — Claude Code PR review agent."""
+
+import argparse, json, os, re, sys, urllib.request
+from urllib.parse import urlparse
+
+API = "https://api.github.com"
+
+
+def parse_pr(url: str):
+    p = urlparse(url).path.strip("/").split("/")
+    if len(p) >= 4 and p[2] == "pull":
+        return p[0], p[1], int(p[3])
+    raise ValueError(f"Invalid PR URL: {url}")
+
+
+def get(url: str):
+    req = urllib.request.Request(url, headers={"User-Agent": "claude-review/1.0"})
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+
+def classify(fn: str) -> str:
+    l = fn.lower()
+    if "/test" in l or "_test." in l or l.startswith("test"): return "test"
+    if l.endswith(".md") or "/docs" in l: return "docs"
+    if ".github" in l or "/ci" in l: return "ci"
+    if "package." in l or "go.mod" in l or "cargo.toml" in l: return "dependencies"
+    if l.endswith((".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs")): return "code"
+    if l.endswith((".yaml", ".yml", ".json", ".toml")): return "config"
+    return "other"
+
+
+def review(pr: dict, files: list) -> str:
+    add = sum(f["additions"] for f in files)
+    d = sum(f["deletions"] for f in files)
+    n = len(files)
+    c = [f for f in files if classify(f["filename"]) == "code"]
+    t = [f for f in files if classify(f["filename"]) == "test"]
+    conf = "High"
+    if add > 500: conf = "Low"
+    elif add > 200: conf = "Medium"
+
+    risks, tips = [], []
+    for f in files:
+        fn, pa = f["filename"], f.get("patch") or ""
+        l = fn.lower()
+        if "package.json" in l or "go.mod" in l or "cargo.toml" in l: risks.append(f"Dependency changed: `{fn}`")
+        if "secret" in l or "credential" in l: risks.append(f"Sensitive file: `{fn}`")
+        if f.get("status") == "removed": risks.append(f"File deleted: `{fn}`")
+        if "migration" in l or "schema" in l: risks.append(f"DB schema: `{fn}` — check backwards compat")
+        if "TODO" in pa: tips.append(f"TODO in `{fn}` — track before merge")
+        if "FIXME" in pa: tips.append(f"FIXME in `{fn}` — review before merge")
+        if re.search(r'\bprint\(', pa) and not fn.endswith("_test.py"): tips.append(f"Debug print in `{fn}`")
+        if re.search(r'# noqa|@ts-ignore', pa): tips.append(f"Lint suppression in `{fn}`")
+    if n > 10: tips.append("Large PR — consider splitting")
+
+    lines = [
+        f"## Review: {pr['title']}",
+        "",
+        f"**PR:** {pr['html_url']}",
+        f"**Author:** {pr['user']['login']}",
+        f"**Repo:** {pr['base']['repo']['full_name']}",
+        f"**Branch:** {pr['head']['label']} → {pr['base']['label']}",
+        "---",
+        "### Summary",
+        f"{n} files ({add}+, {d}-). {len(c)} code, {len(t)} test.",
+        "",
+        f"Primary area: {c[0]['filename']}" if c else "",
+        "Tests included." if t else "No test changes — consider adding tests.",
+        "",
+        "### Risks",
+        *([f"- {r}" for r in risks] or ["None identified."]),
+        "",
+        "### Suggestions",
+        *([f"- {t}" for t in tips] or ["None at this time."]),
+        "",
+        f"### Confidence\n**{conf}**",
+        "",
+        "### Files",
+        "| File | Status | +/- | Type |",
+        "|------|--------|-----|------|",
+        *[f"| `{f['filename']}` | {f['status']} | +{f['additions']}/-{f['deletions']} | {classify(f['filename'])} |" for f in sorted(files, key=lambda x: x["filename"])],
+    ]
+    return "\n".join(filter(None, lines)) + "\n"
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--pr", required=True)
+    p.add_argument("-o", "--output")
+    a = p.parse_args()
+    o, r, n = parse_pr(a.pr)
+    print(f"Analyzing {o}/{r}#{n} ...", file=sys.stderr)
+    review_text = review(get(f"{API}/repos/{o}/{r}/pulls/{n}"), get(f"{API}/repos/{o}/{r}/pulls/{n}/files?per_page=100"))
+    if a.output:
+        os.makedirs(os.path.dirname(a.output) or ".", exist_ok=True)
+        open(a.output, "w", encoding="utf-8").write(review_text)
+        print(f"Written to {a.output}", file=sys.stderr)
+    else:
+        print(review_text)
+
+
+if __name__ == "__main__":
+    main()
