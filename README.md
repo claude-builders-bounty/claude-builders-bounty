@@ -22,6 +22,19 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+Generate a structured `CHANGELOG.md` from git history with Breaking Changes, Added, Fixed, Changed, and Removed sections.
+
+1. Copy `changelog.sh` and `.claude/skills/generate-changelog/SKILL.md` into any git repository.
+2. Run `bash changelog.sh [output_file]` (defaults to `CHANGELOG.md`).
+3. Optionally run `chmod +x changelog.sh && ./changelog.sh [output_file]`.
+4. Review and commit the generated changelog.
+
+Run `bash tests/test_changelog.sh` to verify tag ranges, conventional commit grouping, breaking changes, and subjects containing delimiters.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
