@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Generate a structured CHANGELOG from git history.
+
+Usage:
+  ./generate-changelog                    # from current directory
+  ./generate-changelog --repo /path/to/repo
+  ./generate-changelog --from v1.0.0     # from a specific tag
+  ./generate-changelog --output CHANGELOG.md
+  ./generate-changelog --format compact   # compact or full
+"""
+
+import subprocess, re, sys, os, argparse
+from datetime import datetime
+from collections import OrderedDict
+
+COMMIT_TYPES = {
+    'feat': ('🚀 Features', 'New Features'),
+    'fix': ('🐛 Bug Fixes', 'Bug Fixes'),
+    'docs': ('📚 Documentation', 'Documentation'),
+    'style': ('💄 Style', 'Code Style'),
+    'refactor': ('♻️ Refactor', 'Code Refactoring'),
+    'perf': ('⚡ Performance', 'Performance'),
+    'test': ('🧪 Tests', 'Tests'),
+    'build': ('📦 Build', 'Build System'),
+    'ci': ('👷 CI', 'CI/CD'),
+    'chore': ('🔧 Chores', 'Chores'),
+    'revert': ('⏪ Reverts', 'Reverts'),
+}
+
+def run_git(cmd, cwd=None):
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+    if result.returncode != 0:
+        print(f"Error: {result.stderr}", file=sys.stderr)
+        sys.exit(1)
+    return result.stdout.strip()
+
+def get_git_log(repo_path, from_ref=None):
+    args = ['git', 'log', '--oneline', '--format=%H|%ai|%s', '--no-merges']
+    if from_ref:
+        args.append(f'{from_ref}..HEAD')
+    log = run_git(args, cwd=repo_path)
+    commits = []
+    for line in log.split('\n'):
+        if '|' in line:
+            parts = line.split('|', 2)
+            commits.append({'hash': parts[0][:8], 'date': parts[1], 'message': parts[2]})
+    return commits
+
+def parse_conventional_commit(message):
+    match = re.match(r'^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+?\))?:\s*(.+)$', message)
+    if match:
+        return match.group(1), match.group(3)
+    # Fallback: categorize by keywords
+    msg_lower = message.lower()
+    for keyword, _ in COMMIT_TYPES.values():
+        if keyword and keyword.lower() in msg_lower:
+            pass
+    return 'chore', message
+
+def generate_changelog(commits, format='full'):
+    sections = OrderedDict()
+    for ctype, (emoji, label) in COMMIT_TYPES.items():
+        sections[ctype] = []
+
+    for commit in commits:
+        ctype, description = parse_conventional_commit(commit['message'])
+        if ctype not in sections:
+            ctype = 'chore'
+        sections[ctype].append({
+            'hash': commit['hash'],
+            'date': commit['date'],
+            'description': description,
+            'full_message': commit['message']
+        })
+
+    output = []
+    output.append('# Changelog')
+    output.append('')
+    output.append(f'*Generated on {datetime.now().strftime("%Y-%m-%d")}*')
+    output.append('')
+    output.append(f'Total commits: {len(commits)}')
+    output.append('')
+
+    for ctype, (emoji, label) in COMMIT_TYPES.items():
+        items = sections[ctype]
+        if not items:
+            continue
+        output.append(f'## {emoji} {label}')
+        output.append('')
+        for item in items:
+            if format == 'compact':
+                output.append(f'- {item["description"]} ({item["hash"]})')
+            else:
+                date = item['date'][:10]
+                output.append(f'- **{item["description"]}**')
+                output.append(f'  - *Commit:* `{item["hash"]}` | *Date:* {date}')
+        output.append('')
+
+    return '\n'.join(output)
+
+def get_tags(repo_path):
+    tags = run_git(['git', 'tag', '--sort=-creatordate'], cwd=repo_path)
+    return [t for t in tags.split('\n') if t]
+
+def main():
+    parser = argparse.ArgumentParser(description='Generate structured CHANGELOG from git history')
+    parser.add_argument('--repo', '-r', default='.', help='Path to git repository')
+    parser.add_argument('--from', '-f', dest='from_ref', help='Starting reference (tag, commit)')
+    parser.add_argument('--output', '-o', help='Output file (default: stdout)')
+    parser.add_argument('--format', choices=['full', 'compact'], default='full', help='Output format')
+    args = parser.parse_args()
+
+    repo_path = os.path.abspath(args.repo)
+    if not os.path.exists(os.path.join(repo_path, '.git')):
+        print(f"Error: {repo_path} is not a git repository", file=sys.stderr)
+        sys.exit(1)
+
+    tags = get_tags(repo_path)
+    if not args.from_ref and tags:
+        args.from_ref = tags[0]
+
+    commits = get_git_log(repo_path, args.from_ref)
+    if not commits:
+        print("No commits found.", file=sys.stderr)
+        sys.exit(0)
+
+    changelog = generate_changelog(commits, args.format)
+
+    if args.output:
+        with open(args.output, 'w') as f:
+            f.write(changelog)
+        print(f"Changelog written to {args.output}")
+    else:
+        print(changelog)
+
+if __name__ == '__main__':
+    main()
