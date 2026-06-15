@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""
+Claude Code Pre-Tool-Use Hook
+Blocks dangerous bash commands before they execute.
+Place in ~/.claude/hooks/pre-tool-use
+"""
+
+import os
+import re
+import sys
+import time
+from datetime import datetime, timezone
+
+BLOCKED_PATTERNS = [
+    r'\brm\s+-rf\b',
+    r'\bDROP\s+TABLE\b',
+    r'\bgit\s+push\s+--force\b',
+    r'\bTRUNCATE\b',
+    r'\bDELETE\s+FROM\b(?!.*\bWHERE\b)',
+]
+
+HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
+LOG_FILE = os.path.join(HOOKS_DIR, "blocked.log")
+
+def is_dangerous(command):
+    """Check if a command matches any blocked pattern."""
+    for pattern in BLOCKED_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True
+    return False
+
+def log_blocked(command):
+    """Log the blocked command attempt."""
+    os.makedirs(HOOKS_DIR, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    project_path = os.getcwd()
+    entry = f"[{timestamp}] BLOCKED | project: {project_path} | cmd: {command}\n"
+    with open(LOG_FILE, "a") as f:
+        f.write(entry)
+
+def main():
+    # Read the command from stdin (Claude Code hooks format)
+    command = sys.stdin.read().strip() if not sys.stdin.isatty() else " ".join(sys.argv[1:])
+    
+    if not command:
+        # No command to check, allow passthrough
+        sys.exit(0)
+    
+    if is_dangerous(command):
+        log_blocked(command)
+        print(f"\n⚠️  BLOCKED: Dangerous command detected and prevented.")
+        print(f"   Pattern matched: The command contains a prohibited pattern.")
+        print(f"   Logged to: {LOG_FILE}")
+        print(f"   If you need to run this, disable the hook temporarily.\n")
+        sys.exit(1)
+    
+    # Command is safe, allow passthrough
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
