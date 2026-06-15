@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Claude Code PR Review Agent
+
+Usage:
+  ./claude-review --pr https://github.com/owner/repo/pull/123
+  ./claude-review --pr https://github.com/owner/repo/pull/123 --api-key sk-ant-...
+  ./claude-review --diff < path/to/diff.txt
+
+Environment:
+  CLAUDE_API_KEY: Anthropic API key (or pass via --api-key)
+  GITHUB_TOKEN: GitHub token for private repos
+"""
+
+import argparse, json, os, sys, textwrap, re
+from urllib.request import Request, urlopen, HTTPError
+from urllib.parse import urlparse
+
+def parse_pr_url(url):
+    parts = urlparse(url).path.strip("/").split("/")
+    if len(parts) >= 4 and parts[2] == "pull":
+        return "/".join(parts[:2]), parts[3]
+    raise ValueError(f"Not a valid PR URL: {url}")
+
+def fetch_pr_diff(repo, pr_num):
+    url = f"https://api.github.com/repos/{repo}/pulls/{pr_num}"
+    req = Request(url)
+    req.add_header("Accept", "application/vnd.github.v3.diff")
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    with urlopen(req) as resp:
+        return resp.read().decode("utf-8")
+
+def fetch_pr_metadata(repo, pr_num):
+    url = f"https://api.github.com/repos/{repo}/pulls/{pr_num}"
+    req = Request(url)
+    req.add_header("Accept", "application/vnd.github.v3+json")
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    with urlopen(req) as resp:
+        return json.load(resp)
+
+def format_diff(diff, max_chars=6000):
+    if len(diff) > max_chars:
+        return diff[:max_chars] + "\n\n[...diff truncated due to length...]\n"
+    return diff
+
+def call_claude(prompt, api_key, model="claude-sonnet-4-20250514"):
+    body = json.dumps({
+        "model": model,
+        "max_tokens": 4096,
+        "messages": [{"role": "user", "content": prompt}]
+    }).encode()
+    req = Request(
+        "https://api.anthropic.com/v1/messages",
+        data=body,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
+    )
+    with urlopen(req) as resp:
+        data = json.load(resp)
+    return data["content"][0]["text"]
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Review Agent")
+    parser.add_argument("--pr", help="PR URL (e.g., https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--diff", help="Read diff from file instead of fetching from GitHub")
+    parser.add_argument("--api-key", help="Claude API key (default: $CLAUDE_API_KEY)")
+    parser.add_argument("--model", default="claude-sonnet-4-20250514", help="Claude model")
+    parser.add_argument("--output", "-o", help="Write review to file")
+    args = parser.parse_args()
+
+    api_key = args.api_key or os.environ.get("CLAUDE_API_KEY")
+    if not api_key:
+        print("Error: Claude API key required. Pass --api-key or set CLAUDE_API_KEY.", file=sys.stderr)
+        sys.exit(1)
+
+    # Get diff
+    diff = ""
+    pr_title = ""
+    pr_description = ""
+    author = ""
+
+    if args.pr:
+        repo, num = parse_pr_url(args.pr)
+        print(f"  Fetching PR #{num} from {repo}...", file=sys.stderr)
+        diff = fetch_pr_diff(repo, num)
+        meta = fetch_pr_metadata(repo, num)
+        pr_title = meta.get("title", "")
+        pr_description = meta.get("body", "") or ""
+        author = meta.get("user", {}).get("login", "unknown")
+    elif args.diff:
+        with open(args.diff) as f:
+            diff = f.read()
+        pr_title = "(local diff)"
+    else:
+        diff = sys.stdin.read()
+        pr_title = "(stdin diff)"
+
+    diff_excerpt = format_diff(diff)
+
+    # Build review prompt
+    prompt = textwrap.dedent(f"""
+You are a senior code reviewer. Analyze the following pull request diff and produce a structured review.
+
+PR Title: {pr_title}
+Author: {author}
+Description: {pr_description[:500]}
+
+### Diff
+```diff
+{diff_excerpt}
+```
+
+### Output Format (use exactly this structure):
+
+## PR Review
+
+### Summary
+[2-3 sentences about what this PR does]
+
+### Identified Risks
+- [Risk 1: description]
+- [Risk 2: description]
+- [Risk 3: description or "None identified"]
+
+### Improvement Suggestions
+- [Suggestion 1: description]
+- [Suggestion 2: description]
+- [Suggestion 3: description or "None"]
+
+### Confidence Score
+**Confidence: [Low / Medium / High]**
+
+### Files Changed (with line counts)
+- [file1] (+10/-2)
+- [file2] (+50/-5)
+
+### Key Observations
+- [Observation 1]
+- [Observation 2]
+""").strip()
+
+    print("  Analyzing with Claude...", file=sys.stderr)
+    review = call_claude(prompt, api_key, args.model)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(review)
+        print(f"  Review written to {args.output}", file=sys.stderr)
+    else:
+        print(review)
+
+if __name__ == "__main__":
+    main()
