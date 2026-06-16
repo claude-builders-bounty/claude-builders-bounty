@@ -1,53 +1,45 @@
-# Claude Builders Bounty 🤖
+# CLAUDE.md Template — Next.js 15 + SQLite SaaS
 
-> A community bounty board for Claude Code builders.
+An opinionated, production-ready `CLAUDE.md` for a typical SaaS project built with Next.js 15 App Router and SQLite.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
 
----
+```bash
+# 1. Copy to your project root
+cp CLAUDE.md /path/to/your/project/CLAUDE.md
 
-## How it works
+# 2. Open Claude Code in that project
+cd /path/to/your/project && claude
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+That's it. Claude Code will automatically read `CLAUDE.md` and understand your project context.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## What It Covers
 
----
+| Section | Description |
+|---|---|
+| **Stack & Versions** | Exact technologies and versions used |
+| **Project Structure** | Folder layout with rationale for each directory |
+| **Rules We Follow** | SQL conventions, component patterns, data flow, auth, error handling |
+| **Anti-Patterns** | Common mistakes with "don't do / do instead" table |
+| **Dev Commands** | Copy-paste commands for daily workflows |
+| **Architecture Decisions** | Why SQLite? Why Drizzle? Why App Router? — with reasoning |
 
-## Active Bounties
+## Opinionated Choices
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+This is **not generic**. Every rule has a stated reason:
 
----
+- **SQLite over Postgres** → zero ops, no Docker, no connection pooling for single-tenant
+- **Drizzle over Prisma** → 1:1 SQL mapping, no hidden queries
+- **App Router over Pages** → RSC, streaming, nested layouts
+- **Server Components by default** → smaller bundle, faster renders
 
-## Rules
+## Verification
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+To confirm Claude Code understands your project:
 
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+```bash
+# After placing CLAUDE.md, start a new session and ask:
+# "What's our database stack?"
+# Expected: "SQLite via better-sqlite3 with Drizzle ORM"
+```
