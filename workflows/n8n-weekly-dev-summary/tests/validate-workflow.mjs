@@ -81,6 +81,10 @@ assert(
   loadCode.includes('GitHub-safe characters only'),
   'Load Config validates GITHUB_REPO format (prevents malformed owner/repo injection)',
 );
+assert(
+  loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/user'),
+  'Load Config validates GITHUB_TOKEN authenticity before GitHub fetches',
+);
 assert(loadCode.includes('weekStart.toISOString()'), 'Load Config emits ISO8601 weekStart');
 assert(loadCode.includes('weekEnd: now.toISOString()'), 'Load Config emits ISO8601 weekEnd');
 assert(!loadCode.includes('githubToken:'), 'Load Config does not embed githubToken in item JSON');

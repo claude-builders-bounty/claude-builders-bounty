@@ -18,10 +18,12 @@ function assert(condition, message) {
 const requiredScripts = [
   { file: 'validate-workflow.mjs', mustInclude: ['weekly-dev-summary.json', 'assert('] },
   { file: 'collect-github-data.test.mjs', mustInclude: ['collectRecords', 'lib/github-collect.mjs'] },
+  { file: 'github-collect-unit.test.mjs', mustInclude: ['validateGitHubToken', 'fetchGitHubPages'] },
+  { file: 'workflow-integration.test.mjs', mustInclude: ['validateGitHubToken', 'Build Claude Prompt'] },
   { file: 'delivery-verification.test.mjs', mustInclude: ['Fleet delivery verification', 'test('] },
   { file: 'peer-review-acceptance.test.mjs', mustInclude: ['Peer-review acceptance', 'assert('] },
   { file: 'run-ci-checks.mjs', mustInclude: ['validate-workflow.mjs', 'delivery-verification.test.mjs'] },
-  { file: 'github-fetch.test.mjs', mustInclude: ['GITHUB_TOKEN', 'api.github.com'] },
+  { file: 'github-fetch.test.mjs', mustInclude: ['GITHUB_TOKEN', 'validateGitHubToken', 'api.github.com'] },
   { file: 'capture-execution-screenshot.mjs', mustInclude: ['playwright', 'n8n-execution-screenshot.png'] },
   { file: 'run-n8n-e2e.mjs', mustInclude: ['mockPort', 'weekly-dev-summary.e2e.json'] },
 ];
@@ -62,6 +64,10 @@ assert(statSync(join(root, 'weekly-dev-summary.json')).isFile(), 'weekly-dev-sum
 assert(statSync(join(root, 'README.md')).isFile(), 'README.md at workflow root');
 
 const githubFetch = readFileSync(join(__dirname, 'github-fetch.test.mjs'), 'utf8');
+assert(
+  githubFetch.includes('validateGitHubToken'),
+  'github-fetch.test.mjs validates token authenticity before paginated fetches',
+);
 assert(
   githubFetch.includes('process.env.GITHUB_TOKEN') && githubFetch.includes('gh auth token'),
   'github-fetch.test.mjs resolves token from env or gh CLI (no hardcoded credentials)',

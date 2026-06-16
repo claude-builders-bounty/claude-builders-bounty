@@ -26,7 +26,7 @@ Set these in **Settings → Variables** (self-hosted `.env` or n8n Cloud variabl
 
 For email delivery, attach an **SMTP** credential to the **Send Email** node.
 
-**Security:** Store `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, and webhook URLs in n8n **Variables** or your host `.env` — never commit them to git or paste them into workflow nodes. The workflow reads secrets only via `$env.*` at runtime; **Load Config** fails fast if required keys are missing. Use least-privilege GitHub PATs (repo read) and rotate keys if exposed.
+**Security:** Store `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, and webhook URLs in n8n **Variables** or your host `.env` — never commit them to git or paste them into workflow nodes. The workflow reads secrets only via `$env.*` at runtime. **Load Config** validates `GITHUB_TOKEN` authenticity against `GET https://api.github.com/user` before any repo API calls, and fails fast if required keys are missing or invalid. Use least-privilege GitHub PATs (repo read) and rotate keys if exposed.
 
 ### 3. Verify the schedule
 
@@ -58,11 +58,21 @@ Friday 5pm Trigger → Load Config → parallel GitHub fetches (commits, issues,
 
 ## Validation
 
-Local regression suite (workflow structure, GitHub data merge, test-script hygiene, fleet delivery checks, peer-review acceptance):
+Local regression suite (workflow structure, GitHub helpers, unit/integration coverage, test-script hygiene, fleet delivery checks, peer-review acceptance):
 
 ```bash
 npm test
 ```
+
+| Suite | Purpose |
+|-------|---------|
+| `validate-workflow.mjs` | Importable JSON structure, node wiring, secret hygiene |
+| `collect-github-data.test.mjs` | GitHub record merge + pagination in workflow Code nodes |
+| `github-collect-unit.test.mjs` | Unit tests for `validateGitHubToken`, `fetchGitHubPages`, `collectRecords` |
+| `workflow-integration.test.mjs` | Token gate + mocked GitHub fetch + Claude prompt payload |
+| `test-scripts-acceptance.test.mjs` | Static checks on all test scripts |
+| `delivery-verification.test.mjs` | Fleet handoff gates (branch diff, PROOF, npm test wiring) |
+| `peer-review-acceptance.test.mjs` | Bounty #5 acceptance criteria regression |
 
 CI mirror (attribution scan, `git diff --check`, ordered summary lines for fleet delivery gates):
 
@@ -83,7 +93,7 @@ Optional full n8n execution + screenshot regeneration (requires `n8n` CLI and `G
 npm run test:e2e
 ```
 
-The `tests/test-scripts-acceptance.test.mjs` step statically validates all eight test scripts (shebang, secret hygiene, package.json wiring) before delivery verification runs.
+The `tests/test-scripts-acceptance.test.mjs` step statically validates all ten test scripts (shebang, secret hygiene, package.json wiring) before delivery verification runs.
 
 ## Test evidence
 

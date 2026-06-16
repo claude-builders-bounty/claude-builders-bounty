@@ -77,6 +77,12 @@ test('regression suite has minimum coverage', () => {
 
 test('ci script exists and declares delivery checks', () => {
   const ciScript = readFileSync(join(__dirname, 'run-ci-checks.mjs'), 'utf8');
+  if (!ciScript.includes('github-collect-unit.test.mjs')) {
+    throw new Error('run-ci-checks.mjs must run github-collect-unit.test.mjs');
+  }
+  if (!ciScript.includes('workflow-integration.test.mjs')) {
+    throw new Error('run-ci-checks.mjs must run workflow-integration.test.mjs');
+  }
   if (!ciScript.includes('test-scripts-acceptance.test.mjs')) {
     throw new Error('run-ci-checks.mjs must run test-scripts-acceptance.test.mjs');
   }
@@ -89,7 +95,7 @@ test('ci script exists and declares delivery checks', () => {
   if (!ciScript.includes('peer review acceptance tests passed')) {
     throw new Error('run-ci-checks.mjs must print peer review acceptance summary');
   }
-  if (!ciScript.includes('totalTests = validateTests + collectTests + testScriptsTests + deliveryTests + peerReviewTests')) {
+  if (!ciScript.includes('totalTests = validateTests + collectTests + unitTests + integrationTests + testScriptsTests + deliveryTests + peerReviewTests')) {
     throw new Error('run-ci-checks.mjs must sum discovered suite counts before final summary');
   }
   if (!ciScript.includes('OK: ${totalTests} tests passed')) {
@@ -103,7 +109,9 @@ test('ci runner total matches discovered test counts', () => {
   const testScripts = countTests(join(__dirname, 'test-scripts-acceptance.test.mjs'));
   const delivery = countTests(join(__dirname, 'delivery-verification.test.mjs'));
   const peerReview = countTests(join(__dirname, 'peer-review-acceptance.test.mjs'));
-  const expectedTotal = validate + collect + testScripts + delivery + peerReview;
+  const unit = countTests(join(__dirname, 'github-collect-unit.test.mjs'));
+  const integration = countTests(join(__dirname, 'workflow-integration.test.mjs'));
+  const expectedTotal = validate + collect + unit + integration + testScripts + delivery + peerReview;
   if (expectedTotal < 120) {
     throw new Error(`discovered ${expectedTotal} regression tests (need >= 120)`);
   }

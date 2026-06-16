@@ -48,6 +48,10 @@ assert(
   'Load Config validates GITHUB_REPO format before API calls',
 );
 assert(
+  loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/user'),
+  'Load Config validates GITHUB_TOKEN authenticity via GitHub /user before API calls',
+);
+assert(
   loadCode.includes('$env.GITHUB_TOKEN') && loadCode.includes('Set GITHUB_TOKEN'),
   'Load Config requires GITHUB_TOKEN from n8n env (no hardcoded token)',
 );

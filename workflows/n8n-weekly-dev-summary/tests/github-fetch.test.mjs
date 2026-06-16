@@ -5,7 +5,7 @@
  * Optional GITHUB_REPO (default: claude-builders-bounty/claude-builders-bounty).
  */
 import { execSync } from 'node:child_process';
-import { fetchGitHubPages } from './lib/github-collect.mjs';
+import { fetchGitHubPages, validateGitHubToken } from './lib/github-collect.mjs';
 
 const repo = process.env.GITHUB_REPO || 'claude-builders-bounty/claude-builders-bounty';
 
@@ -25,6 +25,8 @@ if (!token) {
   console.error('FAIL: GITHUB_TOKEN not set and gh CLI is not authenticated');
   process.exit(1);
 }
+
+await validateGitHubToken(token);
 
 const weekStart = new Date();
 weekStart.setDate(weekStart.getDate() - 7);

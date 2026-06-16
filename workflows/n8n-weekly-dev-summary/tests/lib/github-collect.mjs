@@ -3,6 +3,46 @@
  * Tests import this module so regressions catch logic drift in weekly-dev-summary.json.
  */
 
+export const GITHUB_USER_URL = 'https://api.github.com/user';
+
+export function githubAuthHeaders(token) {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+}
+
+/**
+ * Verify GITHUB_TOKEN authenticity via GitHub /user before repo API calls.
+ * @param {string} token - GitHub PAT or OAuth token
+ * @param {typeof fetch} [fetchFn] - injectable fetch for unit tests
+ * @returns {Promise<string>} authenticated GitHub login
+ */
+export async function validateGitHubToken(token, fetchFn = fetch) {
+  const trimmed = (token || '').trim();
+  if (!trimmed) {
+    throw new Error('Set GITHUB_TOKEN with repo read access.');
+  }
+
+  const res = await fetchFn(GITHUB_USER_URL, { headers: githubAuthHeaders(trimmed) });
+  const body = await res.json().catch(() => ({}));
+
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('GITHUB_TOKEN is invalid or lacks required permissions.');
+  }
+  if (!res.ok) {
+    throw new Error(
+      `GitHub token validation failed: ${res.status} ${body.message || res.statusText || ''}`.trim(),
+    );
+  }
+  if (!body || typeof body.login !== 'string') {
+    throw new Error('GITHUB_TOKEN validation failed: unexpected GitHub response.');
+  }
+
+  return body.login;
+}
+
 export function isGitHubError(row) {
   return Boolean(
     row &&
@@ -15,27 +55,28 @@ export function isGitHubError(row) {
 
 export function collectRecords(items) {
   if (!Array.isArray(items) || !items.length) return [];
-  const rows = items.map((item) => item?.json?.records ?? item?.json).filter(Boolean);
-  if (rows.length === 1 && Array.isArray(rows[0])) return rows[0].filter((row) => !isGitHubError(row));
-  if (rows.length === 1 && Array.isArray(rows[0]?.records)) {
-    return rows[0].records.filter((row) => !isGitHubError(row));
-  }
-  const flat = rows.flatMap((row) => (Array.isArray(row?.records) ? row.records : [row]));
-  return flat.filter((row) => row && typeof row === 'object' && !Array.isArray(row) && !isGitHubError(row));
+
+  const rows = items.flatMap((item) => {
+    const json = item?.json;
+    if (!json) return [];
+    if (Array.isArray(json.records)) return json.records;
+    if (Array.isArray(json)) return json;
+    return [json];
+  });
+
+  return rows.filter(
+    (row) => row && typeof row === 'object' && !Array.isArray(row) && !isGitHubError(row),
+  );
 }
 
-export async function fetchGitHubPages(baseUrl, token, query = {}, { maxPages = 50 } = {}) {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-  };
+export async function fetchGitHubPages(baseUrl, token, query = {}, { maxPages = 50, fetchFn = fetch } = {}) {
+  const headers = githubAuthHeaders((token || '').trim());
   const records = [];
   let page = 1;
 
   while (page <= maxPages) {
     const params = new URLSearchParams({ ...query, per_page: '100', page: String(page) });
-    const res = await fetch(`${baseUrl}?${params}`, { headers });
+    const res = await fetchFn(`${baseUrl}?${params}`, { headers });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(`GitHub ${baseUrl} failed: ${res.status} ${body.message || res.statusText || ''}`.trim());
