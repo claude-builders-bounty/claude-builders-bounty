@@ -71,6 +71,7 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         package_json = (REPO_ROOT / "package.json").read_text(encoding="utf-8")
         self.assertIn('"test"', package_json)
         self.assertIn("run-ci-checks.sh", package_json)
+        self.assertIn('"test:readme-links"', package_json)
         self.assertIn('"test:peer-review"', package_json)
         self.assertIn("OK: peer review acceptance tests passed", package_json)
 
