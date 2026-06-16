@@ -57,6 +57,19 @@ test("repo root keeps reproducible npm test wiring", () => {
   }
 });
 
+test("CI workflow uses npm test as single env-check entry point", () => {
+  const workflow = readFileSync(
+    join(repoRoot, ".github/workflows/test-nextjs-sqlite-template.yml"),
+    "utf8",
+  );
+  if (!workflow.includes("npm test")) {
+    throw new Error("CI workflow must run npm test");
+  }
+  if (/run: npm run env-check[\s\S]*run: npm test/m.test(workflow)) {
+    throw new Error("CI workflow must not double-run env-check before npm test");
+  }
+});
+
 test("ci runner declares delivery and peer-review summary lines", () => {
   const ciScript = readFileSync(join(__dirname, "run-ci-checks.sh"), "utf8");
   if (!ciScript.includes("delivery-verification.test.mjs")) {

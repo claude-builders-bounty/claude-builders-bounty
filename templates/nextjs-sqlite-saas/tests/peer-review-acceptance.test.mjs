@@ -225,7 +225,14 @@ assert(
   workflow.includes("npm test") || workflow.includes("npm run test"),
   "CI workflow executes npm test",
 );
-assert(workflow.includes("env-check"), "CI workflow validates environment before tests");
+assert(
+  packageJson.scripts?.test?.includes("env-check.mjs"),
+  "npm test gates on env-check.mjs so CI inherits toolchain validation",
+);
+assert(
+  !/run: npm run env-check[\s\S]*run: npm test/m.test(workflow),
+  "CI workflow must not double-run env-check when npm test already gates on it",
+);
 assert(workflow.includes("run-ci-checks.sh") || workflow.includes("npm test"), "CI runs unified validation");
 assert(workflow.includes("pull_request_target"), "CI supports upstream fork PR checks");
 assert(workflow.includes("Makefile"), "CI triggers on Makefile changes");
