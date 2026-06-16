@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#
+# pr-review — generate a structured Markdown review for a PR diff.
+#
+# Sources (pick one): --pr <num|url> | --diff <file> | stdin
+# Engines:
+#   --engine claude   run the native Claude Code agent via `claude -p` (default
+#                     when the `claude` CLI is installed)
+#   --engine api      run scripts/pr_review.py against the Anthropic API
+#                     (default otherwise; needs ANTHROPIC_API_KEY)
+#
+# Examples:
+#   pr-review --pr 123
+#   pr-review --pr https://github.com/owner/repo/pull/42 --out review.md
+#   git diff origin/main...HEAD | pr-review
+#   pr-review --diff changes.patch --engine api
+#
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
+PROMPT_FILE="$ROOT/prompts/review-system-prompt.md"
+
+PR="" DIFF_FILE="" OUT="" ENGINE="" TITLE=""
+
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr)     PR="$2"; shift 2 ;;
+    --diff)   DIFF_FILE="$2"; shift 2 ;;
+    --out)    OUT="$2"; shift 2 ;;
+    --engine) ENGINE="$2"; shift 2 ;;
+    --title)  TITLE="$2"; shift 2 ;;
+    -h|--help) usage 0 ;;
+    *) echo "unknown argument: $1" >&2; usage 1 ;;
+  esac
+done
+
+# ---- acquire the diff -------------------------------------------------------
+get_diff() {
+  if [[ -n "$PR" ]]; then
+    command -v gh >/dev/null || { echo "error: gh CLI required for --pr" >&2; exit 1; }
+    gh pr diff "$PR"
+  elif [[ -n "$DIFF_FILE" ]]; then
+    cat "$DIFF_FILE"
+  elif [[ ! -t 0 ]]; then
+    cat
+  else
+    echo "error: no diff. Use --pr, --diff FILE, or pipe a diff via stdin." >&2
+    exit 2
+  fi
+}
+
+# ---- choose engine ----------------------------------------------------------
+if [[ -z "$ENGINE" ]]; then
+  if command -v claude >/dev/null; then ENGINE="claude"; else ENGINE="api"; fi
+fi
+
+DIFF="$(get_diff)"
+[[ -n "${DIFF// /}" ]] || { echo "error: empty diff — nothing to review." >&2; exit 2; }
+
+emit() { if [[ -n "$OUT" ]]; then printf '%s\n' "$1" > "$OUT"; echo "review written to $OUT" >&2; else printf '%s\n' "$1"; fi; }
+
+case "$ENGINE" in
+  claude)
+    command -v claude >/dev/null || { echo "error: claude CLI not found" >&2; exit 1; }
+    CTX=""
+    [[ -n "$TITLE" ]] && CTX="PR title: $TITLE"$'\n\n'
+    RESULT="$(printf '%s%s\n\n```diff\n%s\n```\n' \
+      "$(cat "$PROMPT_FILE")"$'\n\n---\n\n' "$CTX" "$DIFF" \
+      | claude -p --model sonnet 2>/dev/null)"
+    emit "$RESULT"
+    ;;
+  api)
+    ARGS=(--diff /dev/stdin)
+    [[ -n "$TITLE" ]] && ARGS+=(--title "$TITLE")
+    [[ -n "$OUT" ]] && ARGS+=(--out "$OUT")
+    printf '%s' "$DIFF" | python3 "$ROOT/scripts/pr_review.py" "${ARGS[@]}"
+    ;;
+  *)
+    echo "error: unknown engine '$ENGINE' (use claude|api)" >&2; exit 1 ;;
+esac
