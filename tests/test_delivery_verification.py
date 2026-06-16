@@ -12,8 +12,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CI_SCRIPT = REPO_ROOT / "tests" / "run-ci-checks.sh"
+README = REPO_ROOT / "README.md"
 README_LINK_TEST = REPO_ROOT / "tests" / "test_readme_links.py"
 PEER_REVIEW_TEST = REPO_ROOT / "tests" / "test_peer_review_acceptance.py"
+UPSTREAM = "claude-builders-bounty/claude-builders-bounty"
 
 
 def count_test_methods(path: Path) -> int:
@@ -30,7 +32,16 @@ class DeliveryVerificationTests(unittest.TestCase):
         delivery_tests = count_test_methods(Path(__file__))
         self.assertGreaterEqual(readme_tests, 2)
         self.assertGreaterEqual(peer_review_tests, 7)
-        self.assertGreaterEqual(delivery_tests, 2)
+        self.assertGreaterEqual(delivery_tests, 3)
+
+    def test_readme_bounty_table_links_fix_issue_521(self) -> None:
+        """Issue #521: Active Bounties rows must link to upstream issues."""
+        text = README.read_text(encoding="utf-8")
+        self.assertNotIn("../../issues/", text)
+        for issue_num in range(1, 6):
+            expected = f"/{UPSTREAM}/issues/{issue_num}"
+            with self.subTest(issue=issue_num):
+                self.assertIn(f"[#{issue_num}]({expected})", text)
 
     def test_repo_root_exposes_npm_test_entry_points(self) -> None:
         package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
