@@ -40,6 +40,13 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertNotIn("../../issues/", text)
         self.assertNotRegex(text, r"\]\(issues/\d+\)")
 
+    def test_readme_bounty_section_documents_absolute_paths(self):
+        text = README.read_text(encoding="utf-8")
+        section_match = BOUNTY_TABLE_RE.search(text)
+        self.assertIsNotNone(section_match, "Active Bounties section not found in README")
+        self.assertIn("absolute `/owner/repo/issues/N` paths", section_match.group(1))
+        self.assertIn("forks and blob views", section_match.group(1))
+
     def test_regression_test_module_exists(self):
         regression = REPO_ROOT / "tests/test_readme_links.py"
         self.assertTrue(regression.is_file())
