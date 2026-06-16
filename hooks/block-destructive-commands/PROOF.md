@@ -40,6 +40,13 @@ Branch: `feat/issue-3-destructive-command-hook-v2` (PR #2556)
 Removed re-introduced stray `feat: mkdocs export` commit (`internal/exporter/*`)
 that broke `test_branch_diff_scoped_to_hook_only` and delivery scope checks.
 
+## Hands-on verification (2026-06-16, hands-on takeover)
+
+Removed stray fleet commit `ac58c06` that re-added `node_modules/*` (55k+ lines)
+to `main...HEAD`, breaking `test_branch_diff_scoped_to_hook_only` and
+`test_npm_test_entry_point_runs_green`. Reset to hook-only diff (`d1e32df` base);
+all 104 unittest + 6 delivery + 21 peer-review checks green.
+
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty
 git checkout feat/issue-3-destructive-command-hook-v2
