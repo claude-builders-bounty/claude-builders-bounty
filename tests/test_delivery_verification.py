@@ -140,6 +140,25 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn("OK: peer review acceptance tests passed", result.stdout)
         self.assertIn("OK: all CI validation checks passed", result.stdout)
 
+    def test_peer_review_script_runs_green(self) -> None:
+        """Fleet may validate peer review independently of the full npm test gate."""
+        if os.environ.get("README_CI_INNER_RUN"):
+            self.skipTest("already inside npm test CI runner")
+
+        result = subprocess.run(
+            ["npm", "run", "test:peer-review"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=result.stdout + result.stderr,
+        )
+        self.assertIn("OK: peer review acceptance tests passed", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
