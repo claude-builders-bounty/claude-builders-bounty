@@ -80,6 +80,11 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("test-peer-review:", makefile)
         self.assertIn("test:peer-review", makefile)
 
+    def test_makefile_exposes_readme_links_target(self):
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("test-readme-links:", makefile)
+        self.assertIn("test:readme-links", makefile)
+
     def test_run_ci_checks_script_exists_and_is_executable(self):
         script = REPO_ROOT / "tests/run-ci-checks.sh"
         self.assertTrue(script.is_file())
