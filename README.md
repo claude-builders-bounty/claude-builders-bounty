@@ -1,53 +1,86 @@
-# Claude Builders Bounty 🤖
+# 🪵 Changelog Generator
 
-> A community bounty board for Claude Code builders.
+A Claude Code skill that automatically generates a structured `CHANGELOG.md` from a project's git history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
 
----
+```bash
+# 1. Clone this skill
+git clone <this-repo> changelog-skill
+cd changelog-skill
 
-## How it works
+# 2. Run it
+bash changelog.sh
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+# 3. Done — open CHANGELOG.md
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Usage
 
----
+```bash
+# Generate for current directory
+bash changelog.sh
 
-## Active Bounties
+# Generate for a specific repo path
+bash changelog.sh --repo /path/to/project
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# Generate with custom output file
+bash changelog.sh --output CHANGES.md
 
----
+# Generate from a specific tag
+bash changelog.sh --since v1.0.0
+```
 
-## Rules
+## Claude Code Integration
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+This skill adds a `/generate-changelog` command to Claude Code:
 
----
+```markdown
+<!-- SKILL.md -->
+/generate-changelog — Generate structured CHANGELOG.md from git history
+  Usage: /generate-changelog [--repo PATH] [--output FILE] [--since TAG]
 
-## Community
+Automatically categorizes commits into:
+- **Added** — new features (feat:, add:, new:)
+- **Fixed** — bug fixes (fix:, bugfix:, patch:)
+- **Changed** — updates, refactors, improvements
+- **Removed** — deletions, deprecations
+- **Deprecated** — deprecation warnings
+- **Security** — security fixes
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+Outputs a clean `CHANGELOG.md` with linked commit hashes.
+```
 
----
+## Sample Output
 
-*Started by the Claude builder community · March 2026 · MIT License*
+```markdown
+# Changelog
+
+## [v1.2.0] - 2026-06-15
+
+### Added
+- New payment processing pipeline ([a1b2c3d](https://github.com/user/repo/commit/a1b2c3d))
+- User authentication with OAuth2 ([e4f5g6h](https://github.com/user/repo/commit/e4f5g6h))
+
+### Fixed
+- Race condition in concurrent requests ([i7j8k9l](https://github.com/user/repo/commit/i7j8k9l))
+- Memory leak in websocket handler ([m0n1o2p](https://github.com/user/repo/commit/m0n1o2p))
+
+### Changed
+- Upgraded dependencies to latest versions ([q3r4s5t](https://github.com/user/repo/commit/q3r4s5t))
+- Refactored database access layer ([u6v7w8x](https://github.com/user/repo/commit/u6v7w8x))
+```
+
+## Requirements
+
+- `bash` 4.0+
+- `git` 2.0+
+
+Works on macOS, Linux, and Windows (Git Bash / WSL).
+
+## How It Works
+
+1. Finds the most recent git tag (or all commits if no tags exist)
+2. Reads commit messages since that tag
+3. Categorizes each commit based on conventional commit prefixes
+4. Generates a structured, ready-to-publish CHANGELOG.md
