@@ -1,53 +1,52 @@
-# Claude Builders Bounty 🤖
+# Claude Code PR Review Agent
 
-> A community bounty board for Claude Code builders.
+A Python-based PR review agent that analyzes GitHub pull request diffs and posts structured Markdown review comments.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
 
----
+1. **Review any PR via URL:**
+   ```bash
+   python claude-review.py --pr https://github.com/owner/repo/pull/123
+   ```
 
-## How it works
+2. **Review by repo + number:**
+   ```bash
+   python claude-review.py --pr 123 --repo owner/repo
+   ```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+3. **Review a local diff:**
+   ```bash
+   python claude-review.py --diff /path/to/diff.patch
+   ```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+4. **Save output to file:**
+   ```bash
+   python claude-review.py --pr 123 --repo owner/repo -o review.md
+   ```
 
----
+## Output Format
 
-## Active Bounties
+The agent generates a structured Markdown review with:
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+- **Summary** — 2–3 sentences describing the PR scope
+- **Identified Risks** — list of potential issues
+- **Improvement Suggestions** — actionable recommendations
+- **Confidence Score** — Low / Medium / High
+- **File Summary Table** — per-file change stats
 
----
+## GitHub Actions Integration
 
-## Rules
+Copy `.github/workflows/claude-review.yml` to your repo to enable automatic PR reviews on every pull request.
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Sample Output
 
----
+See `SAMPLE_REVIEW.md` for an example review of PR #2820.
 
-## Community
+## Requirements
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+- Python 3.8+
+- Internet access to fetch PR diffs from GitHub API
 
----
+## Claiming the Bounty
 
-*Started by the Claude builder community · March 2026 · MIT License*
+This submission addresses Issue #4 for the $150 Claude Code Agent bounty.
