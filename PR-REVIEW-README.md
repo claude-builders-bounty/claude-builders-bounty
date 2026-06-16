@@ -22,6 +22,18 @@ Review a public PR and print Markdown:
 claude-review --pr https://github.com/python/cpython/pull/151541
 ```
 
+Use the included Claude Code project subagent:
+
+```bash
+claude --agent pr-reviewer
+```
+
+Then ask it to review a pull request:
+
+```text
+Review https://github.com/python/cpython/pull/151541
+```
+
 Write the review to a file:
 
 ```bash
@@ -62,6 +74,10 @@ It also lists changed files to make the review easier to audit.
 ## GitHub Action
 
 The workflow in `.github/workflows/claude-review.yml` can be triggered manually with a PR URL. It writes the Markdown review to the workflow summary, uploads it as an artifact, and can optionally post a PR comment when `post_comment` is set to `true`.
+
+## Claude Code Subagent
+
+The project-level subagent lives at `.claude/agents/pr-reviewer.md`. Claude Code discovers project subagents from `.claude/agents/`, and this one delegates to the CLI so the same review behavior is available from either the shell, GitHub Actions, or Claude Code itself.
 
 ## Testing
 

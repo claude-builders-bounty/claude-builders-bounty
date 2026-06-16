@@ -10,6 +10,7 @@ Implements a `claude-review` CLI that accepts a GitHub PR URL, fetches the diff,
 
 - [x] CLI usage: `claude-review --pr https://github.com/owner/repo/pull/123`
 - [x] GitHub Action workflow included
+- [x] Claude Code project subagent included at `.claude/agents/pr-reviewer.md`
 - [x] Structured Markdown output
 - [x] Summary of changes
 - [x] Identified risks
@@ -27,6 +28,7 @@ Closes #4.
 ## What changed
 
 - Adds `claude-review`, a Python CLI that reviews a GitHub PR diff and emits the required structured Markdown comment.
+- Adds a Claude Code project subagent at `.claude/agents/pr-reviewer.md` that delegates to the CLI.
 - Adds optional `--post-comment` support using `GITHUB_TOKEN`.
 - Adds a manual GitHub Action workflow that can generate a review artifact or post the comment.
 - Adds unit tests and sample outputs from two real public PRs.
