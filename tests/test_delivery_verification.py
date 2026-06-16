@@ -90,14 +90,16 @@ class DeliveryVerificationTests(unittest.TestCase):
             for line in result.stdout.splitlines()
             if line.startswith("-") and not line.startswith("---")
         ]
-        self.assertTrue(
-            any(f"/{UPSTREAM}/issues/1" in line for line in added_lines),
-            msg="committed README diff must add upstream issue links",
-        )
-        self.assertTrue(
-            any("../../issues/1" in line for line in removed_lines),
-            msg="committed README diff must remove fragile relative issue links",
-        )
+        for issue_num in range(1, 6):
+            with self.subTest(issue=issue_num):
+                self.assertTrue(
+                    any(f"/{UPSTREAM}/issues/{issue_num}" in line for line in added_lines),
+                    msg=f"committed README diff must add upstream link for issue #{issue_num}",
+                )
+                self.assertTrue(
+                    any(f"[#{issue_num}](../../issues/{issue_num})" in line for line in removed_lines),
+                    msg=f"committed README diff must remove fragile link for issue #{issue_num}",
+                )
         self.assertFalse(
             any("../../issues/" in line for line in added_lines),
             msg="committed README diff must not add fragile relative issue links",
