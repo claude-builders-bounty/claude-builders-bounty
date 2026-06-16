@@ -24,6 +24,8 @@ You're in the right place.
 
 ## Active Bounties
 
+Bounty links use absolute `/owner/repo/issues/N` paths so they resolve on forks and blob views.
+
 | # | Task | Amount | Status |
 |---|------|--------|--------|
 | [#1](/claude-builders-bounty/claude-builders-bounty/issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
