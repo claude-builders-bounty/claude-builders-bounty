@@ -1,0 +1,303 @@
+#!/usr/bin/env bash
+#
+# claude-review — a Claude Code agent that reviews a PR diff and prints a
+# structured Markdown review comment (Summary / Risks / Suggestions / Confidence).
+#
+# Bounty #4 — claude-builders-bounty
+#
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --pr owner/repo#123
+#   claude-review --file my.diff
+#   git diff main | claude-review
+#
+# Engine: prefers the local `claude` CLI (Claude Code, uses your existing auth).
+# Falls back to the Anthropic API via curl when only ANTHROPIC_API_KEY is set
+# (e.g. in CI). Either way the output is identical, structured Markdown.
+#
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Defaults / config
+# ---------------------------------------------------------------------------
+MODEL="${CLAUDE_REVIEW_MODEL:-}"        # empty => let the engine pick its default
+MAX_DIFF_CHARS="${CLAUDE_REVIEW_MAX_DIFF_CHARS:-120000}"
+PR_REF=""
+DIFF_FILE=""
+OUTPUT_FILE=""
+DO_POST="false"
+TITLE=""
+REPO=""        # owner/repo, derived from --pr
+NUMBER=""      # PR number, derived from --pr
+
+prog="$(basename "$0")"
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+usage() {
+  cat <<EOF
+$prog — structured Markdown PR review, powered by Claude Code.
+
+USAGE
+  $prog --pr <url|owner/repo#N|N> [options]
+  $prog --file <diff-file> [options]
+  <something> | $prog [options]            # read a diff from stdin
+
+OPTIONS
+  --pr <ref>        PR to review. Accepts a full URL
+                    (https://github.com/owner/repo/pull/123),
+                    owner/repo#123, or a bare number (uses the current repo).
+                    Requires the GitHub CLI (gh) to be installed and authed.
+  --file <path>     Read the diff from a file instead of GitHub.
+  --title <text>    Title to show in the review header (auto-detected for --pr).
+  --model <model>   Model id to use (default: engine default, or \$CLAUDE_REVIEW_MODEL).
+  --post            Post the review as a comment on the PR (only with --pr; uses gh).
+  --output <path>   Also write the Markdown review to this file.
+  -h, --help        Show this help.
+
+ENGINE
+  Uses the 'claude' CLI if available, otherwise the Anthropic API
+  (set ANTHROPIC_API_KEY). At least one must be available.
+
+EXAMPLES
+  $prog --pr https://github.com/cli/cli/pull/9999
+  $prog --pr owner/repo#42 --post
+  git diff origin/main...HEAD | $prog --title "My feature"
+EOF
+}
+
+die() { echo "$prog: error: $*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr)      PR_REF="${2:-}"; shift 2 ;;
+    --file)    DIFF_FILE="${2:-}"; shift 2 ;;
+    --title)   TITLE="${2:-}"; shift 2 ;;
+    --model)   MODEL="${2:-}"; shift 2 ;;
+    --output)  OUTPUT_FILE="${2:-}"; shift 2 ;;
+    --post)    DO_POST="true"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *)         die "unknown argument: $1 (try --help)" ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
+# Resolve owner/repo and number from a --pr reference
+# ---------------------------------------------------------------------------
+parse_pr_ref() {
+  local ref="$1"
+  if [[ "$ref" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    REPO="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+    NUMBER="${BASH_REMATCH[3]}"
+  elif [[ "$ref" =~ ^([^/]+/[^#]+)#([0-9]+)$ ]]; then
+    REPO="${BASH_REMATCH[1]}"
+    NUMBER="${BASH_REMATCH[2]}"
+  elif [[ "$ref" =~ ^[0-9]+$ ]]; then
+    NUMBER="$ref"          # bare number -> current repo (gh infers it)
+  else
+    die "could not parse --pr '$ref' (expected a URL, owner/repo#N, or N)"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Acquire the diff + metadata
+# ---------------------------------------------------------------------------
+DIFF=""
+META=""   # human-readable metadata block for the prompt
+
+if [[ -n "$PR_REF" ]]; then
+  command -v gh >/dev/null 2>&1 || die "--pr needs the GitHub CLI (gh). Install: https://cli.github.com"
+  parse_pr_ref "$PR_REF"
+
+  gh_args=()
+  [[ -n "$REPO" ]] && gh_args+=(--repo "$REPO")
+
+  echo "$prog: fetching diff for PR #$NUMBER ${REPO:+($REPO)} ..." >&2
+  DIFF="$(gh pr diff "$NUMBER" "${gh_args[@]}")" \
+    || die "failed to fetch diff via gh (is the PR public / are you authed?)"
+
+  # Metadata is best-effort; the review still works without it.
+  if view_json="$(gh pr view "$NUMBER" "${gh_args[@]}" \
+        --json title,author,baseRefName,headRefName,additions,deletions,changedFiles 2>/dev/null)"; then
+    TITLE="${TITLE:-$(printf '%s' "$view_json" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("title",""))')}"
+    META="$(printf '%s' "$view_json" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+a = d.get("author") or {}
+repo, number = sys.argv[1], sys.argv[2]
+title = d.get("title", "")
+author = a.get("login", "unknown")
+base = d.get("baseRefName", "?")
+head = d.get("headRefName", "?")
+files = d.get("changedFiles", "?")
+adds = d.get("additions", "?")
+dels = d.get("deletions", "?")
+print("- Repo: %s" % repo)
+print("- PR: #%s" % number)
+print("- Title: %s" % title)
+print("- Author: %s" % author)
+print("- Base <- Head: %s <- %s" % (base, head))
+print("- Files changed: %s (+%s / -%s)" % (files, adds, dels))
+' "${REPO:-current repo}" "$NUMBER")"
+  fi
+
+elif [[ -n "$DIFF_FILE" ]]; then
+  [[ -f "$DIFF_FILE" ]] || die "diff file not found: $DIFF_FILE"
+  DIFF="$(cat "$DIFF_FILE")"
+  META="- Source: file ($DIFF_FILE)"
+
+elif [[ ! -t 0 ]]; then
+  DIFF="$(cat)"          # piped on stdin
+  META="- Source: stdin"
+
+else
+  usage >&2
+  exit 2
+fi
+
+[[ -n "${DIFF//[[:space:]]/}" ]] || die "the diff is empty — nothing to review"
+
+# Guard against pathologically large diffs (cost + context). Truncate + note.
+TRUNCATED_NOTE=""
+if [[ "${#DIFF}" -gt "$MAX_DIFF_CHARS" ]]; then
+  DIFF="${DIFF:0:$MAX_DIFF_CHARS}"
+  TRUNCATED_NOTE=$'\n\n[NOTE: diff truncated to '"$MAX_DIFF_CHARS"$' chars for review.]'
+fi
+
+[[ -n "$TITLE" ]] || TITLE="Untitled diff"
+
+# ---------------------------------------------------------------------------
+# System prompt — defines the reviewer role and the EXACT output contract.
+# Kept in sync with .claude/agents/pr-reviewer.md
+# ---------------------------------------------------------------------------
+read -r -d '' SYSTEM_PROMPT <<'SYS' || true
+You are a meticulous senior software engineer performing a pull-request review.
+You are given a unified diff (and optional metadata). Review ONLY what the diff
+shows; do not invent files or lines that are not present. Be specific and
+reference file names and concrete code where possible. Be honest about
+uncertainty rather than padding the review.
+
+Respond with GitHub-flavored Markdown in EXACTLY this structure and nothing else
+(no preamble, no closing chit-chat):
+
+## 🔍 PR Review: <short title>
+
+### Summary
+<2-3 sentences describing what this PR changes and why, in plain language.>
+
+### ⚠️ Risks
+- <each identified risk: bugs, regressions, security, performance, breaking
+  changes, missing tests, edge cases. If genuinely none, write a single bullet
+  "- No significant risks identified.">
+
+### 💡 Suggestions
+- <concrete, actionable improvement suggestions. If none, write a single bullet
+  "- No suggestions; the change looks clean.">
+
+### Confidence: <Low | Medium | High>
+> <one sentence justifying the confidence level — e.g. how much of the change is
+> visible in the diff, how risky the touched area is, whether tests are present.>
+
+Confidence rubric:
+- High: small/clear change, low-risk area, intent obvious from the diff.
+- Medium: moderate size or some unknowns outside the diff (config, callers).
+- Low: large/complex change, security- or data-sensitive, or hard to judge
+  correctness from the diff alone.
+SYS
+
+# ---------------------------------------------------------------------------
+# User prompt — metadata + the diff itself
+# ---------------------------------------------------------------------------
+USER_PROMPT="Review the following pull request.
+
+## PR metadata
+${META:-- (no metadata available)}
+
+## Diff
+\`\`\`diff
+${DIFF}${TRUNCATED_NOTE}
+\`\`\`
+"
+
+# ---------------------------------------------------------------------------
+# Engine: run Claude and capture the Markdown review
+# ---------------------------------------------------------------------------
+run_with_claude_cli() {
+  local args=(-p --output-format text --append-system-prompt "$SYSTEM_PROMPT")
+  [[ -n "$MODEL" ]] && args+=(--model "$MODEL")
+  printf '%s' "$USER_PROMPT" | claude "${args[@]}"
+}
+
+run_with_api() {
+  local model="${MODEL:-claude-opus-4-8}"
+  SYS_P="$SYSTEM_PROMPT" USR_P="$USER_PROMPT" MODEL_P="$model" python3 <<'PY'
+import json, os, sys, urllib.request, urllib.error
+
+req = {
+    "model": os.environ["MODEL_P"],
+    "max_tokens": 2048,
+    "system": os.environ["SYS_P"],
+    "messages": [{"role": "user", "content": os.environ["USR_P"]}],
+}
+r = urllib.request.Request(
+    "https://api.anthropic.com/v1/messages",
+    data=json.dumps(req).encode(),
+    headers={
+        "content-type": "application/json",
+        "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+        "anthropic-version": "2023-06-01",
+    },
+)
+try:
+    with urllib.request.urlopen(r) as resp:
+        data = json.load(resp)
+except urllib.error.HTTPError as e:
+    sys.stderr.write("Anthropic API error %s: %s\n" % (e.code, e.read().decode()))
+    sys.exit(1)
+print("".join(b.get("text", "") for b in data.get("content", [])).strip())
+PY
+}
+
+REVIEW=""
+if command -v claude >/dev/null 2>&1; then
+  echo "$prog: reviewing with the claude CLI ..." >&2
+  REVIEW="$(run_with_claude_cli)"
+elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "$prog: reviewing with the Anthropic API ..." >&2
+  REVIEW="$(run_with_api)"
+else
+  die "no engine available: install the 'claude' CLI or set ANTHROPIC_API_KEY"
+fi
+
+[[ -n "${REVIEW//[[:space:]]/}" ]] || die "the model returned an empty review"
+
+# Footer for provenance.
+REVIEW="${REVIEW}
+
+---
+<sub>🤖 Generated by <code>claude-review</code> (claude-builders-bounty #4).</sub>"
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+printf '%s\n' "$REVIEW"
+
+if [[ -n "$OUTPUT_FILE" ]]; then
+  printf '%s\n' "$REVIEW" > "$OUTPUT_FILE"
+  echo "$prog: wrote review to $OUTPUT_FILE" >&2
+fi
+
+if [[ "$DO_POST" == "true" ]]; then
+  [[ -n "$NUMBER" ]] || die "--post requires --pr"
+  command -v gh >/dev/null 2>&1 || die "--post needs the GitHub CLI (gh)"
+  gh_args=()
+  [[ -n "$REPO" ]] && gh_args+=(--repo "$REPO")
+  tmp="$(mktemp)"; printf '%s\n' "$REVIEW" > "$tmp"
+  gh pr comment "$NUMBER" "${gh_args[@]}" --body-file "$tmp" \
+    && echo "$prog: posted review to PR #$NUMBER" >&2
+  rm -f "$tmp"
+fi
