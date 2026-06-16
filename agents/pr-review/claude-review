@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+#
+# claude-review — review a GitHub PR with Claude Code and emit a structured
+# Markdown review (Summary / Risks / Suggestions / Confidence).
+#
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --pr owner/repo#123 --post          # also post the review as a PR comment
+#   claude-review --pr https://github.com/o/r/pull/1 --model claude-opus-4-8
+#
+# Requirements: bash, gh (authenticated), claude (Claude Code CLI, authenticated).
+#
+set -euo pipefail
+
+# --------------------------------------------------------------------------- #
+# Configuration / defaults
+# --------------------------------------------------------------------------- #
+PR=""
+POST=0
+MODEL=""              # empty => use the claude CLI's configured default model
+MAX_DIFF_CHARS=120000 # guard against blowing the model's context window
+SCRIPT_NAME="$(basename "$0")"
+
+usage() {
+  cat <<EOF
+$SCRIPT_NAME — structured PR review powered by Claude Code
+
+USAGE:
+  $SCRIPT_NAME --pr <pr-url|owner/repo#number> [options]
+
+OPTIONS:
+  --pr <ref>      PR to review. Accepts a full URL
+                  (https://github.com/owner/repo/pull/123) or owner/repo#123.
+  --post          Post the review back to the PR as a comment (uses gh).
+  --model <name>  Override the Claude model (e.g. claude-opus-4-8).
+  -h, --help      Show this help.
+
+EXAMPLES:
+  $SCRIPT_NAME --pr https://github.com/cli/cli/pull/9000
+  $SCRIPT_NAME --pr cli/cli#9000 --post
+
+The review is written to stdout as Markdown with these sections:
+  Summary · Risks · Suggestions · Confidence (Low/Medium/High)
+EOF
+}
+
+die() { echo "error: $*" >&2; exit 1; }
+
+# --------------------------------------------------------------------------- #
+# Arg parsing
+# --------------------------------------------------------------------------- #
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr)    PR="${2:-}"; shift 2 ;;
+    --pr=*)  PR="${1#*=}"; shift ;;
+    --post)  POST=1; shift ;;
+    --model) MODEL="${2:-}"; shift 2 ;;
+    --model=*) MODEL="${1#*=}"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "unknown argument: $1 (try --help)" ;;
+  esac
+done
+
+[[ -n "$PR" ]] || { usage; exit 1; }
+
+# --------------------------------------------------------------------------- #
+# Preconditions
+# --------------------------------------------------------------------------- #
+command -v gh     >/dev/null 2>&1 || die "'gh' (GitHub CLI) is required: https://cli.github.com"
+command -v claude >/dev/null 2>&1 || die "'claude' (Claude Code CLI) is required: https://docs.claude.com/claude-code"
+gh auth status >/dev/null 2>&1 || die "gh is not authenticated. Run: gh auth login"
+
+# --------------------------------------------------------------------------- #
+# Parse the PR reference into owner/repo and number
+# --------------------------------------------------------------------------- #
+OWNER="" ; REPO="" ; NUMBER=""
+if [[ "$PR" =~ ^https?://github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+  OWNER="${BASH_REMATCH[1]}"; REPO="${BASH_REMATCH[2]}"; NUMBER="${BASH_REMATCH[3]}"
+elif [[ "$PR" =~ ^([^/]+)/([^/#]+)#([0-9]+)$ ]]; then
+  OWNER="${BASH_REMATCH[1]}"; REPO="${BASH_REMATCH[2]}"; NUMBER="${BASH_REMATCH[3]}"
+else
+  die "could not parse --pr '$PR'. Use a PR URL or owner/repo#number."
+fi
+REPO_SLUG="$OWNER/$REPO"
+
+echo "▸ Fetching PR $REPO_SLUG#$NUMBER ..." >&2
+
+# --------------------------------------------------------------------------- #
+# Fetch PR metadata + diff
+# --------------------------------------------------------------------------- #
+META="$(gh pr view "$NUMBER" --repo "$REPO_SLUG" \
+          --json title,author,additions,deletions,changedFiles,url,body 2>/dev/null)" \
+  || die "failed to fetch PR metadata. Check the URL and your gh access."
+
+TITLE="$(python3 -c 'import sys,json;print(json.load(sys.stdin)["title"])' <<<"$META")"
+AUTHOR="$(python3 -c 'import sys,json;d=json.load(sys.stdin);print((d.get("author") or {}).get("login","unknown"))' <<<"$META")"
+ADDS="$(python3 -c 'import sys,json;print(json.load(sys.stdin)["additions"])' <<<"$META")"
+DELS="$(python3 -c 'import sys,json;print(json.load(sys.stdin)["deletions"])' <<<"$META")"
+FILES="$(python3 -c 'import sys,json;print(json.load(sys.stdin)["changedFiles"])' <<<"$META")"
+BODY="$(python3 -c 'import sys,json;print((json.load(sys.stdin).get("body") or "").strip()[:2000])' <<<"$META")"
+
+DIFF="$(gh pr diff "$NUMBER" --repo "$REPO_SLUG" 2>/dev/null)" \
+  || die "failed to fetch PR diff."
+[[ -n "$DIFF" ]] || die "PR diff is empty — nothing to review."
+
+DIFF_NOTE=""
+if [[ ${#DIFF} -gt $MAX_DIFF_CHARS ]]; then
+  DIFF="${DIFF:0:$MAX_DIFF_CHARS}"
+  DIFF_NOTE=$'\n\n[NOTE: diff truncated to '"$MAX_DIFF_CHARS"$' characters for review.]'
+fi
+
+# --------------------------------------------------------------------------- #
+# Build the review prompt (this IS the sub-agent's instruction set; the same
+# text lives in .claude/agents/pr-reviewer.md for native Claude Code use)
+# --------------------------------------------------------------------------- #
+read -r -d '' SYSTEM <<'PROMPT' || true
+You are a senior staff software engineer performing a code review of a single
+GitHub pull request. You are given the PR title, description, and unified diff.
+
+Review the change for correctness, security, performance, readability, test
+coverage, and backwards compatibility. Base every statement ONLY on the diff
+provided — never invent files, lines, or behavior you cannot see. If the diff
+is partial or truncated, say so rather than guessing.
+
+Respond with EXACTLY this Markdown structure and nothing else (no preamble,
+no closing remarks):
+
+## 📋 Summary
+A 2–3 sentence plain-English description of what this PR changes and why.
+
+## ⚠️ Risks
+A bullet list of concrete risks, bugs, or regressions you can identify. Cite
+file/function names from the diff. If you find none, write a single bullet:
+"- No significant risks identified in the diff."
+
+## 💡 Suggestions
+A bullet list of specific, actionable improvements (code quality, tests,
+edge cases, naming, docs). Reference the relevant file where useful.
+
+## 🎯 Confidence
+One of **Low**, **Medium**, or **High**, in bold, followed by one sentence
+explaining the score. Use Low when the diff is large/partial or the domain is
+unfamiliar, High when the change is small and self-contained.
+PROMPT
+
+PROMPT_INPUT="$(cat <<EOF
+$SYSTEM
+
+----- PR METADATA -----
+Repository: $REPO_SLUG
+PR #$NUMBER: $TITLE
+Author: $AUTHOR
+Changed files: $FILES  (+$ADDS / -$DELS)
+
+----- PR DESCRIPTION -----
+${BODY:-(no description provided)}
+
+----- UNIFIED DIFF -----
+$DIFF$DIFF_NOTE
+EOF
+)"
+
+# --------------------------------------------------------------------------- #
+# Run Claude
+# --------------------------------------------------------------------------- #
+echo "▸ Reviewing with Claude ..." >&2
+CLAUDE_ARGS=(-p)
+[[ -n "$MODEL" ]] && CLAUDE_ARGS+=(--model "$MODEL")
+
+REVIEW="$(printf '%s' "$PROMPT_INPUT" | claude "${CLAUDE_ARGS[@]}")" \
+  || die "claude invocation failed."
+
+HEADER="<!-- generated by claude-review -->
+# 🤖 Claude Code Review — [$REPO_SLUG#$NUMBER](https://github.com/$OWNER/$REPO/pull/$NUMBER)
+> _${TITLE}_ · by @$AUTHOR · $FILES files (+$ADDS / -$DELS)
+"
+
+OUTPUT="$HEADER
+$REVIEW"
+
+# --------------------------------------------------------------------------- #
+# Emit + optionally post
+# --------------------------------------------------------------------------- #
+printf '%s\n' "$OUTPUT"
+
+if [[ "$POST" -eq 1 ]]; then
+  echo "▸ Posting review comment to $REPO_SLUG#$NUMBER ..." >&2
+  printf '%s\n' "$OUTPUT" | gh pr comment "$NUMBER" --repo "$REPO_SLUG" --body-file - \
+    && echo "✓ Posted." >&2 \
+    || die "failed to post comment (need write access + gh auth)."
+fi
