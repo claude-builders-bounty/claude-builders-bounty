@@ -19,7 +19,7 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 103 tests in ...s
+Ran 104 tests in ...s
 OK
 Ran 6 delivery verification tests — OK
 Ran 21 tests — OK
@@ -33,14 +33,17 @@ OK: all CI validation checks passed
 or other unrelated files). Peer-review acceptance test
 `test_branch_diff_scoped_to_hook_only` enforces this.
 
-## Hands-on verification (2026-06-09, takeover)
+## Hands-on verification (2026-06-16, fleet engineer)
 
 Branch: `feat/issue-3-destructive-command-hook-v2` (PR #2556)
+
+Removed re-introduced stray `feat: mkdocs export` commit (`internal/exporter/*`)
+that broke `test_branch_diff_scoped_to_hook_only` and delivery scope checks.
 
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty
 git checkout feat/issue-3-destructive-command-hook-v2
-npm test                    # 103 unittest + 6 delivery + 21 peer-review + attribution checks
+npm test                    # 104 unittest + 6 delivery + 21 peer-review + attribution checks
 make ci-validate            # same as npm test
 ```
 
