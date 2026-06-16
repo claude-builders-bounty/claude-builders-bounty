@@ -34,6 +34,38 @@ You're in the right place.
 
 ---
 
+## Bounty #3: Destructive Bash Command Hook
+
+This repository includes a Claude Code `PreToolUse` hook that inspects Bash
+commands before execution and blocks destructive patterns:
+
+- `rm -rf`
+- `DROP TABLE`
+- `git push --force`
+- `TRUNCATE`
+- `DELETE FROM` without a `WHERE` clause
+
+Blocked attempts exit with code `2`, print a clear reason to stderr for Claude,
+and append a JSON line to `~/.claude/hooks/blocked.log` with the timestamp,
+attempted command, and project path.
+
+### Install in 2 commands
+
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/pre_tool_use_safety.py ~/.claude/hooks/pre_tool_use_safety.py && chmod +x ~/.claude/hooks/pre_tool_use_safety.py
+python3 -c 'import json,pathlib;p=pathlib.Path.home()/".claude/settings.json";p.parent.mkdir(parents=True,exist_ok=True);data=json.loads(p.read_text() if p.exists() else "{}");entry={"matcher":"Bash","hooks":[{"type":"command","command":"python3 ~/.claude/hooks/pre_tool_use_safety.py"}]};items=data.setdefault("hooks",{}).setdefault("PreToolUse",[]);items.append(entry) if entry not in items else None;p.write_text(json.dumps(data,indent=2)+"\n")'
+```
+
+### Test
+
+```bash
+python3 -m unittest tests.test_pre_tool_use_safety -v
+```
+
+The hook uses only Python standard-library modules.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
