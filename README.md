@@ -43,6 +43,17 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. Copy `changelog.sh` into any git repository.
+2. Run `bash changelog.sh`.
+3. Review the generated `CHANGELOG.md`.
+
+The script collects commits since the latest git tag, or the full git history
+when no tag exists, and groups entries into Added, Fixed, Changed, and Removed.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
