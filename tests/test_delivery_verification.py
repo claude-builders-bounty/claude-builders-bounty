@@ -43,6 +43,39 @@ class DeliveryVerificationTests(unittest.TestCase):
             with self.subTest(issue=issue_num):
                 self.assertIn(f"[#{issue_num}]({expected})", text)
 
+    def test_readme_link_fix_is_committed_vs_main(self) -> None:
+        """Fleet delivery requires a committed README diff, not only working-tree edits."""
+        result = subprocess.run(
+            ["git", "diff", "main...HEAD", "--", "README.md"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        added_lines = [
+            line
+            for line in result.stdout.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        ]
+        removed_lines = [
+            line
+            for line in result.stdout.splitlines()
+            if line.startswith("-") and not line.startswith("---")
+        ]
+        self.assertTrue(
+            any(f"/{UPSTREAM}/issues/1" in line for line in added_lines),
+            msg="committed README diff must add upstream issue links",
+        )
+        self.assertTrue(
+            any("../../issues/1" in line for line in removed_lines),
+            msg="committed README diff must remove fragile relative issue links",
+        )
+        self.assertFalse(
+            any("../../issues/" in line for line in added_lines),
+            msg="committed README diff must not add fragile relative issue links",
+        )
+
     def test_repo_root_exposes_npm_test_entry_points(self) -> None:
         package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
         self.assertIn("run-ci-checks.sh", package_json["scripts"]["test"])
