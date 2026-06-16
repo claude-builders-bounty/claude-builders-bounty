@@ -51,3 +51,33 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## changelog.sh — Auto-generate CHANGELOG.md
+
+A bash script that generates a structured `CHANGELOG.md` from your git history,
+auto-categorizing commits into **Added**, **Fixed**, **Changed**, and **Removed**.
+
+### Setup (3 steps)
+
+```
+1. git clone <your-repo> && cd <your-repo>
+2. curl -O https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/changelog.sh
+3. bash changelog.sh
+```
+
+That's it — `CHANGELOG.md` will appear in your project root, populated with
+every commit since the last git tag, sorted by category.
+
+### Commit format
+
+The script recognises [Conventional Commits](https://www.conventionalcommits.org/):
+
+| Prefix              | Category |
+|---------------------|----------|
+| `feat:` / `feature:` | Added    |
+| `fix:`              | Fixed    |
+| `refactor:` / `style:` / `perf:` / `chore:` | Changed |
+| `remove:` / `deprecate:` / `revert:` | Removed |
+| *(anything else)*   | Changed  |
