@@ -31,7 +31,7 @@ npm run env-check
 
 # Full CI validation (structural checks + greenfield smoke test + delivery + peer-review)
 npm test
-# npm test / make test (runs scripts/run-ci-checks.sh → template validation suite)
+# or: make test / make ci-validate (env-check + scripts/run-ci-checks.sh)
 
 # Individual checks
 node templates/nextjs-sqlite-saas/validate-template.mjs

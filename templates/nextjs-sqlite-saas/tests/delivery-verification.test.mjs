@@ -43,6 +43,12 @@ test("repo root keeps reproducible npm test wiring", () => {
   if (!makefile.includes("ci-validate:")) {
     throw new Error("Makefile must expose ci-validate target");
   }
+  if (!/^test:\s*env-check/m.test(makefile)) {
+    throw new Error("Makefile test target must depend on env-check before CI validation");
+  }
+  if (!makefile.includes("run-ci-checks.sh")) {
+    throw new Error("Makefile test must invoke scripts/run-ci-checks.sh");
+  }
   if (!statSync(join(repoRoot, "package-lock.json")).isFile()) {
     throw new Error("package-lock.json must exist for reproducible npm test runs");
   }

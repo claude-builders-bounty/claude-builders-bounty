@@ -173,6 +173,7 @@ assert(gitignore.includes("pnpm-lock.yaml"), ".gitignore excludes pnpm-lock.yaml
 assert(gitignore.includes("internal/"), ".gitignore excludes local fleet artifacts");
 assert(makefile.includes("run-ci-checks.sh"), "Makefile test target runs unified validation");
 assert(makefile.includes("scripts/run-ci-checks.sh"), "Makefile uses root scripts/run-ci-checks.sh entry point");
+assert(/^test:\s*env-check/m.test(makefile), "Makefile test depends on env-check before CI validation");
 assert(makefile.includes("ci-validate:"), "Makefile exposes ci-validate alias for CI runners");
 assert(makefile.includes("env-check:"), "Makefile exposes env-check target for toolchain validation");
 assert(
