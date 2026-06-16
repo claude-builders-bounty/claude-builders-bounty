@@ -1,53 +1,57 @@
-# Claude Builders Bounty 🤖
+# CHANGELOG Generator
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from your project's git history in 3 commands.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start
 
----
+```bash
+# 1. Make executable
+chmod +x changelog.sh
 
-## How it works
+# 2. Run in your git repo
+bash changelog.sh
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+# 3. Done — open CHANGELOG.md
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Usage
 
----
+```bash
+bash changelog.sh [options]
+```
 
-## Active Bounties
+| Option | Default | Description |
+|---|---|---|
+| `--output FILE` | `CHANGELOG.md` | Output file path |
+| `--from-tag TAG` | Previous tag | Start version for changelog |
+| `--to-tag TAG` | Latest tag | End version for changelog |
+| `--exclude-categories TYPES` | — | Comma-separated categories to skip (e.g., `Other,Documentation`) |
+| `--help` | — | Show usage |
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## How It Works
 
----
+1. Reads git tags to determine version range
+2. Parses commit history using conventional commit format
+3. Auto-categorizes into: **Added**, **Fixed**, **Changed**, **Deprecated**, **Removed**, **Security**, **Documentation**, **Other**
+4. Outputs a `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
 
-## Rules
+## Example Output
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+```markdown
+# Changelog
 
----
+## [v1.2.0] — 2026-06-15
 
-## Community
+### Added
+- User invitation via email links (a1b2c3d)
+- Export dashboard to CSV (e4f5g6h)
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### Fixed
+- Pagination resets on filter change (i7j8k9l)
+- Stripe webhook retry handling (m0n1o2p)
+```
 
----
+## Requirements
 
-*Started by the Claude builder community · March 2026 · MIT License*
+- Git repository with [conventional commits](https://www.conventionalcommits.org/)
+- Bash 4+
