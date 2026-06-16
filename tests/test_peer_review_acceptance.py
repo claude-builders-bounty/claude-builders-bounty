@@ -71,6 +71,13 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         package_json = (REPO_ROOT / "package.json").read_text(encoding="utf-8")
         self.assertIn('"test"', package_json)
         self.assertIn("run-ci-checks.sh", package_json)
+        self.assertIn('"test:peer-review"', package_json)
+        self.assertIn("OK: peer review acceptance tests passed", package_json)
+
+    def test_makefile_exposes_peer_review_target(self):
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("test-peer-review:", makefile)
+        self.assertIn("test:peer-review", makefile)
 
     def test_run_ci_checks_script_exists_and_is_executable(self):
         script = REPO_ROOT / "tests/run-ci-checks.sh"
