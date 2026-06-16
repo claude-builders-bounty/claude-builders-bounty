@@ -40,6 +40,13 @@ Branch: `feat/issue-3-destructive-command-hook-v2` (PR #2556)
 Removed re-introduced stray `feat: mkdocs export` commit (`internal/exporter/*`)
 that broke `test_branch_diff_scoped_to_hook_only` and delivery scope checks.
 
+## Hands-on verification (2026-06-16, delivery takeover)
+
+Fleet re-added stray commit `3c7f64a` (`internal/exporter/mkdocs.go`), failing
+`test_branch_diff_excludes_unrelated_exporter_paths` and
+`test_branch_diff_scoped_to_hook_only`. Reset to `17bc764` (hook-only diff);
+`npm test` green (104 unittest + 6 delivery + 21 peer-review + attribution).
+
 ## Hands-on verification (2026-06-16, hands-on takeover)
 
 Removed stray fleet commit `ac58c06` that re-added `node_modules/*` (55k+ lines)
