@@ -24,7 +24,7 @@ You're in the right place.
 
 ## Active Bounties
 
-Bounty links use absolute `/owner/repo/issues/N` paths (for example `/claude-builders-bounty/claude-builders-bounty/issues/1`) so they resolve on forks and blob views.
+Bounty links use absolute `/owner/repo/issues/N` paths (for example `/claude-builders-bounty/claude-builders-bounty/issues/1`) so they always resolve to the upstream repository on forks and blob views.
 
 | # | Task | Amount | Status |
 |---|------|--------|--------|
