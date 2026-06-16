@@ -1,86 +1,52 @@
-# 🪵 Changelog Generator
+# Claude Code PR Review Agent
 
-A Claude Code skill that automatically generates a structured `CHANGELOG.md` from a project's git history.
+A Python-based PR review agent that analyzes GitHub pull request diffs and posts structured Markdown review comments.
 
 ## Quick Start
 
-```bash
-# 1. Clone this skill
-git clone <this-repo> changelog-skill
-cd changelog-skill
+1. **Review any PR via URL:**
+   ```bash
+   python claude-review.py --pr https://github.com/owner/repo/pull/123
+   ```
 
-# 2. Run it
-bash changelog.sh
+2. **Review by repo + number:**
+   ```bash
+   python claude-review.py --pr 123 --repo owner/repo
+   ```
 
-# 3. Done — open CHANGELOG.md
-```
+3. **Review a local diff:**
+   ```bash
+   python claude-review.py --diff /path/to/diff.patch
+   ```
 
-## Usage
+4. **Save output to file:**
+   ```bash
+   python claude-review.py --pr 123 --repo owner/repo -o review.md
+   ```
 
-```bash
-# Generate for current directory
-bash changelog.sh
+## Output Format
 
-# Generate for a specific repo path
-bash changelog.sh --repo /path/to/project
+The agent generates a structured Markdown review with:
 
-# Generate with custom output file
-bash changelog.sh --output CHANGES.md
+- **Summary** — 2–3 sentences describing the PR scope
+- **Identified Risks** — list of potential issues
+- **Improvement Suggestions** — actionable recommendations
+- **Confidence Score** — Low / Medium / High
+- **File Summary Table** — per-file change stats
 
-# Generate from a specific tag
-bash changelog.sh --since v1.0.0
-```
+## GitHub Actions Integration
 
-## Claude Code Integration
-
-This skill adds a `/generate-changelog` command to Claude Code:
-
-```markdown
-<!-- SKILL.md -->
-/generate-changelog — Generate structured CHANGELOG.md from git history
-  Usage: /generate-changelog [--repo PATH] [--output FILE] [--since TAG]
-
-Automatically categorizes commits into:
-- **Added** — new features (feat:, add:, new:)
-- **Fixed** — bug fixes (fix:, bugfix:, patch:)
-- **Changed** — updates, refactors, improvements
-- **Removed** — deletions, deprecations
-- **Deprecated** — deprecation warnings
-- **Security** — security fixes
-
-Outputs a clean `CHANGELOG.md` with linked commit hashes.
-```
+Copy `.github/workflows/claude-review.yml` to your repo to enable automatic PR reviews on every pull request.
 
 ## Sample Output
 
-```markdown
-# Changelog
-
-## [v1.2.0] - 2026-06-15
-
-### Added
-- New payment processing pipeline ([a1b2c3d](https://github.com/user/repo/commit/a1b2c3d))
-- User authentication with OAuth2 ([e4f5g6h](https://github.com/user/repo/commit/e4f5g6h))
-
-### Fixed
-- Race condition in concurrent requests ([i7j8k9l](https://github.com/user/repo/commit/i7j8k9l))
-- Memory leak in websocket handler ([m0n1o2p](https://github.com/user/repo/commit/m0n1o2p))
-
-### Changed
-- Upgraded dependencies to latest versions ([q3r4s5t](https://github.com/user/repo/commit/q3r4s5t))
-- Refactored database access layer ([u6v7w8x](https://github.com/user/repo/commit/u6v7w8x))
-```
+See `SAMPLE_REVIEW.md` for an example review of PR #2820.
 
 ## Requirements
 
-- `bash` 4.0+
-- `git` 2.0+
+- Python 3.8+
+- Internet access to fetch PR diffs from GitHub API
 
-Works on macOS, Linux, and Windows (Git Bash / WSL).
+## Claiming the Bounty
 
-## How It Works
-
-1. Finds the most recent git tag (or all commits if no tags exist)
-2. Reads commit messages since that tag
-3. Categorizes each commit based on conventional commit prefixes
-4. Generates a structured, ready-to-publish CHANGELOG.md
+This submission addresses Issue #4 for the $150 Claude Code Agent bounty.
