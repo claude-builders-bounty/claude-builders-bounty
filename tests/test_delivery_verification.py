@@ -43,16 +43,43 @@ class DeliveryVerificationTests(unittest.TestCase):
             with self.subTest(issue=issue_num):
                 self.assertIn(f"[#{issue_num}]({expected})", text)
 
-    def test_readme_link_fix_is_committed_vs_main(self) -> None:
-        """Fleet delivery requires a committed README diff, not only working-tree edits."""
-        result = subprocess.run(
-            ["git", "diff", "main...HEAD", "--", "README.md"],
+    def _ensure_main_ref(self) -> None:
+        probe = subprocess.run(
+            ["git", "rev-parse", "--verify", "main"],
             cwd=REPO_ROOT,
-            text=True,
             capture_output=True,
             check=False,
         )
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        if probe.returncode == 0:
+            return
+        subprocess.run(
+            ["git", "fetch", "--no-tags", "--depth", "50", "origin", "main:main"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=False,
+        )
+
+    def _readme_diff_vs_main(self) -> subprocess.CompletedProcess[str]:
+        self._ensure_main_ref()
+        result: subprocess.CompletedProcess[str] | None = None
+        for spec in ("main...HEAD", "main..HEAD"):
+            result = subprocess.run(
+                ["git", "diff", spec, "--", "README.md"],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                return result
+        self.fail(
+            "unable to diff README against main: "
+            + ((result.stderr or result.stdout) if result else "no git diff result")
+        )
+
+    def test_readme_link_fix_is_committed_vs_main(self) -> None:
+        """Fleet delivery requires a committed README diff, not only working-tree edits."""
+        result = self._readme_diff_vs_main()
         added_lines = [
             line
             for line in result.stdout.splitlines()

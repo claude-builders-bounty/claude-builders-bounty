@@ -20,6 +20,10 @@ echo "Ran ${peer_review_tests} peer review acceptance tests — OK"
 echo 'OK: peer review acceptance tests passed'
 
 if [[ -z "${README_CI_INNER_RUN:-}" ]]; then
+  if ! git rev-parse --verify main >/dev/null 2>&1; then
+    git fetch --no-tags --depth 50 origin main:main
+  fi
+
   delivery_tests="$(
     grep -Ec '^[[:space:]]*def test_' "${REPO_ROOT}/tests/test_delivery_verification.py"
   )"
