@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Regression tests for README bounty table issue links."""
+"""Regression tests for README bounty table issue links.
+
+Bounty rows must use absolute /owner/repo/issues/N hrefs so links resolve on
+forks and blob views; fragile ../../issues/N paths escape the repo root.
+"""
 
 from __future__ import annotations
 
