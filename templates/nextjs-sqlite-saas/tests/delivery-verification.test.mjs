@@ -26,8 +26,14 @@ test("repo root exposes npm test and test:ci entry points", () => {
   if (!pkg.scripts?.test?.includes("run-ci-checks.sh")) {
     throw new Error("package.json test script must delegate to run-ci-checks.sh");
   }
+  if (!pkg.scripts?.test?.includes("env-check.mjs")) {
+    throw new Error("package.json test script must run env-check before CI validation");
+  }
   if (!pkg.scripts?.["test:ci"]?.includes("run-ci-checks.sh")) {
     throw new Error("package.json test:ci script must delegate to run-ci-checks.sh");
+  }
+  if (!pkg.scripts?.["test:ci"]?.includes("env-check.mjs")) {
+    throw new Error("package.json test:ci script must run env-check before CI validation");
   }
 });
 

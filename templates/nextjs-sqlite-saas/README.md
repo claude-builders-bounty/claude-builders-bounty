@@ -26,7 +26,7 @@ Opinionated [Claude Code](https://docs.anthropic.com/en/docs/claude-code) contex
 ## Verify
 
 ```bash
-# Toolchain check (node, bash, git) — also runs automatically before npm test via Makefile
+# Toolchain check (node, bash, git) — also runs automatically at the start of npm test / make test
 npm run env-check
 
 # Full CI validation (structural checks + greenfield smoke test + delivery + peer-review)

@@ -204,8 +204,16 @@ assert(
   "package.json test runs unified validation",
 );
 assert(
+  packageJson.scripts?.test?.includes("env-check.mjs"),
+  "package.json test runs env-check before CI validation (parity with make test)",
+);
+assert(
   packageJson.scripts?.["test:ci"]?.includes("run-ci-checks.sh"),
   "package.json test:ci runs unified validation",
+);
+assert(
+  packageJson.scripts?.["test:ci"]?.includes("env-check.mjs"),
+  "package.json test:ci runs env-check before CI validation",
 );
 assert(
   packageJson.scripts?.["env-check"]?.includes("env-check.mjs"),
