@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Peer-review acceptance cases for issue #521 README bounty table links.
 
-Hands-on delivery (2026-06-17, PR #2532): maps issue #521 acceptance criteria to README
-artifacts — five upstream issue links, no fragile relative hrefs, and contributor note
-linking issue #521. Committed README diff vs main verified; npm test 25/25 green. Hands-on takeover re-verified.
+Maps issue #521 acceptance criteria to README artifacts: five upstream issue links,
+no fragile relative hrefs, and a contributor note linking issue #521.
 """
 
 from __future__ import annotations
