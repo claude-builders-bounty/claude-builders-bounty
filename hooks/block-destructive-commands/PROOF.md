@@ -19,7 +19,7 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 105 tests in ...s
+Ran 108 tests in ...s
 OK
 Ran 6 delivery verification tests — OK
 Ran 21 tests — OK
@@ -145,6 +145,16 @@ No hook logic changes required — CI/reviews clean, branch synced with fork.
 - Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
 - PR status: MERGEABLE/CLEAN against `main`; 0 commits behind
 - CLI: `rm -rf /` denied; `git status` allowed; `  rm -rf /tmp  ` denied
+
+## Hands-on verification (2026-06-17, hands-on takeover v3)
+
+Fleet engineer session failed `no_committed_diff` / `peer_review_not_passed` without source
+edits. Added `normalize_command()` to replace null bytes that split regex tokens (e.g.
+`rm\x00-rf /` evasion); regression tests added.
+
+- Branch `feat/issue-3-destructive-command-hook-v2` hook-only diff (16 paths)
+- `npm test` green: 108 unittest + 6 delivery + 21 peer-review + attribution checks
+- CLI: `rm -rf /` denied; `git status` allowed; `rm\x00-rf /tmp` denied after normalize fix
 
 ## Acceptance criteria
 

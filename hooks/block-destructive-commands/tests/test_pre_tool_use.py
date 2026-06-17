@@ -132,6 +132,18 @@ class CheckCommandTests(unittest.TestCase):
             "Git force push (git push --force)",
         )
 
+    def test_blocks_null_byte_rm_rf_evasion(self):
+        self.assertEqual(
+            self.hook.check_command("rm\x00-rf /"),
+            "Recursive force delete (rm -rf)",
+        )
+
+    def test_normalize_command_strips_padding_and_null_bytes(self):
+        self.assertEqual(
+            self.hook.normalize_command("  rm\x00-rf /\x00  "),
+            "rm -rf /",
+        )
+
     def test_parametrized_blocked_commands(self):
         blocked = (
             ("rm -rf /", "Recursive force delete (rm -rf)"),
@@ -570,6 +582,24 @@ class HookIntegrationTests(unittest.TestCase):
             {
                 "tool_name": "Bash",
                 "tool_input": {"command": "  rm -rf /tmp/build  "},
+                "cwd": "/workspace/demo",
+            }
+        )
+
+        self.assertEqual(result.returncode, 0)
+        output = json.loads(result.stdout)
+        self.assertEqual(
+            output["hookSpecificOutput"]["permissionDecision"],
+            "deny",
+        )
+        log_contents = self.log_file.read_text(encoding="utf-8")
+        self.assertIn("rm -rf /tmp/build", log_contents)
+
+    def test_blocks_null_byte_padded_destructive_command(self):
+        result = self.run_hook(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "rm\x00-rf /tmp/build"},
                 "cwd": "/workspace/demo",
             }
         )

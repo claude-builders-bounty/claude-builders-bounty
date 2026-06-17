@@ -71,6 +71,15 @@ GIT_PUSH_FORCE_CONFIG_FALSE = frozenset({"false", "0", "no", "off", "n"})
 CHAIN_SPLIT = re.compile(r"\s*(?:;|&&|\|\|)\s*")
 
 
+def normalize_command(command: str) -> str:
+    """Strip padding and neutralize null bytes that can split regex tokens."""
+    normalized = command.strip()
+    if "\x00" not in normalized:
+        return normalized
+    normalized = normalized.replace("\x00", " ")
+    return re.sub(r" +", " ", normalized).strip()
+
+
 def iter_command_segments(command: str) -> list[str]:
     """Split chained bash commands so each segment is checked independently."""
     return [segment.strip() for segment in CHAIN_SPLIT.split(command) if segment.strip()]
@@ -228,6 +237,7 @@ def check_segment(segment: str) -> str | None:
 
 
 def check_command(command: str) -> str | None:
+    command = normalize_command(command)
     for segment in iter_command_segments(command):
         reason = check_segment(segment)
         if reason:
@@ -246,7 +256,7 @@ def main() -> None:
             sys.exit(0)
 
         tool_input = data.get("tool_input") or {}
-        command = (tool_input.get("command") or "").strip()
+        command = normalize_command(tool_input.get("command") or "")
         if not command:
             sys.exit(0)
 
