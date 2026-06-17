@@ -109,6 +109,8 @@ class DeliveryVerificationTests(unittest.TestCase):
         package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
         self.assertIn("run-ci-checks.sh", package_json["scripts"]["test"])
         self.assertIn("run-ci-checks.sh", package_json["scripts"]["test:ci"])
+        self.assertIn("test_delivery_verification.py", package_json["scripts"]["test:delivery"])
+        self.assertIn("OK: delivery verification tests passed", package_json["scripts"]["test:delivery"])
 
     def test_ci_script_exists_and_declares_delivery_checks(self) -> None:
         self.assertTrue(CI_SCRIPT.is_file())

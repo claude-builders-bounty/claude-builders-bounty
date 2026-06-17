@@ -73,7 +73,9 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("run-ci-checks.sh", package_json)
         self.assertIn('"test:readme-links"', package_json)
         self.assertIn('"test:peer-review"', package_json)
+        self.assertIn('"test:delivery"', package_json)
         self.assertIn("OK: peer review acceptance tests passed", package_json)
+        self.assertIn("OK: delivery verification tests passed", package_json)
 
     def test_makefile_exposes_peer_review_target(self):
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
@@ -84,6 +86,11 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn("test-readme-links:", makefile)
         self.assertIn("test:readme-links", makefile)
+
+    def test_makefile_exposes_delivery_target(self):
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("test-delivery:", makefile)
+        self.assertIn("test:delivery", makefile)
 
     def test_run_ci_checks_script_exists_and_is_executable(self):
         script = REPO_ROOT / "tests/run-ci-checks.sh"
