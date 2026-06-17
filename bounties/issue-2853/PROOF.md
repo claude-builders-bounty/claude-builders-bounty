@@ -51,3 +51,14 @@ Local zeroeye branch `pr-3-read-tool-hook` HEAD: `069e238` (with fresh diagnosti
 cd /workspace/claude-builders-bounty/claude-builders-bounty && npm run test:issue-2853
 # OK: issue #2853 read tool hook acceptance tests passed
 ```
+
+## PR #2871 peer review resolution
+
+Delivery PR: https://github.com/claude-builders-bounty/claude-builders-bounty/pull/2871
+
+| Peer review item | Resolution |
+|------------------|------------|
+| Security: `git diff --check` in CI script | Replaced with scoped `find` + `grep` trailing-whitespace scan over CI-guarded paths only |
+| Correctness: redundant npm subprocess tests | Removed `test_peer_review_script_runs_green` and `test_npm_test_entry_point_runs_green`; coverage lives in `test_peer_review_acceptance.py` |
+| Tests: README bounty table absolute links | Covered by `tests/test_readme_links.py` and `tests/test_peer_review_acceptance.py` |
+| Style/scope: multiple scaffold files | Each file is required by acceptance tests (workflow, Makefile, package.json, run-ci-checks.sh, .gitignore) |

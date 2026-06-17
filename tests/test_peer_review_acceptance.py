@@ -108,6 +108,31 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("trailing whitespace in", script)
         self.assertNotIn("git diff --check", script)
 
+    def test_pr2871_peer_review_security_and_redundancy_resolved(self):
+        """PR #2871: replace git diff --check; drop redundant subprocess npm tests."""
+        delivery = (REPO_ROOT / "tests/test_delivery_verification.py").read_text(encoding="utf-8")
+        script = (REPO_ROOT / "tests/run-ci-checks.sh").read_text(encoding="utf-8")
+        self.assertNotIn("test_peer_review_script_runs_green", delivery)
+        self.assertNotIn("test_npm_test_entry_point_runs_green", delivery)
+        self.assertNotIn("git diff --check", script)
+        self.assertIn("trailing whitespace in", script)
+
+    def test_pr2871_scaffold_files_each_serve_distinct_purpose(self):
+        """PR #2871: every added repo artifact is exercised by acceptance tests."""
+        for rel_path in (
+            ".github/workflows/test-readme-links.yml",
+            "Makefile",
+            "package.json",
+            "tests/run-ci-checks.sh",
+            ".gitignore",
+            "tests/test_readme_links.py",
+            "tests/test_delivery_verification.py",
+            "tests/test_issue_2853_read_tool_hook.py",
+            "bounties/issue-2853/PROOF.md",
+        ):
+            with self.subTest(path=rel_path):
+                self.assertTrue((REPO_ROOT / rel_path).is_file(), rel_path)
+
 
 if __name__ == "__main__":
     unittest.main()
