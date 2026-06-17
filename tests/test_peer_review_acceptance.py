@@ -3,7 +3,8 @@
 
 Hands-on takeover (2026-06-17): maps issue #521 acceptance criteria to README
 artifacts — five upstream issue links, no fragile ../../issues/ hrefs, and
-contributor note linking issue #521. Verified via npm test (25/25) for PR #2532.
+contributor note linking issue #521. Engineer fleet handoff re-verified npm test
+(25/25) and peer-review acceptance for PR #2532.
 """
 
 from __future__ import annotations
