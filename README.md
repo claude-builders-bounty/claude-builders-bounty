@@ -24,7 +24,7 @@ You're in the right place.
 
 ## Active Bounties
 
-**Note:** Bounty table links ([issue #521](/claude-builders-bounty/claude-builders-bounty/issues/521)) use root-absolute `/owner/repo/issues/N` paths (for example `/claude-builders-bounty/claude-builders-bounty/issues/1`) instead of fragile relative issue hrefs so each bounty row resolves to the upstream repository on GitHub forks and blob views.
+**Note:** Bounty table links ([issue #521](/claude-builders-bounty/claude-builders-bounty/issues/521)) use root-absolute `/owner/repo/issues/N` paths (for example `/claude-builders-bounty/claude-builders-bounty/issues/1`) instead of fragile per-fork relative hrefs so each bounty row resolves to the upstream repository on GitHub forks and blob views.
 
 | # | Task | Amount | Status |
 |---|------|--------|--------|
