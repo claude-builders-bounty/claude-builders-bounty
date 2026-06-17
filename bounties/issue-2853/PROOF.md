@@ -18,24 +18,25 @@ Read-only `read_market_data` tool hook scaffolding across three layers:
 | Gateway | `market/gateway/api.go`, `ai_tools_test.go` | `GET /api/v1/ai/tools`, `POST /api/v1/ai/tools/read`, `POST /api/v1/ai/tools/execute` |
 | Frontend | `frontend/src/ai/readToolHook.ts`, `chat.ts` | `ReadToolHook` client wired into `AiChatService` |
 
-## Verification (2026-06-17)
+## Verification (2026-06-17, hands-on takeover)
 
 ```bash
 cd /workspace/zeroeye/market && go test ./ai/... ./gateway/... -v
 # PASS — 7 tests (4 ai + 3 gateway)
 
-python3 build.py -m market   # via Docker Ubuntu 24.04 + Go 1.26
-# PASS — market module builds successfully
+docker run --rm -v /workspace/zeroeye:/workspace/zeroeye -w /workspace/zeroeye golang:1.26 \
+  bash -lc 'export PATH=/usr/local/go/bin:$PATH && python3 build.py -m market'
+# PASS — market module builds; encrypted diagnostic logd created
 ```
 
-## Build diagnostics
+## Build diagnostics (latest)
 
 | Artifact | Path |
 |----------|------|
-| Encrypted logd | `diagnostic/build-10027b8d.logd` |
-| Metadata JSON | `diagnostic/build-10027b8d.json` |
-| Password | `22b783167d7d16cd39f0` |
-| Decrypt | `encryptly unpack diagnostic/build-10027b8d.logd <outdir> --password 22b783167d7d16cd39f0` |
+| Encrypted logd | `diagnostic/build-590d064e.logd` |
+| Metadata JSON | `diagnostic/build-590d064e.json` |
+| Password | `8aeaeeed897044eb9dfa` |
+| Decrypt | `encryptly unpack diagnostic/build-590d064e.logd <outdir> --password 8aeaeeed897044eb9dfa` |
 
 ## claude-builders-bounty tests
 
