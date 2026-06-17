@@ -315,12 +315,20 @@ const schema = z.object({
   invoiceId: z.string().min(1),
 });
 
-export async function actionVoidInvoice(input: z.infer<typeof schema>) {
-  const data = schema.parse(input);
-  const { orgId } = await requireOrgMember(data.orgSlug);
-  await voidInvoice({ orgId, invoiceId: data.invoiceId });
-  revalidatePath(`/${data.orgSlug}/invoices`);
-  return { ok: true as const };
+export async function actionVoidInvoice(input: unknown) {
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, error: 'Invalid input' };
+  }
+  const data = parsed.data;
+  try {
+    const { orgId } = await requireOrgMember(data.orgSlug);
+    await voidInvoice({ orgId, invoiceId: data.invoiceId });
+    revalidatePath(`/${data.orgSlug}/invoices`);
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, error: 'Failed to void invoice' };
+  }
 }
 ```
 

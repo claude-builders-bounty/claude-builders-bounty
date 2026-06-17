@@ -380,6 +380,10 @@ assert(
   createActionExample.length > 0 && /safeParse/.test(createActionExample),
   "create-invoice action uses safeParse for graceful validation errors",
 );
+assert(
+  voidActionExample.length > 0 && /safeParse/.test(voidActionExample),
+  "void-invoice action uses safeParse for graceful validation errors",
+);
 
 // Peer-review style: Server Actions + Client Components (useActionState form)
 assert(
