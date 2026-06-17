@@ -6,7 +6,7 @@ Cross-repo bounty delivery for [claude-builders-bounty#2853](https://github.com/
 
 https://github.com/lobster-trap/zeroeye/pull/3
 
-Branch: `feat/read-tool-hook-market-ai` on `advancedresearcharray/zeroeye`
+Branch: `pr-3-read-tool-hook` on `advancedresearcharray/zeroeye`
 
 ## What was implemented
 
@@ -18,7 +18,7 @@ Read-only `read_market_data` tool hook scaffolding across three layers:
 | Gateway | `market/gateway/api.go`, `ai_tools_test.go` | `GET /api/v1/ai/tools`, `POST /api/v1/ai/tools/read`, `POST /api/v1/ai/tools/execute` |
 | Frontend | `frontend/src/ai/readToolHook.ts`, `chat.ts` | `ReadToolHook` client wired into `AiChatService` |
 
-## Verification (2026-06-17, hands-on takeover — re-verified)
+## Verification (2026-06-17, hands-on takeover)
 
 ```bash
 cd /workspace/zeroeye/market && go test ./ai/... ./gateway/... -v
@@ -26,23 +26,28 @@ cd /workspace/zeroeye/market && go test ./ai/... ./gateway/... -v
 
 docker run --rm -v /workspace/zeroeye:/workspace/zeroeye -w /workspace/zeroeye golang:1.26 \
   bash -lc 'export PATH=/usr/local/go/bin:$PATH && python3 build.py -m market'
-# PASS — market module builds (0.9s); encrypted diagnostic logd created
+# PASS — market module builds (9.3s); encrypted diagnostic logd created
+
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — README, peer review, delivery, and issue #2853 acceptance tests
 ```
 
-Local branch `pr-3-read-tool-hook` HEAD: `1c3cebc` (pushed to fork `feat/read-tool-hook-market-ai`).
+Local zeroeye branch `pr-3-read-tool-hook` HEAD: `069e238` (with fresh diagnostics committed).
 
 ## Build diagnostics (latest)
 
 | Artifact | Path |
 |----------|------|
-| Encrypted logd | `diagnostic/build-a2701834.logd` |
-| Metadata JSON | `diagnostic/build-a2701834.json` |
-| Password | `c0bdd59c798016c43299` |
-| Decrypt | `encryptly unpack diagnostic/build-a2701834.logd <outdir> --password c0bdd59c798016c43299` |
+| Encrypted logd | `diagnostic/build-069e2382.logd` |
+| Metadata JSON | `diagnostic/build-069e2382.json` |
+| Password | `5ee81ef173cfefa58e6a` |
+| Decrypt | `encryptly unpack diagnostic/build-069e2382.logd <outdir> --password 5ee81ef173cfefa58e6a` |
 
-## claude-builders-bounty tests
+## claude-builders-bounty acceptance tests
+
+`tests/test_issue_2853_read_tool_hook.py` verifies zeroeye source files, symbols, go tests, and build diagnostics.
 
 ```bash
-cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
-# OK: all CI validation checks passed
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm run test:issue-2853
+# OK: issue #2853 read tool hook acceptance tests passed
 ```
