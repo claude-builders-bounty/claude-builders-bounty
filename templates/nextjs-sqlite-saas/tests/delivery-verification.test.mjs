@@ -2,9 +2,9 @@
 /**
  * End-to-end delivery verification for issue #2 / PR #2529 Next.js SQLite template.
  *
- * Hands-on takeover (2026-06-17, cursor-agent): verifies committed template diff vs
- * main ships templates/nextjs-sqlite-saas/CLAUDE.md with structural validation,
- * greenfield smoke test, reference Vitest suites, and fleet npm test wiring.
+ * Hands-on takeover (2026-06-17): verifies committed template diff vs main ships
+ * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
+ * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  */
 import { execSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
@@ -177,7 +177,11 @@ test("opire try issue 2 deliverable ships Next.js SQLite CLAUDE.md template", ()
   for (const section of [
     "## Stack & Versions",
     "## Folder Structure",
+    "## Naming Conventions",
     "## SQL & Migration Conventions",
+    "## Component Patterns",
+    "## Patterns to Follow",
+    "## Dev Commands",
     "## What We Don't Do (And Why)",
     "## Greenfield Smoke Test",
   ]) {
@@ -187,6 +191,20 @@ test("opire try issue 2 deliverable ships Next.js SQLite CLAUDE.md template", ()
   }
   if (!claude.includes("Next.js 15") || !claude.includes("better-sqlite3")) {
     throw new Error("CLAUDE.md must pin Next.js 15 and SQLite stack");
+  }
+});
+
+test("structural validator reports opinionated reason count for bounty #2", () => {
+  const output = execSync(`node "${join(root, "validate-template.mjs")}"`, {
+    encoding: "utf8",
+  });
+  const match = output.match(/Template validation passed with (\d+) explicit reasons/);
+  if (!match) {
+    throw new Error("validate-template.mjs must report explicit reason count");
+  }
+  const reasonCount = Number(match[1]);
+  if (reasonCount < 42) {
+    throw new Error(`CLAUDE.md must ship at least 42 explicit reasons (found ${reasonCount})`);
   }
 });
 

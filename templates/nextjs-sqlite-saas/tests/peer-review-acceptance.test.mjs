@@ -2,9 +2,9 @@
 /**
  * Peer-review acceptance cases for issue #2 / PR #2529 Next.js SQLite template.
  *
- * Hands-on takeover (2026-06-17, cursor-agent): locks acceptance criteria for PR #2529
- * so fleet peer review validates the CLAUDE.md template, reference Vitest suites, and
- * npm test wiring.
+ * Hands-on takeover (2026-06-17): locks acceptance criteria for PR #2529 so fleet
+ * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
+ * test wiring.
  */
 import { execSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -302,9 +302,11 @@ assert(
   /Template validation passed with \d+ explicit reasons/.test(validateOutput),
   "validate-template.mjs exits successfully on CLAUDE.md",
 );
+const reasonMatch = validateOutput.match(/Template validation passed with (\d+) explicit reasons/);
+assert(reasonMatch, "validate-template.mjs reports opinionated reason count");
 assert(
-  validateOutput.includes("42 explicit reasons") || validateOutput.includes("explicit reasons"),
-  "validate-template.mjs reports opinionated reason count",
+  Number(reasonMatch[1]) >= 42,
+  "validate-template.mjs reports at least 42 explicit reasons for bounty #2",
 );
 
 // Semantic auth consistency — examples must not teach IDOR or slug-scoped queries
