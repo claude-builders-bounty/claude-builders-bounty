@@ -126,18 +126,49 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn("lobster-trap/zeroeye/pull/109", diff_text)
         self.assertIn("issue #2853 read tool hook acceptance tests", diff_text)
 
+    def _added_diff_lines(self, diff_text: str) -> list[str]:
+        return [
+            line[1:]
+            for line in diff_text.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        ]
+
     def test_pr2871_peer_review_fixes_are_committed_vs_main(self) -> None:
         """PR #2871: peer review security/redundancy fixes must be committed vs main."""
         ci_diff = self._git_diff_vs_main("tests/run-ci-checks.sh").stdout
         delivery_diff = self._git_diff_vs_main("tests/test_delivery_verification.py").stdout
         peer_diff = self._git_diff_vs_main("tests/test_peer_review_acceptance.py").stdout
+        added_delivery = self._added_diff_lines(delivery_diff)
 
         self.assertIn("trailing whitespace in", ci_diff)
         self.assertNotIn("git diff --check", ci_diff)
-        self.assertNotIn("test_peer_review_script_runs_green", delivery_diff)
-        self.assertNotIn("test_npm_test_entry_point_runs_green", delivery_diff)
-        self.assertIn("test_pr2871_peer_review_security_and_redundancy_resolved", peer_diff)
-        self.assertIn("test_pr2871_scaffold_files_each_serve_distinct_purpose", peer_diff)
+        for forbidden_test in (
+            "test_peer_review_script_runs_green",
+            "test_npm_test_entry_point_runs_green",
+        ):
+            with self.subTest(test=forbidden_test):
+                self.assertIsNone(
+                    re.search(
+                        rf"^\s*def {forbidden_test}\b",
+                        "\n".join(added_delivery),
+                        flags=re.MULTILINE,
+                    ),
+                    msg=f"committed delivery diff must not add {forbidden_test}",
+                )
+        self.assertTrue(
+            any(
+                re.search(r"^\s*def test_pr2871_peer_review_security_and_redundancy_resolved\b", line)
+                for line in self._added_diff_lines(peer_diff)
+            ),
+            msg="committed peer review diff must add PR #2871 security/redundancy test",
+        )
+        self.assertTrue(
+            any(
+                re.search(r"^\s*def test_pr2871_scaffold_files_each_serve_distinct_purpose\b", line)
+                for line in self._added_diff_lines(peer_diff)
+            ),
+            msg="committed peer review diff must add PR #2871 scaffold coverage test",
+        )
 
     def test_repo_root_exposes_npm_test_entry_points(self) -> None:
         package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
