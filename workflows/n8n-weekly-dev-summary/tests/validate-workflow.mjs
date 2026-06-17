@@ -82,7 +82,7 @@ assert(
   'Load Config validates GITHUB_REPO format (prevents malformed owner/repo injection)',
 );
 assert(
-  loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/user'),
+  loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/repos/'),
   'Load Config validates GITHUB_TOKEN authenticity before GitHub fetches',
 );
 assert(loadCode.includes('weekStart.toISOString()'), 'Load Config emits ISO8601 weekStart');

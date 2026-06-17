@@ -48,7 +48,7 @@ assert(
   'Load Config validates GITHUB_REPO format before API calls',
 );
 assert(
-  loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/user'),
+  loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/repos/'),
   'Load Config validates GITHUB_TOKEN authenticity via GitHub /user before API calls',
 );
 assert(

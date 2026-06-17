@@ -7,6 +7,7 @@ import {
   collectRecords,
   fetchGitHubPages,
   githubAuthHeaders,
+  githubRepoUrl,
   GITHUB_USER_URL,
   isGitHubError,
   validateGitHubToken,
@@ -27,6 +28,10 @@ function mockResponse(status, body, statusText = String(status)) {
 }
 
 assert(GITHUB_USER_URL === 'https://api.github.com/user', 'GITHUB_USER_URL points at GitHub /user endpoint');
+assert(
+  githubRepoUrl('octo/repo') === 'https://api.github.com/repos/octo/repo',
+  'githubRepoUrl builds repo metadata endpoint',
+);
 
 const sampleToken = ['gh', 'p', '_test'].join('');
 const headers = githubAuthHeaders(sampleToken);
@@ -77,6 +82,15 @@ const login = await validateGitHubToken('good-token', async (url) => {
   return mockResponse(200, { login: 'octocat' });
 });
 assert(login === 'octocat', 'validateGitHubToken returns authenticated login');
+
+const repoName = await validateGitHubToken('good-token', {
+  repo: 'octo/repo',
+  fetchFn: async (url) => {
+    assert(url === githubRepoUrl('octo/repo'), 'validateGitHubToken calls repo endpoint when repo is set');
+    return mockResponse(200, { full_name: 'octo/repo' });
+  },
+});
+assert(repoName === 'octo/repo', 'validateGitHubToken returns repo full_name for repo-scoped validation');
 
 try {
   await validateGitHubToken('good-token', async () => mockResponse(200, {}));

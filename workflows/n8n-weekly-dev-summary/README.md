@@ -26,7 +26,7 @@ Set these in **Settings → Variables** (self-hosted `.env` or n8n Cloud variabl
 
 For email delivery, attach an **SMTP** credential to the **Send Email** node.
 
-**Security:** Store `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, and webhook URLs in n8n **Variables** or your host `.env` — never commit them to git or paste them into workflow nodes. The workflow reads secrets only via `$env.*` at runtime. **Load Config** validates `GITHUB_TOKEN` authenticity against `GET https://api.github.com/user` before any repo API calls, and fails fast if required keys are missing or invalid. Use least-privilege GitHub PATs (repo read) and rotate keys if exposed.
+**Security:** Store `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, and webhook URLs in n8n **Variables** or your host `.env` — never commit them to git or paste them into workflow nodes. The workflow reads secrets only via `$env.*` at runtime. **Load Config** validates `GITHUB_TOKEN` can read the configured repo via `GET https://api.github.com/repos/{owner}/{repo}` before any activity fetches, and fails fast if required keys are missing or invalid. Use least-privilege GitHub PATs (repo read) and rotate keys if exposed.
 
 ### 3. Verify the schedule
 

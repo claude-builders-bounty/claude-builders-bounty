@@ -27,7 +27,7 @@ assert(
   'Load Config emits ISO8601 week boundaries for GitHub since filters',
 );
 assert(
-  loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/user'),
+  loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/repos/'),
   'Load Config validates GITHUB_TOKEN via GitHub /user before repo API calls',
 );
 assert(

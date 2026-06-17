@@ -26,7 +26,7 @@ if (!token) {
   process.exit(1);
 }
 
-await validateGitHubToken(token);
+await validateGitHubToken(token, { repo });
 
 const weekStart = new Date();
 weekStart.setDate(weekStart.getDate() - 7);

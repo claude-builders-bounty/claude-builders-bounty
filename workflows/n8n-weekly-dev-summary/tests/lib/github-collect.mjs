@@ -5,6 +5,11 @@
 
 export const GITHUB_USER_URL = 'https://api.github.com/user';
 
+export function githubRepoUrl(repoFull) {
+  const [owner, repo] = String(repoFull || '').split('/');
+  return `https://api.github.com/repos/${owner}/${repo}`;
+}
+
 export function githubAuthHeaders(token) {
   return {
     Authorization: `Bearer ${token}`,
@@ -14,18 +19,24 @@ export function githubAuthHeaders(token) {
 }
 
 /**
- * Verify GITHUB_TOKEN authenticity via GitHub /user before repo API calls.
+ * Verify GITHUB_TOKEN can read the target repo (or /user when no repo is given).
+ * Repo-scoped validation works with GitHub Actions GITHUB_TOKEN (contents: read).
  * @param {string} token - GitHub PAT or OAuth token
- * @param {typeof fetch} [fetchFn] - injectable fetch for unit tests
- * @returns {Promise<string>} authenticated GitHub login
+ * @param {{ fetchFn?: typeof fetch, repo?: string } | typeof fetch} [options]
+ * @returns {Promise<string>} repo full_name or authenticated GitHub login
  */
-export async function validateGitHubToken(token, fetchFn = fetch) {
+export async function validateGitHubToken(token, options = {}) {
+  const normalized =
+    typeof options === 'function' ? { fetchFn: options } : options;
+  const { fetchFn = fetch, repo: repoFull = null } = normalized;
+
   const trimmed = (token || '').trim();
   if (!trimmed) {
     throw new Error('Set GITHUB_TOKEN with repo read access.');
   }
 
-  const res = await fetchFn(GITHUB_USER_URL, { headers: githubAuthHeaders(trimmed) });
+  const url = repoFull ? githubRepoUrl(repoFull) : GITHUB_USER_URL;
+  const res = await fetchFn(url, { headers: githubAuthHeaders(trimmed) });
   const body = await res.json().catch(() => ({}));
 
   if (res.status === 401 || res.status === 403) {
@@ -35,6 +46,12 @@ export async function validateGitHubToken(token, fetchFn = fetch) {
     throw new Error(
       `GitHub token validation failed: ${res.status} ${body.message || res.statusText || ''}`.trim(),
     );
+  }
+  if (repoFull) {
+    if (!body || typeof body.full_name !== 'string') {
+      throw new Error('GITHUB_TOKEN validation failed: unexpected GitHub response.');
+    }
+    return body.full_name;
   }
   if (!body || typeof body.login !== 'string') {
     throw new Error('GITHUB_TOKEN validation failed: unexpected GitHub response.');

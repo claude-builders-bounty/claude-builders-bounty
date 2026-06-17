@@ -30,9 +30,6 @@ function mockResponse(status, body) {
 }
 
 async function mockGitHubApi(url) {
-  if (url.includes('/user')) {
-    return mockResponse(200, { login: 'integration-user' });
-  }
   if (url.includes('/commits')) {
     return mockResponse(200, [
       { sha: 'abc', commit: { message: 'feat: add widget', author: { date: '2026-06-10T12:00:00Z' } } },
@@ -47,11 +44,14 @@ async function mockGitHubApi(url) {
       { number: 2, title: 'PR', closed_at: '2026-06-11T12:00:00Z', pull_request: {} },
     ]);
   }
+  if (/\/repos\/[^/]+\/[^/?]+$/.test(url.split('?')[0])) {
+    return mockResponse(200, { full_name: 'o/r' });
+  }
   return mockResponse(404, { message: 'Not Found', documentation_url: 'https://docs.github.com' });
 }
 
-const login = await validateGitHubToken('integration-token', mockGitHubApi);
-assert(login === 'integration-user', 'integration: validateGitHubToken accepts mocked GitHub /user');
+const repoName = await validateGitHubToken('integration-token', { repo: 'o/r', fetchFn: mockGitHubApi });
+assert(repoName === 'o/r', 'integration: validateGitHubToken accepts mocked GitHub repo access');
 
 const commits = await fetchGitHubPages(
   'https://api.github.com/repos/o/r/commits',
@@ -128,7 +128,7 @@ try {
 const loadConfig = workflow.nodes.find((n) => n.name === 'Load Config');
 const loadCode = loadConfig?.parameters?.jsCode || '';
 assert(loadCode.includes('validateGitHubToken'), 'integration: Load Config validates token before GitHub fetches');
-assert(loadCode.includes('api.github.com/user'), 'integration: Load Config calls GitHub /user for token auth');
+assert(loadCode.includes('api.github.com/repos/'), 'integration: Load Config validates token against target repo');
 
 const claudeNode = workflow.nodes.find((n) => n.name === 'Claude API');
 assert(claudeNode?.parameters?.url === 'https://api.anthropic.com/v1/messages', 'integration: Claude API targets Anthropic messages endpoint');
