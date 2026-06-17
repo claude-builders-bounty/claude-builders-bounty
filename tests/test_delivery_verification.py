@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end delivery verification for issue #521 README bounty link fix."""
+"""End-to-end delivery verification for issue #521 and #2853 bounty deliveries."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ CI_SCRIPT = REPO_ROOT / "tests" / "run-ci-checks.sh"
 README = REPO_ROOT / "README.md"
 README_LINK_TEST = REPO_ROOT / "tests" / "test_readme_links.py"
 PEER_REVIEW_TEST = REPO_ROOT / "tests" / "test_peer_review_acceptance.py"
+ISSUE_2853_TEST = REPO_ROOT / "tests" / "test_issue_2853_read_tool_hook.py"
 UPSTREAM = "claude-builders-bounty/claude-builders-bounty"
 
 
@@ -31,7 +32,9 @@ class DeliveryVerificationTests(unittest.TestCase):
         delivery_tests = count_test_methods(Path(__file__))
         self.assertGreaterEqual(readme_tests, 2)
         self.assertGreaterEqual(peer_review_tests, 7)
-        self.assertGreaterEqual(delivery_tests, 3)
+        issue_2853_tests = count_test_methods(ISSUE_2853_TEST)
+        self.assertGreaterEqual(delivery_tests, 4)
+        self.assertGreaterEqual(issue_2853_tests, 7)
 
     def test_readme_bounty_table_links_fix_issue_521(self) -> None:
         """Issue #521: Active Bounties rows must link to upstream issues."""
@@ -58,12 +61,12 @@ class DeliveryVerificationTests(unittest.TestCase):
             check=False,
         )
 
-    def _readme_diff_vs_main(self) -> subprocess.CompletedProcess[str]:
+    def _git_diff_vs_main(self, *paths: str) -> subprocess.CompletedProcess[str]:
         self._ensure_main_ref()
         result: subprocess.CompletedProcess[str] | None = None
         for spec in ("main...HEAD", "main..HEAD"):
             result = subprocess.run(
-                ["git", "diff", spec, "--", "README.md"],
+                ["git", "diff", spec, "--", *paths],
                 cwd=REPO_ROOT,
                 text=True,
                 capture_output=True,
@@ -72,9 +75,12 @@ class DeliveryVerificationTests(unittest.TestCase):
             if result.returncode == 0:
                 return result
         self.fail(
-            "unable to diff README against main: "
+            f"unable to diff {paths!r} against main: "
             + ((result.stderr or result.stdout) if result else "no git diff result")
         )
+
+    def _readme_diff_vs_main(self) -> subprocess.CompletedProcess[str]:
+        return self._git_diff_vs_main("README.md")
 
     def test_readme_link_fix_is_committed_vs_main(self) -> None:
         """Fleet delivery requires a committed README diff, not only working-tree edits."""
@@ -104,12 +110,30 @@ class DeliveryVerificationTests(unittest.TestCase):
             msg="committed README diff must not add fragile relative issue links",
         )
 
+    def test_issue_2853_acceptance_is_committed_vs_main(self) -> None:
+        """Fleet delivery requires committed issue #2853 artifacts, not working-tree edits."""
+        result = self._git_diff_vs_main(
+            "tests/test_issue_2853_read_tool_hook.py",
+            "bounties/issue-2853/PROOF.md",
+            "package.json",
+            "tests/run-ci-checks.sh",
+        )
+        diff_text = result.stdout
+        self.assertIn("test_issue_2853_read_tool_hook.py", diff_text)
+        self.assertIn("bounties/issue-2853/PROOF.md", diff_text)
+        self.assertIn("test:issue-2853", diff_text)
+        self.assertIn("test_issue_2853_read_tool_hook.py", diff_text)
+        self.assertIn("lobster-trap/zeroeye/pull/109", diff_text)
+        self.assertIn("issue #2853 read tool hook acceptance tests", diff_text)
+
     def test_repo_root_exposes_npm_test_entry_points(self) -> None:
         package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
         self.assertIn("run-ci-checks.sh", package_json["scripts"]["test"])
         self.assertIn("run-ci-checks.sh", package_json["scripts"]["test:ci"])
         self.assertIn("test_delivery_verification.py", package_json["scripts"]["test:delivery"])
         self.assertIn("OK: delivery verification tests passed", package_json["scripts"]["test:delivery"])
+        self.assertIn("test:issue-2853", package_json["scripts"])
+        self.assertIn("test_issue_2853_read_tool_hook.py", package_json["scripts"]["test:issue-2853"])
 
     def test_ci_script_exists_and_declares_delivery_checks(self) -> None:
         self.assertTrue(CI_SCRIPT.is_file())
