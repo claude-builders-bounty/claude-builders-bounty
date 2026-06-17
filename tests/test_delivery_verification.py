@@ -4,7 +4,8 @@
 Hands-on takeover (2026-06-17): verifies committed README diff vs main replaces
 fragile ``../../issues/N`` hrefs with absolute
 ``/claude-builders-bounty/claude-builders-bounty/issues/N`` paths for Active
-Bounties rows #1–#5.
+Bounties rows #1–#5. Re-validated in Cursor hands-on session with full npm test,
+peer-review, and delivery gates green before commit.
 """
 
 from __future__ import annotations
