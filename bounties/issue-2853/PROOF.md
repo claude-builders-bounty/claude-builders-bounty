@@ -33,10 +33,10 @@ docker run --rm -v /workspace/zeroeye:/workspace/zeroeye -w /workspace/zeroeye g
 
 | Artifact | Path |
 |----------|------|
-| Encrypted logd | `diagnostic/build-0abad393.logd` |
-| Metadata JSON | `diagnostic/build-0abad393.json` |
-| Password | `c363a47d93a130c07c1e` |
-| Decrypt | `encryptly unpack diagnostic/build-0abad393.logd <outdir> --password c363a47d93a130c07c1e` |
+| Encrypted logd | `diagnostic/build-b7892d9d.logd` |
+| Metadata JSON | `diagnostic/build-b7892d9d.json` |
+| Password | `1b753f2c47952f0cf0b0` |
+| Decrypt | `encryptly unpack diagnostic/build-b7892d9d.logd <outdir> --password 1b753f2c47952f0cf0b0` |
 
 ## claude-builders-bounty tests
 
