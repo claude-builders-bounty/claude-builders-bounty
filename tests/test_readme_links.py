@@ -3,6 +3,8 @@
 
 Bounty rows must use absolute /owner/repo/issues/N hrefs so links resolve on
 forks and blob views; fragile ../../issues/N paths escape the repo root.
+Hands-on takeover (2026-06-17) verifies all five Active Bounties rows target
+upstream issues (#1–#5 → /claude-builders-bounty/claude-builders-bounty/issues/N).
 """
 
 from __future__ import annotations
