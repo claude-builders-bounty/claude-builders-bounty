@@ -3,7 +3,8 @@
 
 Hands-on delivery (2026-06-17, PR #2532): verifies committed README diff vs main replaces
 fragile ``../../issues/N`` hrefs with absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N``
-paths for Active Bounties rows #1–#5; contributor note links issue #521. npm test 25/25 green.
+paths for Active Bounties rows #1–#5; contributor note links issue #521. Re-verified
+2026-06-17 hands-on takeover: npm test 25/25 green.
 """
 
 from __future__ import annotations
