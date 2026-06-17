@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""
+claude-review — Claude Code PR reviewer agent.
+Reviews a GitHub PR diff and posts a structured Markdown comment.
+Usage: claude-review --pr https://github.com/owner/repo/pull/123
+       claude-review --pr https://github.com/owner/repo/pull/123 --publish
+"""
+import argparse, json, os, subprocess, sys, urllib.request, urllib.error
+
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+
+def get_pr_info(pr_url):
+    parts = pr_url.replace("https://github.com/", "").split("/")
+    owner, repo, _, num = parts
+    return owner, repo, num
+
+def fetch_diff(owner, repo, num, token):
+    url = f'https://api.github.com/repos/{owner}/{repo}/pulls/{num}'
+    req = urllib.request.Request(url, headers={
+        'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github.v3.diff', 'User-Agent': 'claude-review'
+    })
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.read().decode('utf-8')
+    except urllib.error.HTTPError as e:
+        print(f'Error fetching PR: {e.code} {e.reason}', file=sys.stderr)
+        sys.exit(1)
+
+def review_with_claude(diff, pr_url):
+    prompt = f'''You are a senior code reviewer. Review this PR diff and return a structured Markdown review.
+
+PR: {pr_url}
+
+Diff:
+```diff
+{diff[:8000]}
+```
+
+Return:
+## Review: {pr_url}
+### Summary
+(2-3 sentence summary of changes)
+
+### Identified Risks
+- risk 1
+- risk 2
+
+### Improvement Suggestions
+- suggestion 1
+- suggestion 2
+
+### Confidence Score
+**High/Medium/Low**
+
+> Reviewed by claude-review'''
+
+    cmd = ['claude', '-p', prompt]
+    if os.name == 'nt':
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode == 0:
+                return result.stdout
+        except FileNotFoundError:
+            pass
+
+    # Fallback: offline analysis
+    lines = diff.split("\n")
+    files_changed = [l for l in lines if l.startswith('+++ ') or l.startswith('--- ')]
+    additions = sum(1 for l in lines if l.startswith('+') and not l.startswith('+++'))
+    deletions = sum(1 for l in lines if l.startswith('-') and not l.startswith('---'))
+
+    return f'''## Review: {pr_url}
+### Summary
+Changes affect {len(files_changed)//2} file(s). +{additions}/-{deletions} lines.
+
+### Identified Risks
+- Review required on {len(files_changed)//2} modified file(s)
+
+### Improvement Suggestions
+- Manual review recommended for logic changes
+- Verify test coverage
+
+### Confidence Score
+**Medium**
+
+> Reviewed by claude-review (offline mode)'''
+
+def main():
+    parser = argparse.ArgumentParser(description='Review a GitHub PR')
+    parser.add_argument('--pr', required=True, help='PR URL')
+    parser.add_argument('--publish', action='store_true', help='Publish as PR comment')
+    args = parser.parse_args()
+
+    gh_token = os.environ.get('GITHUB_TOKEN')
+    owner, repo, num = get_pr_info(args.pr)
+    diff = fetch_diff(owner, repo, num, gh_token or "")
+
+    review = review_with_claude(diff, args.pr)
+    print(review)
+
+    if args.publish:
+        if not gh_token:
+        print('GITHUB_TOKEN required for --publish', file=sys.stderr)
+            sys.exit(1)
+        comment = json.dumps({'body': review}).encode()
+        url = f'https://api.github.com/repos/{owner}/{repo}/issues/{num}/comments'
+        req = urllib.request.Request(url, data=comment, headers={
+            'Authorization': f'Bearer {gh_token}',
+            'Content-Type': 'application/json',
+            'User-Agent': 'claude-review'
+        })
+        try:
+            with urllib.request.urlopen(req) as r:
+                print(f'Comment posted to {args.pr}')
+        except urllib.error.HTTPError as e:
+            print(f'Error posting comment: {e.code}', file=sys.stderr)
+
+if __name__ == '__main__':
+    main()
