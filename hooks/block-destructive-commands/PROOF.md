@@ -54,6 +54,13 @@ to `main...HEAD`, breaking `test_branch_diff_scoped_to_hook_only` and
 `test_npm_test_entry_point_runs_green`. Reset to hook-only diff (`d1e32df` base);
 all 104 unittest + 6 delivery + 21 peer-review checks green.
 
+## Hands-on verification (2026-06-17, delivery takeover)
+
+Fleet commit `c0e9c87c` re-added `templates/nextjs-sqlite-saas/reference/node_modules/*`
+(7k+ files), breaking `test_branch_diff_scoped_to_hook_only` and
+`test_npm_test_entry_point_runs_green`. Reset to `d7bcc85d` (hook-only diff);
+`npm test` green (104 unittest + 6 delivery + 21 peer-review + attribution).
+
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty
 git checkout feat/issue-3-destructive-command-hook-v2
