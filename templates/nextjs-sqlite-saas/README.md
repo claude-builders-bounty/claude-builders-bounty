@@ -36,6 +36,7 @@ npm test
 # Individual checks
 node templates/nextjs-sqlite-saas/validate-template.mjs
 bash templates/nextjs-sqlite-saas/tests/smoke-greenfield.sh
+bash templates/nextjs-sqlite-saas/reference/scripts/run-tests.sh
 node templates/nextjs-sqlite-saas/tests/delivery-verification.test.mjs
 node templates/nextjs-sqlite-saas/tests/peer-review-acceptance.test.mjs
 ```

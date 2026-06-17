@@ -127,6 +127,33 @@ test("peer-review and delivery suites have minimum coverage", () => {
   }
 });
 
+test("ci runner executes reference app vitest suites", () => {
+  const ciScript = readFileSync(join(__dirname, "run-ci-checks.sh"), "utf8");
+  if (!ciScript.includes("reference/scripts/run-tests.sh")) {
+    throw new Error("run-ci-checks.sh must run reference app unit/integration tests");
+  }
+  if (!ciScript.includes("reference app tests")) {
+    throw new Error("run-ci-checks.sh must print reference app test summary");
+  }
+});
+
+test("reference app ships committed unit and integration tests", () => {
+  const referenceRoot = join(root, "reference");
+  const required = [
+    "tests/db/migrations.test.ts",
+    "tests/db/queries/invoices.test.ts",
+    "tests/server/actions/create-invoice.test.ts",
+    "tests/components/create-invoice-form.test.tsx",
+    "src/db/queries/invoices.ts",
+    "src/server/actions/create-invoice.ts",
+  ];
+  for (const rel of required) {
+    if (!statSync(join(referenceRoot, rel)).isFile()) {
+      throw new Error(`missing reference app file: reference/${rel}`);
+    }
+  }
+});
+
 test("npm test entry point runs green", () => {
   if (process.env.NEXTJS_TEMPLATE_CI_INNER_RUN) {
     return;

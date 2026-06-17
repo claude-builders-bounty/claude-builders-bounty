@@ -142,6 +142,10 @@ assert(smokeTest.includes("create-next-app@15"), "smoke test scaffolds Next.js 1
 assert(smokeTest.includes('cp "$ROOT/CLAUDE.md"'), "smoke test copies CLAUDE.md into scaffold");
 assert(runCiChecks.includes("validate-template.mjs"), "run-ci-checks runs structural validator");
 assert(runCiChecks.includes("smoke-greenfield.sh"), "run-ci-checks runs greenfield smoke test");
+assert(
+  runCiChecks.includes("reference/scripts/run-tests.sh"),
+  "run-ci-checks runs reference app unit and integration tests",
+);
 assert(runCiChecks.includes("peer-review-acceptance.test.mjs"), "run-ci-checks runs peer-review acceptance");
 assert(runCiChecks.includes("delivery-verification.test.mjs"), "run-ci-checks runs delivery verification");
 assert(
@@ -394,6 +398,40 @@ const componentTestExample = claude.match(
 assert(
   componentTestExample.length > 0 && /CreateInvoiceForm/.test(componentTestExample),
   "Testing Rules include create-invoice-form component test example",
+);
+
+// Peer-review tests: committed reference app unit and integration tests
+const referenceTestsDir = join(root, "reference", "tests");
+const committedTestFiles = [];
+function collectTestFiles(dir) {
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      collectTestFiles(full);
+    } else if (/\.test\.(ts|tsx)$/.test(name)) {
+      committedTestFiles.push(full);
+    }
+  }
+}
+collectTestFiles(referenceTestsDir);
+assert(
+  committedTestFiles.length >= 4,
+  "reference app commits at least four unit/integration test files",
+);
+for (const rel of [
+  "db/migrations.test.ts",
+  "db/queries/invoices.test.ts",
+  "server/actions/create-invoice.test.ts",
+  "components/create-invoice-form.test.tsx",
+]) {
+  assert(
+    committedTestFiles.some((path) => path.endsWith(rel)),
+    `reference/tests/${rel} committed for peer-review test coverage`,
+  );
+}
+assert(
+  statSync(join(root, "reference", "scripts", "run-tests.sh")).isFile(),
+  "reference/scripts/run-tests.sh runs Vitest suites in CI",
 );
 
 // Branch diff scoped to template bounty paths only

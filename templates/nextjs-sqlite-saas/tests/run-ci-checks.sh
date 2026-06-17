@@ -33,6 +33,14 @@ ensure_git_base_ref
 node "${TEMPLATE_DIR}/validate-template.mjs"
 bash "${TEMPLATE_DIR}/tests/smoke-greenfield.sh"
 
+echo "Running reference app unit and integration tests..."
+bash "${TEMPLATE_DIR}/reference/scripts/run-tests.sh"
+reference_app_tests="$(
+  grep -rE '^\s*it\(' "${TEMPLATE_DIR}/reference/tests" \
+    --include='*.test.ts' --include='*.test.tsx' 2>/dev/null | wc -l | tr -d ' '
+)"
+echo "Ran ${reference_app_tests} reference app tests — OK"
+
 delivery_verification_tests="$(
   grep -Ec '^test\(' "${TEMPLATE_DIR}/tests/delivery-verification.test.mjs"
 )"
@@ -45,7 +53,7 @@ peer_review_tests="$(
 node "${TEMPLATE_DIR}/tests/peer-review-acceptance.test.mjs"
 echo "Ran ${peer_review_tests} tests — OK"
 echo 'OK: peer review acceptance tests passed'
-total_tests=$((delivery_verification_tests + peer_review_tests))
+total_tests=$((delivery_verification_tests + peer_review_tests + reference_app_tests))
 echo "OK: ${total_tests} tests passed"
 
 git diff --check
