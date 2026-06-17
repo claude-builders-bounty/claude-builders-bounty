@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """End-to-end delivery verification for issue #521 / PR #2532 README bounty links.
 
-Hands-on takeover (2026-06-17): verifies committed README diff vs main replaces fragile
-``../../issues/N`` hrefs with absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N``
-paths for Active Bounties rows #1–#5. npm test 25/25, peer-review, and delivery gates green.
+Cursor hands-on takeover (2026-06-17): verifies committed README diff vs main replaces
+fragile relative issue hrefs with absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N``
+paths for Active Bounties rows #1–#5. npm test 25/25, peer-review, and delivery green.
 """
 
 from __future__ import annotations
