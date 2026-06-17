@@ -1,0 +1,126 @@
+﻿{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "id": "schedule-trigger",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 17 * * 5" }]
+        }
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "Get GitHub Commits",
+      "type": "n8n-nodes-base.git",
+      "typeVersion": 1,
+      "position": [450, 200],
+      "parameters": {
+        "repository": "={{ $json.repository || $env.GITHUB_REPO }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 400],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/issues?state=closed&since={{ $json.weekStart }}",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "=Bearer {{ $env.GITHUB_TOKEN }}"
+          }
+        }
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 600],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/pulls?state=closed&sort=updated&direction=desc&per_page=20",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "=Bearer {{ $env.GITHUB_TOKEN }}"
+          }
+        }
+      }
+    },
+    {
+      "id": "merge-data",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [650, 400],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "claude-api",
+      "name": "Claude API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 400],
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "claude-sonnet-4-20250514" },
+            { "name": "max_tokens", "value": 4096 },
+            { "name": "system", "value": "You generate a concise weekly dev summary in markdown. Cover key commits, closed issues, and merged PRs. Write in 3-5 paragraphs." },
+            { "name": "messages", "value": "=[{\"role\": \"user\", \"content\": \"Generate a weekly summary for {{ $env.GITHUB_REPO }}.\\n\\nCommits: {{ JSON.stringify($node[\"Get GitHub Commits\"].json) }}\\n\\nIssues: {{ JSON.stringify($node[\"Get Closed Issues\"].json) }}\\n\\nPRs: {{ JSON.stringify($node[\"Get Merged PRs\"].json) }}\"}]" }
+          ]
+        },
+        "options": {
+          "headers": {
+            "x-api-key": "={{ $env.CLAUDE_API_KEY }}",
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+          }
+        }
+      }
+    },
+    {
+      "id": "webhook-output",
+      "name": "Send Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1050, 400],
+      "parameters": {
+        "url": "={{ $env.DESTINATION_WEBHOOK }}",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "content", "value": "={{ $json.content | default($json.body | default($json)) }}" },
+            { "name": "username", "value": "Weekly Dev Summary" }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": { "main": [[ { "node": "Get GitHub Commits", "type": "main", "index": 0 } ]] },
+    "Get GitHub Commits": { "main": [[ { "node": "Merge Data", "type": "main", "index": 0 } ]] },
+    "Get Closed Issues": { "main": [[ { "node": "Merge Data", "type": "main", "index": 1 } ]] },
+    "Get Merged PRs": { "main": [[ { "node": "Merge Data", "type": "main", "index": 2 } ]] },
+    "Merge Data": { "main": [[ { "node": "Claude API Call", "type": "main", "index": 0 } ]] },
+    "Claude API Call": { "main": [[ { "node": "Send Summary", "type": "main", "index": 0 } ]] }
+  },
+  "settings": {},
+  "tags": []
+}
