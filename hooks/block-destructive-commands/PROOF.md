@@ -19,7 +19,7 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 104 tests in ...s
+Ran 105 tests in ...s
 OK
 Ran 6 delivery verification tests — OK
 Ran 21 tests — OK
@@ -134,6 +134,17 @@ still block destructive commands; added integration regression test.
 - Branch `feat/issue-3-destructive-command-hook-v2` hook-only diff (16 paths)
 - `npm test` green: 105 unittest + 6 delivery + 21 peer-review + attribution checks
 - CLI: `rm -rf /` denied; `git status` allowed; `  rm -rf /tmp  ` denied after strip fix
+
+## Hands-on verification (2026-06-17, sprout-idle-nudge)
+
+Merge-first nurture on `feat/issue-3-destructive-command-hook-v2` @ `e1a369e9` (PR #2556).
+No hook logic changes required — CI/reviews clean, branch synced with fork.
+
+- Removed untracked stray `internal/exporter/mkdocs.go` from parallel fleet job (not in diff)
+- `npm test` green: 105 unittest + 6 delivery + 21 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- PR status: MERGEABLE/CLEAN against `main`; 0 commits behind
+- CLI: `rm -rf /` denied; `git status` allowed; `  rm -rf /tmp  ` denied
 
 ## Acceptance criteria
 
