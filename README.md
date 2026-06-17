@@ -24,7 +24,7 @@ You're in the right place.
 
 ## Active Bounties
 
-Bounty links use absolute `/owner/repo/issues/N` paths (for example `/claude-builders-bounty/claude-builders-bounty/issues/1`) instead of fragile relative parent-path issue hrefs, so they always resolve to the upstream repository on GitHub forks and blob views.
+Bounty table links use absolute `/owner/repo/issues/N` paths (for example `/claude-builders-bounty/claude-builders-bounty/issues/1`) instead of fragile relative parent-path issue hrefs, so they always resolve to the upstream repository on GitHub forks and blob views.
 
 | # | Task | Amount | Status |
 |---|------|--------|--------|
