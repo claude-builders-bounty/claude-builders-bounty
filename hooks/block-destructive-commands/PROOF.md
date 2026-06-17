@@ -114,6 +114,17 @@ Peer-review fix: `log_blocked_attempt()` sanitizes command and project_path via
 Fork CI re-runs on push after this verification commit.
 PR status: MERGEABLE/CLEAN against `main`.
 
+## Hands-on verification (2026-06-17, hands-on takeover)
+
+Fleet engineer session failed `no_committed_diff` / `peer_review_not_passed` on a clean
+tree despite green `npm test`. Re-verified delivery criteria and committed proof:
+
+- Branch `feat/issue-3-destructive-command-hook-v2` at `19b59c33` (hook-only diff, 16 paths)
+- `npm test` green: 104 unittest + 6 delivery + 21 peer-review + attribution checks
+- `test_branch_diff_scoped_to_hook_only` and `test_branch_diff_excludes_unrelated_exporter_paths` pass
+- CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (exit 0, no stdout)
+- No stray `internal/exporter/*` in working tree or `main...HEAD` diff
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
