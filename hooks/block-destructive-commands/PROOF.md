@@ -61,6 +61,13 @@ Fleet commit `c0e9c87c` re-added `templates/nextjs-sqlite-saas/reference/node_mo
 `test_npm_test_entry_point_runs_green`. Reset to `d7bcc85d` (hook-only diff);
 `npm test` green (104 unittest + 6 delivery + 21 peer-review + attribution).
 
+## Hands-on verification (2026-06-17, fleet engineer takeover)
+
+Prior fleet session failed `no_committed_diff` / `peer_review_not_passed` on a
+clean tree despite green tests. Re-verified hook-only `main...HEAD` scope (16
+paths), `npm test` green (104+6+21), and CLI spot-checks (`rm -rf /` denied,
+`git status` allowed). Committed delivery proof at `adae02b8` base.
+
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty
 git checkout feat/issue-3-destructive-command-hook-v2
