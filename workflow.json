@@ -1,0 +1,217 @@
+{
+  "name": "GitHub Weekly Summary with Anthropic",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": "everyWeek",
+        "day": "friday",
+        "hour": 17,
+        "minute": 0
+      },
+      "id": "node_schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "a1", "name": "report_language", "value": "English", "type": "string" },
+            { "id": "a2", "name": "delivery_email",  "value": "therapyneuroflex@gmail.com", "type": "string" }
+          ]
+        }
+      },
+      "id": "node_setvars",
+      "name": "Config - Set Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "subtractFromDate",
+        "magnitude": 7,
+        "duration": "days"
+      },
+      "id": "node_daterange",
+      "name": "Calculate Date Range",
+      "type": "n8n-nodes-base.dateTime",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/anthropics/anthropic-sdk-python/commits?since={{ $json.value }}&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubOAuth2Api",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "node_commits",
+      "name": "GitHub - Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 160]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/anthropics/anthropic-sdk-python/issues?state=closed&since={{ $('Calculate Date Range').first().json.value }}&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubOAuth2Api",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "node_issues",
+      "name": "GitHub - Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/anthropics/anthropic-sdk-python/pulls?state=closed&since={{ $('Calculate Date Range').first().json.value }}&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubOAuth2Api",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "node_prs",
+      "name": "GitHub - Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 440]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "node_merge1",
+      "name": "Merge_1",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [1120, 230]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "node_merge2",
+      "name": "Merge_2",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('GitHub - Commits').all().map(i => ({\n  sha:     i.json.sha?.slice(0,7),\n  author:  i.json.commit?.author?.name,\n  message: i.json.commit?.message?.split('\\n')[0]\n}));\n\nconst issues = $('GitHub - Closed Issues').all()\n  .filter(i => !i.json.pull_request)\n  .map(i => ({ number: i.json.number, title: i.json.title, user: i.json.user?.login }));\n\nconst prs = $('GitHub - Merged PRs').all()\n  .filter(i => i.json.merged_at)\n  .map(i => ({ number: i.json.number, title: i.json.title, user: i.json.user?.login }));\n\nreturn [{ json: {\n  commits,\n  issues,\n  pullRequests: prs,\n  stats: { totalCommits: commits.length, totalIssues: issues.length, totalPRs: prs.length },\n  generatedAt: new Date().toISOString()\n}}];"
+      },
+      "id": "node_aggregate",
+      "name": "Aggregate All Payloads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type",      "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, messages: [{ role: 'user', content: 'You are a technical summarizer. Analyze this GitHub activity and write a professional weekly report in ' + $('Config - Set Variables').first().json.report_language + ' language.\\n\\nData:\\n' + JSON.stringify($json, null, 2) + '\\n\\nInclude:\\n- Summary stats (' + $json.stats.totalCommits + ' commits, ' + $json.stats.totalIssues + ' issues closed, ' + $json.stats.totalPRs + ' PRs merged)\\n- Notable changes and highlights\\n- Top contributors\\n- Any breaking changes or important notes\\n\\nKeep it professional and concise.' }] }) }}",
+        "options": {}
+      },
+      "id": "node_claude",
+      "name": "Claude Sonnet - Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 300],
+      "credentials": {
+        "httpHeaderAuth": "anthropic_api_key"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.first().json.content?.[0]?.text ?? '';\nconst lang = $('Config - Set Variables').first().json.report_language;\nreturn [{ json: {\n  subject: `[${lang}] Weekly GitHub Summary - Anthropic SDK Python`,\n  email:   $('Config - Set Variables').first().json.delivery_email,\n  html: `<!DOCTYPE html><html><head><style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#222;line-height:1.7}h2{color:#c0392b;border-bottom:2px solid #eee;padding-bottom:8px}pre{background:#f5f5f5;padding:12px;border-radius:4px;white-space:pre-wrap}</style></head><body><h2>Weekly GitHub Report</h2><p><strong>Date:</strong> ${new Date().toLocaleDateString()} &nbsp;|&nbsp; <strong>Language:</strong> ${lang}</p><hr/>${text.replace(/\\n/g,'<br/>')}<hr/><small>Generated by n8n &middot; Powered by Anthropic Claude Sonnet</small></body></html>`\n}}];"
+      },
+      "id": "node_format",
+      "name": "Format Final Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "sendTo":      "={{ $json.email }}",
+        "subject":     "={{ $json.subject }}",
+        "htmlMessage": "={{ $json.html }}"
+      },
+      "id": "node_email",
+      "name": "Deliver - Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [2220, 300],
+      "credentials": {
+        "smtp": "gmail_smtp"
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Config - Set Variables", "type": "main", "index": 0 }]]
+    },
+    "Config - Set Variables": {
+      "main": [[{ "node": "Calculate Date Range", "type": "main", "index": 0 }]]
+    },
+    "Calculate Date Range": {
+      "main": [[
+        { "node": "GitHub - Commits",      "type": "main", "index": 0 },
+        { "node": "GitHub - Closed Issues","type": "main", "index": 0 },
+        { "node": "GitHub - Merged PRs",   "type": "main", "index": 0 }
+      ]]
+    },
+    "GitHub - Commits": {
+      "main": [[{ "node": "Merge_1", "type": "main", "index": 0 }]]
+    },
+    "GitHub - Closed Issues": {
+      "main": [[{ "node": "Merge_1", "type": "main", "index": 1 }]]
+    },
+    "Merge_1": {
+      "main": [[{ "node": "Merge_2", "type": "main", "index": 0 }]]
+    },
+    "GitHub - Merged PRs": {
+      "main": [[{ "node": "Merge_2", "type": "main", "index": 1 }]]
+    },
+    "Merge_2": {
+      "main": [[{ "node": "Aggregate All Payloads", "type": "main", "index": 0 }]]
+    },
+    "Aggregate All Payloads": {
+      "main": [[{ "node": "Claude Sonnet - Generate Summary", "type": "main", "index": 0 }]]
+    },
+    "Claude Sonnet - Generate Summary": {
+      "main": [[{ "node": "Format Final Output", "type": "main", "index": 0 }]]
+    },
+    "Format Final Output": {
+      "main": [[{ "node": "Deliver - Email", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/New_York",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "tags": ["github", "anthropic", "automation", "weekly-report"]
+}
