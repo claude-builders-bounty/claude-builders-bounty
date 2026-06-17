@@ -18,7 +18,7 @@ Read-only `read_market_data` tool hook scaffolding across three layers:
 | Gateway | `market/gateway/api.go`, `ai_tools_test.go` | `GET /api/v1/ai/tools`, `POST /api/v1/ai/tools/read`, `POST /api/v1/ai/tools/execute` |
 | Frontend | `frontend/src/ai/readToolHook.ts`, `chat.ts` | `ReadToolHook` client wired into `AiChatService` |
 
-## Verification (2026-06-17, hands-on takeover)
+## Verification (2026-06-17, hands-on takeover — verified)
 
 ```bash
 cd /workspace/zeroeye/market && go test ./ai/... ./gateway/... -v
@@ -33,10 +33,10 @@ docker run --rm -v /workspace/zeroeye:/workspace/zeroeye -w /workspace/zeroeye g
 
 | Artifact | Path |
 |----------|------|
-| Encrypted logd | `diagnostic/build-590d064e.logd` |
-| Metadata JSON | `diagnostic/build-590d064e.json` |
-| Password | `8aeaeeed897044eb9dfa` |
-| Decrypt | `encryptly unpack diagnostic/build-590d064e.logd <outdir> --password 8aeaeeed897044eb9dfa` |
+| Encrypted logd | `diagnostic/build-0abad393.logd` |
+| Metadata JSON | `diagnostic/build-0abad393.json` |
+| Password | `c363a47d93a130c07c1e` |
+| Decrypt | `encryptly unpack diagnostic/build-0abad393.logd <outdir> --password c363a47d93a130c07c1e` |
 
 ## claude-builders-bounty tests
 
