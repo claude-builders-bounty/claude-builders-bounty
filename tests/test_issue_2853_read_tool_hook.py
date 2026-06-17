@@ -99,7 +99,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
     def test_bounty_proof_doc_exists_and_links_pr(self) -> None:
         self.assertTrue(PROOF.is_file())
         text = PROOF.read_text(encoding="utf-8")
-        self.assertIn("lobster-trap/zeroeye/pull/3", text)
+        self.assertIn("lobster-trap/zeroeye/pull/109", text)
         self.assertIn("read_market_data", text)
         self.assertIn("ToolHook", text)
 

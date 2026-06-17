@@ -4,7 +4,7 @@ Cross-repo bounty delivery for [claude-builders-bounty#2853](https://github.com/
 
 ## Implementation PR
 
-https://github.com/lobster-trap/zeroeye/pull/3
+https://github.com/lobster-trap/zeroeye/pull/109
 
 Branch: `pr-3-read-tool-hook` on `advancedresearcharray/zeroeye`
 
