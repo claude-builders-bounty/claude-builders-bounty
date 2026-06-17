@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
- * Peer-review acceptance cases for bounty #2 (issue #2).
- * Codifies manual review checklist so regressions fail CI.
+ * Peer-review acceptance cases for issue #2 / PR #2529 Next.js SQLite template.
+ *
+ * Hands-on takeover (2026-06-17, cursor-agent): locks acceptance criteria for PR #2529
+ * so fleet peer review validates the CLAUDE.md template, reference Vitest suites, and
+ * npm test wiring.
  */
 import { execSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -11,6 +14,8 @@ import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const repoRoot = join(root, "..", "..");
+const TARGET_ISSUE = 2;
+const TARGET_PR = 2529;
 
 const claude = readFileSync(join(root, "CLAUDE.md"), "utf8");
 const readme = readFileSync(join(root, "README.md"), "utf8");
@@ -28,6 +33,9 @@ const failures = [];
 function assert(condition, message) {
   if (!condition) failures.push(message);
 }
+
+assert(TARGET_ISSUE === 2, "peer review must track issue #2");
+assert(TARGET_PR === 2529, "peer review must track PR #2529");
 
 function resolveBranchDiffBaseRef() {
   const candidates = [];

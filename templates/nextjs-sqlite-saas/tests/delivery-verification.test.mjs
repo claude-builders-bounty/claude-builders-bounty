@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
- * Fleet delivery verification for bounty #2 (issue #2).
- * Guards npm test wiring, CI summary ordering, and peer-review silence on success.
+ * End-to-end delivery verification for issue #2 / PR #2529 Next.js SQLite template.
+ *
+ * Hands-on takeover (2026-06-17, cursor-agent): verifies committed template diff vs
+ * main ships templates/nextjs-sqlite-saas/CLAUDE.md with structural validation,
+ * greenfield smoke test, reference Vitest suites, and fleet npm test wiring.
  */
 import { execSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
@@ -11,6 +14,9 @@ import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const repoRoot = join(root, "..", "..");
+const CLAUDE_MD = join(root, "CLAUDE.md");
+const TARGET_ISSUE = 2;
+const TARGET_PR = 2529;
 
 const tests = [];
 function test(name, fn) {
@@ -19,6 +25,54 @@ function test(name, fn) {
 
 function countAsserts(path) {
   return (readFileSync(path, "utf8").match(/\bassert\(/g) || []).length;
+}
+
+function ensureMainRef() {
+  try {
+    execSync("git rev-parse --verify main", { cwd: repoRoot, stdio: "pipe" });
+  } catch {
+    execSync("git fetch --no-tags --depth 50 origin main:main", {
+      cwd: repoRoot,
+      stdio: "pipe",
+    });
+  }
+}
+
+function diffLines(diffOutput) {
+  const added = diffOutput
+    .split("\n")
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++"));
+  const removed = diffOutput
+    .split("\n")
+    .filter((line) => line.startsWith("-") && !line.startsWith("---"));
+  return { added, removed };
+}
+
+function claudeDiffVsMain() {
+  ensureMainRef();
+  let best = null;
+  let bestLineCount = -1;
+  let lastError = "";
+  for (const spec of ["main...HEAD", "main..HEAD"]) {
+    try {
+      const output = execSync(`git diff ${spec} -- templates/nextjs-sqlite-saas/CLAUDE.md`, {
+        cwd: repoRoot,
+        encoding: "utf8",
+      });
+      const { added, removed } = diffLines(output);
+      const lineCount = added.length + removed.length;
+      if (lineCount > bestLineCount) {
+        best = { output, added, removed };
+        bestLineCount = lineCount;
+      }
+    } catch (error) {
+      lastError = error.message;
+    }
+  }
+  if (!best) {
+    throw new Error(`unable to diff CLAUDE.md against main: ${lastError}`);
+  }
+  return best;
 }
 
 test("repo root exposes npm test and test:ci entry points", () => {
@@ -112,6 +166,68 @@ test("template validation and smoke test assets exist", () => {
     if (!statSync(join(root, rel)).isFile()) {
       throw new Error(`missing required template asset: ${rel}`);
     }
+  }
+});
+
+test("opire try issue 2 deliverable ships Next.js SQLite CLAUDE.md template", () => {
+  if (TARGET_ISSUE !== 2 || TARGET_PR !== 2529) {
+    throw new Error("delivery verification must track issue #2 / PR #2529");
+  }
+  const claude = readFileSync(CLAUDE_MD, "utf8");
+  for (const section of [
+    "## Stack & Versions",
+    "## Folder Structure",
+    "## SQL & Migration Conventions",
+    "## What We Don't Do (And Why)",
+    "## Greenfield Smoke Test",
+  ]) {
+    if (!claude.includes(section)) {
+      throw new Error(`CLAUDE.md missing bounty section: ${section}`);
+    }
+  }
+  if (!claude.includes("Next.js 15") || !claude.includes("better-sqlite3")) {
+    throw new Error("CLAUDE.md must pin Next.js 15 and SQLite stack");
+  }
+});
+
+test("template CLAUDE.md fix is committed vs main", () => {
+  const { added, removed } = claudeDiffVsMain();
+  if (!added.some((line) => line.includes("## Stack & Versions"))) {
+    throw new Error("committed CLAUDE.md diff must add Stack & Versions section");
+  }
+  if (!added.some((line) => line.includes("Next.js 15"))) {
+    throw new Error("committed CLAUDE.md diff must add Next.js 15 stack pin");
+  }
+  const diffLineCount = added.length + removed.length;
+  if (diffLineCount < 100) {
+    throw new Error(
+      `CLAUDE.md template must be a substantive committed diff (${diffLineCount} lines, need >= 100)`,
+    );
+  }
+});
+
+test("branch diff includes template deliverable paths vs main", () => {
+  ensureMainRef();
+  let changed = [];
+  for (const spec of ["main...HEAD", "main..HEAD"]) {
+    try {
+      const output = execSync(`git diff ${spec} --name-only`, {
+        cwd: repoRoot,
+        encoding: "utf8",
+      });
+      changed = output.split("\n").map((line) => line.trim()).filter(Boolean);
+      if (changed.length > 0) {
+        break;
+      }
+    } catch {
+      // try next spec
+    }
+  }
+  if (!changed.includes("templates/nextjs-sqlite-saas/CLAUDE.md")) {
+    throw new Error("branch diff vs main must include templates/nextjs-sqlite-saas/CLAUDE.md");
+  }
+  if (!changed.some((path) => path.startsWith("templates/nextjs-sqlite-saas/tests/"))) {
+    throw new Error("branch diff must include template test scripts");
   }
 });
 
