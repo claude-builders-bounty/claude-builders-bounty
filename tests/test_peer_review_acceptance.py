@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Peer-review acceptance cases for issue #521 README bounty table links.
 
-Cursor hands-on takeover (2026-06-17): maps issue #521 acceptance criteria to
+Cursor hands-on takeover (2026-06-17, engineer handoff): maps issue #521 acceptance criteria to
 README artifacts — five upstream issue links, no fragile ../../issues/ hrefs,
-and contributor note linking issue #521. Re-verified npm test (25/25) and
-peer-review acceptance for PR #2532.
+and contributor note linking issue #521. Committed README diff vs main; npm test
+(25/25) and peer-review acceptance green for PR #2532.
 """
 
 from __future__ import annotations
