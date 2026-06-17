@@ -158,6 +158,28 @@ assert(
   'README documents validation test entry points',
 );
 
+const workflowPkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+assert(
+  workflowPkg.scripts?.['test:peer-review']?.includes('peer-review-acceptance.test.mjs'),
+  'package.json exposes isolated test:peer-review entry point',
+);
+assert(
+  workflowPkg.scripts?.['test:delivery']?.includes('delivery-verification.test.mjs'),
+  'package.json exposes isolated test:delivery entry point',
+);
+assert(
+  workflowPkg.scripts?.['test:peer-review']?.includes('OK: peer review acceptance tests passed'),
+  'test:peer-review prints fleet-expected peer-review summary',
+);
+assert(
+  workflowPkg.scripts?.['test:delivery']?.includes('OK: delivery verification tests passed'),
+  'test:delivery prints fleet-expected delivery summary',
+);
+
+const makefile = readFileSync(join(repoRoot, 'Makefile'), 'utf8');
+assert(makefile.includes('test-peer-review:') && makefile.includes('test:peer-review'), 'Makefile exposes test-peer-review target');
+assert(makefile.includes('test-delivery:') && makefile.includes('test:delivery'), 'Makefile exposes test-delivery target');
+
 const screenshot = statSync(join(root, 'assets', 'n8n-execution-screenshot.png'));
 assert(screenshot.isFile() && screenshot.size > 1024, 'n8n execution screenshot asset present');
 

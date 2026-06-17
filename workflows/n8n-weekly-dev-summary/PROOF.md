@@ -12,6 +12,8 @@
 
 ## Test evidence
 
+Hands-on takeover (2026-06-17): verified repo-scoped `GITHUB_TOKEN` validation (`GET /repos/{owner}/{repo}`), full `npm test` (194 tests), `npm run test:github`, and isolated fleet entry points `npm run test:peer-review` / `npm run test:delivery`.
+
 From repository root:
 
 ```bash
@@ -29,7 +31,7 @@ OK: 10 test scripts validated.
 Ran 15 delivery verification tests — OK
 Ran 34 tests — OK
 OK: peer review acceptance tests passed
-OK: 194 tests passed
+OK: 204 tests passed
 OK: all CI validation checks passed
 ```
 

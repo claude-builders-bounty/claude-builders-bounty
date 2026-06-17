@@ -222,6 +222,14 @@ assert(
   workflowPkg.scripts?.['test:github']?.includes('github-fetch.test.mjs'),
   'package.json test:github runs github-fetch.test.mjs',
 );
+assert(
+  workflowPkg.scripts?.['test:peer-review']?.includes('peer-review-acceptance.test.mjs'),
+  'package.json test:peer-review runs peer-review acceptance suite',
+);
+assert(
+  workflowPkg.scripts?.['test:delivery']?.includes('delivery-verification.test.mjs'),
+  'package.json test:delivery runs delivery verification suite',
+);
 
 if (failures.length) {
   console.error('FAILED:\n- ' + failures.join('\n- '));

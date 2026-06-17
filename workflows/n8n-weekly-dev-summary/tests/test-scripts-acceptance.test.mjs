@@ -55,6 +55,8 @@ assert(pkg.scripts?.test === pkg.scripts?.['test:ci'], 'npm test and test:ci use
 assert(pkg.scripts?.['test:ci']?.includes('run-ci-checks.mjs'), 'npm run test:ci runs unified CI runner');
 assert(pkg.scripts?.['test:github']?.includes('github-fetch.test.mjs'), 'npm run test:github runs GitHub API test');
 assert(pkg.scripts?.['test:e2e']?.includes('run-n8n-e2e.mjs'), 'npm run test:e2e runs n8n e2e runner');
+assert(pkg.scripts?.['test:peer-review']?.includes('peer-review-acceptance.test.mjs'), 'npm run test:peer-review runs peer-review suite');
+assert(pkg.scripts?.['test:delivery']?.includes('delivery-verification.test.mjs'), 'npm run test:delivery runs delivery verification');
 
 const expectedDirs = ['tests', 'assets'];
 for (const dir of expectedDirs) {

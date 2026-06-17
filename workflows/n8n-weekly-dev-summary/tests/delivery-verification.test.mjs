@@ -173,6 +173,12 @@ test('repo root Makefile exposes test and ci-validate', () => {
   if (!/^test:/m.test(makefile) || !/^ci-validate:/m.test(makefile)) {
     throw new Error('repo root Makefile must expose test and ci-validate targets');
   }
+  if (!/^test-peer-review:/m.test(makefile) || !makefile.includes('test:peer-review')) {
+    throw new Error('repo root Makefile must expose test-peer-review target');
+  }
+  if (!/^test-delivery:/m.test(makefile) || !makefile.includes('test:delivery')) {
+    throw new Error('repo root Makefile must expose test-delivery target');
+  }
 });
 
 test('tracked files belong to bounty #5 n8n workflow only', () => {
