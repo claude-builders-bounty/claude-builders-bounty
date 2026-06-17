@@ -3,7 +3,8 @@
 
 Hands-on takeover (2026-06-17): maps issue #521 acceptance criteria to README artifacts —
 five upstream issue links, no fragile ../../issues/ hrefs, and contributor note linking
-issue #521. Re-applied README fix from main; npm test 25/25 and peer-review green.
+issue #521. Hands-on cursor takeover verified committed README diff vs main;
+npm test 25/25 and peer-review green.
 """
 
 from __future__ import annotations
