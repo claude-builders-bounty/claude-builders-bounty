@@ -83,8 +83,9 @@ assert(
 );
 assert(
   loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/repos/'),
-  'Load Config validates GITHUB_TOKEN authenticity before GitHub fetches',
+  'Load Config validates GITHUB_TOKEN via GET /repos/{owner}/{repo} before GitHub fetches',
 );
+assert(!loadCode.includes('api.github.com/user'), 'Load Config does not validate token via /user endpoint');
 assert(loadCode.includes('weekStart.toISOString()'), 'Load Config emits ISO8601 weekStart');
 assert(loadCode.includes('weekEnd: now.toISOString()'), 'Load Config emits ISO8601 weekEnd');
 assert(!loadCode.includes('githubToken:'), 'Load Config does not embed githubToken in item JSON');
@@ -188,6 +189,39 @@ assert(screenshot.isFile() && screenshot.size > 1024, 'n8n execution screenshot 
 for (const forbidden of ['sk-ant-', 'ghp_', 'gho_', 'discord.com/api/webhooks/']) {
   assert(!serialized.includes(forbidden), `workflow does not embed ${forbidden} secrets`);
 }
+
+const requiredTestScripts = [
+  'validate-workflow.mjs',
+  'collect-github-data.test.mjs',
+  'github-collect-unit.test.mjs',
+  'workflow-integration.test.mjs',
+  'delivery-verification.test.mjs',
+  'peer-review-acceptance.test.mjs',
+  'run-ci-checks.mjs',
+  'github-fetch.test.mjs',
+  'capture-execution-screenshot.mjs',
+  'run-n8n-e2e.mjs',
+];
+const secretScanExempt = new Set(['validate-workflow.mjs']);
+for (const file of requiredTestScripts) {
+  const scriptPath = join(__dirname, file);
+  const scriptText = readFileSync(scriptPath, 'utf8');
+  assert(scriptText.startsWith('#!/usr/bin/env node'), `${file} has node shebang`);
+  if (!secretScanExempt.has(file)) {
+    for (const secret of ['sk-ant-', 'ghp_', 'gho_', 'discord.com/api/webhooks/']) {
+      assert(!scriptText.includes(secret), `${file} does not embed ${secret}`);
+    }
+  }
+}
+const workflowPkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'));
+assert(
+  workflowPkg.scripts?.test?.includes('run-ci-checks.mjs'),
+  'package.json npm test delegates to run-ci-checks.mjs',
+);
+assert(
+  workflowPkg.scripts?.['test:github']?.includes('github-fetch.test.mjs'),
+  'package.json test:github runs github-fetch.test.mjs',
+);
 
 if (failures.length) {
   console.error('FAILED:\n- ' + failures.join('\n- '));

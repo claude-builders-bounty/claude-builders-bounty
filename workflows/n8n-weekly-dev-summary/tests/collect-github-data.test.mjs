@@ -28,8 +28,9 @@ assert(
 );
 assert(
   loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/repos/'),
-  'Load Config validates GITHUB_TOKEN via GitHub /user before repo API calls',
+  'Load Config validates GITHUB_TOKEN via GET /repos/{owner}/{repo} before repo API calls',
 );
+assert(!loadCode.includes('api.github.com/user'), 'Load Config does not use /user token validation');
 assert(
   !loadCode.includes('githubToken:') && !loadCode.includes('anthropicApiKey:'),
   'Load Config does not copy secrets into item JSON',

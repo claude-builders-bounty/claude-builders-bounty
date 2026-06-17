@@ -23,7 +23,7 @@ const requiredScripts = [
   { file: 'delivery-verification.test.mjs', mustInclude: ['Fleet delivery verification', 'test('] },
   { file: 'peer-review-acceptance.test.mjs', mustInclude: ['Peer-review acceptance', 'assert('] },
   { file: 'run-ci-checks.mjs', mustInclude: ['validate-workflow.mjs', 'delivery-verification.test.mjs'] },
-  { file: 'github-fetch.test.mjs', mustInclude: ['GITHUB_TOKEN', 'validateGitHubToken', 'api.github.com'] },
+  { file: 'github-fetch.test.mjs', mustInclude: ['GITHUB_TOKEN', 'validateGitHubToken', 'api.github.com/repos'] },
   { file: 'capture-execution-screenshot.mjs', mustInclude: ['playwright', 'n8n-execution-screenshot.png'] },
   { file: 'run-n8n-e2e.mjs', mustInclude: ['mockPort', 'weekly-dev-summary.e2e.json'] },
 ];

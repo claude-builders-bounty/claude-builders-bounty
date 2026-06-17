@@ -49,7 +49,11 @@ assert(
 );
 assert(
   loadCode.includes('validateGitHubToken') && loadCode.includes('api.github.com/repos/'),
-  'Load Config validates GITHUB_TOKEN authenticity via GitHub /user before API calls',
+  'Load Config validates GITHUB_TOKEN via GET /repos/{owner}/{repo} before API calls',
+);
+assert(
+  !loadCode.includes('api.github.com/user'),
+  'Load Config does not validate GITHUB_TOKEN via /user (Actions token lacks user scope)',
 );
 assert(
   loadCode.includes('$env.GITHUB_TOKEN') && loadCode.includes('Set GITHUB_TOKEN'),
