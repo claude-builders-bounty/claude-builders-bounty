@@ -277,9 +277,11 @@ test("reference app ships committed unit and integration tests", () => {
     "tests/db/migrations.test.ts",
     "tests/db/queries/invoices.test.ts",
     "tests/server/actions/create-invoice.test.ts",
+    "tests/server/actions/void-invoice.test.ts",
     "tests/components/create-invoice-form.test.tsx",
     "src/db/queries/invoices.ts",
     "src/server/actions/create-invoice.ts",
+    "src/server/actions/void-invoice.ts",
   ];
   for (const rel of required) {
     if (!statSync(join(referenceRoot, rel)).isFile()) {

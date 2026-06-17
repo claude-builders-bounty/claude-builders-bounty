@@ -425,13 +425,18 @@ function collectTestFiles(dir) {
 }
 collectTestFiles(referenceTestsDir);
 assert(
-  committedTestFiles.length >= 4,
-  "reference app commits at least four unit/integration test files",
+  committedTestFiles.length >= 5,
+  "reference app commits at least five unit/integration test files",
+);
+assert(
+  statSync(join(root, "reference", "src", "server", "actions", "void-invoice.ts")).isFile(),
+  "reference app commits void-invoice.ts server action paired with CLAUDE.md example",
 );
 for (const rel of [
   "db/migrations.test.ts",
   "db/queries/invoices.test.ts",
   "server/actions/create-invoice.test.ts",
+  "server/actions/void-invoice.test.ts",
   "components/create-invoice-form.test.tsx",
 ]) {
   assert(
