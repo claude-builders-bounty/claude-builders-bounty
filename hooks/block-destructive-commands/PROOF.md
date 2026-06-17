@@ -125,6 +125,16 @@ tree despite green `npm test`. Re-verified delivery criteria and committed proof
 - CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (exit 0, no stdout)
 - No stray `internal/exporter/*` in working tree or `main...HEAD` diff
 
+## Hands-on verification (2026-06-17, hands-on takeover v2)
+
+Fleet engineer session failed `no_committed_diff` / `peer_review_not_passed` without source
+edits. Applied `command.strip()` before pattern matching so whitespace-padded Bash payloads
+still block destructive commands; added integration regression test.
+
+- Branch `feat/issue-3-destructive-command-hook-v2` hook-only diff (16 paths)
+- `npm test` green: 105 unittest + 6 delivery + 21 peer-review + attribution checks
+- CLI: `rm -rf /` denied; `git status` allowed; `  rm -rf /tmp  ` denied after strip fix
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

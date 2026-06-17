@@ -565,6 +565,24 @@ class HookIntegrationTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "")
         self.assertFalse(self.log_file.exists())
 
+    def test_blocks_whitespace_padded_destructive_command(self):
+        result = self.run_hook(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "  rm -rf /tmp/build  "},
+                "cwd": "/workspace/demo",
+            }
+        )
+
+        self.assertEqual(result.returncode, 0)
+        output = json.loads(result.stdout)
+        self.assertEqual(
+            output["hookSpecificOutput"]["permissionDecision"],
+            "deny",
+        )
+        log_contents = self.log_file.read_text(encoding="utf-8")
+        self.assertIn("rm -rf /tmp/build", log_contents)
+
     def test_ignores_non_bash_tools(self):
         result = self.run_hook(
             {

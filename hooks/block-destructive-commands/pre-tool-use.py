@@ -246,7 +246,7 @@ def main() -> None:
             sys.exit(0)
 
         tool_input = data.get("tool_input") or {}
-        command = tool_input.get("command", "")
+        command = (tool_input.get("command") or "").strip()
         if not command:
             sys.exit(0)
 

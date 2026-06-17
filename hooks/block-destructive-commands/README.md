@@ -99,7 +99,7 @@ From this directory:
 ```bash
 make test
 # or: python3 -m unittest discover -s tests -v
-# 103 regression tests (bounty + peer-review acceptance + integration checks)
+# 105+ regression tests (bounty + peer-review acceptance + integration checks)
 ```
 
 From the repository root:
