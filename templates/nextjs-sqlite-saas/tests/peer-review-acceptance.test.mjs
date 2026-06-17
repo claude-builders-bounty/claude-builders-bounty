@@ -449,7 +449,8 @@ assert(
   "reference/scripts/run-tests.sh runs Vitest suites in CI",
 );
 
-// Branch diff scoped to template bounty paths only
+// Branch diff scoped to template bounty paths only (reject fleet stray artifacts)
+const strayFleetArtifacts = ["example.js", "mkdocs.go"];
 const allowedPrefixes = [
   "templates/nextjs-sqlite-saas/",
   ".github/workflows/test-nextjs-sqlite-template.yml",
@@ -462,6 +463,12 @@ const allowedPrefixes = [
 try {
   const baseRef = resolveBranchDiffBaseRef();
   for (const path of listBranchChangedFiles(baseRef)) {
+    for (const stray of strayFleetArtifacts) {
+      assert(
+        path !== stray && !path.endsWith(`/${stray}`),
+        `branch diff includes fleet stray artifact: ${path}`,
+      );
+    }
     assert(!path.startsWith("internal/"), `unrelated path in PR diff: ${path}`);
     assert(!path.startsWith("hooks/"), `unrelated path in PR diff: ${path}`);
     assert(

@@ -224,6 +224,30 @@ test("template CLAUDE.md fix is committed vs main", () => {
   }
 });
 
+test("branch diff excludes fleet stray root artifacts", () => {
+  ensureMainRef();
+  let changed = [];
+  for (const spec of ["main...HEAD", "main..HEAD"]) {
+    try {
+      const output = execSync(`git diff ${spec} --name-only`, {
+        cwd: repoRoot,
+        encoding: "utf8",
+      });
+      changed = output.split("\n").map((line) => line.trim()).filter(Boolean);
+      if (changed.length > 0) {
+        break;
+      }
+    } catch {
+      // try next spec
+    }
+  }
+  for (const stray of ["example.js", "mkdocs.go"]) {
+    if (changed.includes(stray)) {
+      throw new Error(`branch diff must not include fleet stray artifact: ${stray}`);
+    }
+  }
+});
+
 test("branch diff includes template deliverable paths vs main", () => {
   ensureMainRef();
   let changed = [];
