@@ -78,6 +78,14 @@ Re-verified on `feat/issue-3-destructive-command-hook-v2` (PR #2556):
 - `npm test` green: 104 unittest + 6 delivery + 21 peer-review + attribution checks
 - Branch scope: 16 hook-related files only (`git diff main...HEAD --stat`)
 - CLI: `rm -rf /` → denied via official `hookSpecificOutput` schema; `git status` → allowed
+
+## Hands-on verification (2026-06-17, delivery takeover)
+
+Fleet commit `14347c1f` re-committed `internal/exporter/mkdocs.go`, failing
+`test_branch_diff_excludes_unrelated_exporter_paths` and
+`test_branch_diff_scoped_to_hook_only`. Removed via `e2a06267`; `npm test` green
+(104 unittest + 6 delivery + 21 peer-review + attribution). Branch scope: 16
+hook-only paths.
 - PR MERGEABLE/CLEAN against `main`; no rebase needed (0 behind main)
 
 ```bash
