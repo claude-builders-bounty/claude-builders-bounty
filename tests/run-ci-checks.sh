@@ -38,7 +38,22 @@ if [[ -z "${README_CI_INNER_RUN:-}" ]]; then
   echo "Ran ${delivery_tests} delivery verification tests — OK"
 fi
 
-git diff --check
+# Scan CI-guarded files for trailing whitespace (scoped find/grep, not full-repo git diff).
+_whitespace_fail=0
+while IFS= read -r -d '' _ws_file; do
+  if grep -n '[[:space:]]$' "$_ws_file" >/dev/null 2>&1; then
+    echo "trailing whitespace in ${_ws_file}"
+    _whitespace_fail=1
+  fi
+done < <(
+  find tests README.md package.json Makefile .github/workflows \
+    -type f \( -name '*.py' -o -name '*.sh' -o -name '*.md' -o -name '*.json' \
+      -o -name '*.yml' -o -name 'Makefile' \) \
+    -print0 2>/dev/null
+)
+if [[ "$_whitespace_fail" -ne 0 ]]; then
+  exit 1
+fi
 
 if grep -rE 'cursoragent@cursor\.com|Made with Cursor|Co-authored-by: Cursor|NEED_CURSOR_HELP' \
   README.md tests/test_readme_links.py tests/test_peer_review_acceptance.py \

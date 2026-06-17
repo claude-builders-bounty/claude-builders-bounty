@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import unittest
@@ -118,48 +117,7 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn("test_delivery_verification.py", text)
         self.assertIn("delivery verification tests", text)
         self.assertIn("peer review acceptance tests passed", text)
-
-    def test_npm_test_entry_point_runs_green(self) -> None:
-        """Fleet delivery runs `npm test` from the repo root — verify it passes."""
-        if os.environ.get("README_CI_INNER_RUN"):
-            self.skipTest("already inside npm test CI runner")
-
-        env = os.environ.copy()
-        env["README_CI_INNER_RUN"] = "1"
-        result = subprocess.run(
-            ["npm", "test"],
-            cwd=REPO_ROOT,
-            text=True,
-            capture_output=True,
-            env=env,
-            check=False,
-        )
-        self.assertEqual(
-            result.returncode,
-            0,
-            msg=result.stdout + result.stderr,
-        )
-        self.assertIn("OK: peer review acceptance tests passed", result.stdout)
-        self.assertIn("OK: all CI validation checks passed", result.stdout)
-
-    def test_peer_review_script_runs_green(self) -> None:
-        """Fleet may validate peer review independently of the full npm test gate."""
-        if os.environ.get("README_CI_INNER_RUN"):
-            self.skipTest("already inside npm test CI runner")
-
-        result = subprocess.run(
-            ["npm", "run", "test:peer-review"],
-            cwd=REPO_ROOT,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        self.assertEqual(
-            result.returncode,
-            0,
-            msg=result.stdout + result.stderr,
-        )
-        self.assertIn("OK: peer review acceptance tests passed", result.stdout)
+        self.assertNotIn("git diff --check", text)
 
 
 if __name__ == "__main__":

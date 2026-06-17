@@ -105,6 +105,8 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("Ran ${readme_link_tests} README link tests — OK", script)
         self.assertIn("Ran ${peer_review_tests} peer review acceptance tests — OK", script)
         self.assertIn("Forbidden agent attribution trailer found in HEAD commit message", script)
+        self.assertIn("trailing whitespace in", script)
+        self.assertNotIn("git diff --check", script)
 
 
 if __name__ == "__main__":
