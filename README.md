@@ -1,53 +1,44 @@
-# Claude Builders Bounty 🤖
+﻿# changelog.py
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from git history using conventional commits.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup
 
----
+1. **Save the script** — copy `changelog.py` into your project root.
+2. **Tag your releases** — `git tag v1.0.0` (the script picks the latest tag automatically).
+3. **Run it** — `python changelog.py`
+
+That is it.
+
+```bash
+# Options
+python changelog.py -o RELEASES.md          # custom output file
+python changelog.py -t v0.9.0               # start from a specific tag
+python changelog.py --stdout                # print to stdout only
+```
 
 ## How it works
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+The script collects every commit since the last `git tag`, categorises them by [Conventional Commits](https://www.conventionalcommits.org/) prefix, and writes a clean markdown changelog.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+| Prefix | Section |
+|--------|---------|
+| `feat:` | Added |
+| `fix:` | Fixed |
+| `refactor:` / `perf:` | Changed |
+| `docs:` | Documentation |
+| `style:` | Styling |
+| `test:` | Testing |
+| `build:` / `ci:` | Build |
+| `remove:` / `deprecate:` / `revert:` | Removed |
+| `chore:` | Maintenance |
+| *(anything else)* | Uncategorised |
 
----
+## Sample output
 
-## Active Bounties
+See [CHANGELOG.sample.md](CHANGELOG.sample.md) for a real generated example.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Requirements
 
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+- Python 3.8+
+- `git` CLI available on your PATH
