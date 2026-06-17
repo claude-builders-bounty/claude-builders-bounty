@@ -68,6 +68,18 @@ clean tree despite green tests. Re-verified hook-only `main...HEAD` scope (16
 paths), `npm test` green (104+6+21), and CLI spot-checks (`rm -rf /` denied,
 `git status` allowed). Committed delivery proof at `adae02b8` base.
 
+## Hands-on verification (2026-06-17, cursor implementation)
+
+Workspace had untracked stray `internal/exporter/mkdocs.go` from a parallel fleet
+job (not in `main...HEAD` diff). Removed from working tree to keep delivery clean.
+
+Re-verified on `feat/issue-3-destructive-command-hook-v2` (PR #2556):
+
+- `npm test` green: 104 unittest + 6 delivery + 21 peer-review + attribution checks
+- Branch scope: 16 hook-related files only (`git diff main...HEAD --stat`)
+- CLI: `rm -rf /` → denied via official `hookSpecificOutput` schema; `git status` → allowed
+- PR MERGEABLE/CLEAN against `main`; no rebase needed (0 behind main)
+
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty
 git checkout feat/issue-3-destructive-command-hook-v2
