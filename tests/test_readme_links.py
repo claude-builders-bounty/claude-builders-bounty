@@ -5,7 +5,7 @@ Bounty rows must use absolute /owner/repo/issues/N hrefs so links resolve on
 forks and blob views; fragile ../../issues/N paths escape the repo root.
 Hands-on takeover (2026-06-17) verifies all five Active Bounties rows target
 upstream issues (#1–#5 → /claude-builders-bounty/claude-builders-bounty/issues/N).
-Cursor hands-on delivery re-ran npm test (25/25) and committed session proof for PR #2532.
+Cursor hands-on delivery confirms README links, npm test (25/25), and committed diff for PR #2532.
 """
 
 from __future__ import annotations
