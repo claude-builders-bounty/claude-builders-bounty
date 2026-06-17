@@ -156,6 +156,18 @@ edits. Added `normalize_command()` to replace null bytes that split regex tokens
 - `npm test` green: 108 unittest + 6 delivery + 21 peer-review + attribution checks
 - CLI: `rm -rf /` denied; `git status` allowed; `rm\x00-rf /tmp` denied after normalize fix
 
+## Hands-on verification (2026-06-17, sprout-idle-nudge)
+
+Merge-first nurture on `feat/issue-3-destructive-command-hook-v2` @ `5f6f800e` (PR #2556).
+No hook logic changes required — CI/reviews clean, branch synced with fork.
+
+- Removed untracked stray `internal/exporter/mkdocs.go` from parallel fleet job (not in diff)
+- `npm test` green: 108 unittest + 6 delivery + 21 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- PR status: MERGEABLE/CLEAN against `main`; head `5f6f800e` matches fork
+- Fork CI green: https://github.com/advancedresearcharray/claude-builders-bounty/actions/runs/27690053000
+- CLI: `rm -rf /` denied (`hookSpecificOutput`); `git status` allowed
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
