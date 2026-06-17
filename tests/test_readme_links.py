@@ -3,7 +3,7 @@
 
 Bounty rows must use absolute /owner/repo/issues/N hrefs so links resolve on
 forks and blob views; fragile ../../issues/N paths escape the repo root.
-Cursor hands-on takeover (2026-06-17): README bounty table uses upstream absolute
+Hands-on takeover (2026-06-17, PR #2532): README bounty table uses upstream absolute
 paths for rows #1–#5; contributor note links issue #521. npm test 25/25 green.
 """
 
