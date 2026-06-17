@@ -112,8 +112,12 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         """PR #2871: replace git diff --check; drop redundant subprocess npm tests."""
         delivery = (REPO_ROOT / "tests/test_delivery_verification.py").read_text(encoding="utf-8")
         script = (REPO_ROOT / "tests/run-ci-checks.sh").read_text(encoding="utf-8")
-        self.assertNotIn("test_peer_review_script_runs_green", delivery)
-        self.assertNotIn("test_npm_test_entry_point_runs_green", delivery)
+        self.assertIsNone(
+            re.search(r"^\s*def test_peer_review_script_runs_green\b", delivery, re.MULTILINE),
+        )
+        self.assertIsNone(
+            re.search(r"^\s*def test_npm_test_entry_point_runs_green\b", delivery, re.MULTILINE),
+        )
         self.assertNotIn("git diff --check", script)
         self.assertIn("trailing whitespace in", script)
 

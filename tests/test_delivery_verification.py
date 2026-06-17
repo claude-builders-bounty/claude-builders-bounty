@@ -33,7 +33,7 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertGreaterEqual(readme_tests, 2)
         self.assertGreaterEqual(peer_review_tests, 7)
         issue_2853_tests = count_test_methods(ISSUE_2853_TEST)
-        self.assertGreaterEqual(delivery_tests, 4)
+        self.assertGreaterEqual(delivery_tests, 7)
         self.assertGreaterEqual(issue_2853_tests, 7)
 
     def test_readme_bounty_table_links_fix_issue_521(self) -> None:
@@ -125,6 +125,19 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn("test_issue_2853_read_tool_hook.py", diff_text)
         self.assertIn("lobster-trap/zeroeye/pull/109", diff_text)
         self.assertIn("issue #2853 read tool hook acceptance tests", diff_text)
+
+    def test_pr2871_peer_review_fixes_are_committed_vs_main(self) -> None:
+        """PR #2871: peer review security/redundancy fixes must be committed vs main."""
+        ci_diff = self._git_diff_vs_main("tests/run-ci-checks.sh").stdout
+        delivery_diff = self._git_diff_vs_main("tests/test_delivery_verification.py").stdout
+        peer_diff = self._git_diff_vs_main("tests/test_peer_review_acceptance.py").stdout
+
+        self.assertIn("trailing whitespace in", ci_diff)
+        self.assertNotIn("git diff --check", ci_diff)
+        self.assertNotIn("test_peer_review_script_runs_green", delivery_diff)
+        self.assertNotIn("test_npm_test_entry_point_runs_green", delivery_diff)
+        self.assertIn("test_pr2871_peer_review_security_and_redundancy_resolved", peer_diff)
+        self.assertIn("test_pr2871_scaffold_files_each_serve_distinct_purpose", peer_diff)
 
     def test_repo_root_exposes_npm_test_entry_points(self) -> None:
         package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))

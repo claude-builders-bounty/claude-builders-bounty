@@ -49,6 +49,10 @@ class ReadmeLinkTests(unittest.TestCase):
                     href.startswith("issues/"),
                     f"Issue #{issue_num} link {href!r} resolves to repo files on blob views",
                 )
+                self.assertTrue(
+                    href.startswith("/"),
+                    f"Issue #{issue_num} link {href!r} must be an absolute path",
+                )
                 self.assertEqual(
                     href,
                     expected,
