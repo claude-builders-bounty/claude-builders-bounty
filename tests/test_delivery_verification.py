@@ -142,6 +142,9 @@ class DeliveryVerificationTests(unittest.TestCase):
 
         self.assertIn("trailing whitespace in", ci_diff)
         self.assertNotIn("git diff --check", ci_diff)
+        for guarded_path in ("tests", "package.json", ".github/workflows"):
+            with self.subTest(path=guarded_path):
+                self.assertIn(guarded_path, ci_diff)
         for forbidden_test in (
             "test_peer_review_script_runs_green",
             "test_npm_test_entry_point_runs_green",

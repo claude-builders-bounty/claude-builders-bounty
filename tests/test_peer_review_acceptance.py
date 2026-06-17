@@ -120,6 +120,9 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         )
         self.assertNotIn("git diff --check", script)
         self.assertIn("trailing whitespace in", script)
+        for guarded_path in ("tests", "package.json", ".github/workflows"):
+            with self.subTest(path=guarded_path):
+                self.assertIn(guarded_path, script)
 
     def test_pr2871_scaffold_files_each_serve_distinct_purpose(self):
         """PR #2871: every added repo artifact is exercised by acceptance tests."""

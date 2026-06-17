@@ -38,7 +38,15 @@ if [[ -z "${README_CI_INNER_RUN:-}" ]]; then
   echo "Ran ${delivery_tests} delivery verification tests — OK"
 fi
 
-# Scan CI-guarded files for trailing whitespace (scoped find/grep, not full-repo git diff).
+# Scan security-critical CI paths for trailing whitespace (scoped find/grep, not full-repo diff).
+# Peer review #2871: scope to tests/, package.json, and .github/workflows/ (+ Makefile/README).
+_CI_GUARDED_PATHS=(
+  tests
+  package.json
+  .github/workflows
+  Makefile
+  README.md
+)
 _whitespace_fail=0
 while IFS= read -r -d '' _ws_file; do
   if grep -n '[[:space:]]$' "$_ws_file" >/dev/null 2>&1; then
@@ -46,7 +54,7 @@ while IFS= read -r -d '' _ws_file; do
     _whitespace_fail=1
   fi
 done < <(
-  find tests README.md package.json Makefile .github/workflows \
+  find "${_CI_GUARDED_PATHS[@]}" \
     -type f \( -name '*.py' -o -name '*.sh' -o -name '*.md' -o -name '*.json' \
       -o -name '*.yml' -o -name 'Makefile' \) \
     -print0 2>/dev/null
