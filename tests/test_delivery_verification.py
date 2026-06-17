@@ -4,7 +4,7 @@
 Verifies committed README diff vs main replaces fragile ``../../issues/N`` hrefs with
 absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N`` paths for Active
 Bounties rows #1–#5; contributor note links issue #521. Fleet delivery requires
-``npm test`` (readme-links, peer-review, delivery) and a non-zero README diff.
+``npm test`` (readme-links, peer-review, delivery) and a non-zero README diff vs main.
 """
 
 from __future__ import annotations
