@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """End-to-end delivery verification for issue #521 / PR #2532 README bounty links.
 
-Hands-on delivery (2026-06-17, PR #2532): verifies committed README diff vs main replaces
-fragile ``../../issues/N`` hrefs with absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N``
-paths for Active Bounties rows #1–#5; contributor note links issue #521. Re-verified
-2026-06-17 hands-on takeover: npm test 25/25 green. Fleet engineer session re-verified.
+Verifies committed README diff vs main replaces fragile ``../../issues/N`` hrefs with
+absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N`` paths for Active
+Bounties rows #1–#5; contributor note links issue #521. Fleet delivery requires
+``npm test`` (readme-links, peer-review, delivery) and a non-zero README diff.
 """
 
 from __future__ import annotations
@@ -22,6 +22,9 @@ README = REPO_ROOT / "README.md"
 README_LINK_TEST = REPO_ROOT / "tests" / "test_readme_links.py"
 PEER_REVIEW_TEST = REPO_ROOT / "tests" / "test_peer_review_acceptance.py"
 UPSTREAM = "claude-builders-bounty/claude-builders-bounty"
+TARGET_ISSUE = 521
+TARGET_PR = 2532
+MIN_README_DIFF_LINES = 10
 
 
 def count_test_methods(path: Path) -> int:
@@ -83,19 +86,24 @@ class DeliveryVerificationTests(unittest.TestCase):
             + ((result.stderr or result.stdout) if result else "no git diff result")
         )
 
-    def test_readme_link_fix_is_committed_vs_main(self) -> None:
-        """Fleet delivery requires a committed README diff, not only working-tree edits."""
-        result = self._readme_diff_vs_main()
+    @staticmethod
+    def _readme_diff_lines(diff_stdout: str) -> tuple[list[str], list[str]]:
         added_lines = [
             line
-            for line in result.stdout.splitlines()
+            for line in diff_stdout.splitlines()
             if line.startswith("+") and not line.startswith("+++")
         ]
         removed_lines = [
             line
-            for line in result.stdout.splitlines()
+            for line in diff_stdout.splitlines()
             if line.startswith("-") and not line.startswith("---")
         ]
+        return added_lines, removed_lines
+
+    def test_readme_link_fix_is_committed_vs_main(self) -> None:
+        """Fleet delivery requires a committed README diff, not only working-tree edits."""
+        result = self._readme_diff_vs_main()
+        added_lines, removed_lines = self._readme_diff_lines(result.stdout)
         for issue_num in range(1, 6):
             with self.subTest(issue=issue_num):
                 self.assertTrue(
@@ -110,15 +118,37 @@ class DeliveryVerificationTests(unittest.TestCase):
             any("../../issues/" in line for line in added_lines),
             msg="committed README diff must not add fragile relative issue links",
         )
+        diff_lines = len(added_lines) + len(removed_lines)
+        self.assertGreater(
+            diff_lines,
+            0,
+            msg="no_committed_diff: README diff vs main must not be empty",
+        )
+        self.assertGreaterEqual(
+            diff_lines,
+            MIN_README_DIFF_LINES,
+            msg="README link fix must be a substantive committed diff, not a one-line tweak",
+        )
+
+    def test_peer_review_deliverable_has_committed_readme_diff(self) -> None:
+        """Peer review gate: reject sessions with zero README diff lines vs main."""
+        result = self._readme_diff_vs_main()
+        added_lines, removed_lines = self._readme_diff_lines(result.stdout)
+        diff_lines = len(added_lines) + len(removed_lines)
+        self.assertGreater(
+            diff_lines,
+            0,
+            msg=f"peer_review_not_passed: committed README diff required for PR #{TARGET_PR}",
+        )
+        self.assertTrue(
+            any(f"/{UPSTREAM}/issues/" in line for line in added_lines),
+            msg=f"peer review requires upstream issue links in committed README diff (issue #{TARGET_ISSUE})",
+        )
 
     def test_committed_readme_diff_documents_issue_521(self) -> None:
         """PR #2532: Active Bounties note must link issue #521 with upstream path."""
         result = self._readme_diff_vs_main()
-        added_lines = [
-            line
-            for line in result.stdout.splitlines()
-            if line.startswith("+") and not line.startswith("+++")
-        ]
+        added_lines, _ = self._readme_diff_lines(result.stdout)
         self.assertTrue(
             any(f"[issue #521](/{UPSTREAM}/issues/521)" in line for line in added_lines),
             msg="committed README diff must document issue #521 with upstream link",
