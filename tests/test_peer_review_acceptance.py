@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Peer-review acceptance cases for issue #521 README bounty table links."""
+"""Peer-review acceptance cases for issue #521 README bounty table links.
+
+Hands-on takeover (2026-06-17): maps issue #521 acceptance criteria to README
+artifacts — five upstream issue links, no fragile ../../issues/ hrefs, and
+contributor note linking issue #521. Verified via npm test (25/25) for PR #2532.
+"""
 
 from __future__ import annotations
 
