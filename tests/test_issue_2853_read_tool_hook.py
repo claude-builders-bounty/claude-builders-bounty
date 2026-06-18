@@ -142,6 +142,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         self.assertIn("no_committed_diff", text)
         self.assertIn("peer_review_not_passed", text)
         self.assertIn("test_pr2871_deliverable_has_committed_issue_2853_diff", text)
+        self.assertIn("_select_passing_build_diagnostic", text)
 
 
 if __name__ == "__main__":

@@ -6,10 +6,10 @@ checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant n
 subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
 vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
 
-Last hands-on verification: 2026-06-18 takeover #9 — 32/32 npm test green (2 readme + 14
+Last hands-on verification: 2026-06-18 takeover #10 — 32/32 npm test green (2 readme + 14
 peer-review + 8 issue-2853 + 8 delivery); CI simulation with fresh zeroeye clone 8/8 pass;
 peer review APPROVED; committed session diff records fleet no_committed_diff and
-peer_review_not_passed gates passing vs main.
+peer_review_not_passed gates passing vs main (diagnostic picker locked in delivery gate).
 """
 
 from __future__ import annotations
@@ -178,6 +178,13 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertTrue(
             any("ZEROEYE_ROOT" in line for line in added_lines),
             msg=f"peer_review_not_passed: CI zeroeye checkout required for PR #{TARGET_PR}",
+        )
+        self.assertTrue(
+            any("_select_passing_build_diagnostic" in line for line in added_lines),
+            msg=(
+                f"peer_review_not_passed: committed CI diagnostic picker fix required "
+                f"for PR #{TARGET_PR}"
+            ),
         )
 
     def _added_diff_lines(self, diff_text: str) -> list[str]:
