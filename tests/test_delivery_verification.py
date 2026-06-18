@@ -6,7 +6,7 @@ absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N`` paths for A
 Bounties rows #1–#5; contributor note links issue #521. Fleet delivery requires
 ``npm test`` (readme-links, peer-review, delivery) and a non-zero README diff vs main.
 
-Last hands-on verification: 2026-06-18T09:40Z — README rows #1–#5 use upstream absolute paths and contributor note links issue #521; npm test 26/26 green; committed README diff vs main (12 lines) passes no_committed_diff and peer_review_not_passed gates (PR #2532).
+Last hands-on verification: 2026-06-18T10:45Z — README rows #1–#5 use upstream absolute paths and contributor note links issue #521; npm test 27/27 green; PR diff excludes unrelated lockfiles (peer review gate for PR #2532).
 """
 
 from __future__ import annotations
@@ -146,6 +146,29 @@ class DeliveryVerificationTests(unittest.TestCase):
             any(f"/{UPSTREAM}/issues/" in line for line in added_lines),
             msg=f"peer review requires upstream issue links in committed README diff (issue #{TARGET_ISSUE})",
         )
+
+    def test_peer_review_deliverable_excludes_unrelated_lockfiles(self) -> None:
+        """Peer review gate: PR diff must not include unrelated lockfile churn."""
+        self._ensure_main_ref()
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "main...HEAD"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+        for path in result.stdout.splitlines():
+            if not path.strip():
+                continue
+            with self.subTest(path=path):
+                self.assertFalse(
+                    path.endswith(("pnpm-lock.yaml", "package-lock.json")),
+                    msg=(
+                        f"peer_review_not_passed: unrelated lockfile {path!r} "
+                        f"must not appear in PR #{TARGET_PR} diff"
+                    ),
+                )
 
     def test_committed_readme_diff_documents_issue_521(self) -> None:
         """PR #2532: Active Bounties note must link issue #521 with upstream path."""
