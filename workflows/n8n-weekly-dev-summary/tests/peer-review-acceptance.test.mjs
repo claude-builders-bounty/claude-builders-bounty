@@ -201,7 +201,9 @@ assert(
   'PROOF.md documents issue #5 / PR #2541 delivery evidence',
 );
 assert(
-  proof.includes('hands-on takeover') && proof.includes('no_committed_diff'),
+  proof.includes('hands-on takeover') &&
+    proof.includes('no_committed_diff') &&
+    proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
 );
 assert(

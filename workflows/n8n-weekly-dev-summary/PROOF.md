@@ -12,6 +12,20 @@
 
 ## Test evidence
 
+### Verification (2026-06-18, cursor hands-on takeover #5)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 213/213 (18 delivery + 45 peer-review + workflow/integration suites)
+npm run test:peer-review && npm run test:delivery
+# PASS — isolated fleet gate entry points
+```
+
+Cursor hands-on takeover #5 (PR #2541 / issue #5): peer review approved with no
+requested changes; committed session diff for fleet delivery gates
+(`no_committed_diff`, `peer_review_not_passed`) with substantive branch diff vs
+main including `scheduleTrigger` and `claude-sonnet-4-20250514`.
+
 ### Verification (2026-06-18, cursor hands-on takeover #4)
 
 ```bash
