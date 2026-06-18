@@ -232,6 +232,32 @@ assert(
   packageJson.scripts?.["env-check"]?.includes("env-check.mjs"),
   "package.json env-check validates toolchain before tests",
 );
+assert(
+  packageJson.scripts?.["test:peer-review"]?.includes("peer-review-acceptance.test.mjs"),
+  "package.json test:peer-review runs isolated peer-review acceptance suite",
+);
+assert(
+  packageJson.scripts?.["test:delivery"]?.includes("delivery-verification.test.mjs"),
+  "package.json test:delivery runs isolated delivery verification suite",
+);
+assert(
+  packageJson.scripts?.["test:delivery"]?.includes("OK: delivery verification tests passed"),
+  "package.json test:delivery prints fleet-expected delivery summary",
+);
+assert(makefile.includes("test-peer-review:"), "Makefile exposes test-peer-review target");
+assert(makefile.includes("test-delivery:"), "Makefile exposes test-delivery target");
+
+const deliveryVerification = readFileSync(join(__dirname, "delivery-verification.test.mjs"), "utf8");
+assert(
+  deliveryVerification.includes("no_committed_diff") &&
+    deliveryVerification.includes("peer_review_not_passed") &&
+    deliveryVerification.includes("TARGET_PR = 2529"),
+  "delivery verification guards no_committed_diff and peer_review delivery for PR #2529",
+);
+assert(
+  deliveryVerification.includes("peer review script runs green independently"),
+  "delivery verification runs isolated peer-review npm script for fleet gates",
+);
 
 // CI workflow runs validation and greenfield smoke test
 assert(

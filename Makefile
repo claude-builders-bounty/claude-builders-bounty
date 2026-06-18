@@ -5,7 +5,7 @@
 #   test         — run full template CI suite (env-check + scripts/run-ci-checks.sh)
 #   ci-validate  — alias for `test`; used by fleet delivery and GitHub Actions via npm test
 
-.PHONY: test ci-validate env-check
+.PHONY: test ci-validate env-check test-peer-review test-delivery
 
 # Toolchain probe; fails fast before heavier scaffold/smoke steps.
 env-check:
@@ -17,3 +17,10 @@ test: env-check
 
 # CI alias — identical to test so `make ci-validate` matches npm run test:ci wiring.
 ci-validate: test
+
+# Isolated fleet entry points for hands-on delivery without the full CI runner.
+test-peer-review:
+	npm run test:peer-review
+
+test-delivery:
+	npm run test:delivery

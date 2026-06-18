@@ -314,6 +314,50 @@ test("reference app ships committed unit and integration tests", () => {
   }
 });
 
+test("template CLAUDE.md deliverable has committed diff vs main", () => {
+  const { added, removed } = claudeDiffVsMain();
+  const diffLineCount = added.length + removed.length;
+  if (diffLineCount <= 0) {
+    throw new Error("no_committed_diff: CLAUDE.md diff vs main must not be empty");
+  }
+});
+
+test("peer review deliverable has committed CLAUDE.md diff", () => {
+  const { added } = claudeDiffVsMain();
+  const diffLineCount = added.length;
+  if (diffLineCount <= 0) {
+    throw new Error(
+      `peer_review_not_passed: committed CLAUDE.md diff required for PR #${TARGET_PR}`,
+    );
+  }
+  if (!added.some((line) => line.includes("## Stack & Versions"))) {
+    throw new Error(
+      `peer review requires Next.js SQLite CLAUDE.md template in committed diff (issue #${TARGET_ISSUE})`,
+    );
+  }
+  if (!added.some((line) => line.includes("Next.js 15"))) {
+    throw new Error(
+      `peer_review_not_passed: committed CLAUDE.md must pin Next.js 15 for PR #${TARGET_PR}`,
+    );
+  }
+});
+
+test("peer review script runs green independently", () => {
+  if (process.env.NEXTJS_TEMPLATE_CI_INNER_RUN) {
+    return;
+  }
+
+  const output = execSync("npm run test:peer-review", {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: { ...process.env, NEXTJS_TEMPLATE_CI_INNER_RUN: "1" },
+  });
+
+  if (!output.includes("OK: peer review acceptance tests passed")) {
+    throw new Error("npm run test:peer-review must print fleet-expected peer-review summary");
+  }
+});
+
 test("npm test entry point runs green", () => {
   if (process.env.NEXTJS_TEMPLATE_CI_INNER_RUN) {
     return;
