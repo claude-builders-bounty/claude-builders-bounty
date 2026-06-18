@@ -5,6 +5,9 @@ import { resetDbForTests } from "@/lib/db";
 import { applyAllMigrations, seedOrganization } from "../../helpers/db";
 
 vi.mock("@/lib/auth");
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+}));
 
 describe("actionCreateInvoice", () => {
   beforeEach(() => {

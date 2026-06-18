@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOrgMember } from "@/lib/auth";
 import { voidInvoice } from "@/db/queries/invoices";
@@ -17,7 +18,8 @@ export async function actionVoidInvoice(input: unknown) {
   const data = parsed.data;
   try {
     const { orgId } = await requireOrgMember(data.orgSlug);
-    voidInvoice({ orgId, invoiceId: data.invoiceId });
+    await voidInvoice({ orgId, invoiceId: data.invoiceId });
+    revalidatePath(`/${data.orgSlug}/invoices`);
     return { ok: true as const };
   } catch {
     return { ok: false as const, error: "Failed to void invoice" };

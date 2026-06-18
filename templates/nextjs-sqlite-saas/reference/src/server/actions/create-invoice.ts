@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOrgMember } from "@/lib/auth";
 import { createInvoice } from "@/db/queries/invoices";
@@ -22,6 +23,7 @@ export async function actionCreateInvoice(input: unknown) {
       amountCents: data.amountCents,
       createdBy: userId,
     });
+    revalidatePath(`/${data.orgSlug}/invoices`);
     return { ok: true as const, invoice };
   } catch {
     return { ok: false as const, error: "Failed to create invoice" };
