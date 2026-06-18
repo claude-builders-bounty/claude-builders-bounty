@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-18T16:40Z — npm test green; isolated test:peer-review
- * (109 asserts) and test:delivery (21 tests) pass; peer review APPROVED.
+ * Last hands-on verification: 2026-06-18T17:00Z — npm test green; isolated test:peer-review
+ * (111 asserts) and test:delivery (22 tests) pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -277,6 +277,14 @@ assert(
 assert(
   deliveryVerification.includes("greenfield step 4 mentions requireOrgMember"),
   "delivery verification locks greenfield step 4 requireOrgMember pairing for PR #2529",
+);
+assert(
+  deliveryVerification.includes("greenfield step 5 pairs db:migrate and typecheck"),
+  "delivery verification locks greenfield step 5 db:migrate/typecheck pairing for PR #2529",
+);
+assert(
+  deliveryVerification.includes("smoke-greenfield.sh locks greenfield step 5"),
+  "delivery verification locks smoke test greenfield step 5 for PR #2529",
 );
 
 // CI workflow runs validation and greenfield smoke test

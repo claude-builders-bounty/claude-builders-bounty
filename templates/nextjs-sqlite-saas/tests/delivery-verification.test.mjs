@@ -6,9 +6,9 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-18T16:40Z — CLAUDE.md diff vs main (730 lines)
+ * Last hands-on verification: 2026-06-18T17:00Z — CLAUDE.md diff vs main (730 lines)
  * ships bounty #2 template with 46 explicit reasons; npm test green (10 reference Vitest,
- * 21 delivery, 109 peer-review); committed diff passes no_committed_diff and
+ * 22 delivery, 111 peer-review); committed diff passes no_committed_diff and
  * peer_review_not_passed gates for PR #2529; smoke test locks greenfield step 3/4/5 pairing.
  */
 import { execSync } from "node:child_process";
@@ -205,6 +205,13 @@ test("CLAUDE.md greenfield step 5 pairs db:migrate and typecheck dev commands", 
   const greenfieldStep5 = greenfieldSection.match(/^5\.\s.+$/m)?.[0] ?? "";
   if (!/db:migrate/.test(greenfieldStep5) || !/typecheck/.test(greenfieldStep5)) {
     throw new Error("Greenfield step 5 must pair pnpm db:migrate with pnpm typecheck");
+  }
+});
+
+test("smoke-greenfield.sh locks greenfield step 5 db:migrate and typecheck", () => {
+  const smoke = readFileSync(join(root, "tests", "smoke-greenfield.sh"), "utf8");
+  if (!/db:migrate/.test(smoke) || !/typecheck/.test(smoke)) {
+    throw new Error("smoke-greenfield.sh must verify greenfield step 5 db:migrate and typecheck");
   }
 });
 
