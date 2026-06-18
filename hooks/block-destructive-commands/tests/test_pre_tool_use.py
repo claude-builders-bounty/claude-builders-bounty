@@ -120,6 +120,12 @@ class CheckCommandTests(unittest.TestCase):
             "Recursive force delete (rm -rf)",
         )
 
+    def test_blocks_rm_force_recursive_long_flags(self):
+        self.assertEqual(
+            self.hook.check_command("rm --force --recursive /var/log"),
+            "Recursive force delete (rm -rf)",
+        )
+
     def test_blocks_delete_from_case_insensitive(self):
         self.assertEqual(
             self.hook.check_command("psql -c 'delete from sessions'"),

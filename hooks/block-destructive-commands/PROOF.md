@@ -245,6 +245,17 @@ No hook logic changes required — CI/reviews clean, branch MERGEABLE/CLEAN, 0 c
 - Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
 - CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed
 
+## Hands-on verification (2026-06-18, hands-on takeover)
+
+Fleet engineer session failed `no_committed_diff` / `peer_review_not_passed` without source
+edits. Improved `is_rm_rf` to detect GNU long options (`--recursive` / `--force`) explicitly
+instead of relying on accidental substring matches in combined flag tokens; added regression
+coverage for `rm --force --recursive`.
+
+- Branch `feat/issue-3-destructive-command-hook-v2` hook-only diff (16 paths)
+- `npm test` green: 114 unittest + 8 delivery + 22 peer-review + attribution checks
+- CLI: `rm --force --recursive /tmp` denied; `git status` allowed
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

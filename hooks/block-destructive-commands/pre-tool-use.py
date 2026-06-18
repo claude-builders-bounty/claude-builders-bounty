@@ -161,13 +161,22 @@ def should_block_sql_statement(
     return bool(pattern.match(stripped_segment(segment)))
 
 
+_RM_RECURSIVE_FLAG = re.compile(
+    r"(?:--recursive\b|(?<=\s)-[A-Za-z]*r[A-Za-z]*\b)",
+    re.IGNORECASE,
+)
+_RM_FORCE_FLAG = re.compile(
+    r"(?:--force\b|(?<=\s)-[A-Za-z]*f[A-Za-z]*\b)",
+    re.IGNORECASE,
+)
+
+
 def is_rm_rf(command: str) -> bool:
-    """True when rm uses both recursive (-r) and force (-f) flags in any order."""
-    for match in re.finditer(r"\brm\s+((?:-\S+\s+)*-\S+)", command):
-        flags = "".join(re.findall(r"-([A-Za-z]+)", match.group(1))).lower()
-        if "r" in flags and "f" in flags:
-            return True
-    return False
+    """True when rm uses both recursive (-r/--recursive) and force (-f/--force) flags."""
+    if not re.search(r"\brm\b", command, re.IGNORECASE):
+        return False
+    after_rm = re.split(r"\brm\b", command, maxsplit=1, flags=re.IGNORECASE)[-1]
+    return bool(_RM_RECURSIVE_FLAG.search(after_rm) and _RM_FORCE_FLAG.search(after_rm))
 
 
 def sanitize_log_field(value: str) -> str:

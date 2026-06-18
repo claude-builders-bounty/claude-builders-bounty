@@ -26,6 +26,7 @@ class BountyAcceptanceTests(unittest.TestCase):
     def test_blocks_required_destructive_patterns(self):
         blocked = (
             ("rm -rf /tmp", "Recursive force delete (rm -rf)"),
+            ("rm --force --recursive /tmp", "Recursive force delete (rm -rf)"),
             ("DROP TABLE users", "SQL DROP TABLE"),
             ("git push --force origin main", "Git force push (git push --force)"),
             ("TRUNCATE sessions", "SQL TRUNCATE"),
