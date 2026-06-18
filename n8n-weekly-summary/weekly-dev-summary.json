@@ -1,0 +1,338 @@
+{
+  "name": "Weekly Dev Summary (OpenRouter free + GitHub)",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "since",
+              "value": "={{ $now.startOf('week').minus({days: 7}).format('YYYY-MM-DD') }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $now.format('YYYY-MM-DD') }}"
+            },
+            {
+              "name": "repo",
+              "value": "={{ $env.GITHUB_REPO || 'owner/repo' }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $env.LANGUAGE || 'EN' }}"
+            },
+            {
+              "name": "webhook_url",
+              "value": "={{ $env.WEBHOOK_URL || '' }}"
+            },
+            {
+              "name": "github_token",
+              "value": "={{ $env.GITHUB_TOKEN || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 200],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits?since={{ $json.since }}T00:00:00Z&until={{ $json.until }}T23:59:59Z&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "Fetch Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues?state=closed&since={{ $json.since }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 400],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "merge",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-prep",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $input.all();\nconst config = data.find(d => d.json.repo)?.json || data[0]?.json || {};\nconst commits = data.find(d => Array.isArray(d.json) && d.json[0]?.sha)?.json || [];\nconst issues = data.find(d => Array.isArray(d.json) && d.json[0]?.number && !d.json[0]?.pull_request)?.json || [];\nconst prs = data.find(d => Array.isArray(d.json) && d.json[0]?.pull_request)?.json || [];\n\nconst lang = config.language || 'EN';\nconst since = config.since;\nconst until = config.until;\n\nconst prompt = `Generate a ${lang === 'FR' ? 'French' : 'English'} weekly narrative summary of GitHub activity for ${config.repo} from ${since} to ${until}.\n\n## Commits (${commits.length})\n${commits.slice(0, 30).map(c => `- ${c.sha.substring(0,7)}: ${c.commit.message.split('\\n')[0]}`).join('\\n')}\n\n## Closed Issues (${issues.length})\n${issues.slice(0, 20).map(i => `- #${i.number}: ${i.title}`).join('\\n')}\n\n## Merged PRs (${prs.length})\n${prs.slice(0, 20).map(p => `- #${p.number}: ${p.title}`).join('\\n')}\n\n## Output Format\nWrite a narrative summary in 3-4 paragraphs covering:\n1. Key features added and improvements\n2. Bug fixes and stability work\n3. Notable issues closed\n4. Overall week assessment\n\nKeep it concise (~300 words) and focus on what matters to users.`;\n\nreturn { json: { prompt, repo: config.repo, language: lang, webhook_url: config.webhook_url } };"
+      }
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 300],
+      "parameters": {
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.OPENROUTER_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "openai/gpt-oss-120b:free"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": "1500"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "extract",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const response = $input.first().json;\nconst summary = response.choices?.[0]?.message?.content || 'No summary generated';\nconst repo = $('Build Prompt').first().json.repo;\nreturn { json: { summary, repo } };"
+      }
+    },
+    {
+      "id": "webhook",
+      "name": "Webhook Delivery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 300],
+      "parameters": {
+        "url": "={{ $json.webhook_url }}",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=**Weekly Summary for {{ $json.repo }}**\n\n{{ $json.summary }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter API": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary": {
+      "main": [
+        [
+          {
+            "node": "Webhook Delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "1.0.0",
+  "id": "weekly-dev-summary-001"
+}
