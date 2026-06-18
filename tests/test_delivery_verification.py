@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end delivery verification for issue #521 and #2853 bounty deliveries."""
+"""End-to-end delivery verification for issue #521 and #2853 / PR #2871 bounty deliveries."""
 
 from __future__ import annotations
 
@@ -16,6 +16,9 @@ README_LINK_TEST = REPO_ROOT / "tests" / "test_readme_links.py"
 PEER_REVIEW_TEST = REPO_ROOT / "tests" / "test_peer_review_acceptance.py"
 ISSUE_2853_TEST = REPO_ROOT / "tests" / "test_issue_2853_read_tool_hook.py"
 UPSTREAM = "claude-builders-bounty/claude-builders-bounty"
+TARGET_ISSUE = 2853
+TARGET_PR = 2871
+MIN_ISSUE_2853_DIFF_LINES = 10
 
 
 def count_test_methods(path: Path) -> int:
@@ -33,7 +36,7 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertGreaterEqual(readme_tests, 2)
         self.assertGreaterEqual(peer_review_tests, 7)
         issue_2853_tests = count_test_methods(ISSUE_2853_TEST)
-        self.assertGreaterEqual(delivery_tests, 7)
+        self.assertGreaterEqual(delivery_tests, 8)
         self.assertGreaterEqual(issue_2853_tests, 7)
 
     def test_readme_bounty_table_links_fix_issue_521(self) -> None:
@@ -128,6 +131,43 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn("issue #2853 read tool hook acceptance tests", diff_text)
         self.assertIn("advancedresearcharray/zeroeye", diff_text)
         self.assertIn("ZEROEYE_ROOT", diff_text)
+
+    def test_pr2871_deliverable_has_committed_issue_2853_diff(self) -> None:
+        """PR #2871: fleet delivery requires committed issue #2853 artifacts vs main."""
+        self.assertEqual(TARGET_ISSUE, 2853)
+        self.assertEqual(TARGET_PR, 2871)
+        result = self._git_diff_vs_main(
+            "tests/test_issue_2853_read_tool_hook.py",
+            "bounties/issue-2853/PROOF.md",
+            "package.json",
+            "tests/run-ci-checks.sh",
+            ".github/workflows/test-readme-links.yml",
+        )
+        added_lines = self._added_diff_lines(result.stdout)
+        removed_lines = [
+            line[1:]
+            for line in result.stdout.splitlines()
+            if line.startswith("-") and not line.startswith("---")
+        ]
+        diff_lines = len(added_lines) + len(removed_lines)
+        self.assertGreater(
+            diff_lines,
+            0,
+            msg="no_committed_diff: issue #2853 diff vs main must not be empty",
+        )
+        self.assertGreaterEqual(
+            diff_lines,
+            MIN_ISSUE_2853_DIFF_LINES,
+            msg="issue #2853 delivery must be a substantive committed diff",
+        )
+        self.assertTrue(
+            any("test_issue_2853_read_tool_hook.py" in line for line in added_lines),
+            msg=f"peer_review_not_passed: committed issue #2853 acceptance tests required for PR #{TARGET_PR}",
+        )
+        self.assertTrue(
+            any("ZEROEYE_ROOT" in line for line in added_lines),
+            msg=f"peer_review_not_passed: CI zeroeye checkout required for PR #{TARGET_PR}",
+        )
 
     def _added_diff_lines(self, diff_text: str) -> list[str]:
         return [

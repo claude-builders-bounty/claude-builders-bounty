@@ -18,6 +18,15 @@ Read-only `read_market_data` tool hook scaffolding across three layers:
 | Gateway | `market/gateway/api.go`, `ai_tools_test.go` | `GET /api/v1/ai/tools`, `POST /api/v1/ai/tools/read`, `POST /api/v1/ai/tools/execute` |
 | Frontend | `frontend/src/ai/readToolHook.ts`, `chat.ts` | `ReadToolHook` client wired into `AiChatService` |
 
+## Verification (2026-06-18, hands-on takeover #3)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 2 README + 14 peer review + 7 issue #2853 + 8 delivery — all OK
+```
+
+CI fix: `.github/workflows/test-readme-links.yml` clones `advancedresearcharray/zeroeye` branch `pr-3-read-tool-hook` and sets `ZEROEYE_ROOT` so GitHub Actions can run issue #2853 acceptance tests. Fleet delivery gates now include `test_pr2871_deliverable_has_committed_issue_2853_diff` with explicit `no_committed_diff` / `peer_review_not_passed` guards.
+
 ## Verification (2026-06-17, hands-on takeover #2)
 
 ```bash
