@@ -19,10 +19,10 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 108 tests in ...s
+Ran 113 tests in ...s
 OK
-Ran 6 delivery verification tests — OK
-Ran 21 tests — OK
+Ran 8 delivery verification tests — OK
+Ran 22 tests — OK
 OK: peer review acceptance tests passed
 OK: all CI validation checks passed
 ```
@@ -233,6 +233,17 @@ and `npm run test:peer-review` entry points for fleet validation.
 - Branch `feat/issue-3-destructive-command-hook-v2` hook-only diff (16 paths)
 - `npm test` green: 110 unittest + 8 delivery + 22 peer-review + attribution checks
 - CLI: `rm -rf /` denied; `git status` allowed; `echo rm -rf /` allowed (execution-context fix)
+
+## Hands-on verification (2026-06-18, sprout-idle-nudge cursor)
+
+Merge-first nurture on `feat/issue-3-destructive-command-hook-v2` @ `4051be1d` (PR #2556).
+No hook logic changes required — CI/reviews clean, branch MERGEABLE/CLEAN, 0 commits behind `main`.
+
+- Removed untracked stray `internal/exporter/mkdocs.go` from parallel fleet jobs (not in `main...HEAD`)
+- `npm test` green: 113 unittest + 8 delivery + 22 peer-review + attribution checks
+- `npm run test:delivery` and `npm run test:peer-review` green in isolation
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed
 
 ## Acceptance criteria
 
