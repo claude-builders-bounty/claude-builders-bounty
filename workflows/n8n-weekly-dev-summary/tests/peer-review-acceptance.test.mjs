@@ -201,7 +201,7 @@ assert(
   'PROOF.md documents issue #5 / PR #2541 delivery evidence',
 );
 assert(
-  proof.includes('hands-on takeover #7') &&
+  proof.includes('hands-on takeover #8') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -209,6 +209,10 @@ assert(
 assert(
   workflow.description?.includes('Claude Sonnet 4') && workflow.description.includes('EN/FR'),
   'workflow JSON includes importable description metadata for n8n UI',
+);
+assert(
+  workflow.description?.includes('America/New_York') && workflow.description.includes('$env'),
+  'workflow description documents timezone and runtime env configuration',
 );
 
 if (failures.length) {
