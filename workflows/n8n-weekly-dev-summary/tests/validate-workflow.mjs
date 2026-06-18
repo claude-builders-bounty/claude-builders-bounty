@@ -30,6 +30,10 @@ assert(
   workflow.description?.includes('Claude Sonnet 4') && workflow.description.includes('EN/FR'),
   'workflow has importable description metadata for n8n UI',
 );
+assert(
+  workflow.description?.includes('paginated') && workflow.description.includes('fail-fast'),
+  'workflow description documents paginated GitHub fetches and fail-fast validation',
+);
 assert(Array.isArray(workflow.nodes) && workflow.nodes.length >= 8, 'workflow has enough nodes');
 assert(workflow.connections && typeof workflow.connections === 'object', 'workflow has connections map');
 assert(workflow.settings?.executionOrder, 'workflow has execution settings for n8n import');

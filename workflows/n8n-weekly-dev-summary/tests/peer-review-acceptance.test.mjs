@@ -201,7 +201,7 @@ assert(
   'PROOF.md documents issue #5 / PR #2541 delivery evidence',
 );
 assert(
-  proof.includes('hands-on takeover #8') &&
+  proof.includes('hands-on takeover #9') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -213,6 +213,10 @@ assert(
 assert(
   workflow.description?.includes('America/New_York') && workflow.description.includes('$env'),
   'workflow description documents timezone and runtime env configuration',
+);
+assert(
+  workflow.description?.includes('paginated') && workflow.description.includes('fail-fast'),
+  'workflow description documents paginated GitHub fetches and fail-fast validation',
 );
 
 if (failures.length) {
