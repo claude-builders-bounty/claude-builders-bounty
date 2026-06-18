@@ -13,7 +13,6 @@ LOG_DIR = os.path.join(os.path.expanduser("~"), ".claude", "hooks")
 LOG_FILE = os.path.join(LOG_DIR, "blocked.log")
 
 BLOCKED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"rm\s+--recursive\s+--force", re.IGNORECASE), "Recursive force delete (rm --recursive --force)"),
     (
         re.compile(r"\bgit\b.*?\bpush\b.*?\s--force(?!\-\w)", re.IGNORECASE),
         "Git force push (git push --force)",

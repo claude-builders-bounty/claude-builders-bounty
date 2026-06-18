@@ -256,6 +256,15 @@ coverage for `rm --force --recursive`.
 - `npm test` green: 114 unittest + 8 delivery + 22 peer-review + attribution checks
 - CLI: `rm --force --recursive /tmp` denied; `git status` allowed
 
+## Hands-on verification (2026-06-18, code delivery takeover)
+
+Removed redundant `rm --recursive --force` regex from `BLOCKED_PATTERNS` — `is_rm_rf()` already
+detects all recursive+force flag combinations (short, long, and mixed). Added regression tests
+for `rm -r --force` and `rm --recursive -f`.
+
+- `npm test` green after committed hook source edit
+- CLI: `rm -r --force /tmp` denied; `git status` allowed
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
