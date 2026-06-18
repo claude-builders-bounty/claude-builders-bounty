@@ -12,6 +12,19 @@
 
 ## Test evidence
 
+### Verification (2026-06-18, cursor hands-on takeover #4)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 213/213 (18 delivery + 45 peer-review + workflow/integration suites)
+npm run test:peer-review && npm run test:delivery
+# PASS — isolated fleet gate entry points
+```
+
+Cursor hands-on takeover #4 (PR #2541 / issue #5): reverted accidental `templates/`
+node_modules commit; added `/templates/` to root `.gitignore` and delivery scope guard;
+fleet delivery gates (`not_committed`, `no_committed_diff`, `peer_review_not_passed`) pass.
+
 ### Verification (2026-06-18, cursor hands-on takeover #3)
 
 ```bash
