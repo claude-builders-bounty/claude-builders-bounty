@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-18T15:15Z — npm test 130/130 green; isolated
- * test:peer-review (102 asserts) and test:delivery (18 tests) pass; peer review APPROVED.
+ * Last hands-on verification: 2026-06-18T15:12Z — npm test 133/133 green; isolated
+ * test:peer-review (104 asserts) and test:delivery (19 tests) pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -260,6 +260,10 @@ assert(
 assert(
   deliveryVerification.includes("peer review script runs green independently"),
   "delivery verification runs isolated peer-review npm script for fleet gates",
+);
+assert(
+  deliveryVerification.includes("greenfield step 3 pairs create-invoice and void-invoice"),
+  "delivery verification locks greenfield step 3 create/void-invoice pairing for PR #2529",
 );
 
 // CI workflow runs validation and greenfield smoke test

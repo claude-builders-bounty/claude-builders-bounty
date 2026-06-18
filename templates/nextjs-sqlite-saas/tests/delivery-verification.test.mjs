@@ -6,10 +6,10 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-18T15:15Z — CLAUDE.md diff vs main (730+ lines)
- * ships bounty #2 template with 46 explicit reasons; npm test 130/130 green (10 reference
- * Vitest, 18 delivery, 102 peer-review); committed diff passes no_committed_diff and
- * peer_review_not_passed gates for PR #2529; branch diff excludes fleet stray artifacts.
+ * Last hands-on verification: 2026-06-18T15:12Z — CLAUDE.md diff vs main (730+ lines)
+ * ships bounty #2 template with 46 explicit reasons; npm test 133/133 green (10 reference
+ * Vitest, 19 delivery, 104 peer-review); committed diff passes no_committed_diff and
+ * peer_review_not_passed gates for PR #2529; greenfield step 3 pairs create/void actions.
  */
 import { execSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
@@ -196,6 +196,17 @@ test("opire try issue 2 deliverable ships Next.js SQLite CLAUDE.md template", ()
   }
   if (!claude.includes("Next.js 15") || !claude.includes("better-sqlite3")) {
     throw new Error("CLAUDE.md must pin Next.js 15 and SQLite stack");
+  }
+});
+
+test("CLAUDE.md greenfield step 3 pairs create-invoice and void-invoice actions", () => {
+  const claude = readFileSync(CLAUDE_MD, "utf8");
+  const greenfieldSection = claude.split("## Greenfield Smoke Test")[1]?.split(/^## /m)[0] ?? "";
+  const greenfieldStep3 = greenfieldSection.match(/^3\.\s.+$/m)?.[0] ?? "";
+  if (!/create-invoice\.ts/.test(greenfieldStep3) || !/void-invoice\.ts/.test(greenfieldStep3)) {
+    throw new Error(
+      "Greenfield step 3 must pair create-invoice.ts and void-invoice.ts server actions",
+    );
   }
 });
 
