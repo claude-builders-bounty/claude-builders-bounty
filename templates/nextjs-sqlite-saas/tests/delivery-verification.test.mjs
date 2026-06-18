@@ -6,10 +6,10 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-18T16:35Z — CLAUDE.md diff vs main (730 lines)
- * ships bounty #2 template with 46 explicit reasons; npm test 138/138 green (10 reference
- * Vitest, 20 delivery, 108 peer-review); committed diff passes no_committed_diff and
- * peer_review_not_passed gates for PR #2529; smoke test locks greenfield step 3/5 pairing.
+ * Last hands-on verification: 2026-06-18T16:40Z — CLAUDE.md diff vs main (730 lines)
+ * ships bounty #2 template with 46 explicit reasons; npm test green (10 reference Vitest,
+ * 21 delivery, 109 peer-review); committed diff passes no_committed_diff and
+ * peer_review_not_passed gates for PR #2529; smoke test locks greenfield step 3/4/5 pairing.
  */
 import { execSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
@@ -216,6 +216,15 @@ test("CLAUDE.md greenfield step 3 pairs create-invoice and void-invoice actions"
     throw new Error(
       "Greenfield step 3 must pair create-invoice.ts and void-invoice.ts server actions",
     );
+  }
+});
+
+test("CLAUDE.md greenfield step 4 mentions requireOrgMember", () => {
+  const claude = readFileSync(CLAUDE_MD, "utf8");
+  const greenfieldSection = claude.split("## Greenfield Smoke Test")[1]?.split(/^## /m)[0] ?? "";
+  const greenfieldStep4 = greenfieldSection.match(/^4\.\s.+$/m)?.[0] ?? "";
+  if (!/requireOrgMember/.test(greenfieldStep4)) {
+    throw new Error("Greenfield step 4 must mention requireOrgMember");
   }
 });
 
