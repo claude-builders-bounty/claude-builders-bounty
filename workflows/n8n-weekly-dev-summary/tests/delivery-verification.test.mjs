@@ -12,6 +12,8 @@ import { isGitHubError, collectRecords } from './lib/github-collect.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const repoRoot = join(root, '..', '..');
+const TARGET_ISSUE = 5;
+const TARGET_PR = 2541;
 
 const tests = [];
 function test(name, fn) {
@@ -297,6 +299,57 @@ test('git branch targets bounty #5 n8n workflow', () => {
   const branch = resolveBountyBranch();
   if (!/bounty-5|n8n-weekly-dev-summary|issue-5/i.test(branch)) {
     throw new Error(`expected bounty #5 branch, got "${branch}"`);
+  }
+});
+
+function workflowDiffVsMain() {
+  const baseRef = resolveBaseRef();
+  return execSync(
+    `git diff ${baseRef}...HEAD -- workflows/n8n-weekly-dev-summary/weekly-dev-summary.json`,
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+}
+
+function countDiffLines(diffStdout) {
+  const added = diffStdout
+    .split('\n')
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'));
+  const removed = diffStdout
+    .split('\n')
+    .filter((line) => line.startsWith('-') && !line.startsWith('---'));
+  return added.length + removed.length;
+}
+
+test('workflow deliverable has committed diff vs main', () => {
+  const diff = workflowDiffVsMain();
+  const diffLines = countDiffLines(diff);
+  if (diffLines <= 0) {
+    throw new Error('no_committed_diff: workflow diff vs main must not be empty');
+  }
+});
+
+test('peer review deliverable has committed workflow diff', () => {
+  const diff = workflowDiffVsMain();
+  const diffLines = countDiffLines(diff);
+  if (diffLines <= 0) {
+    throw new Error(`peer_review_not_passed: committed workflow diff required for PR #${TARGET_PR}`);
+  }
+  if (!diff.includes('scheduleTrigger') || !diff.includes('claude-sonnet-4-20250514')) {
+    throw new Error(
+      `peer review requires n8n workflow deliverable in committed diff (issue #${TARGET_ISSUE})`,
+    );
+  }
+});
+
+test('peer review script runs green independently', () => {
+  if (process.env.N8N_CI_INNER_RUN) return;
+  const output = execSync('npm run test:peer-review', {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: { ...process.env, N8N_CI_INNER_RUN: '1' },
+  });
+  if (!output.includes('OK: peer review acceptance tests passed')) {
+    throw new Error('npm run test:peer-review must print fleet-expected peer-review summary');
   }
 });
 

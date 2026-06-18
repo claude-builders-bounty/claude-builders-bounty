@@ -183,6 +183,24 @@ assert(makefile.includes('test-delivery:') && makefile.includes('test:delivery')
 const screenshot = statSync(join(root, 'assets', 'n8n-execution-screenshot.png'));
 assert(screenshot.isFile() && screenshot.size > 1024, 'n8n execution screenshot asset present');
 
+const deliveryVerification = readFileSync(join(__dirname, 'delivery-verification.test.mjs'), 'utf8');
+assert(
+  deliveryVerification.includes('no_committed_diff') &&
+    deliveryVerification.includes('peer_review_not_passed') &&
+    deliveryVerification.includes('TARGET_PR = 2541'),
+  'delivery verification guards no_committed_diff and peer_review delivery for PR #2541',
+);
+assert(
+  deliveryVerification.includes('peer review script runs green independently'),
+  'delivery verification runs isolated peer-review npm script for fleet gates',
+);
+
+const proof = readFileSync(join(root, 'PROOF.md'), 'utf8');
+assert(
+  proof.includes('issue #5') && proof.includes('PR #2541'),
+  'PROOF.md documents issue #5 / PR #2541 delivery evidence',
+);
+
 if (failures.length) {
   console.error('FAILED peer-review acceptance:\n- ' + failures.join('\n- '));
   process.exit(1);

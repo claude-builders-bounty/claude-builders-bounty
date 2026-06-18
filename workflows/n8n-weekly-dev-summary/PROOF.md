@@ -12,7 +12,9 @@
 
 ## Test evidence
 
-Hands-on takeover (2026-06-17): verified repo-scoped `GITHUB_TOKEN` validation (`GET /repos/{owner}/{repo}`), full `npm test` (194 tests), `npm run test:github`, and isolated fleet entry points `npm run test:peer-review` / `npm run test:delivery`.
+Hands-on takeover (2026-06-18, PR #2541): verified repo-scoped `GITHUB_TOKEN` validation (`GET /repos/{owner}/{repo}`), full `npm test`, isolated `npm run test:peer-review` / `npm run test:delivery`, and fleet delivery gates (`no_committed_diff`, `peer_review_not_passed`) for issue #5.
+
+Prior verification (2026-06-17): same suite plus `npm run test:github`.
 
 From repository root:
 
@@ -28,10 +30,10 @@ OK: GitHub data collection handles n8n item splitting.
 OK: github-collect unit tests passed.
 OK: workflow integration tests passed.
 OK: 10 test scripts validated.
-Ran 15 delivery verification tests — OK
-Ran 34 tests — OK
+Ran 18 delivery verification tests — OK
+Ran 43 tests — OK
 OK: peer review acceptance tests passed
-OK: 204 tests passed
+OK: 210 tests passed
 OK: all CI validation checks passed
 ```
 
