@@ -19,7 +19,7 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 113 tests in ...s
+Ran 115 tests in ...s
 OK
 Ran 8 delivery verification tests — OK
 Ran 22 tests — OK
@@ -264,6 +264,18 @@ for `rm -r --force` and `rm --recursive -f`.
 
 - `npm test` green after committed hook source edit
 - CLI: `rm -r --force /tmp` denied; `git status` allowed
+
+## Hands-on verification (2026-06-18, sprout-idle-nudge)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `0bd3cac3` (PR #2556). No hook logic
+changes — merge-nurture re-check after parallel fleet jobs.
+
+- Removed untracked stray `internal/exporter/mkdocs.go` from parallel fleet jobs (not in `main...HEAD`)
+- `npm test` green: 115 unittest + 8 delivery + 22 peer-review + attribution checks
+- `npm run test:delivery` and `npm run test:peer-review` green in isolation
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
+- GitHub PR: OPEN, no review comments, no CI checks reported on fork branch
 
 ## Acceptance criteria
 
