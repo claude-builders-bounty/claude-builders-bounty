@@ -1,53 +1,59 @@
-# Claude Builders Bounty 🤖
+# Claude Code Security Hook
 
-> A community bounty board for Claude Code builders.
+A `pre-tool-use` hook that blocks dangerous bash commands before execution.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation (2 commands)
 
----
+```bash
+mkdir -p ~/.claude/hooks && cp claude-hook.py ~/.claude/hooks/pre-tool-use.py
+```
+
+## What it blocks
+
+| Pattern | Example | Risk |
+|---------|---------|------|
+| `rm -rf` | `rm -rf /tmp/build` | Permanent file deletion |
+| `DROP TABLE` | `DROP TABLE users` | Database destruction |
+| `DELETE` without WHERE | `DELETE FROM logs` | Delete all rows |
+| `git push --force` | `git push --force origin main` | Overwrite remote history |
+| `TRUNCATE TABLE` | `TRUNCATE TABLE sessions` | Delete all rows |
+| `chmod 777` | `chmod -R 777 .` | Insecure permissions |
+| `curl \| bash` | `curl -sSL x.com/install \| bash` | Remote code execution |
 
 ## How it works
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+1. Intercepts bash commands before execution
+2. Matches against dangerous patterns
+3. Blocks the command if matched
+4. Logs the attempt to `~/.claude/hooks/blocked.log`
+5. Explains to Claude why it was blocked
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Log format
 
----
+```
+[2026-06-18T15:00:00+00:00] BLOCKED: rm -rf /tmp/build
+  Reason: Recursive delete detected (rm -rf). This can permanently delete files.
+  Project: /home/user/my-project
+```
 
-## Active Bounties
+## Testing
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```bash
+# This should be blocked
+echo "test" | python3 claude-hook.py << 'EOF'
+{"tool_name": "Bash", "tool_input": {"command": "rm -rf /tmp/test"}}
+EOF
 
----
+# This should pass through
+echo "test" | python3 claude-hook.py << 'EOF'
+{"tool_name": "Bash", "tool_input": {"command": "ls -la"}}
+EOF
+```
 
-## Rules
+## Customization
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Edit `DANGEROUS_PATTERNS` in `claude-hook.py` to add your own patterns.
 
----
+## License
 
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+MIT
