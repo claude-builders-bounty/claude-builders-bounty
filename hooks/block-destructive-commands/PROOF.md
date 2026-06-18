@@ -277,6 +277,16 @@ changes — merge-nurture re-check after parallel fleet jobs.
 - CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
 - GitHub PR: OPEN, no review comments, no CI checks reported on fork branch
 
+## Hands-on verification (2026-06-18, fleet takeover)
+
+Explicit `extract_container_exec_inner()` unwraps docker/podman/kubectl/nerdctl exec
+payloads before pattern checks so inner destructive commands are evaluated independently
+of container names/flags.
+
+- `npm test` green: 120 unittest + 8 delivery + 22 peer-review + attribution checks
+- Committed hook source diff vs `main` includes container exec extraction logic
+- CLI: `docker exec -it db rm -rf /data` denied; `git status` allowed
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

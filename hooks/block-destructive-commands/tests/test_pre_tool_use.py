@@ -527,6 +527,34 @@ class CheckCommandTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNotNone(self.hook.check_command(command))
 
+    def test_extract_container_exec_inner_skips_flags_and_container_name(self):
+        cases = (
+            (
+                "docker exec -it db rm -rf /data",
+                "rm -rf /data",
+            ),
+            (
+                "kubectl exec -it -n prod pod-name -- sh -c 'rm -rf /var/lib'",
+                "sh -c 'rm -rf /var/lib'",
+            ),
+            (
+                "docker exec -e FOO=bar --workdir /app db bash -c \"DROP TABLE users\"",
+                'bash -c "DROP TABLE users"',
+            ),
+        )
+        for command, expected_inner in cases:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.extract_container_exec_inner(command),
+                    expected_inner,
+                )
+
+    def test_blocks_nerdctl_exec_destructive_commands(self):
+        self.assertEqual(
+            self.hook.check_command("nerdctl exec app rm -rf /data"),
+            "Recursive force delete (rm -rf)",
+        )
+
     def test_allows_shell_variable_indirection(self):
         """Documented regex limit: indirect rm via variables is not detected."""
         self.assertIsNone(self.hook.check_command("x=rm; $x -rf /tmp"))

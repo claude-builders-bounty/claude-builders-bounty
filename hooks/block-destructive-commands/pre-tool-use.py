@@ -73,6 +73,11 @@ GIT_PUSH_FORCE_CONFIG = re.compile(
 )
 GIT_PUSH_FORCE_CONFIG_FALSE = frozenset({"false", "0", "no", "off", "n"})
 CHAIN_SPLIT = re.compile(r"\s*(?:;|&&|\|\|)\s*")
+CONTAINER_RUNTIME_EXEC = re.compile(
+    r"\b(?:docker(?:\s+compose)?|podman|kubectl|nerdctl)\s+exec\b",
+    re.IGNORECASE,
+)
+CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
 
 
 def normalize_command(command: str) -> str:
@@ -122,6 +127,57 @@ def embedded_shell_sql(segment: str, pattern: re.Pattern[str]) -> bool:
 def iter_pipe_stages(segment: str) -> list[str]:
     """Split pipeline stages so rm -rf after a display tool is still detected."""
     return [stage.strip() for stage in segment.split("|") if stage.strip()]
+
+
+def extract_container_exec_inner(segment: str) -> str | None:
+    """Return the command run inside docker/podman/kubectl/nerdctl exec."""
+    match = CONTAINER_RUNTIME_EXEC.search(segment)
+    if not match:
+        return None
+    tail = segment[match.end() :].strip()
+    while tail:
+        if tail.startswith("-- "):
+            tail = tail[3:].strip()
+            break
+        if flag_match := re.match(r"--[\w-]+=\S+\s*", tail):
+            tail = tail[flag_match.end() :].strip()
+            continue
+        if flag_match := re.match(r"--[\w-]+\s+", tail):
+            tail = tail[flag_match.end() :].strip()
+            if tail and not tail.startswith("-"):
+                value_match = re.match(r"\S+\s*", tail)
+                if value_match:
+                    tail = tail[value_match.end() :].strip()
+            continue
+        if flag_match := re.match(r"-\w+\s+", tail):
+            flag_chars = flag_match.group().strip()[1:]
+            tail = tail[flag_match.end() :].strip()
+            if (
+                len(flag_chars) == 1
+                and tail
+                and not tail.startswith("-")
+            ):
+                value_match = re.match(r"\S+\s*", tail)
+                if value_match:
+                    tail = tail[value_match.end() :].strip()
+            continue
+        break
+    name_match = CONTAINER_NAME.match(tail)
+    if not name_match:
+        return None
+    inner = tail[name_match.end() :].strip()
+    if inner.startswith("-- "):
+        inner = inner[3:].strip()
+    return inner or None
+
+
+def iter_segment_candidates(segment: str) -> list[str]:
+    """Check the segment and any inner container exec command independently."""
+    candidates = [segment]
+    inner = extract_container_exec_inner(segment)
+    if inner:
+        candidates.append(inner)
+    return candidates
 
 
 def embedded_shell_rm_rf(segment: str) -> bool:
@@ -218,7 +274,7 @@ def deny(reason: str) -> None:
     sys.exit(0)
 
 
-def check_segment(segment: str) -> str | None:
+def check_segment_body(segment: str) -> str | None:
     if segment_has_rm_rf_invocation(segment):
         return "Recursive force delete (rm -rf)"
 
@@ -272,6 +328,14 @@ def check_segment(segment: str) -> str | None:
     if REMOTE_SHELL.search(segment):
         return "Remote script execution (curl|sh / wget|sh)"
 
+    return None
+
+
+def check_segment(segment: str) -> str | None:
+    for candidate in iter_segment_candidates(segment):
+        reason = check_segment_body(candidate)
+        if reason:
+            return reason
     return None
 
 
