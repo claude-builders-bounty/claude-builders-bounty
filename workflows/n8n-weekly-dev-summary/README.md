@@ -6,11 +6,13 @@ Importable [n8n](https://n8n.io) workflow that generates a **narrative weekly de
 
 ### 1. Import the workflow
 
+Load the exportable JSON into n8n so all 13 nodes (trigger, GitHub fetches, Claude, delivery) are available for configuration.
+
 In n8n: **Workflows → Import from File** → select `weekly-dev-summary.json`.
 
 ### 2. Configure environment variables
 
-Set these in **Settings → Variables** (self-hosted `.env` or n8n Cloud variables):
+Define repo, API keys, and delivery destination in n8n **Settings → Variables** (self-hosted `.env` or n8n Cloud variables):
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -28,15 +30,29 @@ For email delivery, attach an **SMTP** credential to the **Send Email** node.
 
 **Security:** Store `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, and webhook URLs in n8n **Variables** or your host `.env` — never commit them to git or paste them into workflow nodes. The workflow reads secrets only via `$env.*` at runtime. **Load Config** validates `GITHUB_TOKEN` can read the configured repo via `GET https://api.github.com/repos/{owner}/{repo}` before any activity fetches, and fails fast if required keys are missing or invalid. Use least-privilege GitHub PATs (repo read) and rotate keys if exposed.
 
+**Pre-flight token check** (recommended before first run):
+
+```bash
+GITHUB_TOKEN=<your-token> GITHUB_REPO=owner/repo npm run test:validate-token
+```
+
+This sends a test request to GitHub's repo API and exits non-zero if the token is missing, invalid, or lacks read access.
+
 ### 3. Verify the schedule
+
+Confirm the cron matches your team's timezone — default is Friday 17:00 in workflow timezone `America/New_York`.
 
 Open **Friday 5pm Weekly Trigger** and confirm timezone/day/hour (default: Friday 17:00, workflow timezone `America/New_York`).
 
 ### 4. Test run
 
+Execute once manually to verify GitHub data collection, Claude summarization, and delivery to your chosen channel.
+
 Click **Execute Workflow**. Confirm GitHub nodes return data, Claude returns a summary, and delivery succeeds.
 
 ### 5. Activate
+
+Enable the weekly schedule so summaries run automatically every Friday at 5pm.
 
 Toggle the workflow **Active** to enable the weekly cron.
 
@@ -70,6 +86,8 @@ npm test
 | `collect-github-data.test.mjs` | GitHub record merge + pagination in workflow Code nodes |
 | `github-collect-unit.test.mjs` | Unit tests for `validateGitHubToken`, `fetchGitHubPages`, `collectRecords` |
 | `workflow-integration.test.mjs` | Token gate + mocked GitHub fetch + Claude prompt payload |
+| `delivery-channels.test.mjs` | Discord, Slack, and email payload + webhook delivery tests |
+| `validate-github-token.mjs` | Pre-flight script: verify `GITHUB_TOKEN` repo read access |
 | `test-scripts-acceptance.test.mjs` | Static checks on all test scripts |
 | `delivery-verification.test.mjs` | Fleet handoff gates (branch diff, PROOF, npm test wiring) |
 | `peer-review-acceptance.test.mjs` | Bounty #5 acceptance criteria regression |
@@ -79,6 +97,12 @@ CI mirror (attribution scan, `git diff --check`, ordered summary lines for fleet
 ```bash
 npm run test:ci
 jq empty weekly-dev-summary.json
+```
+
+Validate GitHub token permissions before enabling the workflow:
+
+```bash
+npm run test:validate-token
 ```
 
 Optional live GitHub API check (uses `GITHUB_TOKEN` or `gh auth token`):
@@ -93,7 +117,7 @@ Optional full n8n execution + screenshot regeneration (requires `n8n` CLI and `G
 npm run test:e2e
 ```
 
-The `tests/test-scripts-acceptance.test.mjs` step statically validates all ten test scripts (shebang, secret hygiene, package.json wiring) before delivery verification runs.
+The `tests/test-scripts-acceptance.test.mjs` step statically validates all test scripts (shebang, secret hygiene, package.json wiring) before delivery verification runs.
 
 ## Test evidence
 

@@ -146,12 +146,33 @@ assert(
 const setupSteps = [...readme.matchAll(/^### \d+\./gm)];
 assert(setupSteps.length > 0 && setupSteps.length <= 5, 'README setup in five steps or fewer');
 
+const validateToken = readFileSync(join(__dirname, 'validate-github-token.mjs'), 'utf8');
+assert(
+  validateToken.includes('validateGitHubToken') && validateToken.includes('process.exit(1)'),
+  'validate-github-token.mjs fails fast when token lacks repo read access',
+);
+assert(
+  readme.includes('test:validate-token') && readme.includes('Pre-flight token check'),
+  'README documents GITHUB_TOKEN pre-flight validation script',
+);
+
+const deliveryChannels = readFileSync(join(__dirname, 'delivery-channels.test.mjs'), 'utf8');
+assert(
+  deliveryChannels.includes('discord') && deliveryChannels.includes('slack') && deliveryChannels.includes('email'),
+  'delivery-channels.test.mjs covers Discord, Slack, and email delivery',
+);
+assert(
+  deliveryChannels.includes('postJsonWebhook'),
+  'delivery-channels.test.mjs verifies webhook POST delivery behavior',
+);
+
 const ciRunner = readFileSync(join(__dirname, 'run-ci-checks.mjs'), 'utf8');
 assert(
   ciRunner.includes('test-scripts-acceptance.test.mjs') &&
+    ciRunner.includes('delivery-channels.test.mjs') &&
     ciRunner.includes('delivery-verification.test.mjs') &&
     ciRunner.includes('peer review acceptance tests passed'),
-  'CI runner executes test-scripts, delivery verification, and peer-review summary',
+  'CI runner executes test-scripts, delivery channels, delivery verification, and peer-review summary',
 );
 assert(
   readme.includes('test-scripts-acceptance') || readme.includes('npm test'),

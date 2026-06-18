@@ -20,6 +20,8 @@ const requiredScripts = [
   { file: 'collect-github-data.test.mjs', mustInclude: ['collectRecords', 'lib/github-collect.mjs'] },
   { file: 'github-collect-unit.test.mjs', mustInclude: ['validateGitHubToken', 'fetchGitHubPages'] },
   { file: 'workflow-integration.test.mjs', mustInclude: ['validateGitHubToken', 'Build Claude Prompt'] },
+  { file: 'delivery-channels.test.mjs', mustInclude: ['Discord, Slack, and email', 'postJsonWebhook'] },
+  { file: 'validate-github-token.mjs', mustInclude: ['validateGitHubToken', 'GITHUB_REPO'] },
   { file: 'delivery-verification.test.mjs', mustInclude: ['Fleet delivery verification', 'test('] },
   { file: 'peer-review-acceptance.test.mjs', mustInclude: ['Peer-review acceptance', 'assert('] },
   { file: 'run-ci-checks.mjs', mustInclude: ['validate-workflow.mjs', 'delivery-verification.test.mjs'] },
@@ -54,6 +56,7 @@ assert(
 assert(pkg.scripts?.test === pkg.scripts?.['test:ci'], 'npm test and test:ci use the same CI runner');
 assert(pkg.scripts?.['test:ci']?.includes('run-ci-checks.mjs'), 'npm run test:ci runs unified CI runner');
 assert(pkg.scripts?.['test:github']?.includes('github-fetch.test.mjs'), 'npm run test:github runs GitHub API test');
+assert(pkg.scripts?.['test:validate-token']?.includes('validate-github-token.mjs'), 'npm run test:validate-token runs token pre-flight check');
 assert(pkg.scripts?.['test:e2e']?.includes('run-n8n-e2e.mjs'), 'npm run test:e2e runs n8n e2e runner');
 assert(pkg.scripts?.['test:peer-review']?.includes('peer-review-acceptance.test.mjs'), 'npm run test:peer-review runs peer-review suite');
 assert(pkg.scripts?.['test:delivery']?.includes('delivery-verification.test.mjs'), 'npm run test:delivery runs delivery verification');

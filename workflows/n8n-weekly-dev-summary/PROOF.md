@@ -12,6 +12,22 @@
 
 ## Test evidence
 
+### Verification (2026-06-18, cursor hands-on takeover #11)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 249/249 (18 delivery + 54 peer-review + delivery channel + token validation suites)
+npm run test:validate-token  # requires GITHUB_TOKEN or gh auth
+npm run test:peer-review && npm run test:delivery
+# PASS — isolated fleet gate entry points
+git diff main...HEAD -- workflows/n8n-weekly-dev-summary/weekly-dev-summary.json | wc -l
+# 479+ lines — scheduleTrigger + claude-sonnet-4-20250514 in committed diff
+```
+
+Peer review fixes: `validate-github-token.mjs` pre-flight script, `delivery-channels.test.mjs`
+(Discord/Slack/email payload + webhook tests), README setup step descriptions, and
+`tests/lib/delivery.mjs` shared helpers. Fleet gates pass.
+
 ### Verification (2026-06-18, cursor hands-on takeover #10)
 
 ```bash
@@ -149,11 +165,12 @@ OK: 13 nodes, all acceptance checks passed.
 OK: GitHub data collection handles n8n item splitting.
 OK: github-collect unit tests passed.
 OK: workflow integration tests passed.
-OK: 10 test scripts validated.
+OK: delivery channel tests passed (Discord, Slack, email).
+OK: 12 test scripts validated.
 Ran 18 delivery verification tests — OK
-Ran 48 tests — OK
+Ran 54 tests — OK
 OK: peer review acceptance tests passed
-OK: 218 tests passed
+OK: 249 tests passed
 OK: all CI validation checks passed
 ```
 
@@ -171,7 +188,7 @@ npm run test:github
 | Weekly cron (Friday 5pm) | Schedule trigger assertions in validator + peer-review suite |
 | GitHub activity fetch | Fetch nodes + `github-fetch.test.mjs` |
 | Claude Sonnet 4 summary | Claude API node + peer-review acceptance |
-| Discord/Slack/email delivery | Route Delivery switch + README + emailTo wiring regression |
+| Discord/Slack/email delivery | Route Delivery switch + `delivery-channels.test.mjs` + README + emailTo wiring |
 | Configurable repo/channel/language | Load Config env vars + FR localization tests |
 | Real n8n test + screenshot | `assets/n8n-execution-screenshot.png` |
 | README ≤ 5 setup steps | README + validator step-count check |
