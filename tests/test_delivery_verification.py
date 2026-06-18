@@ -6,7 +6,7 @@ absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N`` paths for A
 Bounties rows #1–#5; contributor note links issue #521. Fleet delivery requires
 ``npm test`` (readme-links, peer-review, delivery) and a non-zero README diff vs main.
 
-Last hands-on verification: 2026-06-18T20:30Z — README rows #1–#5 use upstream absolute paths and contributor note links issue #521; npm test 27/27 green; committed README diff vs main passes no_committed_diff and peer_review gates; PR diff excludes lockfiles; peer review APPROVED.
+Last hands-on verification: 2026-06-18T21:00Z — README rows #1–#5 use upstream absolute paths and contributor note links issue #521; npm test 27/27 green; committed README diff vs main passes no_committed_diff and peer_review gates; PR diff excludes lockfiles; peer review scope/style notes addressed (test docstrings, script comments).
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ class DeliveryVerificationTests(unittest.TestCase):
     """Guards fleet delivery: npm test wiring and README link validation."""
 
     def test_regression_suite_has_minimum_coverage(self) -> None:
+        """Each validation module must expose a minimum number of test cases."""
         readme_tests = count_test_methods(README_LINK_TEST)
         peer_review_tests = count_test_methods(PEER_REVIEW_TEST)
         delivery_tests = count_test_methods(Path(__file__))
@@ -180,6 +181,7 @@ class DeliveryVerificationTests(unittest.TestCase):
         )
 
     def test_repo_root_exposes_npm_test_entry_points(self) -> None:
+        """package.json scripts must wire test, test:ci, and test:delivery to run-ci-checks.sh."""
         package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
         self.assertIn("run-ci-checks.sh", package_json["scripts"]["test"])
         self.assertIn("run-ci-checks.sh", package_json["scripts"]["test:ci"])
@@ -187,6 +189,7 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn("OK: delivery verification tests passed", package_json["scripts"]["test:delivery"])
 
     def test_ci_script_exists_and_declares_delivery_checks(self) -> None:
+        """Unified CI runner must invoke delivery verification and emit expected markers."""
         self.assertTrue(CI_SCRIPT.is_file())
         text = CI_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("test_delivery_verification.py", text)

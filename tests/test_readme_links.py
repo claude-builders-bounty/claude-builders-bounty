@@ -22,7 +22,10 @@ ISSUE_LINK_RE = re.compile(r"\[#(\d+)\]\(([^)]+)\)")
 
 
 class ReadmeLinkTests(unittest.TestCase):
+    """Regression coverage for README issue link href conventions."""
+
     def test_readme_issue_links_use_upstream_hrefs_only(self) -> None:
+        """Every /issues/ href in README must use the upstream absolute path prefix."""
         text = README.read_text(encoding="utf-8")
         for match in re.finditer(r"\[[^\]]+\]\(([^)]+)\)", text):
             href = match.group(1)
@@ -35,6 +38,7 @@ class ReadmeLinkTests(unittest.TestCase):
                 )
 
     def test_readme_has_no_escaping_issue_links(self) -> None:
+        """README must not contain fragile ../../issues/ relative hrefs."""
         text = README.read_text(encoding="utf-8")
         self.assertNotIn(
             "../../issues/",
@@ -43,6 +47,7 @@ class ReadmeLinkTests(unittest.TestCase):
         )
 
     def test_bounty_section_note_links_issue_521(self) -> None:
+        """Active Bounties contributor note must link issue #521 with upstream path."""
         text = README.read_text(encoding="utf-8")
         table_match = BOUNTY_TABLE_RE.search(text)
         self.assertIsNotNone(table_match, "Active Bounties section not found in README")
@@ -52,6 +57,7 @@ class ReadmeLinkTests(unittest.TestCase):
         )
 
     def test_bounty_table_links_point_to_upstream_issues(self) -> None:
+        """Each bounty table row (#1–#5) must link to the canonical upstream issue."""
         text = README.read_text(encoding="utf-8")
         table_match = BOUNTY_TABLE_RE.search(text)
         self.assertIsNotNone(table_match, "Active Bounties section not found in README")
