@@ -15,6 +15,8 @@ from pathlib import Path
 HOOK_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HOOK_PATH = HOOK_DIR / "pre-tool-use.py"
+TARGET_ISSUE = 3
+TARGET_PR = 2556
 
 
 def load_hook_module():
@@ -314,6 +316,37 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
                 any(path == prefix or path.startswith(prefix) for prefix in allowed_prefixes),
                 f"unexpected path in PR diff: {path!r}",
             )
+
+    def test_peer_review_deliverable_has_committed_hook_source(self):
+        """Peer review gate: fleet sessions must commit hook source, not docs-only proof."""
+        base_ref = resolve_branch_diff_base_ref()
+        result = subprocess.run(
+            ["git", "diff", f"{base_ref}...HEAD", "--", str(HOOK_PATH.relative_to(REPO_ROOT))],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+        added_lines = [
+            line
+            for line in result.stdout.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        ]
+        self.assertGreater(
+            len(added_lines),
+            0,
+            msg=(
+                f"peer_review_not_passed: committed pre-tool-use.py additions required "
+                f"for issue #{TARGET_ISSUE} / PR #{TARGET_PR}"
+            ),
+        )
+        combined = "\n".join(added_lines)
+        self.assertIn(
+            "hookSpecificOutput",
+            combined,
+            msg="peer review requires official Claude hook denial schema in committed source",
+        )
 
 
 if __name__ == "__main__":

@@ -223,6 +223,17 @@ No hook logic changes required — local CI green, no maintainer review feedback
 - Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`); 0 behind `origin/main`
 - CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
 
+## Hands-on verification (2026-06-18, cursor hands-on takeover)
+
+Fleet engineer session failed `no_committed_diff` / `peer_review_not_passed` without source
+edits. Added delivery guard tests that reject zero-line `pre-tool-use.py` diffs vs main and
+lock peer-review deliverable checks for issue #3 / PR #2556; isolated `npm run test:delivery`
+and `npm run test:peer-review` entry points for fleet validation.
+
+- Branch `feat/issue-3-destructive-command-hook-v2` hook-only diff (16 paths)
+- `npm test` green: 110 unittest + 8 delivery + 22 peer-review + attribution checks
+- CLI: `rm -rf /` denied; `git status` allowed; `echo rm -rf /` allowed (execution-context fix)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

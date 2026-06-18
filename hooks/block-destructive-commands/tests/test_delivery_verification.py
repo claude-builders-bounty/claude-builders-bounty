@@ -19,6 +19,9 @@ HOOK_PATH = HOOK_DIR / "pre-tool-use.py"
 CI_SCRIPT = HOOK_DIR / "tests" / "run-ci-checks.sh"
 PEER_REVIEW_TEST = HOOK_DIR / "tests" / "test_peer_review_acceptance.py"
 UNIT_TEST = HOOK_DIR / "tests" / "test_pre_tool_use.py"
+TARGET_ISSUE = 3
+TARGET_PR = 2556
+MIN_HOOK_SOURCE_DIFF_LINES = 50
 
 
 def count_test_methods(path: Path) -> int:
@@ -33,6 +36,32 @@ def load_peer_review_helpers():
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def hook_source_diff_vs_main() -> subprocess.CompletedProcess[str]:
+    peer_review = load_peer_review_helpers()
+    base_ref = peer_review.resolve_branch_diff_base_ref()
+    return subprocess.run(
+        ["git", "diff", f"{base_ref}...HEAD", "--", str(HOOK_PATH.relative_to(REPO_ROOT))],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def hook_source_diff_lines(diff_stdout: str) -> tuple[list[str], list[str]]:
+    added_lines = [
+        line
+        for line in diff_stdout.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    ]
+    removed_lines = [
+        line
+        for line in diff_stdout.splitlines()
+        if line.startswith("-") and not line.startswith("---")
+    ]
+    return added_lines, removed_lines
 
 
 class DeliveryVerificationTests(unittest.TestCase):
@@ -118,6 +147,61 @@ class DeliveryVerificationTests(unittest.TestCase):
                 path.startswith("internal/"),
                 f"unrelated exporter path in PR diff: {path!r}",
             )
+
+    def test_hook_source_is_committed_vs_main(self):
+        """Fleet delivery requires a committed hook source diff, not only working-tree edits."""
+        result = hook_source_diff_vs_main()
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=(result.stderr or result.stdout or "git diff failed"),
+        )
+        added_lines, removed_lines = hook_source_diff_lines(result.stdout)
+        diff_lines = len(added_lines) + len(removed_lines)
+        self.assertGreater(
+            diff_lines,
+            0,
+            msg="no_committed_diff: pre-tool-use.py diff vs main must not be empty",
+        )
+        self.assertGreaterEqual(
+            diff_lines,
+            MIN_HOOK_SOURCE_DIFF_LINES,
+            msg=(
+                "hook source fix must be a substantive committed diff, "
+                "not a one-line tweak"
+            ),
+        )
+        combined = "\n".join(added_lines)
+        self.assertIn(
+            "check_command",
+            combined,
+            msg="committed hook diff must include destructive-command detection logic",
+        )
+
+    def test_peer_review_deliverable_has_committed_hook_diff(self):
+        """Peer review gate: reject sessions with zero hook source diff lines vs main."""
+        result = hook_source_diff_vs_main()
+        added_lines, removed_lines = hook_source_diff_lines(result.stdout)
+        diff_lines = len(added_lines) + len(removed_lines)
+        self.assertGreater(
+            diff_lines,
+            0,
+            msg=(
+                f"peer_review_not_passed: committed pre-tool-use.py diff required "
+                f"for PR #{TARGET_PR}"
+            ),
+        )
+        combined = "\n".join(added_lines)
+        self.assertTrue(
+            any(
+                marker in combined
+                for marker in ("segment_has_rm_rf_invocation", "check_command", "deny")
+            ),
+            msg=(
+                f"peer review requires hook blocking logic in committed diff "
+                f"(issue #{TARGET_ISSUE})"
+            ),
+        )
 
     def test_npm_test_entry_point_runs_green(self):
         """Fleet delivery runs `npm test` from the repo root — verify it passes."""
