@@ -1,53 +1,80 @@
-# Claude Builders Bounty 🤖
+# claude-review — Claude Code PR Reviewer
 
-> A community bounty board for Claude Code builders.
+A **Claude Code sub-agent** that reviews GitHub PRs and posts structured Markdown comments.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Features
 
----
+- **CLI**: `claude-review --pr https://github.com/owner/repo/pull/123`
+- **GitHub Action**: Automatic review on every PR
+- **Structured output**: Summary, risks, suggestions, confidence score
+- **Powered by Claude**: Uses Claude Code (`claude -p`) for deep analysis
+- **No API keys needed**: Uses your existing Claude Code setup
 
-## How it works
+## CLI Usage
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+```bash
+# Install
+curl -sLO https://raw.githubusercontent.com/Andyyook/claude-builders-bounty/main/claude-review.py
+chmod +x claude-review.py
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+# Review a PR
+export GITHUB_TOKEN="ghp_xxx"
+python3 claude-review.py --pr https://github.com/owner/repo/pull/123
 
----
+# Write to file
+python3 claude-review.py --pr https://github.com/owner/repo/pull/123 --output review.md
 
-## Active Bounties
+# Short form
+python3 claude-review.py --pr 123 --repo owner/repo
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### Output
 
----
+```markdown
+> Reviewed by **claude-review** · https://github.com/owner/repo/pull/123
+>
+> _2026-06-18 12:00 UTC_
 
-## Rules
+## Review: PR title
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+### Summary
+...
 
----
+### Identified Risks
+- ...
 
-## Community
+### Improvement Suggestions
+- ...
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### Confidence Score
+**High**
+```
 
----
+## GitHub Action
 
-*Started by the Claude builder community · March 2026 · MIT License*
+Add `.github/workflows/claude-review.yml` to your repo:
+
+```yaml
+name: Claude Code PR Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Andyyook/claude-builders-bounty/.github/actions/claude-review@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+## Requirements
+
+- **Claude Code** installed (`npm install -g @anthropic-ai/claude-code`)
+- **GitHub token** with `repo` scope for private repos (public repos work without a token)
+
+## Sample Reviews
+
+See [sample-reviews/](sample-reviews/) for example outputs tested on real PRs.
