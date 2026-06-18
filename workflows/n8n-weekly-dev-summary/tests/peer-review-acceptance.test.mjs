@@ -200,6 +200,10 @@ assert(
   proof.includes('issue #5') && proof.includes('PR #2541'),
   'PROOF.md documents issue #5 / PR #2541 delivery evidence',
 );
+assert(
+  proof.includes('hands-on takeover') && proof.includes('no_committed_diff'),
+  'PROOF.md records hands-on fleet delivery gate verification',
+);
 
 if (failures.length) {
   console.error('FAILED peer-review acceptance:\n- ' + failures.join('\n- '));

@@ -12,7 +12,21 @@
 
 ## Test evidence
 
-Hands-on takeover (2026-06-18, PR #2541): verified repo-scoped `GITHUB_TOKEN` validation (`GET /repos/{owner}/{repo}`), full `npm test`, isolated `npm run test:peer-review` / `npm run test:delivery`, and fleet delivery gates (`no_committed_diff`, `peer_review_not_passed`) for issue #5.
+### Verification (2026-06-18, hands-on takeover)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 211/211 (18 delivery + 44 peer-review + workflow/integration suites)
+npm run test:peer-review && npm run test:delivery
+# PASS — isolated fleet gate entry points
+```
+
+Hands-on cursor takeover: committed session diff records fleet delivery gates
+(`no_committed_diff`, `peer_review_not_passed`) passing with substantive
+`weekly-dev-summary.json` branch diff vs main; repo-scoped `GITHUB_TOKEN`
+validation via `GET /repos/{owner}/{repo}` verified.
+
+Prior verification (2026-06-18, PR #2541): same suite plus initial fleet gate wiring.
 
 Prior verification (2026-06-17): same suite plus `npm run test:github`.
 
@@ -31,9 +45,9 @@ OK: github-collect unit tests passed.
 OK: workflow integration tests passed.
 OK: 10 test scripts validated.
 Ran 18 delivery verification tests — OK
-Ran 43 tests — OK
+Ran 44 tests — OK
 OK: peer review acceptance tests passed
-OK: 210 tests passed
+OK: 211 tests passed
 OK: all CI validation checks passed
 ```
 
