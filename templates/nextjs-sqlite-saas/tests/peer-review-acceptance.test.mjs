@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-18T15:12Z — npm test 133/133 green; isolated
- * test:peer-review (104 asserts) and test:delivery (19 tests) pass; peer review APPROVED.
+ * Last hands-on verification: 2026-06-18T15:53Z — npm test 135/135 green; isolated
+ * test:peer-review (106 asserts) and test:delivery (19 tests) pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -151,6 +151,11 @@ assert(statSync(join(__dirname, "smoke-greenfield.sh")).isFile(), "smoke-greenfi
 assert(validator.includes("requiredSections"), "validator enforces required sections");
 assert(smokeTest.includes("create-next-app@15"), "smoke test scaffolds Next.js 15 project");
 assert(smokeTest.includes('cp "$ROOT/CLAUDE.md"'), "smoke test copies CLAUDE.md into scaffold");
+assert(
+  smokeTest.includes("create-invoice.ts") && smokeTest.includes("void-invoice.ts"),
+  "smoke test verifies greenfield step 3 create/void-invoice pairing",
+);
+assert(smokeTest.includes("requireOrgMember"), "smoke test verifies greenfield step 4 requireOrgMember");
 assert(runCiChecks.includes("validate-template.mjs"), "run-ci-checks runs structural validator");
 assert(runCiChecks.includes("smoke-greenfield.sh"), "run-ci-checks runs greenfield smoke test");
 assert(

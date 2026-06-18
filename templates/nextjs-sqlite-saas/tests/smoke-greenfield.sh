@@ -44,6 +44,15 @@ grep -q "## When to Ask Clarifying Questions" "$WORKDIR/app/CLAUDE.md"
 grep -q "## Auth and Authorization" "$WORKDIR/app/CLAUDE.md"
 grep -q "## Route Handlers and APIs" "$WORKDIR/app/CLAUDE.md"
 grep -q "## Testing Rules" "$WORKDIR/app/CLAUDE.md"
+grep -q "## Greenfield Smoke Test" "$WORKDIR/app/CLAUDE.md"
 grep -q "middleware.ts" "$WORKDIR/app/CLAUDE.md"
+
+greenfield_section="$(sed -n '/^## Greenfield Smoke Test$/,$p' "$WORKDIR/app/CLAUDE.md" | sed '1d' | sed '/^## /q')"
+greenfield_step3="$(echo "$greenfield_section" | grep '^3\.' || true)"
+echo "$greenfield_step3" | grep -q "create-invoice.ts"
+echo "$greenfield_step3" | grep -q "void-invoice.ts"
+
+greenfield_step4="$(echo "$greenfield_section" | grep '^4\.' || true)"
+echo "$greenfield_step4" | grep -q "requireOrgMember"
 
 echo "Greenfield smoke test passed: CLAUDE.md is usable in a fresh Next.js 15 project."
