@@ -12,19 +12,19 @@
 
 ## Test evidence
 
-### Verification (2026-06-18, hands-on takeover)
+### Verification (2026-06-18, cursor hands-on takeover #2)
 
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
-# PASS — 211/211 (18 delivery + 44 peer-review + workflow/integration suites)
+# PASS — 212/212 (18 delivery + 45 peer-review + workflow/integration suites)
 npm run test:peer-review && npm run test:delivery
 # PASS — isolated fleet gate entry points
 ```
 
-Hands-on cursor takeover: committed session diff records fleet delivery gates
-(`no_committed_diff`, `peer_review_not_passed`) passing with substantive
-`weekly-dev-summary.json` branch diff vs main; repo-scoped `GITHUB_TOKEN`
-validation via `GET /repos/{owner}/{repo}` verified.
+Cursor hands-on takeover: committed source diff on `weekly-dev-summary.json`
+(workflow description metadata) plus verification docs; fleet delivery gates
+(`no_committed_diff`, `peer_review_not_passed`) pass with substantive branch
+diff vs main including `scheduleTrigger` and `claude-sonnet-4-20250514`.
 
 Prior verification (2026-06-18, PR #2541): same suite plus initial fleet gate wiring.
 
@@ -47,7 +47,7 @@ OK: 10 test scripts validated.
 Ran 18 delivery verification tests — OK
 Ran 44 tests — OK
 OK: peer review acceptance tests passed
-OK: 211 tests passed
+OK: 212 tests passed
 OK: all CI validation checks passed
 ```
 
