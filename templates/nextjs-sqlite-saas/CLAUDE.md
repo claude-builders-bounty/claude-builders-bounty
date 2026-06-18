@@ -580,17 +580,21 @@ Reason: filename-order application plus a post-run count check catches skipped f
 ## Testing Rules
 
 - **Query modules:** test against an in-memory SQLite database or a temp file; seed minimal schema in `beforeEach`.
-- **Server actions:** call the action function directly with mocked `requireOrgMember` — no HTTP layer; assert both success and validation-error paths.
+- **Server actions:** call the action function directly with mocked `requireOrgMember` — no HTTP layer; assert both success and validation-error paths; mock `next/cache` and assert `revalidatePath` after successful mutations.
 - **Components:** React Testing Library for client islands; RSC pages are covered indirectly via query/action tests.
 - **Migrations:** apply all migrations to a fresh DB in CI; assert `_migrations` row count matches file count.
 
 ```ts
 // tests/server/actions/create-invoice.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { revalidatePath } from 'next/cache';
 import { actionCreateInvoice } from '@/server/actions/create-invoice';
 import * as auth from '@/lib/auth';
 
 vi.mock('@/lib/auth');
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+}));
 
 describe('actionCreateInvoice', () => {
   beforeEach(() => {
@@ -610,6 +614,40 @@ describe('actionCreateInvoice', () => {
     const result = await actionCreateInvoice({ orgSlug: 'acme', amountCents: 1000 });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.invoice).toBeDefined();
+  });
+
+  it('revalidates the org invoice list path on success', async () => {
+    await actionCreateInvoice({ orgSlug: 'acme', amountCents: 1000 });
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith('/acme/invoices');
+  });
+});
+```
+
+```ts
+// tests/server/actions/void-invoice.test.ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { revalidatePath } from 'next/cache';
+import { actionVoidInvoice } from '@/server/actions/void-invoice';
+import { createInvoice } from '@/db/queries/invoices';
+import * as auth from '@/lib/auth';
+
+vi.mock('@/lib/auth');
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+}));
+
+describe('actionVoidInvoice', () => {
+  beforeEach(() => {
+    vi.mocked(auth.requireOrgMember).mockResolvedValue({
+      orgId: 'org-1',
+      userId: 'user-1',
+    });
+  });
+
+  it('revalidates the org invoice list path on success', async () => {
+    const invoice = createInvoice({ orgId: 'org-1', amountCents: 500, createdBy: 'user-1' });
+    await actionVoidInvoice({ orgSlug: 'acme', invoiceId: invoice.id });
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith('/acme/invoices');
   });
 });
 ```

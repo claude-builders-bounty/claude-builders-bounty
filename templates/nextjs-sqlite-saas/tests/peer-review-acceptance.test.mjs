@@ -402,6 +402,21 @@ assert(
   actionTestExample.length > 0 && /actionCreateInvoice/.test(actionTestExample),
   "Testing Rules include create-invoice server action unit test",
 );
+assert(
+  actionTestExample.length > 0 && /revalidatePath/.test(actionTestExample),
+  "create-invoice action test example asserts revalidatePath on success",
+);
+const voidActionTestExample = claude.match(
+  /\/\/ tests\/server\/actions\/void-invoice\.test\.ts[\s\S]*?```/,
+)?.[0] ?? "";
+assert(
+  voidActionTestExample.length > 0 && /actionVoidInvoice/.test(voidActionTestExample),
+  "Testing Rules include void-invoice server action unit test",
+);
+assert(
+  voidActionTestExample.length > 0 && /revalidatePath/.test(voidActionTestExample),
+  "void-invoice action test example asserts revalidatePath on success",
+);
 const createActionExample = claude.match(
   /\/\/ src\/server\/actions\/create-invoice\.ts[\s\S]*?```/,
 )?.[0] ?? "";

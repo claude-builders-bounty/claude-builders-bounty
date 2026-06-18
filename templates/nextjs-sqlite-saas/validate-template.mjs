@@ -148,6 +148,22 @@ if (!actionTestExample || !/actionCreateInvoice/.test(actionTestExample)) {
   console.error("Testing Rules must include create-invoice server action unit test example.");
   process.exit(1);
 }
+if (!/revalidatePath/.test(actionTestExample)) {
+  console.error("create-invoice test example must assert revalidatePath on success.");
+  process.exit(1);
+}
+
+const voidActionTestExample = text.match(
+  /\/\/ tests\/server\/actions\/void-invoice\.test\.ts[\s\S]*?```/,
+)?.[0] ?? "";
+if (!voidActionTestExample || !/actionVoidInvoice/.test(voidActionTestExample)) {
+  console.error("Testing Rules must include void-invoice server action unit test example.");
+  process.exit(1);
+}
+if (!/revalidatePath/.test(voidActionTestExample)) {
+  console.error("void-invoice test example must assert revalidatePath on success.");
+  process.exit(1);
+}
 
 const createActionExample = text.match(
   /\/\/ src\/server\/actions\/create-invoice\.ts[\s\S]*?```/,
