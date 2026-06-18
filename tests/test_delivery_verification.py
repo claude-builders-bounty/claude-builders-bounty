@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""End-to-end delivery verification for issue #521 and #2853 / PR #2871 bounty deliveries."""
+"""End-to-end delivery verification for issue #521 and #2853 / PR #2871 bounty deliveries.
+
+Verifies committed issue #2853 artifacts vs main (acceptance tests, PROOF.md, CI zeroeye
+checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant npm
+subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
+vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
+
+Last hands-on verification: 2026-06-18 — 31/31 npm test green (2 readme + 14 peer-review
++ 7 issue-2853 + 8 delivery); issue #2853 diff vs main 347 lines; no_committed_diff and
+peer_review_not_passed gates pass @ eab36c89.
+"""
 
 from __future__ import annotations
 
