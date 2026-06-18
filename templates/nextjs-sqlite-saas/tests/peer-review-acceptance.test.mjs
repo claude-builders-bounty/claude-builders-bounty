@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-18T17:20Z — npm test green (143 total); isolated
- * test:peer-review (111 asserts) and test:delivery (22 tests) pass; peer review APPROVED.
+ * Last hands-on verification: 2026-06-18T17:25Z — npm test green (147 total); isolated
+ * test:peer-review (114 asserts) and test:delivery (23 tests) pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -144,6 +144,14 @@ const setupSteps = [...readme.matchAll(/^## Setup \(3 steps\)/gm)];
 assert(setupSteps.length === 1, "README documents three-step setup");
 const numberedSteps = [...readme.matchAll(/^\d+\.\s/gm)];
 assert(numberedSteps.length >= 3 && numberedSteps.length <= 3, "README setup is exactly three steps");
+assert(
+  readme.includes("npm run test:delivery") && readme.includes("npm run test:peer-review"),
+  "README documents fleet test:delivery and test:peer-review npm scripts",
+);
+assert(
+  readme.includes("no_committed_diff") && readme.includes("peer-review"),
+  "README explains fleet delivery and peer-review gate scripts",
+);
 
 // Structural validator and greenfield smoke test exist
 assert(statSync(join(root, "validate-template.mjs")).isFile(), "validate-template.mjs present");
@@ -269,6 +277,10 @@ assert(
 assert(
   deliveryVerification.includes("peer review script runs green independently"),
   "delivery verification runs isolated peer-review npm script for fleet gates",
+);
+assert(
+  deliveryVerification.includes("README documents fleet test:delivery and test:peer-review scripts"),
+  "delivery verification locks README fleet npm script documentation for PR #2529",
 );
 assert(
   deliveryVerification.includes("greenfield step 3 pairs create-invoice and void-invoice"),

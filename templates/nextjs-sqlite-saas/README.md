@@ -41,6 +41,12 @@ npm test
 node templates/nextjs-sqlite-saas/validate-template.mjs
 bash templates/nextjs-sqlite-saas/tests/smoke-greenfield.sh
 bash templates/nextjs-sqlite-saas/reference/scripts/run-tests.sh
+
+# Fleet hands-on delivery gates (isolated npm scripts)
+npm run test:delivery      # no_committed_diff + committed CLAUDE.md diff vs main
+npm run test:peer-review   # bounty acceptance criteria + branch diff scope
+
+# Direct suite entry points (same as npm scripts above)
 node templates/nextjs-sqlite-saas/tests/delivery-verification.test.mjs
 node templates/nextjs-sqlite-saas/tests/peer-review-acceptance.test.mjs
 ```
