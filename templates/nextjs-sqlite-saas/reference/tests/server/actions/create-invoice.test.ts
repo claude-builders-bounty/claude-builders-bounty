@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { revalidatePath } from "next/cache";
 import { actionCreateInvoice } from "@/server/actions/create-invoice";
 import * as auth from "@/lib/auth";
 import { resetDbForTests } from "@/lib/db";
@@ -34,5 +35,10 @@ describe("actionCreateInvoice", () => {
     const result = await actionCreateInvoice({ orgSlug: "acme", amountCents: 1000 });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.invoice).toBeDefined();
+  });
+
+  it("revalidates the org invoice list path on success", async () => {
+    await actionCreateInvoice({ orgSlug: "acme", amountCents: 1000 });
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith("/acme/invoices");
   });
 });

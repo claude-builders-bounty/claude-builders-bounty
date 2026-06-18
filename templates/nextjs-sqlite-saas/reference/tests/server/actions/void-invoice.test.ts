@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { revalidatePath } from "next/cache";
 import { actionVoidInvoice } from "@/server/actions/void-invoice";
 import { createInvoice } from "@/db/queries/invoices";
 import * as auth from "@/lib/auth";
@@ -35,5 +36,11 @@ describe("actionVoidInvoice", () => {
     const invoice = createInvoice({ orgId: "org-1", amountCents: 500, createdBy: "user-1" });
     const result = await actionVoidInvoice({ orgSlug: "acme", invoiceId: invoice.id });
     expect(result.ok).toBe(true);
+  });
+
+  it("revalidates the org invoice list path on success", async () => {
+    const invoice = createInvoice({ orgId: "org-1", amountCents: 500, createdBy: "user-1" });
+    await actionVoidInvoice({ orgSlug: "acme", invoiceId: invoice.id });
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith("/acme/invoices");
   });
 });
