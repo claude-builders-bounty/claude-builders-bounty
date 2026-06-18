@@ -205,7 +205,7 @@ assert(
   'PROOF.md records hands-on fleet delivery gate verification',
 );
 assert(
-  workflow.description?.includes('Claude Sonnet 4'),
+  workflow.description?.includes('Claude Sonnet 4') && workflow.description.includes('EN/FR'),
   'workflow JSON includes importable description metadata for n8n UI',
 );
 

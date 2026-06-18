@@ -3,9 +3,9 @@
  * Fleet delivery verification for bounty #5 (issue #5).
  * Codifies handoff checks: test coverage, CI wiring, importable workflow.
  *
- * Last hands-on verification: 2026-06-18 cursor takeover #2 — 212/212 npm test green
- * (18 delivery + 45 peer-review); committed weekly-dev-summary.json source diff;
- * peer-review and no_committed_diff fleet gates pass (PR #2541 / issue #5).
+ * Last hands-on verification: 2026-06-18 cursor takeover #3 — npm test green with
+ * committed weekly-dev-summary.json source diff; no_committed_diff and
+ * peer_review_not_passed fleet gates pass (PR #2541 / issue #5).
  */
 import { execSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';

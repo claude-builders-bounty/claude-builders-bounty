@@ -26,6 +26,10 @@ const nodeTypes = workflow.nodes.map((n) => n.type);
 const nodeNames = workflow.nodes.map((n) => n.name);
 
 assert(workflow.name, 'workflow has a name');
+assert(
+  workflow.description?.includes('Claude Sonnet 4') && workflow.description.includes('EN/FR'),
+  'workflow has importable description metadata for n8n UI',
+);
 assert(Array.isArray(workflow.nodes) && workflow.nodes.length >= 8, 'workflow has enough nodes');
 assert(workflow.connections && typeof workflow.connections === 'object', 'workflow has connections map');
 assert(workflow.settings?.executionOrder, 'workflow has execution settings for n8n import');
