@@ -23,6 +23,10 @@ Opinionated [Claude Code](https://docs.anthropic.com/en/docs/claude-code) contex
 - Server Component / Client island / Server Action patterns
 - Anti-patterns table with reasons
 
+## Reference app
+
+The `reference/` directory is a minimal runnable slice of the patterns in `CLAUDE.md` (migrations, invoice queries, create/void server actions, and Vitest suites). CI runs it via `reference/scripts/run-tests.sh`; use it to sanity-check conventions before copying the template into a greenfield project.
+
 ## Verify
 
 ```bash

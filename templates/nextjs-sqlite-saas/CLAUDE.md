@@ -723,7 +723,7 @@ After copying this file to a new Next.js 15 project root, Claude Code should han
 
 1. Create `organizations` table (`id`, `slug`, soft-delete columns) in `src/db/migrations/20260315120000_create_organizations.sql`; child tables reference `organizations(id)` via `org_id`.
 2. Create `src/db/queries/invoices.ts` with `listInvoices(orgId)` using explicit column lists and `deleted_at IS NULL`.
-3. Add `src/server/actions/create-invoice.ts` with Zod validation, `requireOrgMember`, and `revalidatePath`.
+3. Add `src/server/actions/create-invoice.ts` and `src/server/actions/void-invoice.ts` with Zod validation, `requireOrgMember`, and `revalidatePath`.
 4. Scaffold `src/app/(app)/[orgSlug]/invoices/page.tsx` as a Server Component: resolve `orgSlug` from route params → `requireOrgMember(orgSlug)` → `listInvoices(orgId)`.
 5. Run `pnpm db:migrate` and `pnpm typecheck` — migrations apply in filename order; types stay strict.
 
