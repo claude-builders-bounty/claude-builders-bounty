@@ -34,6 +34,10 @@ assert(
   workflow.description?.includes('paginated') && workflow.description.includes('fail-fast'),
   'workflow description documents paginated GitHub fetches and fail-fast validation',
 );
+assert(
+  workflow.description?.includes('7-day') && workflow.description.includes('parallel'),
+  'workflow description documents rolling 7-day window and parallel GitHub fetches',
+);
 assert(Array.isArray(workflow.nodes) && workflow.nodes.length >= 8, 'workflow has enough nodes');
 assert(workflow.connections && typeof workflow.connections === 'object', 'workflow has connections map');
 assert(workflow.settings?.executionOrder, 'workflow has execution settings for n8n import');
