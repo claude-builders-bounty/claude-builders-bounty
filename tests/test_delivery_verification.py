@@ -117,6 +117,7 @@ class DeliveryVerificationTests(unittest.TestCase):
             "bounties/issue-2853/PROOF.md",
             "package.json",
             "tests/run-ci-checks.sh",
+            ".github/workflows/test-readme-links.yml",
         )
         diff_text = result.stdout
         self.assertIn("test_issue_2853_read_tool_hook.py", diff_text)
@@ -125,6 +126,8 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn("test_issue_2853_read_tool_hook.py", diff_text)
         self.assertIn("lobster-trap/zeroeye/pull/109", diff_text)
         self.assertIn("issue #2853 read tool hook acceptance tests", diff_text)
+        self.assertIn("advancedresearcharray/zeroeye", diff_text)
+        self.assertIn("ZEROEYE_ROOT", diff_text)
 
     def _added_diff_lines(self, diff_text: str) -> list[str]:
         return [

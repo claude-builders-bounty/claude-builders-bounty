@@ -60,6 +60,11 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         text = workflow.read_text(encoding="utf-8")
         self.assertIn("run-ci-checks.sh", text)
         self.assertIn("tests/test_readme_links.py", text)
+        self.assertIn("tests/test_issue_2853_read_tool_hook.py", text)
+        self.assertIn("advancedresearcharray/zeroeye", text)
+        self.assertIn("pr-3-read-tool-hook", text)
+        self.assertIn("ZEROEYE_ROOT", text)
+        self.assertIn("setup-go", text)
 
     def test_makefile_exposes_test_and_ci_validate(self):
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
