@@ -202,6 +202,17 @@ No hook logic changes required — CI/reviews clean, branch synced with fork.
 - Head `f8b75d96` matches `fork/feat/issue-3-destructive-command-hook-v2`
 - CLI: `rm -rf /` denied (`hookSpecificOutput`); `git status` allowed
 
+## Hands-on verification (2026-06-18, sprout-idle-nudge)
+
+Merge-first nurture on `feat/issue-3-destructive-command-hook-v2` @ `015e2c6b` (PR #2556).
+No hook logic changes required — CI/reviews clean, branch synced with fork.
+
+- Untracked stray `internal/exporter/` from parallel fleet jobs (not in `main...HEAD` diff)
+- `npm test` green: 108 unittest + 6 delivery + 21 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- PR status: MERGEABLE/CLEAN against `main`; head `015e2c6b` matches fork remote
+- CLI: `rm -rf /tmp/build` denied via official `hookSpecificOutput`; `git status` allowed
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
