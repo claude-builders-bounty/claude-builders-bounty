@@ -76,24 +76,51 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         )
         self.assertIn("ok", result.stdout)
 
+    def _select_passing_build_diagnostic(self, diagnostic_dir: Path) -> tuple[Path, dict]:
+        """Pick a passing build diagnostic with a valid logd path.
+
+        Fresh git clones give every file the same mtime, so max(mtime) can pick a
+        metadata JSON with ``diagnostic_logd: null``. Prefer latest ``generated_at``
+        among entries that passed with a non-empty logd reference.
+        """
+        json_files = sorted(diagnostic_dir.glob("build-*.json"))
+        self.assertGreater(len(json_files), 0, "expected at least one build-*.json")
+
+        passing: list[tuple[str, Path, dict]] = []
+        for json_path in json_files:
+            metadata = json.loads(json_path.read_text(encoding="utf-8"))
+            logd_rel = metadata.get("diagnostic_logd")
+            if metadata.get("failed") != 0:
+                continue
+            if not metadata.get("passed"):
+                continue
+            if not isinstance(logd_rel, str) or not logd_rel.strip():
+                continue
+            passing.append((metadata.get("generated_at", ""), json_path, metadata))
+
+        self.assertGreater(
+            len(passing),
+            0,
+            msg="expected at least one passing build diagnostic with diagnostic_logd",
+        )
+        _, latest_json, metadata = max(passing, key=lambda item: item[0])
+        return latest_json, metadata
+
     def test_zeroeye_has_committed_build_diagnostics(self) -> None:
         diagnostic_dir = ZEROEYE_ROOT / "diagnostic"
         self.assertTrue(diagnostic_dir.is_dir())
 
         logd_files = sorted(diagnostic_dir.glob("build-*.logd"))
-        json_files = sorted(diagnostic_dir.glob("build-*.json"))
         self.assertGreater(len(logd_files), 0, "expected at least one build-*.logd")
-        self.assertGreater(len(json_files), 0, "expected at least one build-*.json")
 
-        latest_json = max(json_files, key=lambda p: p.stat().st_mtime)
-        metadata = json.loads(latest_json.read_text(encoding="utf-8"))
+        latest_json, metadata = self._select_passing_build_diagnostic(diagnostic_dir)
         self.assertEqual(metadata.get("failed"), 0)
         self.assertGreater(metadata.get("passed", 0), 0)
         self.assertIn("password", metadata)
         self.assertIn("diagnostic_logd", metadata)
 
         logd_path = ZEROEYE_ROOT / metadata["diagnostic_logd"]
-        self.assertTrue(logd_path.is_file())
+        self.assertTrue(logd_path.is_file(), msg=f"missing logd for {latest_json.name}")
         self.assertGreater(logd_path.stat().st_size, 0)
 
     def test_bounty_proof_doc_exists_and_links_pr(self) -> None:

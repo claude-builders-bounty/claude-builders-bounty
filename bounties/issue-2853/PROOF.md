@@ -18,6 +18,23 @@ Read-only `read_market_data` tool hook scaffolding across three layers:
 | Gateway | `market/gateway/api.go`, `ai_tools_test.go` | `GET /api/v1/ai/tools`, `POST /api/v1/ai/tools/read`, `POST /api/v1/ai/tools/execute` |
 | Frontend | `frontend/src/ai/readToolHook.ts`, `chat.ts` | `ReadToolHook` client wired into `AiChatService` |
 
+## Verification (2026-06-18, hands-on takeover #7)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 32/32 (2 README + 14 peer review + 8 issue #2853 + 8 delivery)
+
+# CI simulation: fresh zeroeye clone (same as GitHub Actions)
+git clone --depth 1 --branch pr-3-read-tool-hook \
+  https://github.com/advancedresearcharray/zeroeye.git /tmp/zeroeye-ci-test
+ZEROEYE_ROOT=/tmp/zeroeye-ci-test npm run test:issue-2853
+# PASS — 8/8 (build diagnostic picker no longer fails on equal clone mtimes)
+```
+
+CI fix: `test_zeroeye_has_committed_build_diagnostics` now selects the latest passing
+metadata JSON with a non-null `diagnostic_logd` (by `generated_at`) instead of
+`max(mtime)`, which picked `build-81749851.json` (`diagnostic_logd: null`) on fresh clones.
+
 ## Verification (2026-06-18, hands-on takeover #6)
 
 ```bash
