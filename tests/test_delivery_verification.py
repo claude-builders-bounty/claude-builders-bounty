@@ -6,7 +6,7 @@ absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N`` paths for A
 Bounties rows #1–#5; contributor note links issue #521. Fleet delivery requires
 ``npm test`` (readme-links, peer-review, delivery) and a non-zero README diff vs main.
 
-Last hands-on verification: 2026-06-18 (26/26 npm test green).
+Last hands-on verification: 2026-06-18 — 26/26 npm test green (4 readme + 13 peer-review + 9 delivery).
 """
 
 from __future__ import annotations
