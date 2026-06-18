@@ -156,6 +156,10 @@ assert(
   "smoke test verifies greenfield step 3 create/void-invoice pairing",
 );
 assert(smokeTest.includes("requireOrgMember"), "smoke test verifies greenfield step 4 requireOrgMember");
+assert(
+  smokeTest.includes("db:migrate") && smokeTest.includes("typecheck"),
+  "smoke test verifies greenfield step 5 db:migrate and typecheck",
+);
 assert(runCiChecks.includes("validate-template.mjs"), "run-ci-checks runs structural validator");
 assert(runCiChecks.includes("smoke-greenfield.sh"), "run-ci-checks runs greenfield smoke test");
 assert(
@@ -385,6 +389,11 @@ const greenfieldStep4 = greenfieldSection.match(/^4\.\s.+$/m)?.[0] ?? "";
 assert(
   /requireOrgMember/.test(greenfieldStep4),
   "Greenfield step 4 mentions requireOrgMember",
+);
+const greenfieldStep5 = greenfieldSection.match(/^5\.\s.+$/m)?.[0] ?? "";
+assert(
+  /db:migrate/.test(greenfieldStep5) && /typecheck/.test(greenfieldStep5),
+  "Greenfield step 5 pairs pnpm db:migrate with pnpm typecheck",
 );
 
 // Peer-review security: env-based DB connection (no hardcoded paths)

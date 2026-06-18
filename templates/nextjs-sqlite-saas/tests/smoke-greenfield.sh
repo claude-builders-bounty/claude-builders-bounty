@@ -55,4 +55,8 @@ echo "$greenfield_step3" | grep -q "void-invoice.ts"
 greenfield_step4="$(echo "$greenfield_section" | grep '^4\.' || true)"
 echo "$greenfield_step4" | grep -q "requireOrgMember"
 
+greenfield_step5="$(echo "$greenfield_section" | grep '^5\.' || true)"
+echo "$greenfield_step5" | grep -q "db:migrate"
+echo "$greenfield_step5" | grep -q "typecheck"
+
 echo "Greenfield smoke test passed: CLAUDE.md is usable in a fresh Next.js 15 project."

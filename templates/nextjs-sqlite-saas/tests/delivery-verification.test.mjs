@@ -199,6 +199,15 @@ test("opire try issue 2 deliverable ships Next.js SQLite CLAUDE.md template", ()
   }
 });
 
+test("CLAUDE.md greenfield step 5 pairs db:migrate and typecheck dev commands", () => {
+  const claude = readFileSync(CLAUDE_MD, "utf8");
+  const greenfieldSection = claude.split("## Greenfield Smoke Test")[1]?.split(/^## /m)[0] ?? "";
+  const greenfieldStep5 = greenfieldSection.match(/^5\.\s.+$/m)?.[0] ?? "";
+  if (!/db:migrate/.test(greenfieldStep5) || !/typecheck/.test(greenfieldStep5)) {
+    throw new Error("Greenfield step 5 must pair pnpm db:migrate with pnpm typecheck");
+  }
+});
+
 test("CLAUDE.md greenfield step 3 pairs create-invoice and void-invoice actions", () => {
   const claude = readFileSync(CLAUDE_MD, "utf8");
   const greenfieldSection = claude.split("## Greenfield Smoke Test")[1]?.split(/^## /m)[0] ?? "";

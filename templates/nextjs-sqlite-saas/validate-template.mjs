@@ -129,6 +129,12 @@ if (!/requireOrgMember/.test(greenfieldStep4)) {
   process.exit(1);
 }
 
+const greenfieldStep5 = greenfieldSection.match(/^5\.\s.+$/m)?.[0] ?? "";
+if (!/db:migrate/.test(greenfieldStep5) || !/typecheck/.test(greenfieldStep5)) {
+  console.error("Greenfield step 5 must pair pnpm db:migrate with pnpm typecheck.");
+  process.exit(1);
+}
+
 const envExample = text.match(/\/\/ src\/lib\/env\.ts[\s\S]*?```/)?.[0] ?? "";
 if (!envExample || !/process\.env\.DATABASE_URL/.test(envExample)) {
   console.error("env.ts example must load DATABASE_URL from process.env.");
