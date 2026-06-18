@@ -51,3 +51,61 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Bounty #4: `claude-review` PR reviewer agent
+
+This repository includes a Claude Code PR review sub-agent and CLI that reviews a GitHub pull request and returns structured Markdown.
+
+### Setup
+
+1. Install Node.js 18 or newer.
+2. From this repository, run:
+   ```bash
+   npm test
+   ```
+3. Optional: set `ANTHROPIC_API_KEY` to let Claude generate the final review. Without it, the CLI uses a deterministic fallback analyzer.
+4. Optional: set `GITHUB_TOKEN` for higher GitHub API rate limits.
+
+### CLI usage
+
+```bash
+npm run claude-review -- --pr https://github.com/owner/repo/pull/123
+```
+
+Write the review to a file:
+
+```bash
+npm run claude-review -- --pr https://github.com/owner/repo/pull/123 --output review.md
+```
+
+After `npm link`, the direct command is:
+
+```bash
+claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+The output always includes:
+
+- `## Summary of changes`
+- `## Identified risks`
+- `## Improvement suggestions`
+- `## Confidence score: Low|Medium|High`
+
+### Claude Code sub-agent
+
+The agent definition lives at `.claude/agents/pr-reviewer.md`.
+
+Use it in Claude Code by asking the `pr-reviewer` sub-agent to review a PR URL. The agent runs the local CLI and keeps the final output concise and actionable.
+
+### GitHub Action
+
+The workflow at `.github/workflows/claude-review.yml` can run manually with a PR URL or automatically on pull request events. It writes the review to the GitHub Actions step summary and uploads `review.md` as an artifact.
+
+### Verified sample outputs
+
+Two real GitHub pull requests were used for verification:
+
+- `examples/octocat-hello-world-pr-6.md`
+- `examples/githubtraining-hellogitworld-pr-1.md`
