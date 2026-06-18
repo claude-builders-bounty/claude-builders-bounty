@@ -468,6 +468,24 @@ class CheckCommandTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.hook.check_command(command))
 
+    def test_allows_search_tools_with_rm_rf_text(self):
+        allowed = (
+            'grep "rm -rf" README.md',
+            'rg "rm -rf /" docs/',
+            "echo rm -rf /",
+            'python3 -c "print(\'rm -rf\')"',
+            "printf %s rm -rf",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
+
+    def test_blocks_rm_rf_after_pipeline_display_tool(self):
+        self.assertEqual(
+            self.hook.check_command("echo test | rm -rf /tmp/build"),
+            "Recursive force delete (rm -rf)",
+        )
+
     def test_allows_shell_variable_indirection(self):
         """Documented regex limit: indirect rm via variables is not detected."""
         self.assertIsNone(self.hook.check_command("x=rm; $x -rf /tmp"))

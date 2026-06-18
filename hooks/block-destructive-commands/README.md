@@ -71,10 +71,13 @@ enforcement when the hook itself cannot parse input reliably.
 
 **Regex and substring matching limits.** Detection inspects command text with
 regex and substring rules; it does not execute or fully parse shell syntax.
-Obfuscated or indirect commands can evade blocking. For example,
-`x=rm; $x -rf /` stores the destructive utility in a variable and invokes it
-later, so the segment may not match `rm -rf` patterns. Treat this hook as a
-safety net for common destructive patterns, not a complete shell sandbox.
+`rm -rf` is only blocked when `rm` is executed (including after `|` pipeline
+stages and inside `sh -c` wrappers), not when the text appears in `echo`,
+`grep`, or similar display/search utilities. Obfuscated or indirect commands
+can still evade blocking. For example, `x=rm; $x -rf /` stores the destructive
+utility in a variable and invokes it later, so the segment may not match `rm -rf`
+patterns. Treat this hook as a safety net for common destructive patterns, not a
+complete shell sandbox.
 
 ## Blocked log
 

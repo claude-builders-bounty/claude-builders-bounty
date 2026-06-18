@@ -115,6 +115,32 @@ def embedded_shell_sql(segment: str, pattern: re.Pattern[str]) -> bool:
     return bool(pattern.search(inner))
 
 
+def iter_pipe_stages(segment: str) -> list[str]:
+    """Split pipeline stages so rm -rf after a display tool is still detected."""
+    return [stage.strip() for stage in segment.split("|") if stage.strip()]
+
+
+def embedded_shell_rm_rf(segment: str) -> bool:
+    """True when a shell -c wrapper embeds rm -rf."""
+    match = SHELL_C.search(segment)
+    if not match:
+        return False
+    inner = next(group for group in match.groups() if group is not None)
+    return is_rm_rf(inner)
+
+
+def segment_has_rm_rf_invocation(segment: str) -> bool:
+    """Block rm -rf only when rm is executed, not when echoed or searched."""
+    if embedded_shell_rm_rf(segment):
+        return True
+    for stage in iter_pipe_stages(segment):
+        if NON_SQL_TOOLS.match(stage):
+            continue
+        if is_rm_rf(stage):
+            return True
+    return False
+
+
 def should_block_sql_statement(
     segment: str,
     pattern: re.Pattern[str],
@@ -180,7 +206,7 @@ def deny(reason: str) -> None:
 
 
 def check_segment(segment: str) -> str | None:
-    if is_rm_rf(segment):
+    if segment_has_rm_rf_invocation(segment):
         return "Recursive force delete (rm -rf)"
 
     for pattern, reason in BLOCKED_PATTERNS:
