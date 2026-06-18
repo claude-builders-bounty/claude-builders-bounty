@@ -1,53 +1,82 @@
-# Claude Builders Bounty 🤖
+# 📋 Auto CHANGELOG Generator
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from your git history in one command.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (3 steps)
+
+1. **Download the script**
+   ```bash
+   curl -O https://raw.githubusercontent.com/fanjuxin9630/openclaw-workspace/master/changelog/generate_changelog.sh
+   chmod +x generate_changelog.sh
+   ```
+
+2. **Run it in your project**
+   ```bash
+   ./generate_changelog.sh
+   ```
+
+3. **Commit the result**
+   ```bash
+   git add CHANGELOG.md && git commit -m "docs: add CHANGELOG"
+   ```
+
+## Usage
+
+```bash
+./generate_changelog.sh [output_file] [repo_path]
+```
+
+### Examples
+
+```bash
+# Basic usage (generates CHANGELOG.md in current directory)
+./generate_changelog.sh
+
+# Custom output file
+./generate_changelog.sh docs/HISTORY.md
+
+# Specify a different repo
+./generate_changelog.sh CHANGELOG.md ../my-other-project
+```
+
+## Python version
+
+```bash
+python3 generate_changelog.py [output_file] [repo_path]
+```
+
+## Features
+
+- ✅ Fetches commits since the last git tag (or all commits if no tags)
+- ✅ Auto-categorizes into: Added / Fixed / Changed / Removed
+- ✅ Recognizes conventional commits (`feat:`, `fix:`, `chore:`, etc.)
+- ✅ Recognizes semantic prefixes (`Add`, `Fix`, `Update`, `Remove`, etc.)
+- ✅ Outputs a properly formatted CHANGELOG.md
+- ✅ Includes commit hashes with GitHub links
+- ✅ Works anywhere (Bash or Python)
+
+## Output example
+
+```markdown
+# Changelog
+
+## [Unreleased]
+
+### ✨ Added
+- Implement user authentication. ([a1b2c3d](https://github.com/user/repo/commit/a1b2c3d))
+
+### 🐛 Fixed
+- Resolve login page crash on mobile. ([e4f5g6h](https://github.com/user/repo/commit/e4f5g6h))
+
+### 🔄 Changed
+- Update dependencies to latest versions. ([i7j8k9l](https://github.com/user/repo/commit/i7j8k9l))
+```
+
+## Compatibility
+
+- **Bash** — Works on Linux, macOS, WSL, CI/CD pipelines
+- **Python 3** — Works anywhere Python 3 is installed
 
 ---
 
-## How it works
-
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+_Claude Builders Bounty #1 · $50_
