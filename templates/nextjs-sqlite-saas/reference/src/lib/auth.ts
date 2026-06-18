@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 
 type OrgRow = { id: string; slug: string };
 
+/** Resolves org membership by slug. Slug binds as a `?` parameter — never interpolated into SQL. */
 export async function requireOrgMember(orgSlug: string): Promise<{ orgId: string; userId: string }> {
   const db = getDb();
   const org = db

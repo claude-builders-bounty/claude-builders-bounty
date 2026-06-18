@@ -12,7 +12,7 @@
  * peer_review_not_passed gates for PR #2529; smoke test locks greenfield step 3/4/5 pairing.
  */
 import { execSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -108,8 +108,11 @@ test("repo root keeps reproducible npm test wiring", () => {
   if (!makefile.includes("run-ci-checks.sh")) {
     throw new Error("Makefile test must invoke scripts/run-ci-checks.sh");
   }
-  if (!statSync(join(repoRoot, "package-lock.json")).isFile()) {
-    throw new Error("package-lock.json must exist for reproducible npm test runs");
+  if (existsSync(join(repoRoot, "package-lock.json"))) {
+    throw new Error("package-lock.json must not exist — reference app uses reference/pnpm-lock.yaml");
+  }
+  if (!statSync(join(root, "reference", "pnpm-lock.yaml")).isFile()) {
+    throw new Error("reference/pnpm-lock.yaml must exist for reproducible pnpm installs");
   }
   if (!gitignore.includes("node_modules/")) {
     throw new Error(".gitignore must exclude node_modules for clean fleet delivery");
@@ -333,6 +336,30 @@ test("peer-review and delivery suites have minimum coverage", () => {
   }
   if (delivery < 4) {
     throw new Error(`delivery-verification.test.mjs has ${delivery} tests (need >= 4)`);
+  }
+});
+
+test("CI workflow runs secret token protection before npm test", () => {
+  const workflow = readFileSync(
+    join(repoRoot, ".github/workflows/test-nextjs-sqlite-template.yml"),
+    "utf8",
+  );
+  if (!workflow.includes("check-secret-tokens.mjs")) {
+    throw new Error("CI workflow must run check-secret-tokens.mjs");
+  }
+});
+
+test("reference app ships eslint and integration test coverage", () => {
+  const referenceRoot = join(root, "reference");
+  for (const rel of [
+    "eslint.config.js",
+    "tests/lib/auth.test.ts",
+    "tests/lib/env.test.ts",
+    "tests/integration/invoice-lifecycle.test.ts",
+  ]) {
+    if (!statSync(join(referenceRoot, rel)).isFile()) {
+      throw new Error(`missing reference app peer-review file: reference/${rel}`);
+    }
   }
 });
 

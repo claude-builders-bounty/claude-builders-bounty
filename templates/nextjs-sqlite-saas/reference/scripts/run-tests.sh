@@ -11,4 +11,5 @@ if ! command -v pnpm >/dev/null 2>&1; then
 fi
 
 pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+pnpm lint
 pnpm test

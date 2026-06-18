@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { actionCreateInvoice } from "@/server/actions/create-invoice";
 
+/** Client form wired to `actionCreateInvoice` via `useActionState` — see CLAUDE.md Component Patterns. */
 export function CreateInvoiceForm({ orgSlug }: { orgSlug: string }) {
   const [state, formAction, pending] = useActionState(
     async (_prev: unknown, formData: FormData) => {

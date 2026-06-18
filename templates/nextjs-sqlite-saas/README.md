@@ -25,7 +25,7 @@ Opinionated [Claude Code](https://docs.anthropic.com/en/docs/claude-code) contex
 
 ## Reference app
 
-The `reference/` directory is a minimal runnable slice of the patterns in `CLAUDE.md` (migrations, invoice queries, create/void server actions, and Vitest suites). CI runs it via `reference/scripts/run-tests.sh`; use it to sanity-check conventions before copying the template into a greenfield project.
+The `reference/` directory is a minimal runnable slice of the patterns in `CLAUDE.md` (migrations, invoice queries, create/void server actions, Vitest unit/integration suites, and ESLint). CI runs it via `reference/scripts/run-tests.sh` (`pnpm lint` + `pnpm test`); use it to sanity-check conventions before copying the template into a greenfield project. Lockfile: `reference/pnpm-lock.yaml` only — the repo root has no npm dependencies and does not commit `package-lock.json`.
 
 ## Verify
 

@@ -1,4 +1,11 @@
+-- 20260315120001_create_invoices.sql
 -- Org-scoped invoices for billing.
+--
+-- Migration best practices (see CLAUDE.md SQL & Migration Conventions):
+-- 1. FK to organizations(id) enforces tenant boundary at the schema level.
+-- 2. CHECK constraints validate status enum and non-negative amounts in SQL.
+-- 3. Partial index (WHERE deleted_at IS NULL) keeps list queries fast.
+-- 4. Apply via `pnpm db:migrate` — migrations never run on `pnpm dev`.
 
 CREATE TABLE IF NOT EXISTS invoices (
   id           TEXT PRIMARY KEY NOT NULL,

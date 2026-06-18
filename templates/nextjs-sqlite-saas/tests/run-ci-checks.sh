@@ -30,6 +30,9 @@ ensure_git_base_ref() {
 
 ensure_git_base_ref
 
+node "${TEMPLATE_DIR}/tests/check-secret-tokens.mjs"
+node "${TEMPLATE_DIR}/tests/check-sql-parameterization.mjs"
+
 node "${TEMPLATE_DIR}/validate-template.mjs"
 bash "${TEMPLATE_DIR}/tests/smoke-greenfield.sh"
 

@@ -10,7 +10,7 @@
  * test:peer-review (114 asserts) and test:delivery (23 tests) pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -199,7 +199,29 @@ assert(
 const makefile = readFileSync(join(repoRoot, "Makefile"), "utf8");
 const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
-assert(statSync(join(repoRoot, "package-lock.json")).isFile(), "package-lock.json locks npm test deps");
+assert(statSync(join(repoRoot, "scripts/env-check.mjs")).isFile(), "scripts/env-check.mjs validates required toolchain");
+assert(
+  !existsSync(join(repoRoot, "package-lock.json")),
+  "root must not commit package-lock.json — reference app uses pnpm-lock.yaml",
+);
+assert(
+  statSync(join(root, "reference", "pnpm-lock.yaml")).isFile(),
+  "reference/pnpm-lock.yaml locks reproducible pnpm installs",
+);
+assert(
+  statSync(join(root, "reference", "eslint.config.js")).isFile(),
+  "reference app ships eslint.config.js for consistent formatting",
+);
+assert(statSync(join(root, "tests/check-secret-tokens.mjs")).isFile(), "check-secret-tokens.mjs guards CI secret exposure");
+assert(statSync(join(root, "tests/check-sql-parameterization.mjs")).isFile(), "check-sql-parameterization.mjs audits query modules");
+assert(
+  workflow.includes("check-secret-tokens.mjs"),
+  "CI workflow runs secret token protection check",
+);
+assert(
+  runCiChecks.includes("check-secret-tokens.mjs") && runCiChecks.includes("check-sql-parameterization.mjs"),
+  "run-ci-checks runs secret token and SQL parameterization audits",
+);
 assert(gitignore.includes("node_modules/"), ".gitignore excludes node_modules");
 assert(gitignore.includes("pnpm-lock.yaml"), ".gitignore excludes pnpm-lock.yaml from greenfield scaffolds");
 assert(gitignore.includes("internal/"), ".gitignore excludes local fleet artifacts");
@@ -316,7 +338,7 @@ assert(workflow.includes("run-ci-checks.sh") || workflow.includes("npm test"), "
 assert(workflow.includes("pull_request_target"), "CI supports upstream fork PR checks");
 assert(workflow.includes("Makefile"), "CI triggers on Makefile changes");
 assert(workflow.includes("package.json"), "CI triggers on package.json changes");
-assert(workflow.includes("package-lock.json"), "CI triggers on package-lock.json changes");
+assert(!workflow.includes("package-lock.json"), "CI must not trigger on redundant package-lock.json");
 assert(workflow.includes(".gitignore"), "CI triggers on .gitignore changes");
 assert(workflow.includes("scripts/"), "CI triggers on scripts/ changes");
 assert(
@@ -520,8 +542,8 @@ function collectTestFiles(dir) {
 }
 collectTestFiles(referenceTestsDir);
 assert(
-  committedTestFiles.length >= 5,
-  "reference app commits at least five unit/integration test files",
+  committedTestFiles.length >= 8,
+  "reference app commits at least eight unit/integration test files",
 );
 assert(
   statSync(join(root, "reference", "src", "server", "actions", "void-invoice.ts")).isFile(),
@@ -533,6 +555,9 @@ for (const rel of [
   "server/actions/create-invoice.test.ts",
   "server/actions/void-invoice.test.ts",
   "components/create-invoice-form.test.tsx",
+  "lib/auth.test.ts",
+  "lib/env.test.ts",
+  "integration/invoice-lifecycle.test.ts",
 ]) {
   assert(
     committedTestFiles.some((path) => path.endsWith(rel)),
@@ -551,7 +576,6 @@ const allowedPrefixes = [
   ".github/workflows/test-nextjs-sqlite-template.yml",
   "Makefile",
   "package.json",
-  "package-lock.json",
   ".gitignore",
   "scripts/",
 ];
