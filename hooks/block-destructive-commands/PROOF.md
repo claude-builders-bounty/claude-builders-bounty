@@ -213,6 +213,16 @@ No hook logic changes required — CI/reviews clean, branch synced with fork.
 - PR status: MERGEABLE/CLEAN against `main`; head `015e2c6b` matches fork remote
 - CLI: `rm -rf /tmp/build` denied via official `hookSpecificOutput`; `git status` allowed
 
+## Hands-on verification (2026-06-18, cursor implementation)
+
+Merge-first nurture on `feat/issue-3-destructive-command-hook-v2` @ `f87ee66d` (PR #2556).
+No hook logic changes required — local CI green, no maintainer review feedback.
+
+- Removed untracked stray `internal/exporter/` (hello.go, newfile.go) from parallel fleet jobs
+- `npm test` green ×5 consecutive runs: 108 unittest + 6 delivery + 21 peer-review + attribution
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`); 0 behind `origin/main`
+- CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
