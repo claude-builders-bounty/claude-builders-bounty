@@ -117,6 +117,12 @@ if (!/actionVoidInvoice/.test(text) || !text.includes("void-invoice.ts")) {
   process.exit(1);
 }
 
+const greenfieldStep3 = greenfieldSection.match(/^3\.\s.+$/m)?.[0] ?? "";
+if (!/create-invoice\.ts/.test(greenfieldStep3) || !/void-invoice\.ts/.test(greenfieldStep3)) {
+  console.error("Greenfield step 3 must pair create-invoice.ts and void-invoice.ts server actions.");
+  process.exit(1);
+}
+
 const greenfieldStep4 = greenfieldSection.match(/^4\.\s.+$/m)?.[0] ?? "";
 if (!/requireOrgMember/.test(greenfieldStep4)) {
   console.error("Greenfield step 4 must mention requireOrgMember.");

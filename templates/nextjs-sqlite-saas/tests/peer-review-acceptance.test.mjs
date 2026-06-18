@@ -6,7 +6,7 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-18T15:10Z — npm test 130/130 green; isolated
+ * Last hands-on verification: 2026-06-18T15:15Z — npm test 130/130 green; isolated
  * test:peer-review (102 asserts) and test:delivery (18 tests) pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -367,6 +367,11 @@ assert(
 );
 
 const greenfieldSection = claude.split("## Greenfield Smoke Test")[1]?.split(/^## /m)[0] ?? "";
+const greenfieldStep3 = greenfieldSection.match(/^3\.\s.+$/m)?.[0] ?? "";
+assert(
+  /create-invoice\.ts/.test(greenfieldStep3) && /void-invoice\.ts/.test(greenfieldStep3),
+  "Greenfield step 3 pairs create-invoice.ts and void-invoice.ts server actions",
+);
 const greenfieldStep4 = greenfieldSection.match(/^4\.\s.+$/m)?.[0] ?? "";
 assert(
   /requireOrgMember/.test(greenfieldStep4),
