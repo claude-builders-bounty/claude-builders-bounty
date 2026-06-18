@@ -1,0 +1,213 @@
+{
+  "name": "Claude Weekly Dev Summary",
+  "nodes": [
+    {
+      "id": "trigger-schedule",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [250, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "repo", "value": "owner/repo-name" },
+            { "name": "language", "value": "EN" },
+            { "name": "webhook_url", "value": "https://hooks.slack.com/services/xxx/xxx/xxx" },
+            { "name": "github_token", "value": "" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 100],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{ $now.minus(7, 'days').toISO() }}" },
+            { "name": "per_page", "value": "50" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "since", "value": "={{ $now.minus(7, 'days').toISO() }}" },
+            { "name": "per_page", "value": "50" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 500],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "sort", "value": "updated" },
+            { "name": "direction", "value": "desc" },
+            { "name": "per_page", "value": "50" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "merge-split",
+      "name": "Merge & Split",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [750, 300],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "code-prep",
+      "name": "Prepare Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300],
+      "parameters": {
+        "jsCode": "// Prepare the data for Claude API\nconst commits = $input.all()[0]?.json || {};\nconst issues = $input.all()[1]?.json || {};\nconst prs = $input.all()[2]?.json || {};\nconst config = $input.all()[3]?.json || {};\n\n// Extract key info\nconst commitList = (commits.body || []).slice(0, 20).map(c => `- [${c.sha?.slice(0,7)}] ${c.commit?.message?.split('\\n')[0]} (${c.commit?.author?.name})`).join('\\n');\nconst issueList = (issues.body || []).filter(i => !i.pull_request).slice(0, 15).map(i => `- #${i.number} ${i.title}`).join('\\n');\nconst prList = (prs.body || []).filter(p => p.merged_at).slice(0, 15).map(p => `- #${p.number} ${p.title} by @${p.user?.login}`).join('\\n');\n\nconst lang = config.language || 'EN';\n\nreturn [{\n  json: {\n    repo: config.repo,\n    language: lang,\n    webhook_url: config.webhook_url,\n    commits_raw: JSON.stringify(commits.body || []).slice(0, 3000),\n    issues_raw: JSON.stringify(issueList).slice(0, 2000),\n    prs_raw: JSON.stringify(prList).slice(0, 2000),\n    commitList,\n    issueList,\n    prList\n  }\n}];"
+      }
+    },
+    {
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "claude-sonnet-4-20250514" },
+            { "name": "max_tokens", "value": 4096 },
+            { "name": "messages[0][role]", "value": "user" },
+            { "name": "messages[0][content]", "value": "=You are a technical writer creating a weekly dev summary for {{ $json.repo }}.\n\nGenerate a narrative summary of this past week's activity.\nLanguage: {{ $json.language }} (respond in this language)\n\nFormat as Markdown:\n\n## Weekly Dev Summary — {{ $now.format('yyyy-MM-dd') }}\n\n### 📝 Commits\n{{ $json.commitList }}\n\n### ✅ Issues Closed\n{{ $json.issueList }}\n\n### 🎉 Merged PRs\n{{ $json.prList }}\n\n### 🔍 Key Themes\n(Brief analysis of what the team focused on this week)" }
+          ]
+        },
+        "options": {
+          "headers": {
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+          }
+        }
+      }
+    },
+    {
+      "id": "webhook-delivery",
+      "name": "Deliver to Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1500, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook_url }}",
+        "authentication": "none",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "text", "value": "={{ $json.content?.[0]?.text || JSON.stringify($json).slice(0, 3900) }}" }
+          ]
+        },
+        "options": {
+          "headers": { "content-type": "application/json" }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "trigger-schedule": {
+      "main": [[{ "node": "set-config", "type": "main", "index": 0 }]]
+    },
+    "set-config": {
+      "main": [[
+        { "node": "github-commits", "type": "main", "index": 0 },
+        { "node": "github-issues", "type": "main", "index": 0 },
+        { "node": "github-prs", "type": "main", "index": 0 }
+      ]]
+    },
+    "github-commits": {
+      "main": [[{ "node": "merge-split", "type": "main", "index": 0 }]]
+    },
+    "github-issues": {
+      "main": [[{ "node": "merge-split", "type": "main", "index": 1 }]]
+    },
+    "github-prs": {
+      "main": [[{ "node": "merge-split", "type": "main", "index": 2 }]]
+    },
+    "merge-split": {
+      "main": [[{ "node": "code-prep", "type": "main", "index": 0 }]]
+    },
+    "code-prep": {
+      "main": [[{ "node": "claude-api", "type": "main", "index": 0 }]]
+    },
+    "claude-api": {
+      "main": [[{ "node": "webhook-delivery", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "saveManualExecutions": true
+  },
+  "active": false,
+  "tags": ["bounty", "weekly-summary", "claude"],
+  "pinData": {}
+}
