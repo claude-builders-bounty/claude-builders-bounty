@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -81,7 +82,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
 
         Fresh git clones give every file the same mtime, so max(mtime) can pick a
         metadata JSON with ``diagnostic_logd: null``. Prefer latest ``generated_at``
-        among entries that passed with a non-empty logd reference.
+        among entries that passed with a non-empty logd reference; tie-break on filename.
         """
         json_files = sorted(diagnostic_dir.glob("build-*.json"))
         self.assertGreater(len(json_files), 0, "expected at least one build-*.json")
@@ -103,8 +104,44 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             0,
             msg="expected at least one passing build diagnostic with diagnostic_logd",
         )
-        _, latest_json, metadata = max(passing, key=lambda item: item[0])
+        _, latest_json, metadata = max(passing, key=lambda item: (item[0], item[1].name))
         return latest_json, metadata
+
+    def test_select_passing_build_diagnostic_skips_null_logd(self) -> None:
+        """Picker must ignore passing metadata with diagnostic_logd: null (fresh clone pitfall)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            diagnostic_dir = Path(tmp)
+            older = {
+                "failed": 0,
+                "passed": 1,
+                "generated_at": "2026-06-17T08:00:00+00:00",
+                "diagnostic_logd": "diagnostic/build-older.logd",
+                "password": "test",
+            }
+            newer_null_logd = {
+                "failed": 0,
+                "passed": 1,
+                "generated_at": "2026-06-17T16:00:00+00:00",
+                "diagnostic_logd": None,
+                "password": "test",
+            }
+            newest = {
+                "failed": 0,
+                "passed": 1,
+                "generated_at": "2026-06-17T16:22:06+00:00",
+                "diagnostic_logd": "diagnostic/build-newest.logd",
+                "password": "test",
+            }
+            for name, payload in (
+                ("build-older.json", older),
+                ("build-newer-null.json", newer_null_logd),
+                ("build-newest.json", newest),
+            ):
+                (diagnostic_dir / name).write_text(json.dumps(payload), encoding="utf-8")
+
+            picked_json, metadata = self._select_passing_build_diagnostic(diagnostic_dir)
+            self.assertEqual(picked_json.name, "build-newest.json")
+            self.assertEqual(metadata["diagnostic_logd"], "diagnostic/build-newest.logd")
 
     def test_zeroeye_has_committed_build_diagnostics(self) -> None:
         diagnostic_dir = ZEROEYE_ROOT / "diagnostic"
