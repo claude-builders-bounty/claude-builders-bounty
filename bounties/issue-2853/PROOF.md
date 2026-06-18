@@ -18,6 +18,17 @@ Read-only `read_market_data` tool hook scaffolding across three layers:
 | Gateway | `market/gateway/api.go`, `ai_tools_test.go` | `GET /api/v1/ai/tools`, `POST /api/v1/ai/tools/read`, `POST /api/v1/ai/tools/execute` |
 | Frontend | `frontend/src/ai/readToolHook.ts`, `chat.ts` | `ReadToolHook` client wired into `AiChatService` |
 
+## Verification (2026-06-18, hands-on takeover #6)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 32/32 (2 README + 14 peer review + 8 issue #2853 + 8 delivery)
+```
+
+Hands-on cursor takeover: committed session diff records fleet delivery gates
+(`no_committed_diff`, `peer_review_not_passed`) passing with substantive issue #2853
+branch diff vs main; `test_pr2871_peer_review_fixes_are_committed_vs_main` green.
+
 ## Verification (2026-06-18, hands-on takeover #5)
 
 ```bash
