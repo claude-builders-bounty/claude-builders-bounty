@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse hook — blocks destructive bash commands."""
+"""Claude Code PreToolUse hook — blocks destructive bash commands.
+
+Detects destructive patterns in bare commands, chained segments (; && ||),
+pipeline stages, shell -c wrappers, and container exec invocations
+(docker/podman/kubectl exec and docker compose exec).
+"""
 
 from __future__ import annotations
 

@@ -503,6 +503,30 @@ class CheckCommandTests(unittest.TestCase):
             "Recursive force delete (rm -rf)",
         )
 
+    def test_blocks_rm_rf_in_container_exec_wrappers(self):
+        blocked = (
+            "docker exec db rm -rf /data",
+            "docker compose exec app rm -rf /data",
+            "podman exec c rm -rf /",
+            "kubectl exec pod -- rm -rf /",
+            "docker exec db sh -c 'rm -rf /'",
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Recursive force delete (rm -rf)",
+                )
+
+    def test_blocks_sql_in_container_exec_wrappers(self):
+        blocked = (
+            'docker exec db psql -c "DROP TABLE users"',
+            'docker exec db bash -c "DROP TABLE users"',
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertIsNotNone(self.hook.check_command(command))
+
     def test_allows_shell_variable_indirection(self):
         """Documented regex limit: indirect rm via variables is not detected."""
         self.assertIsNone(self.hook.check_command("x=rm; $x -rf /tmp"))
