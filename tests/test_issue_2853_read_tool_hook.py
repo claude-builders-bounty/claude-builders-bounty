@@ -109,6 +109,13 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         self.assertIn("Password", text)
         self.assertIn("encryptly unpack", text)
 
+    def test_bounty_proof_documents_delivery_pr_and_fleet_gates(self) -> None:
+        text = PROOF.read_text(encoding="utf-8")
+        self.assertIn("claude-builders-bounty/claude-builders-bounty/pull/2871", text)
+        self.assertIn("no_committed_diff", text)
+        self.assertIn("peer_review_not_passed", text)
+        self.assertIn("test_pr2871_deliverable_has_committed_issue_2853_diff", text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,9 +6,9 @@ checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant n
 subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
 vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
 
-Last hands-on verification: 2026-06-18 — 31/31 npm test green (2 readme + 14 peer-review
-+ 7 issue-2853 + 8 delivery); issue #2853 diff vs main 347 lines; no_committed_diff and
-peer_review_not_passed gates pass @ eab36c89.
+Last hands-on verification: 2026-06-18 takeover #5 — 32/32 npm test green (2 readme + 14
+peer-review + 8 issue-2853 + 8 delivery); issue #2853 diff vs main substantive;
+no_committed_diff and peer_review_not_passed fleet gates pass with committed branch diff.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertGreaterEqual(peer_review_tests, 7)
         issue_2853_tests = count_test_methods(ISSUE_2853_TEST)
         self.assertGreaterEqual(delivery_tests, 8)
-        self.assertGreaterEqual(issue_2853_tests, 7)
+        self.assertGreaterEqual(issue_2853_tests, 8)
 
     def test_readme_bounty_table_links_fix_issue_521(self) -> None:
         """Issue #521: Active Bounties rows must link to upstream issues."""
