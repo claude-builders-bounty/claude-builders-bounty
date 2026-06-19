@@ -243,6 +243,10 @@ assert(
   workflow.description?.includes('7-day') && workflow.description.includes('parallel'),
   'workflow description documents rolling 7-day window and parallel GitHub fetches',
 );
+assert(
+  workflow.description?.includes('GET /repos/{owner}/{repo}'),
+  'workflow description documents repo-scoped GITHUB_TOKEN validation',
+);
 
 if (failures.length) {
   console.error('FAILED peer-review acceptance:\n- ' + failures.join('\n- '));
