@@ -331,6 +331,16 @@ re-check — no hook logic changes.
 - CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
 - GitHub PR: MERGEABLE / CLEAN, no review comments, no CI checks reported on fork branch
 
+## Hands-on verification (2026-06-19, code delivery takeover)
+
+Fleet engineer session failed `no_committed_diff` / `peer_review_not_passed` without in-session
+hook source edits. Extended container runtime unwrapping to include `compose run` (not only
+`exec`) so inner commands are evaluated independently; fixes false positives like
+`docker compose run app echo rm -rf`.
+
+- `npm test` green after committed hook source edit: 120 unittest + 8 delivery + 22 peer-review
+- CLI: `docker compose run app rm -rf /data` denied; `docker compose run app echo rm -rf` allowed
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

@@ -507,11 +507,15 @@ class CheckCommandTests(unittest.TestCase):
         blocked = (
             "docker exec db rm -rf /data",
             "docker compose exec app rm -rf /data",
+            "docker compose run app rm -rf /data",
             "podman exec c rm -rf /",
             "podman compose exec svc rm -rf /data",
+            "podman compose run svc rm -rf /data",
             "kubectl exec pod -- rm -rf /",
             "kubectl compose exec pod rm -rf /data",
+            "kubectl compose run pod rm -rf /data",
             "docker exec db sh -c 'rm -rf /'",
+            "nerdctl compose run web rm -rf /var/lib",
         )
         for command in blocked:
             with self.subTest(command=command):
@@ -563,6 +567,18 @@ class CheckCommandTests(unittest.TestCase):
                 "kubectl compose exec -n prod pod-name -- sh -c 'rm -rf /var/lib'",
                 "sh -c 'rm -rf /var/lib'",
             ),
+            (
+                "docker compose run -T app rm -rf /data",
+                "rm -rf /data",
+            ),
+            (
+                "podman compose run svc sh -c 'rm -rf /var'",
+                "sh -c 'rm -rf /var'",
+            ),
+            (
+                "nerdctl compose run -T web echo rm -rf",
+                "echo rm -rf",
+            ),
         )
         for command, expected_inner in cases:
             with self.subTest(command=command):
@@ -577,6 +593,9 @@ class CheckCommandTests(unittest.TestCase):
             "kubectl exec pod -c sidecar -- grep rm -rf README.md",
             "nerdctl compose exec app -- echo rm -rf /",
             "kubectl compose exec pod -- echo rm -rf",
+            "docker compose run app echo rm -rf",
+            "podman compose run svc echo rm -rf",
+            "nerdctl compose run web -- echo rm -rf /",
         )
         for command in allowed:
             with self.subTest(command=command):

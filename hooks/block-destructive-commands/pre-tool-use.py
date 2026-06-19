@@ -2,8 +2,8 @@
 """Claude Code PreToolUse hook — blocks destructive bash commands.
 
 Detects destructive patterns in bare commands, chained segments (; && ||),
-pipeline stages, shell -c wrappers, and container exec invocations
-(docker/podman/kubectl/nerdctl exec and docker/podman/kubectl/nerdctl compose exec).
+pipeline stages, shell -c wrappers, and container exec/run invocations
+(docker/podman/kubectl/nerdctl exec|run and compose exec|run).
 """
 
 from __future__ import annotations
@@ -73,8 +73,8 @@ GIT_PUSH_FORCE_CONFIG = re.compile(
 )
 GIT_PUSH_FORCE_CONFIG_FALSE = frozenset({"false", "0", "no", "off", "n"})
 CHAIN_SPLIT = re.compile(r"\s*(?:;|&&|\|\|)\s*")
-CONTAINER_RUNTIME_EXEC = re.compile(
-    r"\b(?:docker(?:\s+compose)?|podman(?:\s+compose)?|kubectl(?:\s+compose)?|nerdctl(?:\s+compose)?)\s+exec\b",
+CONTAINER_RUNTIME_INVOCATION = re.compile(
+    r"\b(?:docker(?:\s+compose)?|podman(?:\s+compose)?|kubectl(?:\s+compose)?|nerdctl(?:\s+compose)?)\s+(?:exec|run)\b",
     re.IGNORECASE,
 )
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
@@ -163,8 +163,8 @@ def _consume_container_exec_flags(tail: str) -> str:
 
 
 def extract_container_exec_inner(segment: str) -> str | None:
-    """Return the command run inside docker/podman compose/kubectl/nerdctl exec."""
-    match = CONTAINER_RUNTIME_EXEC.search(segment)
+    """Return the command run inside docker/podman/kubectl/nerdctl exec or compose run."""
+    match = CONTAINER_RUNTIME_INVOCATION.search(segment)
     if not match:
         return None
     tail = _consume_container_exec_flags(segment[match.end() :].strip())
