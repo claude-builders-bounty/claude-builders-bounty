@@ -19,7 +19,7 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 115 tests in ...s
+Ran 119 tests in ...s
 OK
 Ran 8 delivery verification tests — OK
 Ran 22 tests — OK
@@ -283,9 +283,21 @@ Explicit `extract_container_exec_inner()` unwraps docker/podman/kubectl/nerdctl 
 payloads before pattern checks so inner destructive commands are evaluated independently
 of container names/flags.
 
-- `npm test` green: 120 unittest + 8 delivery + 22 peer-review + attribution checks
+- `npm test` green: 119 unittest + 8 delivery + 22 peer-review + attribution checks
 - Committed hook source diff vs `main` includes container exec extraction logic
 - CLI: `docker exec -it db rm -rf /data` denied; `git status` allowed
+
+## Hands-on verification (2026-06-19, sprout-idle-nudge)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `13f49cce` (PR #2556). Merge-nurture
+re-check — no hook logic changes.
+
+- Removed untracked stray `internal/exporter/mkdocs.go` from parallel fleet jobs (not in `main...HEAD`)
+- `npm test` green: 119 unittest + 8 delivery + 22 peer-review + attribution checks
+- `npm run test:delivery` and `npm run test:peer-review` green in isolation
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
+- GitHub PR: OPEN, no review comments, no CI checks reported on fork branch
 
 ## Acceptance criteria
 
