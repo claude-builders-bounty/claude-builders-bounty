@@ -49,6 +49,19 @@ bash templates/nextjs-sqlite-saas/reference/scripts/run-tests.sh
 # Fleet hands-on delivery gates (isolated npm scripts)
 npm run test:delivery      # no_committed_diff + peer_review_not_passed gates
 npm run test:peer-review   # bounty acceptance criteria + branch diff scope
+```
+
+## Fleet delivery gates
+
+Hands-on takeover agents run these isolated scripts before merge:
+
+| Gate | Script | What it checks |
+|------|--------|----------------|
+| `no_committed_diff` | `npm run test:delivery` | Committed `CLAUDE.md` diff vs `main` is non-empty |
+| `peer_review_not_passed` | `npm run test:delivery` | Diff includes `## Stack & Versions` and pins Next.js 15 |
+| Peer review | `npm run test:peer-review` | Bounty #2 acceptance criteria and branch diff scope |
+
+Both gates must pass alongside `npm test` (163 tests) for PR #2529.
 
 # Direct suite entry points (same as npm scripts above)
 node templates/nextjs-sqlite-saas/tests/delivery-verification.test.mjs
