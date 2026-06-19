@@ -243,7 +243,7 @@ assert(
 );
 assert(
   proof.includes('hands-on takeover #10') &&
-    proof.includes('hands-on takeover #15') &&
+    proof.includes('hands-on takeover #16') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -275,6 +275,10 @@ assert(
 assert(
   workflow.description?.includes('narrative'),
   'workflow description documents Claude narrative summary output',
+);
+assert(
+  workflow.description?.includes('search API') && workflow.description.includes('append mode'),
+  'workflow description documents merged-PR search API and append merge sync',
 );
 
 if (failures.length) {
