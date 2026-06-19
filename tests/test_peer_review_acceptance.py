@@ -163,6 +163,7 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             "Removed `test_peer_review_script_runs_green`",
             "tests/test_readme_links.py",
             "workflow, Makefile, package.json, run-ci-checks.sh, .gitignore",
+            "test_pr2871_proof_documents_peer_review_approved_in_resolution_section",
         ):
             with self.subTest(resolution=resolution):
                 self.assertIn(resolution, section)

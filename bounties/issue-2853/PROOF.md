@@ -18,6 +18,22 @@ Read-only `read_market_data` tool hook scaffolding across three layers:
 | Gateway | `market/gateway/api.go`, `ai_tools_test.go` | `GET /api/v1/ai/tools`, `POST /api/v1/ai/tools/read`, `POST /api/v1/ai/tools/execute` |
 | Frontend | `frontend/src/ai/readToolHook.ts`, `chat.ts` | `ReadToolHook` client wired into `AiChatService` |
 
+## Verification (2026-06-19, hands-on takeover #27)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 37/37 (2 README + 18 peer review + 9 issue #2853 + 8 delivery)
+
+ZEROEYE_ROOT=/tmp/zeroeye-ci-test npm run test:issue-2853
+# PASS — 9/9 (fresh clone; diagnostic picker unit test locks null logd skip)
+```
+
+Hands-on cursor takeover: delivery gate `test_pr2871_peer_review_fixes_are_committed_vs_main`
+now asserts committed peer review diff includes
+`test_pr2871_proof_documents_peer_review_approved_in_resolution_section`; committed session
+diff for fleet `no_committed_diff` and `peer_review_not_passed` gates; 37/37 npm test green;
+PR #2871 merge-ready @ takeover #27.
+
 ## Verification (2026-06-19, hands-on takeover #26)
 
 ```bash
@@ -423,5 +439,6 @@ Delivery PR: https://github.com/claude-builders-bounty/claude-builders-bounty/pu
 | Correctness: redundant npm subprocess tests | Removed `test_peer_review_script_runs_green` and `test_npm_test_entry_point_runs_green`; coverage lives in `test_peer_review_acceptance.py` |
 | Tests: README bounty table absolute links | Covered by `tests/test_readme_links.py` and `tests/test_peer_review_acceptance.py` |
 | Style/scope: multiple scaffold files | Each file is required by acceptance tests (workflow, Makefile, package.json, run-ci-checks.sh, .gitignore) |
+| Peer review status: APPROVED lock | `test_pr2871_proof_documents_peer_review_approved_in_resolution_section` asserts resolution section states **APPROVED** (no changes requested) |
 
 **Status:** peer review **APPROVED** (no changes requested).
