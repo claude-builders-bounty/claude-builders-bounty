@@ -152,6 +152,21 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             with self.subTest(item=item):
                 self.assertIn(item, section)
 
+    def test_pr2871_proof_documents_peer_review_table_resolutions(self) -> None:
+        """PR #2871: PROOF.md resolution table must document how each item was fixed."""
+        proof = REPO_ROOT / "bounties" / "issue-2853" / "PROOF.md"
+        text = proof.read_text(encoding="utf-8")
+        section_start = text.index("## PR #2871 peer review resolution")
+        section = text[section_start:]
+        for resolution in (
+            "scoped `find` + `grep` trailing-whitespace scan",
+            "Removed `test_peer_review_script_runs_green`",
+            "tests/test_readme_links.py",
+            "workflow, Makefile, package.json, run-ci-checks.sh, .gitignore",
+        ):
+            with self.subTest(resolution=resolution):
+                self.assertIn(resolution, section)
+
     def test_pr2871_scaffold_files_each_serve_distinct_purpose(self):
         """PR #2871: every added repo artifact is exercised by acceptance tests."""
         for rel_path in (
