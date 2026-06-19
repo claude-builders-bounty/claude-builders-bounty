@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""Generate a structured Markdown review comment for a GitHub pull request."""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+
+
+PR_RE = re.compile(r"https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)")
+
+
+@dataclass
+class DiffStats:
+    files: list[str]
+    additions: int
+    deletions: int
+    added_lines: list[str]
+    deleted_lines: list[str]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="claude-review",
+        description="Generate a structured pull request review comment from a GitHub PR diff.",
+    )
+    parser.add_argument("--pr", help="GitHub pull request URL, for example https://github.com/owner/repo/pull/123")
+    parser.add_argument("--diff-file", help="Read a local unified diff instead of fetching from GitHub")
+    parser.add_argument("--output", "-o", help="Write the review comment to a file instead of stdout")
+    args = parser.parse_args()
+
+    if not args.pr and not args.diff_file:
+        parser.error("provide --pr or --diff-file")
+    return args
+
+
+def fetch_diff(pr_url: str) -> str:
+    gh_diff = fetch_with_gh(pr_url)
+    if gh_diff:
+        return gh_diff
+    return fetch_with_public_diff_url(pr_url)
+
+
+def fetch_with_gh(pr_url: str) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["gh", "pr", "diff", pr_url],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+    if completed.returncode == 0 and completed.stdout.strip():
+        return completed.stdout
+    return None
+
+
+def fetch_with_public_diff_url(pr_url: str) -> str:
+    match = PR_RE.match(pr_url.rstrip("/"))
+    if not match:
+        raise SystemExit("Unsupported PR URL. Expected https://github.com/owner/repo/pull/123")
+
+    diff_url = f"https://github.com/{match.group('owner')}/{match.group('repo')}/pull/{match.group('number')}.diff"
+    request = urllib.request.Request(diff_url, headers={"User-Agent": "claude-review"})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def parse_diff(diff: str) -> DiffStats:
+    files: list[str] = []
+    seen_files: set[str] = set()
+    added_lines: list[str] = []
+    deleted_lines: list[str] = []
+    additions = 0
+    deletions = 0
+
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                path = parts[3][2:] if parts[3].startswith("b/") else parts[3]
+                if path not in seen_files:
+                    seen_files.add(path)
+                    files.append(path)
+            continue
+
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            additions += 1
+            added_lines.append(line[1:])
+        elif line.startswith("-"):
+            deletions += 1
+            deleted_lines.append(line[1:])
+
+    return DiffStats(files=files, additions=additions, deletions=deletions, added_lines=added_lines, deleted_lines=deleted_lines)
+
+
+def has_any(paths: list[str], needles: tuple[str, ...]) -> bool:
+    lowered = [path.lower() for path in paths]
+    return any(any(needle in path for needle in needles) for path in lowered)
+
+
+def changed_extensions(paths: list[str]) -> list[str]:
+    exts = sorted({Path(path).suffix or "(no extension)" for path in paths})
+    return exts[:8]
+
+
+def summarize(stats: DiffStats) -> list[str]:
+    total = stats.additions + stats.deletions
+    file_word = "file" if len(stats.files) == 1 else "files"
+    summary = [
+        f"This PR changes {len(stats.files)} {file_word} with {stats.additions} additions and {stats.deletions} deletions.",
+    ]
+
+    areas: list[str] = []
+    if has_any(stats.files, ("test", "spec", "__tests__")):
+        areas.append("test coverage")
+    if has_any(stats.files, ("readme", "docs", ".md")):
+        areas.append("documentation")
+    if has_any(stats.files, (".github", "workflow", ".yml", ".yaml")):
+        areas.append("automation or CI configuration")
+    if has_any(stats.files, ("package.json", "requirements", "pyproject", "lock")):
+        areas.append("dependency or packaging metadata")
+    if has_any(stats.files, ("src/", "lib/", "app/", "packages/")):
+        areas.append("application code")
+
+    if areas:
+        summary.append("The main touched areas are " + ", ".join(areas[:4]) + ".")
+    elif stats.files:
+        summary.append("The changed file types are " + ", ".join(changed_extensions(stats.files)) + ".")
+    else:
+        summary.append("The diff does not expose file paths, so the review focuses on line-level risk signals.")
+
+    if total > 1000:
+        summary.append("The diff is large enough that a second pass on generated or mechanical changes would be useful.")
+    return summary[:3]
+
+
+def risks(stats: DiffStats) -> list[str]:
+    text = "\n".join(stats.added_lines + stats.deleted_lines).lower()
+    total = stats.additions + stats.deletions
+    found: list[str] = []
+
+    if total > 1000:
+        found.append("Large diff size can hide unrelated or generated changes; confirm the PR scope is intentional.")
+    if has_any(stats.files, ("auth", "session", "token", "secret", "permission", "policy")) or any(
+        word in text for word in ("password", "secret", "token", "auth", "permission")
+    ):
+        found.append("Authentication or permission-related changes need explicit negative-path coverage.")
+    if has_any(stats.files, ("migration", "schema", "sql")) or any(
+        word in text for word in ("drop table", "delete from", "truncate", "alter table")
+    ):
+        found.append("Database changes can be destructive; verify migration rollback and data-preservation behavior.")
+    if has_any(stats.files, (".github", "workflow", ".yml", ".yaml")):
+        found.append("Workflow changes can affect CI permissions and secret exposure; review token scopes and triggers.")
+    if has_any(stats.files, ("package-lock", "pnpm-lock", "yarn.lock", "requirements", "pyproject")):
+        found.append("Dependency changes may introduce transitive risk; verify lockfile updates and vulnerability scans.")
+    if not has_any(stats.files, ("test", "spec", "__tests__")):
+        found.append("No obvious test file changed; regression coverage may rely on manual verification.")
+
+    return found or ["No major structural risks are obvious from the diff alone."]
+
+
+def suggestions(stats: DiffStats) -> list[str]:
+    found: list[str] = []
+
+    if not has_any(stats.files, ("test", "spec", "__tests__")):
+        found.append("Add or link targeted tests for the primary behavior changed by this PR.")
+    if has_any(stats.files, ("readme", "docs", ".md")):
+        found.append("Check examples and commands in the documentation against a fresh checkout.")
+    if has_any(stats.files, (".github", "workflow", ".yml", ".yaml")):
+        found.append("Run the workflow on a throwaway branch or use a dry-run path before relying on it.")
+    if has_any(stats.files, ("auth", "session", "token", "secret")):
+        found.append("Include failure cases for expired, missing, and malformed credentials.")
+    if stats.additions + stats.deletions > 1000:
+        found.append("Consider splitting generated output or fixtures from hand-written logic in the PR description.")
+
+    found.append("Keep the PR description tied to user-visible behavior and list the exact verification commands.")
+    return dedupe(found)
+
+
+def confidence(stats: DiffStats) -> str:
+    total = stats.additions + stats.deletions
+    has_tests = has_any(stats.files, ("test", "spec", "__tests__"))
+    high_risk_area = has_any(stats.files, ("auth", "session", "token", "secret", "migration", ".github", "workflow"))
+
+    if total > 1500 or (high_risk_area and not has_tests):
+        return "Low"
+    if total < 500 and has_tests and not high_risk_area:
+        return "High"
+    return "Medium"
+
+
+def dedupe(items: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
+def render_review(stats: DiffStats, source: str) -> str:
+    lines = [f"# PR Review Comment", "", f"Source: {source}", "", "## Summary of Changes"]
+    lines.extend(f"- {item}" for item in summarize(stats))
+    lines.extend(["", "## Identified Risks"])
+    lines.extend(f"- {item}" for item in risks(stats))
+    lines.extend(["", "## Improvement Suggestions"])
+    lines.extend(f"- {item}" for item in suggestions(stats))
+    lines.extend(["", f"## Confidence Score: {confidence(stats)}", ""])
+    return "\n".join(lines)
+
+
+def main() -> int:
+    args = parse_args()
+    if args.diff_file:
+        diff = Path(args.diff_file).read_text(encoding="utf-8", errors="replace")
+        source = args.diff_file
+    else:
+        diff = fetch_diff(args.pr)
+        source = args.pr
+
+    stats = parse_diff(diff)
+    review = render_review(stats, source)
+    if args.output:
+        Path(args.output).write_text(review, encoding="utf-8")
+    else:
+        sys.stdout.write(review)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
