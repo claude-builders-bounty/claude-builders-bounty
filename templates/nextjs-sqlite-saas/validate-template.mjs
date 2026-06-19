@@ -20,6 +20,7 @@ const requiredSections = [
   "## Environment Variables",
   "## Auth and Authorization",
   "## Route Handlers and APIs",
+  "## Dev Seed Script",
   "## Testing Rules",
   "## Greenfield Smoke Test",
 ];
@@ -150,6 +151,16 @@ if (!dbExample || !/env\.DATABASE_URL/.test(dbExample) || /['"]\.\/data\/app\.db
 const migrateExample = text.match(/\/\/ scripts\/migrate\.ts[\s\S]*?```/)?.[0] ?? "";
 if (!migrateExample || !/Migration integrity check failed/.test(migrateExample)) {
   console.error("migrate.ts example must include post-apply integrity check.");
+  process.exit(1);
+}
+
+const seedExample = text.match(/\/\/ scripts\/seed\.ts[\s\S]*?```/)?.[0] ?? "";
+if (!seedExample || !/NODE_ENV.*production/.test(seedExample)) {
+  console.error("seed.ts example must block production with NODE_ENV guard.");
+  process.exit(1);
+}
+if (!/ON CONFLICT\(id\) DO NOTHING/.test(seedExample)) {
+  console.error("seed.ts example must use idempotent upsert.");
   process.exit(1);
 }
 

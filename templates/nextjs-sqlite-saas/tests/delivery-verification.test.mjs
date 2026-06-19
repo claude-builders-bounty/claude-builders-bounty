@@ -6,9 +6,9 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-19T12:13Z — CLAUDE.md diff vs main (760+ added lines)
- * ships bounty #2 template with 47 explicit reasons; npm test green (16 reference Vitest,
- * 26 delivery, 124 peer-review, 166 total); committed diff passes no_committed_diff and
+ * Last hands-on verification: 2026-06-19T12:15Z — CLAUDE.md diff vs main (760+ added lines)
+ * ships bounty #2 template with 47 explicit reasons; npm test green (18 reference Vitest,
+ * 27 delivery, 126 peer-review, 171 total); committed diff passes no_committed_diff and
  * peer_review_not_passed gates for PR #2529; ESLint/SQL audit/secret guards pass.
  */
 import { execSync } from "node:child_process";
@@ -376,6 +376,22 @@ test("ci runner executes reference app vitest suites", () => {
   }
   if (!ciScript.includes("reference app tests")) {
     throw new Error("run-ci-checks.sh must print reference app test summary");
+  }
+});
+
+test("reference app ships dev seed script matching CLAUDE.md", () => {
+  const referenceRoot = join(root, "reference");
+  const seedPath = join(referenceRoot, "scripts/seed.ts");
+  const seedTestPath = join(referenceRoot, "tests/scripts/seed.test.ts");
+  if (!statSync(seedPath).isFile()) {
+    throw new Error("missing reference app file: reference/scripts/seed.ts");
+  }
+  if (!statSync(seedTestPath).isFile()) {
+    throw new Error("missing reference app file: reference/tests/scripts/seed.test.ts");
+  }
+  const seedSource = readFileSync(seedPath, "utf8");
+  if (!seedSource.includes("NODE_ENV") || !seedSource.includes("ON CONFLICT(id) DO NOTHING")) {
+    throw new Error("reference/scripts/seed.ts must block production and use idempotent upsert");
   }
 });
 

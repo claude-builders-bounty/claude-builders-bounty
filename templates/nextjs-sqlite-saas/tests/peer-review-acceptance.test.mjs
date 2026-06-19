@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-19T12:13Z — npm test green (166 total); isolated
- * test:peer-review (124 asserts) and test:delivery (26 tests) pass; peer review APPROVED.
+ * Last hands-on verification: 2026-06-19T12:15Z — npm test green (171 total); isolated
+ * test:peer-review (126 asserts) and test:delivery (27 tests) pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -221,6 +221,14 @@ assert(
 assert(
   statSync(join(root, "reference", "eslint.config.js")).isFile(),
   "reference app ships eslint.config.js for consistent formatting",
+);
+assert(
+  statSync(join(root, "reference", "scripts/seed.ts")).isFile(),
+  "reference app ships scripts/seed.ts matching CLAUDE.md dev seed pattern",
+);
+assert(
+  validator.includes("## Dev Seed Script"),
+  "validate-template.mjs requires Dev Seed Script section in CLAUDE.md",
 );
 assert(statSync(join(root, "tests/check-secret-tokens.mjs")).isFile(), "check-secret-tokens.mjs guards CI secret exposure");
 assert(statSync(join(root, "tests/check-sql-parameterization.mjs")).isFile(), "check-sql-parameterization.mjs audits query modules");
