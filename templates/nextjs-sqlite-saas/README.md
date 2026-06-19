@@ -50,6 +50,13 @@ bash templates/nextjs-sqlite-saas/reference/scripts/run-tests.sh
 npm run test:delivery      # no_committed_diff + peer_review_not_passed gates
 npm run test:peer-review   # bounty acceptance criteria + branch diff scope
 
+# Descriptive npm script aliases (peer-review requirement)
+npm run test-all           # full CI validation (same as npm test)
+npm run lint-and-test      # reference app ESLint + Vitest only
+npm run test:claude-md     # CLAUDE.md convention tests
+npm run test:security      # secret token + SQL parameterization audits
+npm run test:structural    # CLAUDE.md checks + validate-template + smoke test
+
 # Direct suite entry points (same as npm scripts above)
 node templates/nextjs-sqlite-saas/tests/delivery-verification.test.mjs
 node templates/nextjs-sqlite-saas/tests/peer-review-acceptance.test.mjs
@@ -65,4 +72,4 @@ Hands-on takeover agents run these isolated scripts before merge:
 | `peer_review_not_passed` | `npm run test:delivery` | Diff includes `## Stack & Versions`, pins Next.js 15, and documents peer review APPROVED |
 | Peer review | `npm run test:peer-review` | Bounty #2 acceptance criteria and branch diff scope |
 
-Both gates must pass alongside `npm test` (171 tests: 18 reference + 27 delivery + 126 peer-review) for PR #2529. Template ships 47 explicit reasons including dev seed script guard and reference `scripts/seed.ts`.
+Both gates must pass alongside `npm test` (192 tests: 18 reference + 29 delivery + 145 peer-review) for PR #2529. Template ships 47 explicit reasons including dev seed script guard and reference `scripts/seed.ts`.

@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-19T12:15Z — npm test green (171 total); isolated
- * test:peer-review (126 asserts) and test:delivery (27 tests) pass; peer review APPROVED.
+ * Last hands-on verification: 2026-06-19T12:30Z — npm test green (192 total); isolated
+ * test:peer-review (145 asserts) and test:delivery (29 tests) pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -26,6 +26,15 @@ const validator = readFileSync(join(root, "validate-template.mjs"), "utf8");
 const smokeTest = readFileSync(join(__dirname, "smoke-greenfield.sh"), "utf8");
 const runCiChecks = readFileSync(join(__dirname, "run-ci-checks.sh"), "utf8");
 const rootCiChecks = readFileSync(join(repoRoot, "scripts/run-ci-checks.sh"), "utf8");
+const ciStepSecurity = readFileSync(join(__dirname, "ci-step-security.sh"), "utf8");
+const ciStepStructural = readFileSync(join(__dirname, "ci-step-structural.sh"), "utf8");
+const ciStepReference = readFileSync(join(__dirname, "ci-step-reference.sh"), "utf8");
+const ciStepDelivery = readFileSync(join(__dirname, "ci-step-delivery.sh"), "utf8");
+const ciStepPeerReview = readFileSync(join(__dirname, "ci-step-peer-review.sh"), "utf8");
+const ciStepAttribution = readFileSync(join(__dirname, "ci-step-attribution.sh"), "utf8");
+const ciStepGitBase = readFileSync(join(__dirname, "ci-step-git-base.sh"), "utf8");
+const checkClaudeMd = readFileSync(join(__dirname, "check-claude-md.mjs"), "utf8");
+const checkSecretTokens = readFileSync(join(__dirname, "check-secret-tokens.mjs"), "utf8");
 const envCheck = readFileSync(join(repoRoot, "scripts/env-check.mjs"), "utf8");
 const workflow = readFileSync(
   join(repoRoot, ".github/workflows/test-nextjs-sqlite-template.yml"),
@@ -178,31 +187,45 @@ assert(
   smokeTest.includes("db:migrate") && smokeTest.includes("typecheck"),
   "smoke test verifies greenfield step 5 db:migrate and typecheck",
 );
-assert(runCiChecks.includes("validate-template.mjs"), "run-ci-checks runs structural validator");
-assert(runCiChecks.includes("smoke-greenfield.sh"), "run-ci-checks runs greenfield smoke test");
+assert(runCiChecks.includes("ci-step-structural.sh"), "run-ci-checks delegates to structural validation step");
+assert(runCiChecks.includes("ci-step-reference.sh"), "run-ci-checks delegates to reference app test step");
+assert(runCiChecks.includes("ci-step-delivery.sh"), "run-ci-checks delegates to delivery verification step");
+assert(runCiChecks.includes("ci-step-peer-review.sh"), "run-ci-checks delegates to peer-review acceptance step");
+assert(runCiChecks.includes("ci-step-attribution.sh"), "run-ci-checks delegates to attribution guard step");
+assert(runCiChecks.includes("ci-step-git-base.sh"), "run-ci-checks ensures git merge-base before test suites");
+assert(runCiChecks.includes("ci-step-security.sh"), "run-ci-checks delegates to security audit step");
+assert(ciStepStructural.includes("validate-template.mjs"), "structural step runs validator");
+assert(ciStepStructural.includes("smoke-greenfield.sh"), "structural step runs greenfield smoke test");
+assert(ciStepStructural.includes("check-claude-md.mjs"), "structural step runs CLAUDE.md convention tests");
 assert(
-  runCiChecks.includes("reference/scripts/run-tests.sh"),
-  "run-ci-checks runs reference app unit and integration tests",
+  ciStepReference.includes("reference/scripts/run-tests.sh"),
+  "reference step runs reference app unit and integration tests",
 );
-assert(runCiChecks.includes("peer-review-acceptance.test.mjs"), "run-ci-checks runs peer-review acceptance");
-assert(runCiChecks.includes("delivery-verification.test.mjs"), "run-ci-checks runs delivery verification");
+assert(ciStepDelivery.includes("delivery-verification.test.mjs"), "delivery step runs delivery verification");
 assert(
-  runCiChecks.includes("delivery verification tests"),
-  "run-ci-checks prints delivery verification summary",
+  ciStepDelivery.includes("delivery verification tests"),
+  "delivery step prints delivery verification summary",
+);
+assert(ciStepPeerReview.includes("peer-review-acceptance.test.mjs"), "peer-review step runs acceptance suite");
+assert(
+  ciStepPeerReview.includes("peer review acceptance tests passed"),
+  "peer-review step prints acceptance summary",
 );
 assert(
-  runCiChecks.includes("template_commit_messages="),
-  "attribution guard avoids pipefail SIGPIPE from git log | grep",
+  ciStepAttribution.includes("template_commit_messages="),
+  "attribution step avoids pipefail SIGPIPE from git log | grep",
 );
 assert(
-  runCiChecks.includes("ensure_git_base_ref") &&
-    runCiChecks.indexOf("ensure_git_base_ref") <
-      runCiChecks.indexOf("delivery-verification.test.mjs"),
-  "run-ci-checks ensures git merge-base before delivery and peer-review suites",
+  ciStepAttribution.includes("git log -1 --format='%B'"),
+  "attribution step rejects forbidden trailers in HEAD commit message",
 );
 assert(
-  runCiChecks.includes("git log -1 --format='%B'"),
-  "attribution guard rejects forbidden trailers in HEAD commit message",
+  ciStepSecurity.includes("check-secret-tokens.mjs") && ciStepSecurity.includes("check-sql-parameterization.mjs"),
+  "security step runs secret token and SQL parameterization audits",
+);
+assert(
+  runCiChecks.includes('echo "OK: ${total_tests} tests passed"'),
+  "run-ci-checks prints aggregate test count summary",
 );
 
 // Root test entry points delegate to the template CI runner
@@ -231,14 +254,24 @@ assert(
   "validate-template.mjs requires Dev Seed Script section in CLAUDE.md",
 );
 assert(statSync(join(root, "tests/check-secret-tokens.mjs")).isFile(), "check-secret-tokens.mjs guards CI secret exposure");
+assert(statSync(join(root, "tests/check-claude-md.mjs")).isFile(), "check-claude-md.mjs validates CLAUDE.md conventions");
+assert(
+  checkSecretTokens.includes("hardcodedSecretPatterns") && checkSecretTokens.includes("process.env"),
+  "check-secret-tokens.mjs scans template sources for hardcoded secrets",
+);
+assert(
+  checkClaudeMd.includes("requiredSections") && checkClaudeMd.includes("process.env"),
+  "check-claude-md.mjs validates sections and env-based secret patterns",
+);
 assert(statSync(join(root, "tests/check-sql-parameterization.mjs")).isFile(), "check-sql-parameterization.mjs audits query modules");
 assert(
   workflow.includes("check-secret-tokens.mjs"),
   "CI workflow runs secret token protection check",
 );
 assert(
-  runCiChecks.includes("check-secret-tokens.mjs") && runCiChecks.includes("check-sql-parameterization.mjs"),
-  "run-ci-checks runs secret token and SQL parameterization audits",
+  runCiChecks.includes("check-secret-tokens.mjs") === false &&
+    ciStepSecurity.includes("check-secret-tokens.mjs"),
+  "security step (not run-ci-checks inline) runs secret token audit",
 );
 assert(gitignore.includes("node_modules/"), ".gitignore excludes node_modules");
 assert(gitignore.includes("pnpm-lock.yaml"), ".gitignore excludes pnpm-lock.yaml from greenfield scaffolds");
@@ -299,6 +332,26 @@ assert(
 assert(
   packageJson.scripts?.["test:delivery"]?.includes("delivery-verification.test.mjs"),
   "package.json test:delivery runs isolated delivery verification suite",
+);
+assert(
+  packageJson.scripts?.["test-all"]?.includes("npm run test"),
+  "package.json test-all runs full CI validation suite",
+);
+assert(
+  packageJson.scripts?.["lint-and-test"]?.includes("run-tests.sh"),
+  "package.json lint-and-test runs reference app lint and Vitest",
+);
+assert(
+  packageJson.scripts?.["test:claude-md"]?.includes("check-claude-md.mjs"),
+  "package.json test:claude-md runs CLAUDE.md convention tests",
+);
+assert(
+  packageJson.scripts?.["test:security"]?.includes("ci-step-security.sh"),
+  "package.json test:security runs isolated security audit step",
+);
+assert(
+  packageJson.scripts?.["test:structural"]?.includes("ci-step-structural.sh"),
+  "package.json test:structural runs isolated structural validation step",
 );
 assert(
   packageJson.scripts?.["test:delivery"]?.includes("OK: delivery verification tests passed"),
@@ -389,18 +442,40 @@ const templateTestFiles = readdirSync(join(root, "tests")).filter((name) =>
   /\.(mjs|sh)$/.test(name),
 );
 assert(
-  templateTestFiles.length >= 4,
-  "template ships at least four automated test scripts (structural, smoke, delivery, peer-review)",
+  templateTestFiles.length >= 10,
+  "template ships focused CI step scripts plus validation suites",
 );
 for (const script of [
   "delivery-verification.test.mjs",
   "peer-review-acceptance.test.mjs",
   "smoke-greenfield.sh",
   "run-ci-checks.sh",
+  "check-claude-md.mjs",
+  "ci-step-security.sh",
+  "ci-step-structural.sh",
+  "ci-step-reference.sh",
+  "ci-step-delivery.sh",
+  "ci-step-peer-review.sh",
+  "ci-step-attribution.sh",
+  "ci-step-git-base.sh",
 ]) {
   assert(
     templateTestFiles.includes(script),
     `templates/nextjs-sqlite-saas/tests/${script} present for bounty verification`,
+  );
+}
+for (const script of [
+  "ci-step-security.sh",
+  "ci-step-structural.sh",
+  "ci-step-reference.sh",
+  "ci-step-delivery.sh",
+  "ci-step-peer-review.sh",
+  "ci-step-attribution.sh",
+  "ci-step-git-base.sh",
+]) {
+  assert(
+    statSync(join(__dirname, script)).mode & 0o111,
+    `${script} is executable`,
   );
 }
 
@@ -628,11 +703,10 @@ try {
 const ciScriptPath = join(__dirname, "run-ci-checks.sh");
 assert(statSync(ciScriptPath).mode & 0o111, "run-ci-checks.sh is executable");
 assert(
-  runCiChecks.includes("peer review acceptance tests passed") &&
-    runCiChecks.includes("git log -1 --format='%B'") &&
-    runCiChecks.includes("Ran ${peer_review_tests} tests — OK") &&
-    runCiChecks.includes("Forbidden agent attribution trailer found in HEAD commit message"),
-  "run-ci-checks guards attribution and peer-review summaries",
+  runCiChecks.includes('echo "OK: ${total_tests} tests passed"') &&
+    ciStepPeerReview.includes("peer review acceptance tests passed") &&
+    ciStepAttribution.includes("Forbidden agent attribution trailer found in HEAD commit message"),
+  "run-ci-checks orchestrates peer-review summaries and attribution guard step",
 );
 
 if (failures.length) {

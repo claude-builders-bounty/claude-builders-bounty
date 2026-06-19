@@ -6,9 +6,9 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-19T12:15Z — CLAUDE.md diff vs main (760+ added lines)
+ * Last hands-on verification: 2026-06-19T12:30Z — CLAUDE.md diff vs main (760+ added lines)
  * ships bounty #2 template with 47 explicit reasons; npm test green (18 reference Vitest,
- * 27 delivery, 126 peer-review, 171 total); committed diff passes no_committed_diff and
+ * 29 delivery, 145 peer-review, 192 total); committed diff passes no_committed_diff and
  * peer_review_not_passed gates for PR #2529; ESLint/SQL audit/secret guards pass.
  */
 import { execSync } from "node:child_process";
@@ -140,22 +140,25 @@ test("CI workflow uses npm test as single env-check entry point", () => {
 
 test("ci runner declares delivery and peer-review summary lines", () => {
   const ciScript = readFileSync(join(__dirname, "run-ci-checks.sh"), "utf8");
-  if (!ciScript.includes("delivery-verification.test.mjs")) {
-    throw new Error("run-ci-checks.sh must run delivery-verification.test.mjs");
+  const deliveryStep = readFileSync(join(__dirname, "ci-step-delivery.sh"), "utf8");
+  const peerReviewStep = readFileSync(join(__dirname, "ci-step-peer-review.sh"), "utf8");
+  if (!ciScript.includes("ci-step-delivery.sh")) {
+    throw new Error("run-ci-checks.sh must delegate to ci-step-delivery.sh");
   }
-  if (!ciScript.includes("delivery verification tests")) {
-    throw new Error("run-ci-checks.sh must print delivery verification summary");
+  if (!deliveryStep.includes("delivery-verification.test.mjs")) {
+    throw new Error("ci-step-delivery.sh must run delivery-verification.test.mjs");
   }
-  if (!ciScript.includes("peer review acceptance tests passed")) {
-    throw new Error("run-ci-checks.sh must print peer review acceptance summary");
+  if (!deliveryStep.includes("delivery verification tests")) {
+    throw new Error("ci-step-delivery.sh must print delivery verification summary");
+  }
+  if (!peerReviewStep.includes("peer review acceptance tests passed")) {
+    throw new Error("ci-step-peer-review.sh must print peer review acceptance summary");
   }
   if (!ciScript.includes('echo "OK: ${total_tests} tests passed"')) {
     throw new Error("run-ci-checks.sh must print aggregate OK: N tests passed summary");
   }
-  const peerReviewIndex = ciScript.indexOf("peer-review-acceptance.test.mjs");
-  const ranTestsIndex = ciScript.indexOf('echo "Ran ${peer_review_tests} tests — OK"');
-  if (peerReviewIndex < 0 || ranTestsIndex < 0 || ranTestsIndex <= peerReviewIndex) {
-    throw new Error("run-ci-checks.sh must print Ran N tests — OK after peer-review suite");
+  if (!peerReviewStep.includes('echo "Ran ${peer_review_tests} tests — OK"')) {
+    throw new Error("ci-step-peer-review.sh must print Ran N tests — OK after peer-review suite");
   }
 });
 
@@ -371,11 +374,35 @@ test("reference app ships eslint and integration test coverage", () => {
 
 test("ci runner executes reference app vitest suites", () => {
   const ciScript = readFileSync(join(__dirname, "run-ci-checks.sh"), "utf8");
-  if (!ciScript.includes("reference/scripts/run-tests.sh")) {
-    throw new Error("run-ci-checks.sh must run reference app unit/integration tests");
+  const referenceStep = readFileSync(join(__dirname, "ci-step-reference.sh"), "utf8");
+  if (!ciScript.includes("ci-step-reference.sh")) {
+    throw new Error("run-ci-checks.sh must delegate to ci-step-reference.sh");
   }
-  if (!ciScript.includes("reference app tests")) {
-    throw new Error("run-ci-checks.sh must print reference app test summary");
+  if (!referenceStep.includes("reference/scripts/run-tests.sh")) {
+    throw new Error("ci-step-reference.sh must run reference app unit/integration tests");
+  }
+  if (!referenceStep.includes("reference app tests")) {
+    throw new Error("ci-step-reference.sh must print reference app test summary");
+  }
+});
+
+test("CLAUDE.md convention tests validate template document", () => {
+  const claudeCheck = readFileSync(join(__dirname, "check-claude-md.mjs"), "utf8");
+  if (!claudeCheck.includes("requiredSections")) {
+    throw new Error("check-claude-md.mjs must validate required CLAUDE.md sections");
+  }
+  const output = execSync(`node "${join(__dirname, "check-claude-md.mjs")}"`, { encoding: "utf8" });
+  if (!output.includes("OK: CLAUDE.md convention checks passed")) {
+    throw new Error("check-claude-md.mjs must pass on shipped CLAUDE.md");
+  }
+});
+
+test("package.json exposes descriptive test script names", () => {
+  const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+  for (const script of ["test-all", "lint-and-test", "test:claude-md", "test:security", "test:structural"]) {
+    if (!pkg.scripts?.[script]) {
+      throw new Error(`package.json must expose descriptive script: ${script}`);
+    }
   }
 });
 
