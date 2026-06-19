@@ -243,7 +243,7 @@ assert(
 );
 assert(
   proof.includes('hands-on takeover #10') &&
-    proof.includes('hands-on takeover #17') &&
+    proof.includes('hands-on takeover #18') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -283,6 +283,10 @@ assert(
 assert(
   workflow.description?.includes('pull_request') && workflow.description.includes('Route Delivery'),
   'workflow description documents closed-issues PR exclusion and Route Delivery switch',
+);
+assert(
+  workflow.description?.includes('weekStart') && workflow.description.includes('Format Summary'),
+  'workflow description documents weekStart filtering and Format Summary narrative extraction',
 );
 
 if (failures.length) {
