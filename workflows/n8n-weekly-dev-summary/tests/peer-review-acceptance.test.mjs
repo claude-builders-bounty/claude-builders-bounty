@@ -247,6 +247,14 @@ assert(
   workflow.description?.includes('GET /repos/{owner}/{repo}'),
   'workflow description documents repo-scoped GITHUB_TOKEN validation',
 );
+assert(
+  workflow.description?.includes('DELIVERY_CHANNEL') && workflow.description.includes('auto-detect'),
+  'workflow description documents DELIVERY_CHANNEL configuration and auto-detection',
+);
+assert(
+  workflow.description?.includes('narrative'),
+  'workflow description documents Claude narrative summary output',
+);
 
 if (failures.length) {
   console.error('FAILED peer-review acceptance:\n- ' + failures.join('\n- '));
