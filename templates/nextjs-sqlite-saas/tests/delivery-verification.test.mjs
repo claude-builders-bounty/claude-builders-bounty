@@ -6,7 +6,7 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-19T01:40Z — CLAUDE.md diff vs main (731 added lines)
+ * Last hands-on verification: 2026-06-19T10:14Z — CLAUDE.md diff vs main (731 added lines)
  * ships bounty #2 template with 46 explicit reasons; npm test green (16 reference Vitest,
  * 25 delivery, 121 peer-review, 162 total); committed diff passes no_committed_diff and
  * peer_review_not_passed gates for PR #2529; ESLint/SQL audit/secret guards pass.
