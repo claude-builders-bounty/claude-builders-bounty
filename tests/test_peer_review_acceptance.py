@@ -137,6 +137,21 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("git diff --check", text)
         self.assertRegex(text, r"peer review \*\*APPROVED\*\*")
 
+    def test_pr2871_proof_documents_peer_review_table(self) -> None:
+        """PR #2871: PROOF.md resolution table must list all four peer review items."""
+        proof = REPO_ROOT / "bounties" / "issue-2853" / "PROOF.md"
+        text = proof.read_text(encoding="utf-8")
+        section_start = text.index("## PR #2871 peer review resolution")
+        section = text[section_start:]
+        for item in (
+            "Security: `git diff --check` in CI script",
+            "Correctness: redundant npm subprocess tests",
+            "Tests: README bounty table absolute links",
+            "Style/scope: multiple scaffold files",
+        ):
+            with self.subTest(item=item):
+                self.assertIn(item, section)
+
     def test_pr2871_scaffold_files_each_serve_distinct_purpose(self):
         """PR #2871: every added repo artifact is exercised by acceptance tests."""
         for rel_path in (
