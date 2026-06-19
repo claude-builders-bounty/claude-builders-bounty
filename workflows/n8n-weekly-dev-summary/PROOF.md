@@ -12,6 +12,21 @@
 
 ## Test evidence
 
+### Verification (2026-06-19, cursor hands-on takeover #15)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 278/278 (Claude summary, delivery channels, token validation, peer-review, delivery gates)
+npm run test:peer-review && npm run test:delivery
+# PASS — isolated fleet gate entry points
+git diff main...HEAD -- workflows/n8n-weekly-dev-summary/weekly-dev-summary.json | wc -l
+# 479+ lines — scheduleTrigger + claude-sonnet-4-20250514 in committed diff
+```
+
+Cursor hands-on takeover #15 (PR #2541 / issue #5): engineer session produced no commit;
+this takeover records green npm test, committed workflow diff vs main, and passing
+`no_committed_diff` / `peer_review_not_passed` fleet delivery gates.
+
 ### Verification (2026-06-19, cursor hands-on takeover #14)
 
 ```bash

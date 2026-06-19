@@ -243,6 +243,7 @@ assert(
 );
 assert(
   proof.includes('hands-on takeover #10') &&
+    proof.includes('hands-on takeover #15') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
