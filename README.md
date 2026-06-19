@@ -24,7 +24,7 @@ You're in the right place.
 
 ## Active Bounties
 
-Each Active Bounties row links to canonical upstream issues on `claude-builders-bounty/claude-builders-bounty` using absolute `/owner/repo/issues/N` paths (root-absolute on GitHub). These paths resolve correctly on forks and blob views—avoid fragile relative per-fork issue hrefs.
+Each Active Bounties row links to canonical upstream issues on `claude-builders-bounty/claude-builders-bounty` using absolute `/owner/repo/issues/N` paths (root-absolute on GitHub). These paths resolve correctly on forks and blob views—avoid relative issue links that resolve per-fork.
 
 | # | Task | Amount | Status |
 |---|------|--------|--------|
