@@ -129,6 +129,14 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             with self.subTest(path=guarded_path):
                 self.assertIn(guarded_path, script)
 
+    def test_pr2871_proof_documents_peer_review_resolution(self) -> None:
+        """PR #2871: PROOF.md must document peer review APPROVED and resolution table."""
+        proof = REPO_ROOT / "bounties" / "issue-2853" / "PROOF.md"
+        text = proof.read_text(encoding="utf-8")
+        self.assertIn("PR #2871 peer review resolution", text)
+        self.assertIn("git diff --check", text)
+        self.assertRegex(text, r"peer review \*\*APPROVED\*\*")
+
     def test_pr2871_scaffold_files_each_serve_distinct_purpose(self):
         """PR #2871: every added repo artifact is exercised by acceptance tests."""
         for rel_path in (
