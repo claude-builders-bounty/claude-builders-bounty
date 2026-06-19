@@ -92,6 +92,10 @@ assert(
   'README documents secure env var storage and runtime-only secret access',
 );
 assert(
+  readme.includes('Secrets manager') && readme.includes('HashiCorp Vault'),
+  'README documents external secrets manager integration for production',
+);
+assert(
   serialized.includes('DISCORD_WEBHOOK_URL') &&
     serialized.includes('SLACK_WEBHOOK_URL') &&
     serialized.includes('SUMMARY_EMAIL_TO'),
@@ -161,6 +165,16 @@ assert(
   deliveryChannels.includes('discord') && deliveryChannels.includes('slack') && deliveryChannels.includes('email'),
   'delivery-channels.test.mjs covers Discord, Slack, and email delivery',
 );
+
+const claudeSummary = readFileSync(join(__dirname, 'claude-summary.test.mjs'), 'utf8');
+assert(
+  claudeSummary.includes('claude-sonnet-4-20250514') && claudeSummary.includes('Build Claude Prompt'),
+  'claude-summary.test.mjs verifies Claude Sonnet 4 narrative generation nodes',
+);
+assert(
+  claudeSummary.includes('Format Summary'),
+  'claude-summary.test.mjs verifies Format Summary narrative extraction',
+);
 assert(
   deliveryChannels.includes('postJsonWebhook'),
   'delivery-channels.test.mjs verifies webhook POST delivery behavior',
@@ -200,6 +214,12 @@ assert(
 const makefile = readFileSync(join(repoRoot, 'Makefile'), 'utf8');
 assert(makefile.includes('test-peer-review:') && makefile.includes('test:peer-review'), 'Makefile exposes test-peer-review target');
 assert(makefile.includes('test-delivery:') && makefile.includes('test:delivery'), 'Makefile exposes test-delivery target');
+assert(makefile.includes('# Full n8n weekly-dev-summary regression suite'), 'Makefile targets include clarifying comments');
+
+const rootGitignore = readFileSync(join(repoRoot, '.gitignore'), 'utf8');
+assert(rootGitignore.includes('.env') && rootGitignore.includes('node_modules/'), 'repo .gitignore excludes secrets and node_modules');
+const workflowGitignore = readFileSync(join(root, '.gitignore'), 'utf8');
+assert(workflowGitignore.includes('.env') && workflowGitignore.includes('node_modules/'), 'workflow .gitignore excludes secrets and local artifacts');
 
 const screenshot = statSync(join(root, 'assets', 'n8n-execution-screenshot.png'));
 assert(screenshot.isFile() && screenshot.size > 1024, 'n8n execution screenshot asset present');

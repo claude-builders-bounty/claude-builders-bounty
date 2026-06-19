@@ -89,6 +89,9 @@ test('ci script exists and declares delivery checks', () => {
   if (!ciScript.includes('workflow-integration.test.mjs')) {
     throw new Error('run-ci-checks.mjs must run workflow-integration.test.mjs');
   }
+  if (!ciScript.includes('claude-summary.test.mjs')) {
+    throw new Error('run-ci-checks.mjs must run claude-summary.test.mjs');
+  }
   if (!ciScript.includes('delivery-channels.test.mjs')) {
     throw new Error('run-ci-checks.mjs must run delivery-channels.test.mjs');
   }
@@ -104,7 +107,7 @@ test('ci script exists and declares delivery checks', () => {
   if (!ciScript.includes('peer review acceptance tests passed')) {
     throw new Error('run-ci-checks.mjs must print peer review acceptance summary');
   }
-  if (!ciScript.includes('totalTests = validateTests + collectTests + unitTests + integrationTests + deliveryChannelTests + testScriptsTests + deliveryTests + peerReviewTests')) {
+  if (!ciScript.includes('totalTests = validateTests + collectTests + unitTests + integrationTests + claudeSummaryTests + deliveryChannelTests + testScriptsTests + deliveryTests + peerReviewTests')) {
     throw new Error('run-ci-checks.mjs must sum discovered suite counts before final summary');
   }
   if (!ciScript.includes('OK: ${totalTests} tests passed')) {
@@ -120,10 +123,11 @@ test('ci runner total matches discovered test counts', () => {
   const peerReview = countTests(join(__dirname, 'peer-review-acceptance.test.mjs'));
   const unit = countTests(join(__dirname, 'github-collect-unit.test.mjs'));
   const integration = countTests(join(__dirname, 'workflow-integration.test.mjs'));
+  const claudeSummary = countTests(join(__dirname, 'claude-summary.test.mjs'));
   const deliveryChannels = countTests(join(__dirname, 'delivery-channels.test.mjs'));
-  const expectedTotal = validate + collect + unit + integration + deliveryChannels + testScripts + delivery + peerReview;
-  if (expectedTotal < 130) {
-    throw new Error(`discovered ${expectedTotal} regression tests (need >= 130)`);
+  const expectedTotal = validate + collect + unit + integration + claudeSummary + deliveryChannels + testScripts + delivery + peerReview;
+  if (expectedTotal < 140) {
+    throw new Error(`discovered ${expectedTotal} regression tests (need >= 140)`);
   }
   const proofPath = join(root, 'PROOF.md');
   if (!statSync(proofPath).isFile()) {
@@ -280,8 +284,8 @@ test('repo root npm test entry point runs green', () => {
   }
   const totalMatch = output.match(/OK: (\d+) tests passed/);
   const total = totalMatch ? Number(totalMatch[1]) : 0;
-  if (total < 130) {
-    throw new Error(`repo root npm test reported ${total} tests (need >= 130 for bounty #5)`);
+  if (total < 140) {
+    throw new Error(`repo root npm test reported ${total} tests (need >= 140 for bounty #5)`);
   }
 });
 

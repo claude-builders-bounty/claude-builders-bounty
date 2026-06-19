@@ -48,6 +48,9 @@ run('node tests/github-collect-unit.test.mjs');
 const integrationTests = countTests(join(__dirname, 'workflow-integration.test.mjs'));
 run('node tests/workflow-integration.test.mjs');
 
+const claudeSummaryTests = countTests(join(__dirname, 'claude-summary.test.mjs'));
+run('node tests/claude-summary.test.mjs');
+
 const deliveryChannelTests = countTests(join(__dirname, 'delivery-channels.test.mjs'));
 run('node tests/delivery-channels.test.mjs');
 
@@ -63,7 +66,7 @@ run('node tests/peer-review-acceptance.test.mjs');
 console.log(`Ran ${peerReviewTests} tests — OK`);
 console.log('OK: peer review acceptance tests passed');
 
-const totalTests = validateTests + collectTests + unitTests + integrationTests + deliveryChannelTests + testScriptsTests + deliveryTests + peerReviewTests;
+const totalTests = validateTests + collectTests + unitTests + integrationTests + claudeSummaryTests + deliveryChannelTests + testScriptsTests + deliveryTests + peerReviewTests;
 console.log(`OK: ${totalTests} tests passed`);
 
 run('jq empty weekly-dev-summary.json');

@@ -30,6 +30,14 @@ For email delivery, attach an **SMTP** credential to the **Send Email** node.
 
 **Security:** Store `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, and webhook URLs in n8n **Variables** or your host `.env` — never commit them to git or paste them into workflow nodes. The workflow reads secrets only via `$env.*` at runtime. **Load Config** validates `GITHUB_TOKEN` can read the configured repo via `GET https://api.github.com/repos/{owner}/{repo}` before any activity fetches, and fails fast if required keys are missing or invalid. Use least-privilege GitHub PATs (repo read) and rotate keys if exposed.
 
+**Secrets manager (production):** For self-hosted n8n, prefer injecting credentials from an external secrets store rather than plain `.env` files on disk:
+
+- **n8n Credentials / Variables** — built-in encrypted store (n8n Cloud or self-hosted with encryption key)
+- **HashiCorp Vault** — mount secrets into n8n container env at startup (`vault kv get -field=...`)
+- **AWS Secrets Manager / GCP Secret Manager** — sync to runtime env via your orchestrator (Docker/K8s secrets)
+
+Map vault paths to the same `$env` names (`GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, webhook URLs). The workflow never embeds secret values in JSON — only `$env` references at execution time.
+
 **Pre-flight token check** (recommended before first run):
 
 ```bash
@@ -86,6 +94,7 @@ npm test
 | `collect-github-data.test.mjs` | GitHub record merge + pagination in workflow Code nodes |
 | `github-collect-unit.test.mjs` | Unit tests for `validateGitHubToken`, `fetchGitHubPages`, `collectRecords` |
 | `workflow-integration.test.mjs` | Token gate + mocked GitHub fetch + Claude prompt payload |
+| `claude-summary.test.mjs` | Claude Sonnet 4 narrative generation (Build Claude Prompt, Claude API, Format Summary) |
 | `delivery-channels.test.mjs` | Discord, Slack, and email payload + webhook delivery tests |
 | `validate-github-token.mjs` | Pre-flight script: verify `GITHUB_TOKEN` repo read access |
 | `test-scripts-acceptance.test.mjs` | Static checks on all test scripts |
@@ -105,10 +114,10 @@ Validate GitHub token permissions before enabling the workflow:
 npm run test:validate-token
 ```
 
-Optional live GitHub API check (uses `GITHUB_TOKEN` or `gh auth token`):
+Optional live GitHub API check (requires `GITHUB_TOKEN` in environment; CI sets `secrets.GITHUB_TOKEN`):
 
 ```bash
-npm run test:github
+GITHUB_TOKEN=<token> npm run test:github
 ```
 
 Optional full n8n execution + screenshot regeneration (requires `n8n` CLI and `GITHUB_TOKEN`):

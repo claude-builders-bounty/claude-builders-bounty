@@ -12,6 +12,21 @@
 
 ## Test evidence
 
+### Verification (2026-06-19, cursor hands-on takeover #14)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 278/278 (Claude summary, delivery channels, token validation, peer-review, delivery gates)
+npm run test:peer-review && npm run test:delivery
+# PASS — isolated fleet gate entry points
+git diff main...HEAD -- workflows/n8n-weekly-dev-summary/weekly-dev-summary.json | wc -l
+# 479+ lines — scheduleTrigger + claude-sonnet-4-20250514 in committed diff
+```
+
+Peer review fixes: `claude-summary.test.mjs` (Claude Sonnet 4 narrative nodes), explicit
+`GITHUB_TOKEN` requirement in `github-fetch.test.mjs`, secrets manager docs in README,
+expanded `.gitignore` patterns, and Makefile target comments.
+
 ### Verification (2026-06-19, cursor hands-on takeover #13)
 
 ```bash
@@ -197,19 +212,20 @@ OK: 13 nodes, all acceptance checks passed.
 OK: GitHub data collection handles n8n item splitting.
 OK: github-collect unit tests passed.
 OK: workflow integration tests passed.
+OK: Claude Sonnet 4 summary tests passed.
 OK: delivery channel tests passed (Discord, Slack, email).
-OK: 12 test scripts validated.
+OK: 13 test scripts validated.
 Ran 18 delivery verification tests — OK
-Ran 53 tests — OK
+Ran 61 tests — OK
 OK: peer review acceptance tests passed
-OK: 252 tests passed
+OK: 278 tests passed
 OK: all CI validation checks passed
 ```
 
-Optional live GitHub check:
+Optional live GitHub check (requires `GITHUB_TOKEN`):
 
 ```bash
-npm run test:github
+GITHUB_TOKEN=<token> npm run test:github
 ```
 
 ## Acceptance mapping
@@ -219,7 +235,7 @@ npm run test:github
 | Exportable `.json` workflow | `weekly-dev-summary.json` + `validate-workflow.mjs` |
 | Weekly cron (Friday 5pm) | Schedule trigger assertions in validator + peer-review suite |
 | GitHub activity fetch | Fetch nodes + `github-fetch.test.mjs` |
-| Claude Sonnet 4 summary | Claude API node + peer-review acceptance |
+| Claude Sonnet 4 summary | Claude API node + `claude-summary.test.mjs` + peer-review acceptance |
 | Discord/Slack/email delivery | Route Delivery switch + `delivery-channels.test.mjs` + README + emailTo wiring |
 | Configurable repo/channel/language | Load Config env vars + FR localization tests |
 | Real n8n test + screenshot | `assets/n8n-execution-screenshot.png` |

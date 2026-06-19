@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Integration test: GitHub API fetch logic used by the workflow.
- * Uses GITHUB_TOKEN, or falls back to `gh auth token` when available.
+ * Requires GITHUB_TOKEN in the environment (CI sets secrets.GITHUB_TOKEN).
+ * Falls back to `gh auth token` for local runs when gh CLI is authenticated.
  * Optional GITHUB_REPO (default: claude-builders-bounty/claude-builders-bounty).
  */
 import { execSync } from 'node:child_process';
@@ -10,7 +11,8 @@ import { fetchGitHubPages, validateGitHubToken } from './lib/github-collect.mjs'
 const repo = process.env.GITHUB_REPO || 'claude-builders-bounty/claude-builders-bounty';
 
 function resolveToken() {
-  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
+  const fromEnv = (process.env.GITHUB_TOKEN || '').trim();
+  if (fromEnv) return fromEnv;
   try {
     return execSync('gh auth token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
@@ -22,8 +24,13 @@ const token = resolveToken();
 const [owner, name] = repo.split('/');
 
 if (!token) {
-  console.error('FAIL: GITHUB_TOKEN not set and gh CLI is not authenticated');
+  console.error('FAIL: GITHUB_TOKEN environment variable is required for test:github');
+  console.error('Set GITHUB_TOKEN=<token> or authenticate the gh CLI before running this integration test.');
   process.exit(1);
+}
+
+if (!process.env.GITHUB_TOKEN) {
+  console.warn('WARN: GITHUB_TOKEN not set in environment; using gh auth token fallback for local run');
 }
 
 await validateGitHubToken(token, { repo });

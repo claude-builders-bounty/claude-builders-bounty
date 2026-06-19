@@ -20,6 +20,7 @@ const requiredScripts = [
   { file: 'collect-github-data.test.mjs', mustInclude: ['collectRecords', 'lib/github-collect.mjs'] },
   { file: 'github-collect-unit.test.mjs', mustInclude: ['validateGitHubToken', 'fetchGitHubPages'] },
   { file: 'workflow-integration.test.mjs', mustInclude: ['validateGitHubToken', 'Build Claude Prompt'] },
+  { file: 'claude-summary.test.mjs', mustInclude: ['Claude Sonnet 4', 'claude-sonnet-4-20250514', 'Build Claude Prompt'] },
   { file: 'delivery-channels.test.mjs', mustInclude: ['Discord, Slack, and email', 'postJsonWebhook'] },
   { file: 'validate-github-token.mjs', mustInclude: ['validateGitHubToken', 'GITHUB_REPO'] },
   { file: 'delivery-verification.test.mjs', mustInclude: ['Fleet delivery verification', 'test('] },
@@ -76,6 +77,10 @@ assert(
 assert(
   githubFetch.includes('process.env.GITHUB_TOKEN') && githubFetch.includes('gh auth token'),
   'github-fetch.test.mjs resolves token from env or gh CLI (no hardcoded credentials)',
+);
+assert(
+  githubFetch.includes('GITHUB_TOKEN environment variable is required'),
+  'github-fetch.test.mjs documents GITHUB_TOKEN requirement for integration test',
 );
 assert(
   githubFetch.includes('process.exit(1)') && !githubFetch.includes('process.exit(0)'),
