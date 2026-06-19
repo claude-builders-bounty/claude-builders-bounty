@@ -508,6 +508,7 @@ class CheckCommandTests(unittest.TestCase):
             "docker exec db rm -rf /data",
             "docker compose exec app rm -rf /data",
             "podman exec c rm -rf /",
+            "podman compose exec svc rm -rf /data",
             "kubectl exec pod -- rm -rf /",
             "docker exec db sh -c 'rm -rf /'",
         )
@@ -540,6 +541,10 @@ class CheckCommandTests(unittest.TestCase):
             (
                 "docker exec -e FOO=bar --workdir /app db bash -c \"DROP TABLE users\"",
                 'bash -c "DROP TABLE users"',
+            ),
+            (
+                "podman compose exec -T web sh -c 'rm -rf /var/lib'",
+                "sh -c 'rm -rf /var/lib'",
             ),
         )
         for command, expected_inner in cases:

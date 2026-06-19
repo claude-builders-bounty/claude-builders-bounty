@@ -3,7 +3,7 @@
 
 Detects destructive patterns in bare commands, chained segments (; && ||),
 pipeline stages, shell -c wrappers, and container exec invocations
-(docker/podman/kubectl exec and docker compose exec).
+(docker/podman/kubectl/nerdctl exec and docker/podman compose exec).
 """
 
 from __future__ import annotations
@@ -74,10 +74,11 @@ GIT_PUSH_FORCE_CONFIG = re.compile(
 GIT_PUSH_FORCE_CONFIG_FALSE = frozenset({"false", "0", "no", "off", "n"})
 CHAIN_SPLIT = re.compile(r"\s*(?:;|&&|\|\|)\s*")
 CONTAINER_RUNTIME_EXEC = re.compile(
-    r"\b(?:docker(?:\s+compose)?|podman|kubectl|nerdctl)\s+exec\b",
+    r"\b(?:docker(?:\s+compose)?|podman(?:\s+compose)?|kubectl|nerdctl)\s+exec\b",
     re.IGNORECASE,
 )
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
+CONTAINER_EXEC_BOOL_SHORT_FLAGS = frozenset("itT")
 
 
 def normalize_command(command: str) -> str:
@@ -130,7 +131,7 @@ def iter_pipe_stages(segment: str) -> list[str]:
 
 
 def extract_container_exec_inner(segment: str) -> str | None:
-    """Return the command run inside docker/podman/kubectl/nerdctl exec."""
+    """Return the command run inside docker/podman compose/kubectl/nerdctl exec."""
     match = CONTAINER_RUNTIME_EXEC.search(segment)
     if not match:
         return None
@@ -154,6 +155,7 @@ def extract_container_exec_inner(segment: str) -> str | None:
             tail = tail[flag_match.end() :].strip()
             if (
                 len(flag_chars) == 1
+                and flag_chars not in CONTAINER_EXEC_BOOL_SHORT_FLAGS
                 and tail
                 and not tail.startswith("-")
             ):

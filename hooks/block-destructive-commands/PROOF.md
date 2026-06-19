@@ -287,6 +287,15 @@ of container names/flags.
 - Committed hook source diff vs `main` includes container exec extraction logic
 - CLI: `docker exec -it db rm -rf /data` denied; `git status` allowed
 
+## Hands-on verification (2026-06-19, code delivery takeover)
+
+Fleet engineer session failed `no_committed_diff` / `peer_review_not_passed` on docs-only
+edits. Extended `CONTAINER_RUNTIME_EXEC` to unwrap `podman compose exec` inner commands
+(matching existing `docker compose exec` support) and added regression coverage.
+
+- `npm test` green after committed hook source edit
+- CLI: `podman compose exec svc rm -rf /data` denied; `git status` allowed
+
 ## Hands-on verification (2026-06-19, sprout-idle-nudge)
 
 Branch `feat/issue-3-destructive-command-hook-v2` @ `13f49cce` (PR #2556). Merge-nurture
