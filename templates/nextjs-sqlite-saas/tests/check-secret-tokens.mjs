@@ -121,6 +121,45 @@ for (const [index, block] of claudeCodeBlocks.entries()) {
   }
 }
 
+// Peer-review: ensure runtime env validation enforces SESSION_SECRET length/complexity.
+const validateReferenceEnv = readFileSync(
+  join(repoRoot, "scripts/validate-reference-env.mjs"),
+  "utf8",
+);
+if (!validateReferenceEnv.includes("SESSION_SECRET") || !validateReferenceEnv.includes("length < 32")) {
+  failures.push(
+    "scripts/validate-reference-env.mjs: must reject SESSION_SECRET shorter than 32 characters",
+  );
+}
+if (!validateReferenceEnv.includes("isStrongSessionSecret")) {
+  failures.push(
+    "scripts/validate-reference-env.mjs: must validate SESSION_SECRET complexity (not weak or single-character)",
+  );
+}
+
+const referenceEnvTs = readFileSync(
+  join(templateRoot, "reference", "src", "lib", "env.ts"),
+  "utf8",
+);
+if (!/SESSION_SECRET:\s*z\.string\(\)\.min\(32\)/.test(referenceEnvTs)) {
+  failures.push("reference/src/lib/env.ts: SESSION_SECRET must use z.string().min(32)");
+}
+
+const weakSessionSecretPattern =
+  /SESSION_SECRET\s*[:=]\s*['"]([^'"]{1,31})['"]/;
+for (const dir of allowedSourceDirs) {
+  for (const filePath of collectSourceFiles(dir)) {
+    const content = readFileSync(filePath, "utf8");
+    const rel = relative(templateRoot, filePath);
+    const match = content.match(weakSessionSecretPattern);
+    if (match) {
+      failures.push(
+        `template/${rel}: SESSION_SECRET value "${match[1]}" is shorter than 32 characters`,
+      );
+    }
+  }
+}
+
 if (failures.length) {
   console.error(`FAILED secret token protection:\n- ${failures.join("\n- ")}`);
   process.exit(1);

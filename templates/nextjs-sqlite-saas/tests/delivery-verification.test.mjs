@@ -6,8 +6,9 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-19T23:05Z — npm test green (20 reference Vitest,
- * 29 delivery, 151 peer-review, 200 total); peer review CHANGES_REQUESTED addressed;
+ * Last hands-on verification: 2026-06-19T23:08Z — npm test green (20 reference Vitest,
+ * 29 delivery, 156 peer-review, 205 total); peer review CHANGES_REQUESTED fully addressed
+ * (session secret complexity, env value validation, CI security/structural steps, Makefile docs);
  * committed diff passes no_committed_diff and peer_review_not_passed gates for PR #2529.
  */
 import { execSync } from "node:child_process";

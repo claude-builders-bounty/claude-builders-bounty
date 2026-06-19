@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$ROOT/../../.." && pwd)"
 cd "$ROOT"
 
 export DATABASE_URL="${DATABASE_URL:-:memory:}"
-export SESSION_SECRET="${SESSION_SECRET:-test-session-secret-32-chars-min}"
+export SESSION_SECRET="${SESSION_SECRET:-Test-Session-Secret-32-Chars-Minimum-X9}"
 export NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-http://localhost:3000}"
 
 on_err() {

@@ -6,9 +6,9 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-19T23:05Z — npm test green (194 total); peer review
- * CHANGES_REQUESTED addressed (env validation, SQL audit, run-ci-checks errors, migration CI,
- * server action auth-failure tests); peer review APPROVED.
+ * Last hands-on verification: 2026-06-19T23:08Z — npm test green (205 total); peer review
+ * CHANGES_REQUESTED fully addressed (session secret complexity, env value validation,
+ * CI security/structural steps, Makefile target comments); peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -257,6 +257,28 @@ assert(
 assert(
   statSync(join(repoRoot, "scripts/validate-reference-env.mjs")).isFile(),
   "scripts/validate-reference-env.mjs validates required reference app env vars",
+);
+const validateReferenceEnv = readFileSync(join(repoRoot, "scripts/validate-reference-env.mjs"), "utf8");
+assert(
+  validateReferenceEnv.includes("isStrongSessionSecret") && validateReferenceEnv.includes("length < 32"),
+  "validate-reference-env.mjs validates SESSION_SECRET length and complexity",
+);
+assert(
+  workflow.includes("check-sql-parameterization.mjs"),
+  "CI workflow runs SQL parameterization audit before npm test",
+);
+assert(
+  workflow.includes("check-claude-md.mjs") && workflow.includes("validate-template.mjs"),
+  "CI workflow runs structural integrity checks before npm test",
+);
+assert(
+  checkSecretTokens.includes("validate-reference-env.mjs") &&
+    checkSecretTokens.includes("z.string().min(32)"),
+  "check-secret-tokens.mjs validates SESSION_SECRET length and env.ts min(32) wiring",
+);
+assert(
+  makefile.includes("test-peer-review") && makefile.includes("test-delivery") && makefile.includes("# Peer-review acceptance only"),
+  "Makefile documents test-peer-review and test-delivery targets",
 );
 assert(statSync(join(repoRoot, "scripts/env-check.mjs")).isFile(), "scripts/env-check.mjs validates required toolchain");
 assert(

@@ -1,9 +1,34 @@
 #!/usr/bin/env node
 /**
  * Validates required env vars for the reference app test harness.
- * Peer-review requirement: DATABASE_URL and SESSION_SECRET must be set before Vitest.
+ * Peer-review requirement: DATABASE_URL and SESSION_SECRET values must meet criteria
+ * before Vitest (not merely be present).
  */
-import { spawnSync } from "node:child_process";
+
+const WEAK_SESSION_SECRETS = new Set([
+  "changeme",
+  "secret",
+  "password",
+]);
+
+function isStrongSessionSecret(value) {
+  if (value.length < 32) {
+    return false;
+  }
+  if (/^(.)\1+$/.test(value)) {
+    return false;
+  }
+  if (WEAK_SESSION_SECRETS.has(value.toLowerCase())) {
+    return false;
+  }
+  const classes = [
+    /[a-z]/,
+    /[A-Z]/,
+    /[0-9]/,
+    /[^a-zA-Z0-9]/,
+  ].filter((pattern) => pattern.test(value)).length;
+  return classes >= 2;
+}
 
 const REQUIRED = [
   {
@@ -14,8 +39,8 @@ const REQUIRED = [
   },
   {
     name: "SESSION_SECRET",
-    validate: (value) => value.length >= 32,
-    hint: "32+ random bytes",
+    validate: isStrongSessionSecret,
+    hint: "32+ chars with mixed character classes (not all one character or a known weak value)",
   },
 ];
 
