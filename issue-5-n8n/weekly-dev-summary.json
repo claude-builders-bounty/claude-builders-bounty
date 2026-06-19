@@ -1,0 +1,327 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.GITHUB_API_URL || 'https://api.github.com' }}/repos/{{ $env.GITHUB_REPO }}/commits?since={{ $now.minus({days:7}).toISO() }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HEADER_AUTH_ID",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.GITHUB_API_URL || 'https://api.github.com' }}/repos/{{ $env.GITHUB_REPO }}/issues?state=closed&since={{ $now.minus({days:7}).toISO() }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "fetch-closed-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HEADER_AUTH_ID",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.GITHUB_API_URL || 'https://api.github.com' }}/repos/{{ $env.GITHUB_REPO }}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "fetch-merged-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 600],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HEADER_AUTH_ID",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge All Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [660, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.first().json.commits || [];\nconst closedIssues = $input.first().json.closedIssues || [];\nconst mergedPRs = $input.first().json.mergedPRs || [];\n\nconst repo = $env.GITHUB_REPO || 'owner/repo';\nconst lang = ($env.SUMMARY_LANGUAGE || 'EN').toUpperCase();\n\n// Build summary context\nconst commitList = Array.isArray(commits) ? commits : [];\nconst issueList = Array.isArray(closedIssues) ? closedIssues : [];\nconst prList = Array.isArray(mergedPRs) ? mergedPRs : [];\n\n// Filter PRs that were actually merged (not just closed)\nconst mergedOnly = prList.filter(pr => pr.merged_at !== null);\n\n// Build prompt\nconst prompt = `Generate a weekly development summary for the GitHub repository ${repo}.\n\n## Data\n\n### Commits this week (${commitList.length})\n${commitList.slice(0, 30).map(c => `- ${c.commit?.message?.split('\\n')[0] || 'no message'} by ${c.commit?.author?.name || 'unknown'}`).join('\\n')}\n\n### Closed Issues (${issueList.length})\n${issueList.slice(0, 20).map(i => `- #${i.number} ${i.title}`).join('\\n')}\n\n### Merged PRs (${mergedOnly.length})\n${mergedOnly.slice(0, 20).map(p => `- #${p.number} ${p.title} by @${p.user?.login || 'unknown'}`).join('\\n')}\n\n## Instructions\n${lang === 'FR' ? 'Écrivez le résumé en français.' : 'Write the summary in English.'}\n\nProduce a narrative summary with these sections:\n1. **Overview** (2-3 sentences about the week's overall activity)\n2. **Key Changes** (highlight the most impactful commits and PRs)\n3. **Issues Resolved** (summarize the closed issues)\n4. **Contributors** (list unique contributors this week)\n5. **Looking Ahead** (brief note about ongoing work based on open issues)\n`;\n\nreturn [{ json: { prompt, repo, commitCount: commitList.length, issueCount: issueList.length, prCount: mergedOnly.length } }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Summary Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 400]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "options": {
+          "temperature": 0.5
+        }
+      },
+      "id": "claude-api",
+      "name": "Generate Summary via Claude",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [1100, 400],
+      "credentials": {
+        "anthropicApi": {
+          "id": "ANTHROPIC_CRED_ID",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Determine delivery method based on env var\nconst delivery = ($env.DELIVERY_METHOD || 'email').toLowerCase();\nconst summary = $input.first().json;\nconst repo = $env.GITHUB_REPO || 'owner/repo';\n\nif (delivery === 'discord' || delivery === 'slack') {\n  // Format for webhook\n  const webhookUrl = $env.WEBHOOK_URL || '';\n  if (!webhookUrl) {\n    throw new Error('WEBHOOK_URL environment variable is required for Discord/Slack delivery');\n  }\n  return [{\n    json: {\n      delivery: 'webhook',\n      webhookUrl,\n      payload: {\n        content: `📋 **Weekly Dev Summary: ${repo}**\\n\\n${typeof summary === 'string' ? summary : JSON.stringify(summary)}`.substring(0, 2000)\n      }\n    }\n  }];\n}\n\n// Default: email\nreturn [{\n  json: {\n    delivery: 'email',\n    subject: `Weekly Dev Summary: ${repo}`,\n    body: typeof summary === 'string' ? summary : JSON.stringify(summary, null, 2)\n  }\n}];"
+      },
+      "id": "format-delivery",
+      "name": "Format for Delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM || 'noreply@example.com' }}",
+        "toEmail": "={{ $env.SMTP_TO || 'team@example.com' }}",
+        "subject": "={{ $json.subject }}",
+        "text": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1540, 300],
+      "credentials": {
+        "smtp": {
+          "id": "SMTP_CRED_ID",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      },
+      "id": "send-webhook",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 500]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "operation": "equal",
+              "value1": "={{ $json.delivery }}",
+              "value2": "webhook"
+            }
+          ]
+        }
+      },
+      "id": "switch-delivery",
+      "name": "Switch Delivery Method",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1430, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Friday 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge All Data": {
+      "main": [
+        [
+          {
+            "node": "Build Summary Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary via Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary via Claude": {
+      "main": [
+        [
+          {
+            "node": "Format for Delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for Delivery": {
+      "main": [
+        [
+          {
+            "node": "Switch Delivery Method",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Delivery Method": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord/Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "github-summary"
+    }
+  ]
+}
