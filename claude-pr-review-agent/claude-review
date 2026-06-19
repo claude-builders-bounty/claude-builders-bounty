@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import re
+import urllib.error
+import urllib.request
+
+
+PR_RE = re.compile(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)")
+
+
+def fetch_url(url: str, headers: dict[str, str] | None = None) -> str:
+    request = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def parse_pr_url(pr_url: str) -> tuple[str, str, str]:
+    match = PR_RE.fullmatch(pr_url.rstrip("/"))
+    if not match:
+        raise ValueError("PR URL must look like https://github.com/owner/repo/pull/123")
+    return match.group(1), match.group(2), match.group(3)
+
+
+def fetch_diff(pr_url: str) -> str:
+    return fetch_url(pr_url.rstrip("/") + ".diff", {"Accept": "text/plain"})
+
+
+def heuristic_review(diff: str, pr_url: str) -> str:
+    files = re.findall(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE)
+    added = sum(1 for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    removed = sum(1 for line in diff.splitlines() if line.startswith("-") and not line.startswith("---"))
+    risks = []
+    suggestions = []
+    lowered = diff.lower()
+    if any(word in lowered for word in ["password", "secret", "token"]):
+        risks.append("The diff touches secret-like names; verify no credentials are exposed.")
+    if "delete from" in lowered or "drop table" in lowered:
+        risks.append("The diff includes destructive SQL; verify authorization and rollback behavior.")
+    if added + removed > 500:
+        risks.append("Large diff size increases review risk; consider splitting the change.")
+    if not re.search(r"test|spec", "\n".join(files), re.IGNORECASE):
+        suggestions.append("Add or update tests that cover the changed behavior.")
+    if not risks:
+        risks.append("No obvious high-risk patterns found in the raw diff; still verify behavior locally.")
+    if not suggestions:
+        suggestions.append("Document the verification command and expected result in the PR.")
+    confidence = "Medium" if added + removed <= 500 else "Low"
+    file_list = ", ".join(files[:6]) + (" ..." if len(files) > 6 else "")
+    return "\n".join([
+        "## PR Review",
+        "",
+        "### Summary",
+        "",
+        f"This PR changes {len(files)} file(s): {file_list or 'no file list detected'}. The diff adds {added} line(s) and removes {removed} line(s).",
+        "",
+        "### Identified Risks",
+        "",
+        *[f"- {risk}" for risk in risks],
+        "",
+        "### Improvement Suggestions",
+        "",
+        *[f"- {suggestion}" for suggestion in suggestions],
+        "",
+        f"### Confidence: {confidence}",
+        "",
+        f"Reviewed diff from {pr_url}.",
+    ])
+
+
+def claude_review(diff: str, pr_url: str, model: str) -> str:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return heuristic_review(diff, pr_url)
+    prompt = f"""Review this pull request diff and return Markdown with exactly these sections:
+### Summary
+2-3 sentences.
+### Identified Risks
+Bulleted list.
+### Improvement Suggestions
+Bulleted list.
+### Confidence: Low|Medium|High
+
+PR: {pr_url}
+
+Diff:
+{diff[:120000]}
+"""
+    payload = {"model": model, "max_tokens": 1200, "messages": [{"role": "user", "content": prompt}]}
+    request = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "content-type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.URLError as exc:
+        return heuristic_review(diff, pr_url) + f"\n\n_Note: Claude API fallback used after error: {exc}_\n"
+    text = "\n".join(part.get("text", "") for part in data.get("content", []) if part.get("type") == "text")
+    return text.strip() or heuristic_review(diff, pr_url)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Review a GitHub PR diff with Claude.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    parser.add_argument("--model", default="claude-sonnet-4-20250514")
+    args = parser.parse_args()
+    parse_pr_url(args.pr)
+    print(claude_review(fetch_diff(args.pr), args.pr, args.model))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
