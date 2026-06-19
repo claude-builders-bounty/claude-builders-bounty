@@ -33,7 +33,7 @@ The `reference/` directory is a minimal runnable slice of the patterns in `CLAUD
 # Toolchain check (node, bash, git) — also runs automatically at the start of npm test / make test
 npm run env-check
 
-# Full CI validation (structural checks + greenfield smoke test + delivery + peer-review)
+# Full CI validation (7 ci-step-*.sh stages: security, structural, reference, delivery, peer-review)
 npm test
 # or: make test / make ci-validate (env-check + scripts/run-ci-checks.sh)
 

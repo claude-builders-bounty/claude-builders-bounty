@@ -3,12 +3,14 @@
 #
 # GitHub Actions (.github/workflows/test-nextjs-sqlite-template.yml) and local
 # runners (`make test`, `npm test`) invoke this script. It delegates to the
-# template-owned runner that contains the actual validation steps:
-#   1. Structural CLAUDE.md validation (validate-template.mjs)
-#   2. Greenfield smoke test (create-next-app@15 scaffold)
-#   3. Delivery verification suite (npm wiring, CI summaries)
-#   4. Peer-review acceptance suite (bounty checklist codified)
-#   5. Attribution guard (no agent trailers in template or commits)
+# template-owned runner that delegates to focused ci-step-*.sh scripts:
+#   1. ci-step-git-base.sh    — fetch merge-base for branch-diff attribution scans
+#   2. ci-step-security.sh    — secret token + SQL parameterization audits
+#   3. ci-step-structural.sh  — CLAUDE.md checks, validate-template, greenfield smoke
+#   4. ci-step-reference.sh   — reference app ESLint + Vitest suites
+#   5. ci-step-delivery.sh    — no_committed_diff + peer_review_not_passed gates
+#   6. ci-step-peer-review.sh — bounty #2 acceptance criteria (peer review APPROVED)
+#   7. ci-step-attribution.sh — reject agent trailers in sources/commits
 #
 # Keep orchestration here at repo root; keep template-specific logic under
 # templates/nextjs-sqlite-saas/tests/ so greenfield copies stay self-contained.
