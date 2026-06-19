@@ -14,14 +14,31 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+on_err() {
+  local exit_code=$?
+  echo "template run-ci-checks failed: step exited with status ${exit_code} (line ${BASH_LINENO[0]})" >&2
+  exit "$exit_code"
+}
+trap on_err ERR
+
+run_step() {
+  local label="$1"
+  shift
+  echo "==> ${label}"
+  if ! "$@"; then
+    echo "template run-ci-checks failed: ${label}" >&2
+    exit 1
+  fi
+}
+
 cd "$REPO_ROOT"
 
-bash "${TESTS_DIR}/ci-step-git-base.sh"
-bash "${TESTS_DIR}/ci-step-security.sh"
-bash "${TESTS_DIR}/ci-step-structural.sh"
-bash "${TESTS_DIR}/ci-step-reference.sh"
-bash "${TESTS_DIR}/ci-step-delivery.sh"
-bash "${TESTS_DIR}/ci-step-peer-review.sh"
+run_step "git merge-base" bash "${TESTS_DIR}/ci-step-git-base.sh"
+run_step "security audits" bash "${TESTS_DIR}/ci-step-security.sh"
+run_step "structural validation" bash "${TESTS_DIR}/ci-step-structural.sh"
+run_step "reference app tests" bash "${TESTS_DIR}/ci-step-reference.sh"
+run_step "delivery verification" bash "${TESTS_DIR}/ci-step-delivery.sh"
+run_step "peer-review acceptance" bash "${TESTS_DIR}/ci-step-peer-review.sh"
 
 delivery_verification_tests="$(
   grep -Ec '^test\(' "${TESTS_DIR}/delivery-verification.test.mjs"
@@ -36,6 +53,6 @@ reference_app_tests="$(
 total_tests=$((delivery_verification_tests + peer_review_tests + reference_app_tests))
 echo "OK: ${total_tests} tests passed"
 
-bash "${TESTS_DIR}/ci-step-attribution.sh"
+run_step "attribution guard" bash "${TESTS_DIR}/ci-step-attribution.sh"
 
 echo 'OK: all CI validation checks passed'

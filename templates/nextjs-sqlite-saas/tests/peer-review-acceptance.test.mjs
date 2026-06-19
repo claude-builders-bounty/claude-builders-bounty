@@ -6,8 +6,9 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-19T22:51Z — npm test green (192 total); isolated
- * test:peer-review (145 asserts) and test:delivery (29 tests) pass; peer review APPROVED.
+ * Last hands-on verification: 2026-06-19T23:05Z — npm test green (194 total); peer review
+ * CHANGES_REQUESTED addressed (env validation, SQL audit, run-ci-checks errors, migration CI,
+ * server action auth-failure tests); peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -232,6 +233,31 @@ assert(
 const makefile = readFileSync(join(repoRoot, "Makefile"), "utf8");
 const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
+assert(
+  packageJson.scripts?.["validate-env"]?.includes("validate-reference-env.mjs"),
+  "package.json validate-env validates DATABASE_URL and SESSION_SECRET",
+);
+assert(
+  runCiChecks.includes("trap on_err ERR") || rootCiChecks.includes("trap on_err ERR"),
+  "run-ci-checks traps errors with descriptive failure messages",
+);
+assert(
+  runCiChecks.includes("run_step("),
+  "template run-ci-checks uses run_step for graceful step-level error reporting",
+);
+assert(
+  workflow.includes("Run database migration tests") &&
+    workflow.includes("tests/db/migrations.test.ts"),
+  "CI workflow runs database migration tests explicitly",
+);
+assert(
+  workflow.includes("validate-reference-env.mjs"),
+  "CI workflow validates DATABASE_URL and SESSION_SECRET before tests",
+);
+assert(
+  statSync(join(repoRoot, "scripts/validate-reference-env.mjs")).isFile(),
+  "scripts/validate-reference-env.mjs validates required reference app env vars",
+);
 assert(statSync(join(repoRoot, "scripts/env-check.mjs")).isFile(), "scripts/env-check.mjs validates required toolchain");
 assert(
   !existsSync(join(repoRoot, "package-lock.json")),

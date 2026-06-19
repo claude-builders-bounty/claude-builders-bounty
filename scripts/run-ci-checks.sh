@@ -19,6 +19,13 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE_RUNNER="${REPO_ROOT}/templates/nextjs-sqlite-saas/tests/run-ci-checks.sh"
 
+on_err() {
+  local exit_code=$?
+  echo "run-ci-checks failed: step exited with status ${exit_code} (line ${BASH_LINENO[0]})" >&2
+  exit "$exit_code"
+}
+trap on_err ERR
+
 if [[ ! -x "$TEMPLATE_RUNNER" ]]; then
   echo "run-ci-checks failed: missing executable template runner at ${TEMPLATE_RUNNER}" >&2
   exit 1

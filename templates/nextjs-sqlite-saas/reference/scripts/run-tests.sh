@@ -3,13 +3,36 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$ROOT/../../.." && pwd)"
 cd "$ROOT"
+
+export DATABASE_URL="${DATABASE_URL:-:memory:}"
+export SESSION_SECRET="${SESSION_SECRET:-test-session-secret-32-chars-min}"
+export NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-http://localhost:3000}"
+
+on_err() {
+  local exit_code=$?
+  echo "reference run-tests failed: step exited with status ${exit_code} (line ${BASH_LINENO[0]})" >&2
+  exit "$exit_code"
+}
+trap on_err ERR
 
 if ! command -v pnpm >/dev/null 2>&1; then
   corepack enable
   corepack prepare pnpm@9 --activate
 fi
 
+echo "==> validate reference env vars"
+node "${REPO_ROOT}/scripts/validate-reference-env.mjs"
+
+echo "==> install dependencies"
 pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+
+echo "==> lint"
 pnpm lint
+
+echo "==> migration tests"
+pnpm exec vitest run tests/db/migrations.test.ts
+
+echo "==> full test suite"
 pnpm test

@@ -41,4 +41,11 @@ describe("actionCreateInvoice", () => {
     await actionCreateInvoice({ orgSlug: "acme", amountCents: 1000 });
     expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith("/acme/invoices");
   });
+
+  it("returns error when org membership check fails", async () => {
+    vi.mocked(auth.requireOrgMember).mockRejectedValue(new Error("Forbidden"));
+    const result = await actionCreateInvoice({ orgSlug: "acme", amountCents: 1000 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("Failed to create invoice");
+  });
 });

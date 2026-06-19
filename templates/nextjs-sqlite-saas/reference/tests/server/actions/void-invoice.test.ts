@@ -43,4 +43,12 @@ describe("actionVoidInvoice", () => {
     await actionVoidInvoice({ orgSlug: "acme", invoiceId: invoice.id });
     expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith("/acme/invoices");
   });
+
+  it("returns error when org membership check fails", async () => {
+    vi.mocked(auth.requireOrgMember).mockRejectedValue(new Error("Forbidden"));
+    const invoice = createInvoice({ orgId: "org-1", amountCents: 500, createdBy: "user-1" });
+    const result = await actionVoidInvoice({ orgSlug: "acme", invoiceId: invoice.id });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("Failed to void invoice");
+  });
 });
