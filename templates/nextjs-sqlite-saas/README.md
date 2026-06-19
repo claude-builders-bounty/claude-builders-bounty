@@ -62,7 +62,7 @@ Hands-on takeover agents run these isolated scripts before merge:
 | Gate | Script | What it checks |
 |------|--------|----------------|
 | `no_committed_diff` | `npm run test:delivery` | Committed `CLAUDE.md` diff vs `main` is non-empty |
-| `peer_review_not_passed` | `npm run test:delivery` | Diff includes `## Stack & Versions` and pins Next.js 15 |
+| `peer_review_not_passed` | `npm run test:delivery` | Diff includes `## Stack & Versions`, pins Next.js 15, and documents peer review APPROVED |
 | Peer review | `npm run test:peer-review` | Bounty #2 acceptance criteria and branch diff scope |
 
 Both gates must pass alongside `npm test` (166 tests) for PR #2529.
