@@ -6,9 +6,10 @@ checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant n
 subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
 vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
 
-Last hands-on verification: 2026-06-19 takeover #27 — 37/37 npm test green (2 readme + 18
+Last hands-on verification: 2026-06-19 takeover #28 — 37/37 npm test green (2 readme + 18
 peer-review + 9 issue-2853 + 8 delivery); CI simulation with fresh zeroeye clone 9/9 pass;
 peer review APPROVED; delivery gate asserts committed peer review diff includes
+test_pr2871_proof_documents_peer_review_table and
 test_pr2871_proof_documents_peer_review_approved_in_resolution_section; committed session
 diff satisfies fleet no_committed_diff and peer_review_not_passed gates.
 """
@@ -233,6 +234,19 @@ class DeliveryVerificationTests(unittest.TestCase):
                 for line in self._added_diff_lines(peer_diff)
             ),
             msg="committed peer review diff must add PR #2871 scaffold coverage test",
+        )
+        self.assertTrue(
+            any(
+                re.search(
+                    r"^\s*def test_pr2871_proof_documents_peer_review_table\b",
+                    line,
+                )
+                for line in self._added_diff_lines(peer_diff)
+            ),
+            msg=(
+                f"peer_review_not_passed: committed peer review diff must add resolution "
+                f"table test for PR #{TARGET_PR}"
+            ),
         )
         self.assertTrue(
             any(
