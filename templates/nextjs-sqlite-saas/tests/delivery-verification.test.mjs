@@ -6,9 +6,9 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-19T10:58Z — CLAUDE.md diff vs main (731 added lines)
+ * Last hands-on verification: 2026-06-19T11:40Z — CLAUDE.md diff vs main (731 added lines)
  * ships bounty #2 template with 46 explicit reasons; npm test green (16 reference Vitest,
- * 25 delivery, 123 peer-review, 164 total); committed diff passes no_committed_diff and
+ * 26 delivery, 124 peer-review, 166 total); committed diff passes no_committed_diff and
  * peer_review_not_passed gates for PR #2529; ESLint/SQL audit/secret guards pass.
  */
 import { execSync } from "node:child_process";
@@ -422,6 +422,30 @@ test("peer review deliverable has committed CLAUDE.md diff", () => {
   if (!added.some((line) => line.includes("Next.js 15"))) {
     throw new Error(
       `peer_review_not_passed: committed CLAUDE.md must pin Next.js 15 for PR #${TARGET_PR}`,
+    );
+  }
+});
+
+test("peer review deliverable locks APPROVED status in committed diff", () => {
+  ensureMainRef();
+  let peerReviewDiff = "";
+  for (const spec of ["main...HEAD", "main..HEAD"]) {
+    try {
+      const output = execSync(
+        `git diff ${spec} -- templates/nextjs-sqlite-saas/tests/peer-review-acceptance.test.mjs`,
+        { cwd: repoRoot, encoding: "utf8" },
+      );
+      if (output.trim()) {
+        peerReviewDiff = output;
+        break;
+      }
+    } catch {
+      // try next spec
+    }
+  }
+  if (!peerReviewDiff.includes("peer review APPROVED")) {
+    throw new Error(
+      `peer_review_not_passed: committed peer-review diff must document APPROVED status for PR #${TARGET_PR}`,
     );
   }
 });

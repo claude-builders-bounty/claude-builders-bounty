@@ -65,4 +65,4 @@ Hands-on takeover agents run these isolated scripts before merge:
 | `peer_review_not_passed` | `npm run test:delivery` | Diff includes `## Stack & Versions` and pins Next.js 15 |
 | Peer review | `npm run test:peer-review` | Bounty #2 acceptance criteria and branch diff scope |
 
-Both gates must pass alongside `npm test` (164 tests) for PR #2529.
+Both gates must pass alongside `npm test` (166 tests) for PR #2529.
