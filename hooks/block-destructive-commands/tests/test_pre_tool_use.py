@@ -539,11 +539,23 @@ class CheckCommandTests(unittest.TestCase):
                 "sh -c 'rm -rf /var/lib'",
             ),
             (
+                "kubectl exec pod -c sidecar -- rm -rf /",
+                "rm -rf /",
+            ),
+            (
+                "kubectl exec -it pod --container sidecar -- rm -rf /",
+                "rm -rf /",
+            ),
+            (
                 "docker exec -e FOO=bar --workdir /app db bash -c \"DROP TABLE users\"",
                 'bash -c "DROP TABLE users"',
             ),
             (
                 "podman compose exec -T web sh -c 'rm -rf /var/lib'",
+                "sh -c 'rm -rf /var/lib'",
+            ),
+            (
+                "nerdctl compose exec -it app sh -c 'rm -rf /var/lib'",
                 "sh -c 'rm -rf /var/lib'",
             ),
         )
@@ -553,6 +565,16 @@ class CheckCommandTests(unittest.TestCase):
                     self.hook.extract_container_exec_inner(command),
                     expected_inner,
                 )
+
+    def test_allows_rm_rf_text_in_kubectl_exec_display_tools(self):
+        allowed = (
+            "kubectl exec pod -c sidecar -- echo rm -rf",
+            "kubectl exec pod -c sidecar -- grep rm -rf README.md",
+            "nerdctl compose exec app -- echo rm -rf /",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
 
     def test_blocks_nerdctl_exec_destructive_commands(self):
         self.assertEqual(

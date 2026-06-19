@@ -3,7 +3,7 @@
 
 Detects destructive patterns in bare commands, chained segments (; && ||),
 pipeline stages, shell -c wrappers, and container exec invocations
-(docker/podman/kubectl/nerdctl exec and docker/podman compose exec).
+(docker/podman/kubectl/nerdctl exec and docker/podman/nerdctl compose exec).
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ GIT_PUSH_FORCE_CONFIG = re.compile(
 GIT_PUSH_FORCE_CONFIG_FALSE = frozenset({"false", "0", "no", "off", "n"})
 CHAIN_SPLIT = re.compile(r"\s*(?:;|&&|\|\|)\s*")
 CONTAINER_RUNTIME_EXEC = re.compile(
-    r"\b(?:docker(?:\s+compose)?|podman(?:\s+compose)?|kubectl|nerdctl)\s+exec\b",
+    r"\b(?:docker(?:\s+compose)?|podman(?:\s+compose)?|kubectl|nerdctl(?:\s+compose)?)\s+exec\b",
     re.IGNORECASE,
 )
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
@@ -130,16 +130,11 @@ def iter_pipe_stages(segment: str) -> list[str]:
     return [stage.strip() for stage in segment.split("|") if stage.strip()]
 
 
-def extract_container_exec_inner(segment: str) -> str | None:
-    """Return the command run inside docker/podman compose/kubectl/nerdctl exec."""
-    match = CONTAINER_RUNTIME_EXEC.search(segment)
-    if not match:
-        return None
-    tail = segment[match.end() :].strip()
+def _consume_container_exec_flags(tail: str) -> str:
+    """Strip exec option flags; stop at ``--`` separator or the next positional token."""
     while tail:
         if tail.startswith("-- "):
-            tail = tail[3:].strip()
-            break
+            return tail[3:].strip()
         if flag_match := re.match(r"--[\w-]+=\S+\s*", tail):
             tail = tail[flag_match.end() :].strip()
             continue
@@ -164,22 +159,30 @@ def extract_container_exec_inner(segment: str) -> str | None:
                     tail = tail[value_match.end() :].strip()
             continue
         break
+    return tail
+
+
+def extract_container_exec_inner(segment: str) -> str | None:
+    """Return the command run inside docker/podman compose/kubectl/nerdctl exec."""
+    match = CONTAINER_RUNTIME_EXEC.search(segment)
+    if not match:
+        return None
+    tail = _consume_container_exec_flags(segment[match.end() :].strip())
+    if not tail:
+        return None
     name_match = CONTAINER_NAME.match(tail)
     if not name_match:
         return None
-    inner = tail[name_match.end() :].strip()
-    if inner.startswith("-- "):
-        inner = inner[3:].strip()
+    inner = _consume_container_exec_flags(tail[name_match.end() :].strip())
     return inner or None
 
 
 def iter_segment_candidates(segment: str) -> list[str]:
-    """Check the segment and any inner container exec command independently."""
-    candidates = [segment]
+    """When exec wraps a command, check only the extracted inner payload."""
     inner = extract_container_exec_inner(segment)
-    if inner:
-        candidates.append(inner)
-    return candidates
+    if inner is not None:
+        return [inner]
+    return [segment]
 
 
 def embedded_shell_rm_rf(segment: str) -> bool:
