@@ -37,6 +37,10 @@ npm run env-check
 npm test
 # or: make test / make ci-validate (env-check + scripts/run-ci-checks.sh)
 
+# Security audits (also run at the start of npm test via run-ci-checks.sh)
+node templates/nextjs-sqlite-saas/tests/check-secret-tokens.mjs
+node templates/nextjs-sqlite-saas/tests/check-sql-parameterization.mjs
+
 # Individual checks
 node templates/nextjs-sqlite-saas/validate-template.mjs
 bash templates/nextjs-sqlite-saas/tests/smoke-greenfield.sh

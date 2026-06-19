@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-19T10:14Z — npm test green (162 total); isolated
- * test:peer-review (121 asserts) and test:delivery (25 tests) pass; peer review APPROVED.
+ * Last hands-on verification: 2026-06-19T10:26Z — npm test green (163 total); isolated
+ * test:peer-review (123 asserts) and test:delivery (25 tests) pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -151,6 +151,10 @@ assert(
 assert(
   readme.includes("no_committed_diff") && readme.includes("peer-review"),
   "README explains fleet delivery and peer-review gate scripts",
+);
+assert(
+  readme.includes("check-secret-tokens.mjs") && readme.includes("check-sql-parameterization.mjs"),
+  "README documents secret-token and SQL parameterization audit scripts",
 );
 
 // Structural validator and greenfield smoke test exist
