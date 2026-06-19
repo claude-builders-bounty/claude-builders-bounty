@@ -577,6 +577,37 @@ Reason: filename-order application plus a post-run count check catches skipped f
 
 ---
 
+## Dev Seed Script
+
+`pnpm db:seed` runs `scripts/seed.ts` for local fixtures only. Block production runs at the top of the script — never gate on env vars only in `package.json`.
+
+```ts
+// scripts/seed.ts — dev-only fixtures; never run against production data
+import Database from 'better-sqlite3';
+import { env } from '../src/lib/env';
+
+if (process.env.NODE_ENV === 'production') {
+  console.error('db:seed is blocked in production');
+  process.exit(1);
+}
+
+const filePath = env.DATABASE_URL.replace(/^file:/, '');
+const db = new Database(filePath);
+db.pragma('foreign_keys = ON');
+
+// Upsert a dev org + user; use deterministic IDs so re-runs are idempotent
+db.prepare(
+  `INSERT INTO organizations (id, slug) VALUES (?, ?)
+   ON CONFLICT(id) DO NOTHING`,
+).run('org-dev-1', 'acme');
+
+db.close();
+```
+
+Reason: an explicit `NODE_ENV` guard prevents accidental seeding in deployed environments; idempotent upserts make `pnpm db:seed` safe to re-run during development.
+
+---
+
 ## Testing Rules
 
 - **Query modules:** test against an in-memory SQLite database or a temp file; seed minimal schema in `beforeEach`.
