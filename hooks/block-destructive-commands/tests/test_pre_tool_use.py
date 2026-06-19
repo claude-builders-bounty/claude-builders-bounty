@@ -508,6 +508,8 @@ class CheckCommandTests(unittest.TestCase):
             "docker exec db rm -rf /data",
             "docker compose exec app rm -rf /data",
             "docker compose run app rm -rf /data",
+            "docker-compose exec db rm -rf /data",
+            "docker-compose run app rm -rf /data",
             "podman exec c rm -rf /",
             "podman compose exec svc rm -rf /data",
             "podman compose run svc rm -rf /data",
@@ -579,6 +581,14 @@ class CheckCommandTests(unittest.TestCase):
                 "nerdctl compose run -T web echo rm -rf",
                 "echo rm -rf",
             ),
+            (
+                "docker-compose exec -T db sh -c 'rm -rf /var/lib'",
+                "sh -c 'rm -rf /var/lib'",
+            ),
+            (
+                "docker-compose run app rm -rf /data",
+                "rm -rf /data",
+            ),
         )
         for command, expected_inner in cases:
             with self.subTest(command=command):
@@ -596,6 +606,11 @@ class CheckCommandTests(unittest.TestCase):
             "docker compose run app echo rm -rf",
             "podman compose run svc echo rm -rf",
             "nerdctl compose run web -- echo rm -rf /",
+            'sh -c "echo rm -rf"',
+            'docker compose exec db sh -c "echo rm -rf"',
+            "docker-compose exec db echo rm -rf",
+            "docker-compose run app echo rm -rf",
+            "podman-compose run svc echo rm -rf",
         )
         for command in allowed:
             with self.subTest(command=command):

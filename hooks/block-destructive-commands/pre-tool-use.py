@@ -74,7 +74,7 @@ GIT_PUSH_FORCE_CONFIG = re.compile(
 GIT_PUSH_FORCE_CONFIG_FALSE = frozenset({"false", "0", "no", "off", "n"})
 CHAIN_SPLIT = re.compile(r"\s*(?:;|&&|\|\|)\s*")
 CONTAINER_RUNTIME_INVOCATION = re.compile(
-    r"\b(?:docker(?:\s+compose)?|podman(?:\s+compose)?|kubectl(?:\s+compose)?|nerdctl(?:\s+compose)?)\s+(?:exec|run)\b",
+    r"\b(?:docker(?:\s+compose|-compose)?|podman(?:\s+compose|-compose)?|kubectl(?:\s+compose|-compose)?|nerdctl(?:\s+compose|-compose)?)\s+(?:exec|run)\b",
     re.IGNORECASE,
 )
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
@@ -185,19 +185,12 @@ def iter_segment_candidates(segment: str) -> list[str]:
     return [segment]
 
 
-def embedded_shell_rm_rf(segment: str) -> bool:
-    """True when a shell -c wrapper embeds rm -rf."""
-    match = SHELL_C.search(segment)
-    if not match:
-        return False
-    inner = next(group for group in match.groups() if group is not None)
-    return is_rm_rf(inner)
-
-
 def segment_has_rm_rf_invocation(segment: str) -> bool:
     """Block rm -rf only when rm is executed, not when echoed or searched."""
-    if embedded_shell_rm_rf(segment):
-        return True
+    shell_match = SHELL_C.search(segment)
+    if shell_match:
+        inner = next(group for group in shell_match.groups() if group is not None)
+        return segment_has_rm_rf_invocation(inner)
     for stage in iter_pipe_stages(segment):
         if NON_SQL_TOOLS.match(stage):
             continue

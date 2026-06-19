@@ -341,6 +341,14 @@ hook source edits. Extended container runtime unwrapping to include `compose run
 - `npm test` green after committed hook source edit: 120 unittest + 8 delivery + 22 peer-review
 - CLI: `docker compose run app rm -rf /data` denied; `docker compose run app echo rm -rf` allowed
 
+## Hands-on verification (2026-06-19, code delivery takeover)
+
+Fleet engineer failed `no_committed_diff` / `peer_review_not_passed` without in-session hook edits.
+
+- Recognize legacy `docker-compose` / `podman-compose` binaries when unwrapping exec/run inner commands
+- Evaluate `sh -c` wrappers by inner payload only so `sh -c "echo rm -rf"` is allowed while real `rm -rf` inside `-c` still blocks
+- `npm test` green: 120 unittest + 8 delivery + 22 peer-review + attribution checks
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
