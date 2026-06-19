@@ -243,7 +243,7 @@ assert(
 );
 assert(
   proof.includes('hands-on takeover #10') &&
-    proof.includes('hands-on takeover #16') &&
+    proof.includes('hands-on takeover #17') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -279,6 +279,10 @@ assert(
 assert(
   workflow.description?.includes('search API') && workflow.description.includes('append mode'),
   'workflow description documents merged-PR search API and append merge sync',
+);
+assert(
+  workflow.description?.includes('pull_request') && workflow.description.includes('Route Delivery'),
+  'workflow description documents closed-issues PR exclusion and Route Delivery switch',
 );
 
 if (failures.length) {
