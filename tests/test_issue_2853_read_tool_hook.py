@@ -181,6 +181,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         self.assertIn("test_pr2871_deliverable_has_committed_issue_2853_diff", text)
         self.assertIn("test_pr2871_proof_documents_peer_review_table", text)
         self.assertIn("test_pr2871_proof_documents_peer_review_table_resolutions", text)
+        self.assertIn("test_pr2871_proof_documents_peer_review_approved_in_resolution_section", text)
         self.assertIn("_select_passing_build_diagnostic", text)
 
 

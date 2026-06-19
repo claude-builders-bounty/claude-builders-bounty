@@ -6,11 +6,11 @@ checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant n
 subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
 vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
 
-Last hands-on verification: 2026-06-19 takeover #24 — 36/36 npm test green (2 readme + 17
+Last hands-on verification: 2026-06-19 takeover #26 — 37/37 npm test green (2 readme + 18
 peer-review + 9 issue-2853 + 8 delivery); CI simulation with fresh zeroeye clone 9/9 pass;
-peer review APPROVED; test_pr2871_proof_documents_peer_review_table_resolutions locks
-resolution column text in PROOF.md; committed session diff satisfies fleet no_committed_diff
-and peer_review_not_passed gates.
+peer review APPROVED; test_pr2871_proof_documents_peer_review_approved_in_resolution_section
+locks APPROVED status in PROOF.md resolution section; committed session diff satisfies fleet
+no_committed_diff and peer_review_not_passed gates.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ class DeliveryVerificationTests(unittest.TestCase):
         peer_review_tests = count_test_methods(PEER_REVIEW_TEST)
         delivery_tests = count_test_methods(Path(__file__))
         self.assertGreaterEqual(readme_tests, 2)
-        self.assertGreaterEqual(peer_review_tests, 16)
+        self.assertGreaterEqual(peer_review_tests, 17)
         issue_2853_tests = count_test_methods(ISSUE_2853_TEST)
         self.assertGreaterEqual(delivery_tests, 8)
         self.assertGreaterEqual(issue_2853_tests, 9)

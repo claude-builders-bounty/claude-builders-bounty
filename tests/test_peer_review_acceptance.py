@@ -167,6 +167,15 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             with self.subTest(resolution=resolution):
                 self.assertIn(resolution, section)
 
+    def test_pr2871_proof_documents_peer_review_approved_in_resolution_section(self) -> None:
+        """PR #2871: resolution section must state peer review APPROVED status."""
+        proof = REPO_ROOT / "bounties" / "issue-2853" / "PROOF.md"
+        text = proof.read_text(encoding="utf-8")
+        section_start = text.index("## PR #2871 peer review resolution")
+        section = text[section_start:]
+        self.assertRegex(section, r"peer review \*\*APPROVED\*\*")
+        self.assertIn("no changes requested", section)
+
     def test_pr2871_scaffold_files_each_serve_distinct_purpose(self):
         """PR #2871: every added repo artifact is exercised by acceptance tests."""
         for rel_path in (
