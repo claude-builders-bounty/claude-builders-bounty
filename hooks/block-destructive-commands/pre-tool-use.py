@@ -3,7 +3,7 @@
 
 Detects destructive patterns in bare commands, chained segments (; && ||),
 pipeline stages, shell -c wrappers, and container exec invocations
-(docker/podman/kubectl/nerdctl exec and docker/podman/nerdctl compose exec).
+(docker/podman/kubectl/nerdctl exec and docker/podman/kubectl/nerdctl compose exec).
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ GIT_PUSH_FORCE_CONFIG = re.compile(
 GIT_PUSH_FORCE_CONFIG_FALSE = frozenset({"false", "0", "no", "off", "n"})
 CHAIN_SPLIT = re.compile(r"\s*(?:;|&&|\|\|)\s*")
 CONTAINER_RUNTIME_EXEC = re.compile(
-    r"\b(?:docker(?:\s+compose)?|podman(?:\s+compose)?|kubectl|nerdctl(?:\s+compose)?)\s+exec\b",
+    r"\b(?:docker(?:\s+compose)?|podman(?:\s+compose)?|kubectl(?:\s+compose)?|nerdctl(?:\s+compose)?)\s+exec\b",
     re.IGNORECASE,
 )
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")

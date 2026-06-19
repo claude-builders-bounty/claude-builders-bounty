@@ -510,6 +510,7 @@ class CheckCommandTests(unittest.TestCase):
             "podman exec c rm -rf /",
             "podman compose exec svc rm -rf /data",
             "kubectl exec pod -- rm -rf /",
+            "kubectl compose exec pod rm -rf /data",
             "docker exec db sh -c 'rm -rf /'",
         )
         for command in blocked:
@@ -558,6 +559,10 @@ class CheckCommandTests(unittest.TestCase):
                 "nerdctl compose exec -it app sh -c 'rm -rf /var/lib'",
                 "sh -c 'rm -rf /var/lib'",
             ),
+            (
+                "kubectl compose exec -n prod pod-name -- sh -c 'rm -rf /var/lib'",
+                "sh -c 'rm -rf /var/lib'",
+            ),
         )
         for command, expected_inner in cases:
             with self.subTest(command=command):
@@ -571,6 +576,7 @@ class CheckCommandTests(unittest.TestCase):
             "kubectl exec pod -c sidecar -- echo rm -rf",
             "kubectl exec pod -c sidecar -- grep rm -rf README.md",
             "nerdctl compose exec app -- echo rm -rf /",
+            "kubectl compose exec pod -- echo rm -rf",
         )
         for command in allowed:
             with self.subTest(command=command):

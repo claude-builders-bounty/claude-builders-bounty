@@ -308,6 +308,16 @@ re-check — no hook logic changes.
 - CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
 - GitHub PR: OPEN, no review comments, no CI checks reported on fork branch
 
+## Hands-on verification (2026-06-19, code delivery takeover)
+
+Fleet engineer session failed `peer_review_not_passed` without source edits in-session.
+Extended `CONTAINER_RUNTIME_EXEC` to unwrap `kubectl compose exec` inner commands
+(matching existing `docker compose exec` / `podman compose exec` support) and fixed
+false positives where `echo rm -rf` inside kubectl compose exec was blocked.
+
+- `npm test` green after committed hook source edit
+- CLI: `kubectl compose exec pod rm -rf /data` denied; `kubectl compose exec pod -- echo rm -rf` allowed
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
