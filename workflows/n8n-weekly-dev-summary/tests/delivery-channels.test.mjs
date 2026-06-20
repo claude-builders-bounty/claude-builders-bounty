@@ -44,6 +44,8 @@ assert(payload.slackBody?.blocks?.length === 3, 'slack: payload has header + two
 assert(payload.slackBody.blocks[0].type === 'header', 'slack: first block is header');
 assert(payload.emailSubject.includes('Weekly Dev Summary'), 'email: subject includes title');
 assert(payload.emailText.includes('3 commits'), 'email: body includes stats line');
+assert(payload.emailHtml?.includes('<h1>') && payload.emailHtml.includes('Shipped widget v2'), 'email: html includes title and summary');
+assert(!payload.emailHtml.includes('<script>'), 'email: html escapes unsafe markup');
 
 const fallback = buildFormatSummaryPayload({
   config: sampleConfig,
@@ -104,6 +106,7 @@ try {
   const row = result?.[0]?.json;
   assert(row?.discordBody?.content && row?.slackBody?.blocks && row?.emailSubject, 'integration: Format Summary node emits all channel payloads');
   assert(row.emailText.includes('Shipped widget v2'), 'integration: Format Summary email text includes summary');
+  assert(row.emailHtml?.includes('<h1>') && row.emailHtml.includes('Shipped widget v2'), 'integration: Format Summary email html includes summary');
 } catch (error) {
   failures.push(`Format Summary vm integration failed: ${error.message}`);
 }
@@ -127,6 +130,7 @@ const sendEmail = workflow.nodes.find((n) => n.name === 'Send Email');
 assert(sendEmail?.parameters?.toEmail?.includes('emailTo'), 'Send Email resolves recipient from Load Config emailTo');
 assert(sendEmail?.parameters?.subject?.includes('emailSubject'), 'Send Email uses formatted emailSubject');
 assert(sendEmail?.parameters?.text?.includes('emailText'), 'Send Email uses formatted emailText');
+assert(sendEmail?.parameters?.html?.includes('emailHtml'), 'Send Email uses formatted emailHtml');
 
 if (failures.length) {
   console.error('FAILED delivery channel tests:\n- ' + failures.join('\n- '));

@@ -16,6 +16,11 @@ export function buildFormatSummaryPayload({ config, stats, claudeContent = [], a
 
   const title = `Weekly Dev Summary — ${config.repoFullName}`;
   const period = `${config.weekStart.slice(0, 10)} → ${config.weekEnd.slice(0, 10)}`;
+  const escapeHtml = (value) => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 
   return {
     config,
@@ -36,6 +41,7 @@ export function buildFormatSummaryPayload({ config, stats, claudeContent = [], a
     },
     emailSubject: `${title} (${period})`,
     emailText: `${title}\n${period}\n${statsLine}\n\n${summary}`,
+    emailHtml: `<h1>${escapeHtml(title)}</h1><p><em>${escapeHtml(period)}</em></p><p>${escapeHtml(statsLine)}</p><pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(summary)}</pre>`,
   };
 }
 

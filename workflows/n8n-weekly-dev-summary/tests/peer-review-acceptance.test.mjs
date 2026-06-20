@@ -244,6 +244,7 @@ assert(
 assert(
   proof.includes('hands-on takeover #10') &&
     proof.includes('hands-on takeover #21') &&
+    proof.includes('hands-on takeover #22') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -307,6 +308,10 @@ assert(
 assert(
   workflow.description?.includes('1800') && workflow.description.includes('2800'),
   'workflow description documents Discord and Slack character limits',
+);
+assert(
+  workflow.description?.includes('emailHtml') && workflow.description.includes('HTML-escaped'),
+  'workflow description documents Format Summary email HTML payload',
 );
 
 if (failures.length) {
