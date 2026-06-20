@@ -69,6 +69,11 @@ because the hook crashed. Operators who prefer fail-closed behavior must wrap or
 replace the hook — this implementation prioritizes availability over strict
 enforcement when the hook itself cannot parse input reliably.
 
+**Unicode invisible-character normalization.** Before pattern matching, commands
+are normalized to collapse zero-width format characters (Unicode Cf/Mn), null
+bytes, and filler glyphs such as Hangul filler (U+3164) or braille blank
+(U+2800) that can split tokens like `rm` and `-rf` without changing visible text.
+
 **Regex and substring matching limits.** Detection inspects command text with
 regex and substring rules; it does not execute or fully parse shell syntax.
 `rm -rf` is only blocked when `rm` is executed (including after `|` pipeline
@@ -102,7 +107,7 @@ From this directory:
 ```bash
 make test
 # or: python3 -m unittest discover -s tests -v
-# 120+ regression tests (bounty + peer-review acceptance + integration checks)
+# 127+ regression tests (bounty + peer-review acceptance + integration checks)
 ```
 
 From the repository root:

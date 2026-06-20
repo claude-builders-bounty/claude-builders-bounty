@@ -138,7 +138,6 @@ def normalize_command(command: str, *, invisible_replacement: str = "") -> str:
     normalized = strip_invisible_format_chars(
         normalized, replacement=invisible_replacement
     )
-    normalized = _INVISIBLE_FORMAT_CHARS.sub(invisible_replacement, normalized)
     return re.sub(r" +", " ", normalized).strip()
 
 

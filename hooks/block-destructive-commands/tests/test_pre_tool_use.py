@@ -874,6 +874,25 @@ class HookIntegrationTests(unittest.TestCase):
         log_contents = self.log_file.read_text(encoding="utf-8")
         self.assertIn("rm?-rf /tmp/build", log_contents)
 
+    def test_blocks_hangul_filler_destructive_command(self):
+        result = self.run_hook(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "rm\u3164-rf /tmp/build"},
+                "cwd": "/workspace/demo",
+            }
+        )
+
+        self.assertEqual(result.returncode, 0)
+        output = json.loads(result.stdout)
+        self.assertEqual(
+            output["hookSpecificOutput"]["permissionDecision"],
+            "deny",
+        )
+        self.assertIn("rm -rf", output["hookSpecificOutput"]["permissionDecisionReason"])
+        log_contents = self.log_file.read_text(encoding="utf-8")
+        self.assertIn("rm?-rf /tmp/build", log_contents)
+
     def test_ignores_non_bash_tools(self):
         result = self.run_hook(
             {
