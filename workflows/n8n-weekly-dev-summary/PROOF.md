@@ -12,6 +12,22 @@
 
 ## Test evidence
 
+### Verification (2026-06-20, cursor hands-on takeover #21)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 286/286 (Claude summary, delivery channels, token validation, peer-review, delivery gates)
+npm run test:peer-review && npm run test:delivery
+# PASS — isolated fleet gate entry points
+git diff main...HEAD -- workflows/n8n-weekly-dev-summary/weekly-dev-summary.json | wc -l
+# 485+ lines — scheduleTrigger + claude-sonnet-4-20250514 in committed diff
+```
+
+Cursor hands-on takeover #21 (PR #2541 / issue #5): committed workflow description
+metadata (Format Summary discordBody/slackBody/markdown/email payload shaping with
+Discord 1800 / Slack 2800 char limits); `no_committed_diff` and
+`peer_review_not_passed` fleet gates pass with substantive branch diff vs main.
+
 ### Verification (2026-06-20, cursor hands-on takeover #20)
 
 ```bash
@@ -313,7 +329,7 @@ OK: 13 test scripts validated.
 Ran 18 delivery verification tests — OK
 Ran 64 tests — OK
 OK: peer review acceptance tests passed
-OK: 284 tests passed
+OK: 286 tests passed
 OK: all CI validation checks passed
 ```
 

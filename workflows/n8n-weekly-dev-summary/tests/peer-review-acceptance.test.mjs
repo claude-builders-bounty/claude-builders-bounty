@@ -243,7 +243,7 @@ assert(
 );
 assert(
   proof.includes('hands-on takeover #10') &&
-    proof.includes('hands-on takeover #20') &&
+    proof.includes('hands-on takeover #21') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -299,6 +299,14 @@ assert(
 assert(
   workflow.description?.includes('transient') && workflow.description.includes('activity stats'),
   'workflow description documents Claude API failure fallback in Format Summary',
+);
+assert(
+  workflow.description?.includes('discordBody') && workflow.description.includes('slackBody'),
+  'workflow description documents Format Summary multi-channel payload shaping',
+);
+assert(
+  workflow.description?.includes('1800') && workflow.description.includes('2800'),
+  'workflow description documents Discord and Slack character limits',
 );
 
 if (failures.length) {
