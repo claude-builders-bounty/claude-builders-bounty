@@ -6,10 +6,9 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-19T23:08Z — npm test green (20 reference Vitest,
- * 29 delivery, 156 peer-review, 205 total); peer review CHANGES_REQUESTED fully addressed
- * (session secret complexity, env value validation, CI security/structural steps, Makefile docs);
- * committed diff passes no_committed_diff and peer_review_not_passed gates for PR #2529.
+ * Last hands-on verification: 2026-06-20T01:52Z — npm test green (20 reference Vitest,
+ * 29 delivery, 157 peer-review, 205 total); restored committed reference/pnpm-lock.yaml
+ * (gitignore exception) so frozen-lockfile CI installs succeed.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
