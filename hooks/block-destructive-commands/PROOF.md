@@ -19,7 +19,7 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 126 tests in ...s
+Ran 131 tests in ...s
 OK
 Ran 8 delivery verification tests — OK
 Ran 22 tests — OK
@@ -382,6 +382,17 @@ commands and container exec payloads.
 - `npm test` green: 131 unittest + 8 delivery + 22 peer-review + attribution checks
 - Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
 - CLI: `git status && rm\u3164-rf /tmp` denied; `docker exec db rm\u2800-rf /data` denied
+- Rebase: not needed (`origin/main` is merge-base)
+
+## Hands-on verification (2026-06-20, sprout-idle-nudge merge-nurture)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `9d9358cd` (PR #2556). Merge-nurture
+re-check — no hook logic changes.
+
+- `npm test` green: 131 unittest + 8 delivery + 22 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`); stray `internal/exporter/` gitignored only
+- CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
+- GitHub PR: MERGEABLE / CLEAN, no review comments, no CI checks on fork branch
 - Rebase: not needed (`origin/main` is merge-base)
 
 ## Acceptance criteria
