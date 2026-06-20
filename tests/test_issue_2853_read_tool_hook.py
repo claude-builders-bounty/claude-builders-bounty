@@ -210,7 +210,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             r"39/39 \(2 README \+ 18 peer review \+ 11 issue #2853 \+ 8 delivery\)",
         )
         self.assertRegex(latest, r"11/11 \(fresh clone")
-        self.assertIn("takeover #58", latest)
+        self.assertIn("takeover #59", latest)
 
 
 if __name__ == "__main__":
