@@ -191,7 +191,17 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         self.assertIn("git clone --depth 1 --branch pr-3-read-tool-hook", text)
         self.assertIn("ZEROEYE_ROOT=", text)
         self.assertIn("advancedresearcharray/zeroeye", text)
-        self.assertRegex(text, r"37/37|PASS — 37/37")
+        self.assertRegex(text, r"39/39|PASS — 39/39")
+
+    def test_bounty_proof_documents_latest_verification_suite_count(self) -> None:
+        """Latest PROOF.md verification block must document the current 39/39 suite count."""
+        text = PROOF.read_text(encoding="utf-8")
+        latest = text.split("## Verification", 1)[1]
+        self.assertRegex(
+            latest,
+            r"39/39 \(2 README \+ 18 peer review \+ 11 issue #2853 \+ 8 delivery\)",
+        )
+        self.assertRegex(latest, r"10/10 \(fresh clone")
 
 
 if __name__ == "__main__":
