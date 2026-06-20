@@ -82,16 +82,23 @@ CONTAINER_RUNTIME_INVOCATION = re.compile(
 _INVISIBLE_FORMAT_CHARS = re.compile(
     r"[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]"
 )
+# Hangul/braille filler glyphs (Lo/other) used like zero-width chars to split tokens.
+_INVISIBLE_FILLER_CHARS = re.compile(r"[\u115f\u1160\u3164\uffa0\u2800]")
 
 
 def strip_invisible_format_chars(text: str, *, replacement: str = "") -> str:
-    """Remove or space-replace Unicode Cf/Mn chars that split shell tokens."""
-    if not any(unicodedata.category(ch) in {"Cf", "Mn"} for ch in text):
+    """Remove or space-replace Unicode Cf/Mn chars and filler glyphs that split tokens."""
+    has_category_chars = any(
+        unicodedata.category(ch) in {"Cf", "Mn"} for ch in text
+    )
+    has_filler_chars = _INVISIBLE_FILLER_CHARS.search(text) is not None
+    if not has_category_chars and not has_filler_chars:
         return text
-    return "".join(
+    stripped = "".join(
         replacement if unicodedata.category(ch) in {"Cf", "Mn"} else ch
         for ch in text
     )
+    return _INVISIBLE_FILLER_CHARS.sub(replacement, stripped)
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
 CONTAINER_EXEC_BOOL_SHORT_FLAGS = frozenset("itTd")
 # Long flags that never take a separate value token (e.g. --rm, not --workdir).
@@ -113,10 +120,11 @@ CONTAINER_EXEC_BOOL_LONG_FLAGS = frozenset(
 
 
 def command_has_invisible_chars(command: str) -> bool:
-    """True when null bytes or Unicode format marks may split pattern tokens."""
+    """True when null bytes or invisible Unicode may split pattern tokens."""
     return (
         "\x00" in command
         or _INVISIBLE_FORMAT_CHARS.search(command) is not None
+        or _INVISIBLE_FILLER_CHARS.search(command) is not None
         or command != strip_invisible_format_chars(command)
     )
 

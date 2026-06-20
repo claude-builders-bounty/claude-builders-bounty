@@ -168,6 +168,11 @@ class CheckCommandTests(unittest.TestCase):
             "rm\u00ad-rf /",
             "rm\u034f-rf /",
             "rm\u061c-rf /",
+            "rm\u3164-rf /",
+            "rm\u115f-rf /",
+            "rm\u1160-rf /",
+            "rm\uffa0-rf /",
+            "rm\u2800-rf /",
         )
         for command in blocked:
             with self.subTest(command=repr(command)):
@@ -182,6 +187,8 @@ class CheckCommandTests(unittest.TestCase):
             ("DELETE\u200bFROM users", "SQL DELETE FROM without WHERE clause"),
             ("git\u200bpush --force origin main", "Git force push (git push --force)"),
             ("TRUNCATE\u200bTABLE sessions", "SQL TRUNCATE"),
+            ("DROP\u3164TABLE users", "SQL DROP TABLE"),
+            ("git\u3164push --force origin main", "Git force push (git push --force)"),
         )
         for command, reason in blocked:
             with self.subTest(command=repr(command)):
