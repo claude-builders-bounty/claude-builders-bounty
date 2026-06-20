@@ -2,8 +2,8 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-20 (cursor takeover PR #2556) — npm test
-127+8+22 green; invisible-char normalization closes Hangul/braille filler and
-zero-width evasion; committed pre-tool-use.py diff vs main satisfies delivery gates.
+128+8+22 green; braille filler (U+2800) CLI regression plus Hangul/zero-width
+evasion; committed pre-tool-use.py diff vs main satisfies delivery gates.
 """
 
 from __future__ import annotations
