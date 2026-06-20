@@ -2,8 +2,8 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-20 (cursor takeover PR #2556) — npm test
-123+8+22 green; pre-tool-use.py committed diff vs main satisfies no_committed_diff
-and peer_review_not_passed gates; branch scope hook-only (16 paths).
+125+8+22 green; dual invisible-char normalization closes DROP\\u200bTABLE/git\\u200bpush
+evasion; committed pre-tool-use.py diff vs main satisfies delivery gates.
 """
 
 from __future__ import annotations

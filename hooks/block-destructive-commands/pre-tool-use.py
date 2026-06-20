@@ -84,12 +84,13 @@ _INVISIBLE_FORMAT_CHARS = re.compile(
 )
 
 
-def strip_invisible_format_chars(text: str) -> str:
-    """Remove Unicode format (Cf) and nonspacing mark (Mn) chars that split shell tokens."""
+def strip_invisible_format_chars(text: str, *, replacement: str = "") -> str:
+    """Remove or space-replace Unicode Cf/Mn chars that split shell tokens."""
     if not any(unicodedata.category(ch) in {"Cf", "Mn"} for ch in text):
         return text
     return "".join(
-        ch for ch in text if unicodedata.category(ch) not in {"Cf", "Mn"}
+        replacement if unicodedata.category(ch) in {"Cf", "Mn"} else ch
+        for ch in text
     )
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
 CONTAINER_EXEC_BOOL_SHORT_FLAGS = frozenset("itTd")
@@ -111,20 +112,41 @@ CONTAINER_EXEC_BOOL_LONG_FLAGS = frozenset(
 )
 
 
-def normalize_command(command: str) -> str:
+def command_has_invisible_chars(command: str) -> bool:
+    """True when null bytes or Unicode format marks may split pattern tokens."""
+    return (
+        "\x00" in command
+        or _INVISIBLE_FORMAT_CHARS.search(command) is not None
+        or command != strip_invisible_format_chars(command)
+    )
+
+
+def normalize_command(command: str, *, invisible_replacement: str = "") -> str:
     """Strip padding and neutralize null/invisible bytes that split regex tokens."""
     normalized = command.strip()
-    needs_cleanup = (
-        "\x00" in normalized
-        or _INVISIBLE_FORMAT_CHARS.search(normalized) is not None
-        or normalized != strip_invisible_format_chars(normalized)
-    )
-    if not needs_cleanup:
+    if not command_has_invisible_chars(normalized):
         return normalized
     normalized = normalized.replace("\x00", "")
-    normalized = strip_invisible_format_chars(normalized)
-    normalized = _INVISIBLE_FORMAT_CHARS.sub("", normalized)
+    normalized = strip_invisible_format_chars(
+        normalized, replacement=invisible_replacement
+    )
+    normalized = _INVISIBLE_FORMAT_CHARS.sub(invisible_replacement, normalized)
     return re.sub(r" +", " ", normalized).strip()
+
+
+def normalized_command_variants(command: str) -> list[str]:
+    """Return compact and space-expanded normalizations for invisible-char evasion."""
+    stripped = command.strip()
+    if not stripped:
+        return [""]
+    if not command_has_invisible_chars(stripped):
+        return [stripped]
+    variants: list[str] = []
+    for replacement in ("", " "):
+        normalized = normalize_command(stripped, invisible_replacement=replacement)
+        if normalized not in variants:
+            variants.append(normalized)
+    return variants
 
 
 def iter_command_segments(command: str) -> list[str]:
@@ -380,11 +402,11 @@ def check_segment(segment: str) -> str | None:
 
 
 def check_command(command: str) -> str | None:
-    command = normalize_command(command)
-    for segment in iter_command_segments(command):
-        reason = check_segment(segment)
-        if reason:
-            return reason
+    for normalized in normalized_command_variants(command):
+        for segment in iter_command_segments(normalized):
+            reason = check_segment(segment)
+            if reason:
+                return reason
     return None
 
 

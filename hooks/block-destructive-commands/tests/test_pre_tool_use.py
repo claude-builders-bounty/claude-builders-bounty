@@ -176,6 +176,17 @@ class CheckCommandTests(unittest.TestCase):
                     "Recursive force delete (rm -rf)",
                 )
 
+    def test_blocks_zero_width_sql_and_git_keyword_evasion(self):
+        blocked = (
+            ("DROP\u200bTABLE users", "SQL DROP TABLE"),
+            ("DELETE\u200bFROM users", "SQL DELETE FROM without WHERE clause"),
+            ("git\u200bpush --force origin main", "Git force push (git push --force)"),
+            ("TRUNCATE\u200bTABLE sessions", "SQL TRUNCATE"),
+        )
+        for command, reason in blocked:
+            with self.subTest(command=repr(command)):
+                self.assertEqual(self.hook.check_command(command), reason)
+
     def test_normalize_command_strips_padding_and_null_bytes(self):
         self.assertEqual(
             self.hook.normalize_command("  rm\x00-rf /\x00  "),
@@ -197,6 +208,11 @@ class CheckCommandTests(unittest.TestCase):
             self.hook.strip_invisible_format_chars("git\u2066push\u2069"),
             "gitpush",
         )
+
+    def test_normalized_command_variants_space_expands_split_keywords(self):
+        variants = self.hook.normalized_command_variants("DROP\u200bTABLE users")
+        self.assertIn("DROP TABLE users", variants)
+        self.assertIn("DROPTABLE users", variants)
 
     def test_parametrized_blocked_commands(self):
         blocked = (
