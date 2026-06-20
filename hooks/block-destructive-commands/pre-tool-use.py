@@ -78,7 +78,23 @@ CONTAINER_RUNTIME_INVOCATION = re.compile(
     re.IGNORECASE,
 )
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
-CONTAINER_EXEC_BOOL_SHORT_FLAGS = frozenset("itT")
+CONTAINER_EXEC_BOOL_SHORT_FLAGS = frozenset("itTd")
+# Long flags that never take a separate value token (e.g. --rm, not --workdir).
+CONTAINER_EXEC_BOOL_LONG_FLAGS = frozenset(
+    {
+        "rm",
+        "detach",
+        "interactive",
+        "tty",
+        "privileged",
+        "read-only",
+        "init",
+        "stdin",
+        "sig-proxy",
+        "help",
+        "quiet",
+    }
+)
 
 
 def normalize_command(command: str) -> str:
@@ -138,9 +154,14 @@ def _consume_container_exec_flags(tail: str) -> str:
         if flag_match := re.match(r"--[\w-]+=\S+\s*", tail):
             tail = tail[flag_match.end() :].strip()
             continue
-        if flag_match := re.match(r"--[\w-]+\s+", tail):
+        if flag_match := re.match(r"--([\w-]+)\s+", tail):
+            flag_name = flag_match.group(1).lower()
             tail = tail[flag_match.end() :].strip()
-            if tail and not tail.startswith("-"):
+            if (
+                flag_name not in CONTAINER_EXEC_BOOL_LONG_FLAGS
+                and tail
+                and not tail.startswith("-")
+            ):
                 value_match = re.match(r"\S+\s*", tail)
                 if value_match:
                     tail = tail[value_match.end() :].strip()

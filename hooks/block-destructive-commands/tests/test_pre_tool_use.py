@@ -520,6 +520,9 @@ class CheckCommandTests(unittest.TestCase):
             "nerdctl compose run web rm -rf /var/lib",
             "compose exec db rm -rf /data",
             "compose run app rm -rf /data",
+            "docker run --rm alpine rm -rf /",
+            "docker compose run --rm app rm -rf /data",
+            "compose run --rm app rm -rf /data",
         )
         for command in blocked:
             with self.subTest(command=command):
@@ -600,6 +603,18 @@ class CheckCommandTests(unittest.TestCase):
             (
                 "compose run app DROP TABLE users",
                 "DROP TABLE users",
+            ),
+            (
+                "docker run --rm alpine rm -rf /",
+                "rm -rf /",
+            ),
+            (
+                "docker compose run --rm app rm -rf /data",
+                "rm -rf /data",
+            ),
+            (
+                "compose run --rm app rm -rf /data",
+                "rm -rf /data",
             ),
         )
         for command, expected_inner in cases:
