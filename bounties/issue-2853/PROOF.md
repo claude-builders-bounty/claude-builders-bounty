@@ -18,6 +18,22 @@ Read-only `read_market_data` tool hook scaffolding across three layers:
 | Gateway | `market/gateway/api.go`, `ai_tools_test.go` | `GET /api/v1/ai/tools`, `POST /api/v1/ai/tools/read`, `POST /api/v1/ai/tools/execute` |
 | Frontend | `frontend/src/ai/readToolHook.ts`, `chat.ts` | `ReadToolHook` client wired into `AiChatService` |
 
+## Verification (2026-06-20, hands-on takeover #43)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 37/37 (2 README + 18 peer review + 9 issue #2853 + 8 delivery)
+
+git clone --depth 1 --branch pr-3-read-tool-hook \
+  https://github.com/advancedresearcharray/zeroeye.git /tmp/zeroeye-ci-test
+ZEROEYE_ROOT=/tmp/zeroeye-ci-test npm run test:issue-2853
+# PASS — 9/9 (fresh clone; diagnostic picker unit test locks null logd skip)
+```
+
+Hands-on cursor takeover: committed session diff for fleet `not_committed`, `no_committed_diff`,
+and `peer_review_not_passed` gates; re-verified full acceptance suite and fresh zeroeye CI sim;
+37/37 npm test green; PR #2871 MERGEABLE/CLEAN @ takeover #43.
+
 ## Verification (2026-06-20, hands-on takeover #42)
 
 ```bash
