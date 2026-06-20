@@ -243,7 +243,7 @@ assert(
 );
 assert(
   proof.includes('hands-on takeover #10') &&
-    proof.includes('hands-on takeover #19') &&
+    proof.includes('hands-on takeover #20') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -291,6 +291,14 @@ assert(
 assert(
   workflow.description?.includes('weekEnd') && workflow.description.includes('GitHub-safe'),
   'workflow description documents weekEnd bounds and GITHUB_REPO format validation',
+);
+assert(
+  workflow.description?.includes('claudeRequest') && workflow.description.includes('system prompt'),
+  'workflow description documents Build Claude Prompt claudeRequest assembly',
+);
+assert(
+  workflow.description?.includes('transient') && workflow.description.includes('activity stats'),
+  'workflow description documents Claude API failure fallback in Format Summary',
 );
 
 if (failures.length) {
