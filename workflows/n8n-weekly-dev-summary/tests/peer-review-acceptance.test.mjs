@@ -243,7 +243,7 @@ assert(
 );
 assert(
   proof.includes('hands-on takeover #10') &&
-    proof.includes('hands-on takeover #18') &&
+    proof.includes('hands-on takeover #19') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -287,6 +287,10 @@ assert(
 assert(
   workflow.description?.includes('weekStart') && workflow.description.includes('Format Summary'),
   'workflow description documents weekStart filtering and Format Summary narrative extraction',
+);
+assert(
+  workflow.description?.includes('weekEnd') && workflow.description.includes('GitHub-safe'),
+  'workflow description documents weekEnd bounds and GITHUB_REPO format validation',
 );
 
 if (failures.length) {
