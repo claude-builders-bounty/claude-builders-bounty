@@ -349,6 +349,17 @@ Fleet engineer failed `no_committed_diff` / `peer_review_not_passed` without in-
 - Evaluate `sh -c` wrappers by inner payload only so `sh -c "echo rm -rf"` is allowed while real `rm -rf` inside `-c` still blocks
 - `npm test` green: 120 unittest + 8 delivery + 22 peer-review + attribution checks
 
+## Hands-on verification (2026-06-20, cursor implementation)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `aa492f7f` (PR #2556). Merge-nurture
+re-check — no hook logic changes.
+
+- Removed untracked stray `internal/exporter/mkdocs.go` from parallel fleet jobs (gitignored, not in `main...HEAD`)
+- `npm test` green: 120 unittest + 8 delivery + 22 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
+- Local HEAD matches `fork/feat/issue-3-destructive-command-hook-v2`; PR OPEN, no review comments
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
