@@ -6,7 +6,7 @@ absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N`` paths for A
 Bounties rows #1–#5; contributor note links issue #521. Fleet delivery requires
 ``npm test`` (readme-links, peer-review, delivery) and a non-zero README diff vs main.
 
-Last hands-on verification: 2026-06-20T12:00Z — README rows #1–#5 use upstream absolute paths and contributor note links issue #521; npm test 27/27 green; committed README diff vs main (12 lines) passes no_committed_diff and peer_review gates; PR diff excludes lockfiles; mergeStateStatus CLEAN.
+Last hands-on verification: 2026-06-20T18:30Z — README rows #1–#5 use upstream absolute paths and contributor note links issue #521; npm test green (8 readme + 14 peer-review + 10 delivery); run-ci-checks.sh scans branch commits and changed files for attribution; committed README diff vs main (12 lines) passes no_committed_diff and peer_review gates; PR diff excludes lockfiles; mergeStateStatus CLEAN.
 """
 
 from __future__ import annotations
@@ -42,9 +42,9 @@ class DeliveryVerificationTests(unittest.TestCase):
         readme_tests = count_test_methods(README_LINK_TEST)
         peer_review_tests = count_test_methods(PEER_REVIEW_TEST)
         delivery_tests = count_test_methods(Path(__file__))
-        self.assertGreaterEqual(readme_tests, 2)
-        self.assertGreaterEqual(peer_review_tests, 7)
-        self.assertGreaterEqual(delivery_tests, 3)
+        self.assertGreaterEqual(readme_tests, 7)
+        self.assertGreaterEqual(peer_review_tests, 13)
+        self.assertGreaterEqual(delivery_tests, 10)
 
     def test_readme_bounty_table_links_fix_issue_521(self) -> None:
         """Issue #521: Active Bounties rows must link to upstream issues."""
@@ -196,6 +196,9 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn("delivery verification tests", text)
         self.assertIn("peer review acceptance tests passed", text)
         self.assertIn("OK: delivery verification tests passed", text)
+        self.assertIn("set +x", text)
+        self.assertIn("git show-ref -q refs/heads/main", text)
+        self.assertIn("Forbidden agent attribution trailer found in branch commit message", text)
 
     def test_npm_test_entry_point_runs_green(self) -> None:
         """Fleet delivery runs `npm test` from the repo root — verify it passes."""

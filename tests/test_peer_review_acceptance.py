@@ -65,7 +65,7 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         )
 
     def test_regression_test_module_exists(self):
-        """Regression module must expose the four core README link test cases."""
+        """Regression module must expose core README link test cases and edge-case coverage."""
         regression = REPO_ROOT / "tests/test_readme_links.py"
         self.assertTrue(regression.is_file())
         text = regression.read_text(encoding="utf-8")
@@ -73,6 +73,8 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("test_bounty_section_note_links_issue_521", text)
         self.assertIn("test_readme_has_no_escaping_issue_links", text)
         self.assertIn("test_readme_issue_links_use_upstream_hrefs_only", text)
+        self.assertIn("test_readme_bounty_table_links_fix_issue_521", text)
+        self.assertIn("test_bounty_links_resolve_on_forked_repo_context", text)
 
     def test_ci_workflow_runs_unified_validation(self):
         """GitHub Actions workflow must invoke run-ci-checks.sh and readme link tests."""
@@ -134,6 +136,18 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("Ran ${peer_review_tests} peer review acceptance tests — OK", script)
         self.assertIn("OK: delivery verification tests passed", script)
         self.assertIn("Forbidden agent attribution trailer found in HEAD commit message", script)
+        self.assertIn("set +x", script)
+        self.assertIn("git show-ref -q refs/heads/main", script)
+        self.assertIn("Forbidden agent attribution trailer found in branch commit message", script)
+        self.assertIn("ATTRIBUTION_PATTERN", script)
+
+    def test_readme_link_tests_cover_fork_and_invalid_edge_cases(self):
+        """Regression module must cover fork-context and invalid href edge cases."""
+        regression = (REPO_ROOT / "tests/test_readme_links.py").read_text(encoding="utf-8")
+        self.assertIn("test_readme_bounty_table_links_fix_issue_521", regression)
+        self.assertIn("test_bounty_links_resolve_on_forked_repo_context", regression)
+        self.assertIn("test_bounty_links_reject_invalid_href_patterns", regression)
+        self.assertIn("test_new_bounty_rows_must_use_upstream_hrefs", regression)
 
 
 if __name__ == "__main__":

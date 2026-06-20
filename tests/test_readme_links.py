@@ -82,6 +82,75 @@ class ReadmeLinkTests(unittest.TestCase):
                     f"Issue #{issue_num} should link to upstream {expected}",
                 )
 
+    def test_readme_bounty_table_links_fix_issue_521(self) -> None:
+        """Issue #521: Active Bounties rows must link to upstream issues."""
+        text = README.read_text(encoding="utf-8")
+        self.assertNotIn("../../issues/", text)
+        for issue_num in range(1, 6):
+            expected = f"/{UPSTREAM}/issues/{issue_num}"
+            with self.subTest(issue=issue_num):
+                self.assertIn(f"[#{issue_num}]({expected})", text)
+
+    def test_bounty_links_resolve_on_forked_repo_context(self) -> None:
+        """Absolute upstream hrefs must still target canonical issues after fork/merge."""
+        text = README.read_text(encoding="utf-8")
+        table_match = BOUNTY_TABLE_RE.search(text)
+        self.assertIsNotNone(table_match, "Active Bounties section not found in README")
+
+        for issue_num, href in ISSUE_LINK_RE.findall(table_match.group(1)):
+            with self.subTest(issue=issue_num, href=href):
+                self.assertTrue(
+                    href.startswith("/"),
+                    f"Issue #{issue_num} href {href!r} must be root-absolute on forks",
+                )
+                self.assertNotIn(
+                    "github.com",
+                    href,
+                    f"Issue #{issue_num} href {href!r} must use repo-root paths, not full URLs",
+                )
+                self.assertRegex(
+                    href,
+                    rf"^/{UPSTREAM}/issues/\d+$",
+                    f"Issue #{issue_num} href {href!r} must match upstream issue path",
+                )
+
+    def test_bounty_links_reject_invalid_href_patterns(self) -> None:
+        """README must not use bare, relative, or blob-view issue href patterns."""
+        text = README.read_text(encoding="utf-8")
+        invalid_patterns = (
+            r"\]\(\.\./\.\./issues/\d+\)",
+            r"\]\(issues/\d+\)",
+            r"\]\(blob/.+/issues/\d+\)",
+        )
+        for pattern in invalid_patterns:
+            with self.subTest(pattern=pattern):
+                self.assertNotRegex(
+                    text,
+                    pattern,
+                    f"README contains invalid issue link pattern: {pattern}",
+                )
+
+    def test_new_bounty_rows_must_use_upstream_hrefs(self) -> None:
+        """Any new bounty table row must use the same upstream absolute href convention."""
+        text = README.read_text(encoding="utf-8")
+        table_match = BOUNTY_TABLE_RE.search(text)
+        self.assertIsNotNone(table_match, "Active Bounties section not found in README")
+
+        table_rows = [
+            line
+            for line in table_match.group(1).splitlines()
+            if line.strip().startswith("| [#")
+        ]
+        self.assertGreaterEqual(len(table_rows), 5, "expected at least five bounty rows")
+
+        for row in table_rows:
+            with self.subTest(row=row.strip()):
+                self.assertRegex(
+                    row,
+                    rf"\[#\d+\]\(/{UPSTREAM}/issues/\d+\)",
+                    f"bounty row {row.strip()!r} must use upstream absolute issue href",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
