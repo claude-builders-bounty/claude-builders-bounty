@@ -61,10 +61,36 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("run-ci-checks.sh", text)
         self.assertIn("tests/test_readme_links.py", text)
         self.assertIn("tests/test_issue_2853_read_tool_hook.py", text)
+        self.assertIn("tests/verify-issue-2853.sh", text)
         self.assertIn("advancedresearcharray/zeroeye", text)
         self.assertIn("pr-3-read-tool-hook", text)
         self.assertIn("ZEROEYE_ROOT", text)
         self.assertIn("setup-go", text)
+
+    def test_pr2871_ci_workflow_secures_credentials_and_permissions(self):
+        """PR #2871: workflow must use minimal permissions and not persist credentials."""
+        workflow = (REPO_ROOT / ".github/workflows/test-readme-links.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("permissions:", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn("GIT_TERMINAL_PROMPT", workflow)
+        self.assertIn("Reusing existing zeroeye checkout", workflow)
+        self.assertNotRegex(workflow, r"\$\{\{\s*secrets\.")
+
+    def test_verify_issue_2853_script_exists_and_reuses_clone(self):
+        """PR #2871: verification script must reuse zeroeye checkout and archive session diffs."""
+        script = REPO_ROOT / "tests" / "verify-issue-2853.sh"
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        package_json = (REPO_ROOT / "package.json").read_text(encoding="utf-8")
+        self.assertTrue(script.is_file())
+        self.assertTrue(script.stat().st_mode & 0o111)
+        text = script.read_text(encoding="utf-8")
+        self.assertIn("ensure_zeroeye", text)
+        self.assertIn("archive_session_diff", text)
+        self.assertIn("verify-issue-2853", makefile)
+        self.assertIn("test:verify-issue-2853", package_json)
 
     def test_makefile_exposes_test_and_ci_validate(self):
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
@@ -148,6 +174,10 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             "Correctness: redundant npm subprocess tests",
             "Tests: README bounty table absolute links",
             "Style/scope: multiple scaffold files",
+            "Security: GitHub Actions workflow sensitive data",
+            "Correctness: verification clone reuse and session diffs",
+            "Tests: issue #2853 layer coverage",
+            "Style/scope: generic .gitignore patterns",
         ):
             with self.subTest(item=item):
                 self.assertIn(item, section)
@@ -164,6 +194,10 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             "tests/test_readme_links.py",
             "workflow, Makefile, package.json, run-ci-checks.sh, .gitignore",
             "test_pr2871_proof_documents_peer_review_approved_in_resolution_section",
+            "persist-credentials: false",
+            "tests/verify-issue-2853.sh",
+            "test_read_tool_hook_go_layer_symbols",
+            "internal/exporter/",
         ):
             with self.subTest(resolution=resolution):
                 self.assertIn(resolution, section)
@@ -184,11 +218,13 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             "Makefile",
             "package.json",
             "tests/run-ci-checks.sh",
+            "tests/verify-issue-2853.sh",
             ".gitignore",
             "tests/test_readme_links.py",
             "tests/test_delivery_verification.py",
             "tests/test_issue_2853_read_tool_hook.py",
             "bounties/issue-2853/PROOF.md",
+            "bounties/issue-2853/sessions/README.md",
         ):
             with self.subTest(path=rel_path):
                 self.assertTrue((REPO_ROOT / rel_path).is_file(), rel_path)

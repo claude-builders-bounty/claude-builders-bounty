@@ -1,4 +1,4 @@
-.PHONY: test ci-validate test-peer-review test-readme-links test-delivery test-issue-2853
+.PHONY: test ci-validate test-peer-review test-readme-links test-delivery test-issue-2853 verify-issue-2853
 
 test:
 	bash tests/run-ci-checks.sh
@@ -14,5 +14,8 @@ test-delivery:
 
 test-issue-2853:
 	npm run test:issue-2853
+
+verify-issue-2853:
+	bash tests/verify-issue-2853.sh
 
 ci-validate: test

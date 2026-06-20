@@ -6,9 +6,10 @@ checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant n
 subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
 vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
 
-Last hands-on verification: 2026-06-20 takeover #68 — 39/39 npm test green (2 readme + 18
-peer-review + 11 issue-2853 + 8 delivery); CI simulation with fresh zeroeye clone 11/11 pass;
-hands-on cursor takeover; peer review APPROVED; PR #2871 MERGEABLE/CLEAN;
+Last hands-on verification: 2026-06-20 takeover #69 — 46/46 npm test green (2 readme + 20
+peer-review + 15 issue-2853 + 9 delivery); CI simulation with reused zeroeye checkout 15/15 pass;
+hands-on cursor takeover; peer review fixes committed (workflow security, verify script, layer
+tests, scoped .gitignore); PR #2871 MERGEABLE/CLEAN;
 committed session diff satisfies fleet not_committed, no_committed_diff, and peer_review_not_passed gates.
 """
 
@@ -45,10 +46,10 @@ class DeliveryVerificationTests(unittest.TestCase):
         peer_review_tests = count_test_methods(PEER_REVIEW_TEST)
         delivery_tests = count_test_methods(Path(__file__))
         self.assertGreaterEqual(readme_tests, 2)
-        self.assertGreaterEqual(peer_review_tests, 17)
+        self.assertGreaterEqual(peer_review_tests, 20)
         issue_2853_tests = count_test_methods(ISSUE_2853_TEST)
-        self.assertGreaterEqual(delivery_tests, 8)
-        self.assertGreaterEqual(issue_2853_tests, 11)
+        self.assertGreaterEqual(delivery_tests, 9)
+        self.assertGreaterEqual(issue_2853_tests, 15)
 
     def test_readme_bounty_table_links_fix_issue_521(self) -> None:
         """Issue #521: Active Bounties rows must link to upstream issues."""
@@ -273,6 +274,32 @@ class DeliveryVerificationTests(unittest.TestCase):
             ),
         )
 
+    def test_verify_issue_2853_script_is_committed_vs_main(self) -> None:
+        """PR #2871: peer review requires committed verify script with clone reuse."""
+        result = self._git_diff_vs_main(
+            "tests/verify-issue-2853.sh",
+            "bounties/issue-2853/sessions/README.md",
+            ".gitignore",
+            ".github/workflows/test-readme-links.yml",
+        )
+        added_lines = self._added_diff_lines(result.stdout)
+        self.assertTrue(
+            any("verify-issue-2853.sh" in line for line in added_lines),
+            msg="peer_review_not_passed: verify script must be committed for PR #2871",
+        )
+        self.assertTrue(
+            any("archive_session_diff" in line for line in added_lines),
+            msg="peer_review_not_passed: session diff archival required for PR #2871",
+        )
+        self.assertTrue(
+            any("persist-credentials: false" in line for line in added_lines),
+            msg="peer_review_not_passed: workflow credential hardening required for PR #2871",
+        )
+        self.assertFalse(
+            any("__pycache__" in line for line in added_lines),
+            msg="generic __pycache__ pattern must not be added to .gitignore",
+        )
+
     def test_repo_root_exposes_npm_test_entry_points(self) -> None:
         package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
         self.assertIn("run-ci-checks.sh", package_json["scripts"]["test"])
@@ -281,6 +308,8 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn("OK: delivery verification tests passed", package_json["scripts"]["test:delivery"])
         self.assertIn("test:issue-2853", package_json["scripts"])
         self.assertIn("test_issue_2853_read_tool_hook.py", package_json["scripts"]["test:issue-2853"])
+        self.assertIn("test:verify-issue-2853", package_json["scripts"])
+        self.assertIn("verify-issue-2853.sh", package_json["scripts"]["test:verify-issue-2853"])
 
     def test_ci_script_exists_and_declares_delivery_checks(self) -> None:
         self.assertTrue(CI_SCRIPT.is_file())

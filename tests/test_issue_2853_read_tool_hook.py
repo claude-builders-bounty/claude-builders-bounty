@@ -33,6 +33,10 @@ REQUIRED_SYMBOLS = (
     "executeReadToolCall",
 )
 
+GO_LAYER_FILES = ("market/ai/tools.go", "market/ai/tools_test.go")
+GATEWAY_LAYER_FILES = ("market/gateway/api.go", "market/gateway/ai_tools_test.go")
+FRONTEND_LAYER_FILES = ("frontend/src/ai/readToolHook.ts", "frontend/src/ai/chat.ts")
+
 
 class Issue2853ReadToolHookTests(unittest.TestCase):
     """Maps issue #2853 acceptance criteria to zeroeye implementation artifacts."""
@@ -58,6 +62,42 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         for symbol in REQUIRED_SYMBOLS:
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, combined)
+
+    def _layer_text(self, rel_paths: tuple[str, ...]) -> str:
+        return "\n".join(
+            (ZEROEYE_ROOT / rel_path).read_text(encoding="utf-8") for rel_path in rel_paths
+        )
+
+    def test_read_tool_hook_go_layer_symbols(self) -> None:
+        text = self._layer_text(GO_LAYER_FILES)
+        for symbol in ("type ToolHook interface", "ReadToolName = \"read_market_data\""):
+            with self.subTest(symbol=symbol):
+                self.assertIn(symbol, text)
+
+    def test_read_tool_hook_gateway_layer_symbols(self) -> None:
+        text = self._layer_text(GATEWAY_LAYER_FILES)
+        for symbol in ("/api/v1/ai/tools", "handleExecuteReadTool"):
+            with self.subTest(symbol=symbol):
+                self.assertIn(symbol, text)
+
+    def test_read_tool_hook_frontend_layer_symbols(self) -> None:
+        text = self._layer_text(FRONTEND_LAYER_FILES)
+        for symbol in ("class ReadToolHook", "executeReadToolCall"):
+            with self.subTest(symbol=symbol):
+                self.assertIn(symbol, text)
+
+    def test_verify_issue_2853_script_reuses_clone_and_archives_sessions(self) -> None:
+        script = REPO_ROOT / "tests" / "verify-issue-2853.sh"
+        sessions_readme = REPO_ROOT / "bounties" / "issue-2853" / "sessions" / "README.md"
+        self.assertTrue(script.is_file())
+        self.assertTrue(script.stat().st_mode & 0o111)
+        text = script.read_text(encoding="utf-8")
+        self.assertIn("Reusing zeroeye checkout", text)
+        self.assertIn("archive_session_diff", text)
+        self.assertIn("bounties/issue-2853/sessions", text)
+        self.assertIn('trap on_fail ERR', text)
+        self.assertTrue(sessions_readme.is_file())
+        self.assertIn("session-", sessions_readme.read_text(encoding="utf-8"))
 
     def test_zeroeye_market_go_tests_pass(self) -> None:
         if os.environ.get("ISSUE_2853_SKIP_GO_TESTS"):
@@ -207,10 +247,11 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         latest = self._latest_verification_block(text)
         self.assertRegex(
             latest,
-            r"39/39 \(2 README \+ 18 peer review \+ 11 issue #2853 \+ 8 delivery\)",
+            r"46/46 \(2 README \+ 20 peer review \+ 15 issue #2853 \+ 9 delivery\)",
         )
-        self.assertRegex(latest, r"11/11 \(fresh clone")
-        self.assertIn("takeover #68", latest)
+        self.assertRegex(latest, r"15/15 \(fresh clone|reused zeroeye")
+        self.assertIn("takeover #69", latest)
+        self.assertIn("verify-issue-2853.sh", latest)
 
 
 if __name__ == "__main__":
