@@ -102,7 +102,7 @@ From this directory:
 ```bash
 make test
 # or: python3 -m unittest discover -s tests -v
-# 105+ regression tests (bounty + peer-review acceptance + integration checks)
+# 120+ regression tests (bounty + peer-review acceptance + integration checks)
 ```
 
 From the repository root:

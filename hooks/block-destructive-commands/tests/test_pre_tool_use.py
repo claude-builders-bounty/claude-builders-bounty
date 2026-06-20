@@ -518,6 +518,8 @@ class CheckCommandTests(unittest.TestCase):
             "kubectl compose run pod rm -rf /data",
             "docker exec db sh -c 'rm -rf /'",
             "nerdctl compose run web rm -rf /var/lib",
+            "compose exec db rm -rf /data",
+            "compose run app rm -rf /data",
         )
         for command in blocked:
             with self.subTest(command=command):
@@ -530,6 +532,8 @@ class CheckCommandTests(unittest.TestCase):
         blocked = (
             'docker exec db psql -c "DROP TABLE users"',
             'docker exec db bash -c "DROP TABLE users"',
+            "compose exec db DROP TABLE users",
+            "compose run app DROP TABLE users",
         )
         for command in blocked:
             with self.subTest(command=command):
@@ -589,6 +593,14 @@ class CheckCommandTests(unittest.TestCase):
                 "docker-compose run app rm -rf /data",
                 "rm -rf /data",
             ),
+            (
+                "compose exec db rm -rf /data",
+                "rm -rf /data",
+            ),
+            (
+                "compose run app DROP TABLE users",
+                "DROP TABLE users",
+            ),
         )
         for command, expected_inner in cases:
             with self.subTest(command=command):
@@ -611,6 +623,8 @@ class CheckCommandTests(unittest.TestCase):
             "docker-compose exec db echo rm -rf",
             "docker-compose run app echo rm -rf",
             "podman-compose run svc echo rm -rf",
+            "compose exec db echo rm -rf",
+            "compose run app echo rm -rf",
         )
         for command in allowed:
             with self.subTest(command=command):
