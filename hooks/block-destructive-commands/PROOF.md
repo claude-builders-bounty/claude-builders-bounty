@@ -371,6 +371,19 @@ after Unicode zero-width evasion hardening (commits c65bab7f, b7574782, 73aa51f1
 - GitHub PR: MERGEABLE / CLEAN, no review comments, no CI checks on fork branch
 - Rebase: not needed (`origin/main` is merge-base)
 
+## Hands-on verification (2026-06-20, code delivery takeover)
+
+Fleet engineer session failed `peer_review_not_passed` without in-session hook source
+edits despite green npm test on prior HEAD. Extracted `_has_filler_glyphs()` for
+consistent filler detection in `command_has_invisible_chars` and
+`strip_invisible_format_chars`; added CLI regressions for filler evasion in chained
+commands and container exec payloads.
+
+- `npm test` green: 131 unittest + 8 delivery + 22 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- CLI: `git status && rm\u3164-rf /tmp` denied; `docker exec db rm\u2800-rf /data` denied
+- Rebase: not needed (`origin/main` is merge-base)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

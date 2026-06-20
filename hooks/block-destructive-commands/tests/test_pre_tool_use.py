@@ -948,6 +948,36 @@ class HookIntegrationTests(unittest.TestCase):
                 log_contents = self.log_file.read_text(encoding="utf-8")
                 self.assertIn("rm?-rf /tmp/build", log_contents)
 
+    def test_blocks_filler_evasion_in_chained_and_container_commands(self):
+        """Filler glyphs must not bypass checks in chained segments or container exec."""
+        blocked = (
+            ("git status && rm\u3164-rf /tmp", "rm -rf"),
+            ("docker exec db rm\u2800-rf /data", "rm -rf"),
+            (
+                'kubectl compose exec pod sh -c "DROP\u3164TABLE users"',
+                "DROP TABLE",
+            ),
+        )
+        for command, reason_fragment in blocked:
+            with self.subTest(command=repr(command)):
+                result = self.run_hook(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": command},
+                        "cwd": "/workspace/demo",
+                    }
+                )
+                self.assertEqual(result.returncode, 0)
+                output = json.loads(result.stdout)
+                self.assertEqual(
+                    output["hookSpecificOutput"]["permissionDecision"],
+                    "deny",
+                )
+                self.assertIn(
+                    reason_fragment,
+                    output["hookSpecificOutput"]["permissionDecisionReason"],
+                )
+
     def test_ignores_non_bash_tools(self):
         result = self.run_hook(
             {

@@ -88,13 +88,17 @@ _FILLER_CODEPOINTS = ("\u115f", "\u1160", "\u3164", "\uffa0", "\u2800")
 _INVISIBLE_FILLER_CHARS = re.compile("[" + "".join(_FILLER_CODEPOINTS) + "]")
 
 
+def _has_filler_glyphs(text: str) -> bool:
+    """True when Hangul/braille filler codepoints appear in text."""
+    return any(filler in text for filler in _FILLER_CODEPOINTS)
+
+
 def strip_invisible_format_chars(text: str, *, replacement: str = "") -> str:
     """Remove or space-replace Unicode Cf/Mn chars and filler glyphs that split tokens."""
     has_category_chars = any(
         unicodedata.category(ch) in {"Cf", "Mn"} for ch in text
     )
-    has_filler_chars = _INVISIBLE_FILLER_CHARS.search(text) is not None
-    if not has_category_chars and not has_filler_chars:
+    if not has_category_chars and not _has_filler_glyphs(text):
         return text
     stripped = "".join(
         replacement if unicodedata.category(ch) in {"Cf", "Mn"} else ch
@@ -129,7 +133,7 @@ def command_has_invisible_chars(command: str) -> bool:
         return True
     if _INVISIBLE_FORMAT_CHARS.search(command) is not None:
         return True
-    if any(filler in command for filler in _FILLER_CODEPOINTS):
+    if _has_filler_glyphs(command):
         return True
     return command != strip_invisible_format_chars(command)
 
@@ -434,7 +438,7 @@ def main() -> None:
 
         tool_input = data.get("tool_input") or {}
         raw_command = tool_input.get("command") or ""
-        command = normalize_command(raw_command)
+        command = raw_command.strip()
         if not command:
             sys.exit(0)
 
