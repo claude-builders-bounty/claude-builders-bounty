@@ -184,6 +184,15 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         self.assertIn("test_pr2871_proof_documents_peer_review_approved_in_resolution_section", text)
         self.assertIn("_select_passing_build_diagnostic", text)
 
+    def test_bounty_proof_documents_hands_on_verification_commands(self) -> None:
+        """PROOF.md must document npm test and fresh zeroeye clone verification commands."""
+        text = PROOF.read_text(encoding="utf-8")
+        self.assertIn("npm test", text)
+        self.assertIn("git clone --depth 1 --branch pr-3-read-tool-hook", text)
+        self.assertIn("ZEROEYE_ROOT=", text)
+        self.assertIn("advancedresearcharray/zeroeye", text)
+        self.assertRegex(text, r"37/37|PASS — 37/37")
+
 
 if __name__ == "__main__":
     unittest.main()
