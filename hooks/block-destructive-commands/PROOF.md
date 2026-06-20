@@ -19,7 +19,7 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 120 tests in ...s
+Ran 126 tests in ...s
 OK
 Ran 8 delivery verification tests — OK
 Ran 22 tests — OK
@@ -359,6 +359,17 @@ re-check — no hook logic changes.
 - Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
 - CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
 - Local HEAD matches `fork/feat/issue-3-destructive-command-hook-v2`; PR OPEN, no review comments
+
+## Hands-on verification (2026-06-20, sprout-idle-nudge merge-nurture)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `73aa51f1` (PR #2556). Re-verified
+after Unicode zero-width evasion hardening (commits c65bab7f, b7574782, 73aa51f1).
+
+- `npm test` green: 126 unittest + 8 delivery + 22 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`); stray `internal/exporter/` gitignored only
+- CLI: `rm -rf /` denied; `git status` allowed; zero-width `DROP\u200bTABLE` and `git\u200bpush --force` blocked
+- GitHub PR: MERGEABLE / CLEAN, no review comments, no CI checks on fork branch
+- Rebase: not needed (`origin/main` is merge-base)
 
 ## Acceptance criteria
 
