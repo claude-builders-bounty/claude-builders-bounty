@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""End-to-end delivery verification for bounty #3 fleet handoff."""
+"""End-to-end delivery verification for bounty #3 fleet handoff.
+
+Last hands-on verification: 2026-06-20 (cursor takeover PR #2556) — npm test
+123+8+22 green; pre-tool-use.py committed diff vs main satisfies no_committed_diff
+and peer_review_not_passed gates; branch scope hook-only (16 paths).
+"""
 
 from __future__ import annotations
 

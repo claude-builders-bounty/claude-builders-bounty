@@ -163,6 +163,11 @@ class CheckCommandTests(unittest.TestCase):
             "rm -r\u200bf /",
             "rm\u200c-rf /",
             "rm\u2060-rf /",
+            "rm\u2066-rf /",
+            "rm\u2069-rf /",
+            "rm\u00ad-rf /",
+            "rm\u034f-rf /",
+            "rm\u061c-rf /",
         )
         for command in blocked:
             with self.subTest(command=repr(command)):
@@ -181,6 +186,16 @@ class CheckCommandTests(unittest.TestCase):
         self.assertEqual(
             self.hook.normalize_command("rm\u200b-rf\u200c/"),
             "rm-rf/",
+        )
+
+    def test_normalize_command_strips_unicode_cf_category_chars(self):
+        self.assertEqual(
+            self.hook.normalize_command("rm\u00ad-rf\u2066/\u2069"),
+            "rm-rf/",
+        )
+        self.assertEqual(
+            self.hook.strip_invisible_format_chars("git\u2066push\u2069"),
+            "gitpush",
         )
 
     def test_parametrized_blocked_commands(self):

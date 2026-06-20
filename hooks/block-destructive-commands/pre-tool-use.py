@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime, timezone
 
 LOG_DIR = os.path.join(os.path.expanduser("~"), ".claude", "hooks")
@@ -77,10 +78,19 @@ CONTAINER_RUNTIME_INVOCATION = re.compile(
     r"\b(?:docker(?:\s+compose|-compose)?|podman(?:\s+compose|-compose)?|kubectl(?:\s+compose|-compose)?|nerdctl(?:\s+compose|-compose)?|compose)\s+(?:exec|run)\b",
     re.IGNORECASE,
 )
-# Zero-width and bidi format chars can split rm/-rf tokens and bypass regex checks.
+# Unicode Cf (format) chars can split rm/-rf tokens and bypass regex checks.
 _INVISIBLE_FORMAT_CHARS = re.compile(
-    r"[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]"
+    r"[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]"
 )
+
+
+def strip_invisible_format_chars(text: str) -> str:
+    """Remove Unicode format (Cf) and nonspacing mark (Mn) chars that split shell tokens."""
+    if not any(unicodedata.category(ch) in {"Cf", "Mn"} for ch in text):
+        return text
+    return "".join(
+        ch for ch in text if unicodedata.category(ch) not in {"Cf", "Mn"}
+    )
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
 CONTAINER_EXEC_BOOL_SHORT_FLAGS = frozenset("itTd")
 # Long flags that never take a separate value token (e.g. --rm, not --workdir).
@@ -104,9 +114,15 @@ CONTAINER_EXEC_BOOL_LONG_FLAGS = frozenset(
 def normalize_command(command: str) -> str:
     """Strip padding and neutralize null/invisible bytes that split regex tokens."""
     normalized = command.strip()
-    if "\x00" not in normalized and not _INVISIBLE_FORMAT_CHARS.search(normalized):
+    needs_cleanup = (
+        "\x00" in normalized
+        or _INVISIBLE_FORMAT_CHARS.search(normalized) is not None
+        or normalized != strip_invisible_format_chars(normalized)
+    )
+    if not needs_cleanup:
         return normalized
     normalized = normalized.replace("\x00", "")
+    normalized = strip_invisible_format_chars(normalized)
     normalized = _INVISIBLE_FORMAT_CHARS.sub("", normalized)
     return re.sub(r" +", " ", normalized).strip()
 
