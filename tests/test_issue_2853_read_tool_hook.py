@@ -193,15 +193,23 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         self.assertIn("advancedresearcharray/zeroeye", text)
         self.assertRegex(text, r"39/39|PASS — 39/39")
 
+    def _latest_verification_block(self, text: str) -> str:
+        marker = "## Verification "
+        first = text.index(marker)
+        second = text.find(marker, first + len(marker))
+        if second == -1:
+            return text[first:]
+        return text[first:second]
+
     def test_bounty_proof_documents_latest_verification_suite_count(self) -> None:
         """Latest PROOF.md verification block must document the current 39/39 suite count."""
         text = PROOF.read_text(encoding="utf-8")
-        latest = text.split("## Verification", 1)[1]
+        latest = self._latest_verification_block(text)
         self.assertRegex(
             latest,
             r"39/39 \(2 README \+ 18 peer review \+ 11 issue #2853 \+ 8 delivery\)",
         )
-        self.assertRegex(latest, r"10/10 \(fresh clone")
+        self.assertRegex(latest, r"11/11 \(fresh clone")
 
 
 if __name__ == "__main__":
