@@ -194,6 +194,13 @@ class CheckCommandTests(unittest.TestCase):
             with self.subTest(command=repr(command)):
                 self.assertEqual(self.hook.check_command(command), reason)
 
+    def test_command_has_invisible_chars_detects_filler_glyphs(self):
+        for filler in self.hook._FILLER_CODEPOINTS:
+            with self.subTest(codepoint=f"U+{ord(filler):04X}"):
+                self.assertTrue(
+                    self.hook.command_has_invisible_chars(f"rm{filler}-rf /"),
+                )
+
     def test_normalize_command_strips_padding_and_null_bytes(self):
         self.assertEqual(
             self.hook.normalize_command("  rm\x00-rf /\x00  "),

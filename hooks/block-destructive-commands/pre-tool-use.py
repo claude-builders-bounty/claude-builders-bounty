@@ -101,6 +101,8 @@ def strip_invisible_format_chars(text: str, *, replacement: str = "") -> str:
         for ch in text
     )
     return _INVISIBLE_FILLER_CHARS.sub(replacement, stripped)
+
+
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
 CONTAINER_EXEC_BOOL_SHORT_FLAGS = frozenset("itTd")
 # Long flags that never take a separate value token (e.g. --rm, not --workdir).
@@ -123,12 +125,13 @@ CONTAINER_EXEC_BOOL_LONG_FLAGS = frozenset(
 
 def command_has_invisible_chars(command: str) -> bool:
     """True when null bytes or invisible Unicode may split pattern tokens."""
-    return (
-        "\x00" in command
-        or _INVISIBLE_FORMAT_CHARS.search(command) is not None
-        or _INVISIBLE_FILLER_CHARS.search(command) is not None
-        or command != strip_invisible_format_chars(command)
-    )
+    if "\x00" in command:
+        return True
+    if _INVISIBLE_FORMAT_CHARS.search(command) is not None:
+        return True
+    if any(filler in command for filler in _FILLER_CODEPOINTS):
+        return True
+    return command != strip_invisible_format_chars(command)
 
 
 def normalize_command(command: str, *, invisible_replacement: str = "") -> str:
