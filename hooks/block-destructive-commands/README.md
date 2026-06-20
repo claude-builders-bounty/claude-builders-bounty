@@ -71,8 +71,9 @@ enforcement when the hook itself cannot parse input reliably.
 
 **Unicode invisible-character normalization.** Before pattern matching, commands
 are normalized to collapse zero-width format characters (Unicode Cf/Mn), null
-bytes, and filler glyphs such as Hangul filler (U+3164) or braille blank
-(U+2800) that can split tokens like `rm` and `-rf` without changing visible text.
+bytes, and filler glyphs (U+115F/U+1160 Hangul choseong/jungseong, U+3164 Hangul
+filler, U+FFA0 halfwidth, U+2800 braille blank) that can split tokens like `rm`
+and `-rf` without changing visible text.
 
 **Regex and substring matching limits.** Detection inspects command text with
 regex and substring rules; it does not execute or fully parse shell syntax.

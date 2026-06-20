@@ -83,8 +83,9 @@ _INVISIBLE_FORMAT_CHARS = re.compile(
     r"[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]"
 )
 # Hangul/braille filler glyphs (Lo/other) used like zero-width chars to split tokens.
-# Covers U+115F/U+1160 (Hangul), U+3164 (Hangul filler), U+FFA0 (halfwidth), U+2800 (braille blank).
-_INVISIBLE_FILLER_CHARS = re.compile(r"[\u115f\u1160\u3164\uffa0\u2800]")
+# U+115F/U+1160 (Hangul choseong/jungseong), U+3164 (Hangul filler), U+FFA0 (halfwidth), U+2800 (braille blank).
+_FILLER_CODEPOINTS = ("\u115f", "\u1160", "\u3164", "\uffa0", "\u2800")
+_INVISIBLE_FILLER_CHARS = re.compile("[" + "".join(_FILLER_CODEPOINTS) + "]")
 
 
 def strip_invisible_format_chars(text: str, *, replacement: str = "") -> str:

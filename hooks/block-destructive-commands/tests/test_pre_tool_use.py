@@ -912,6 +912,35 @@ class HookIntegrationTests(unittest.TestCase):
         log_contents = self.log_file.read_text(encoding="utf-8")
         self.assertIn("rm?-rf /tmp/build", log_contents)
 
+    def test_blocks_remaining_filler_codepoint_evasion_at_cli(self):
+        """CLI regression for Hangul choseong/jungseong and halfwidth filler splits."""
+        for filler, label in (
+            ("\u115f", "choseong"),
+            ("\u1160", "jungseong"),
+            ("\uffa0", "halfwidth"),
+        ):
+            with self.subTest(label=label, codepoint=f"U+{ord(filler):04X}"):
+                result = self.run_hook(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": f"rm{filler}-rf /tmp/build"},
+                        "cwd": "/workspace/demo",
+                    }
+                )
+
+                self.assertEqual(result.returncode, 0)
+                output = json.loads(result.stdout)
+                self.assertEqual(
+                    output["hookSpecificOutput"]["permissionDecision"],
+                    "deny",
+                )
+                self.assertIn(
+                    "rm -rf",
+                    output["hookSpecificOutput"]["permissionDecisionReason"],
+                )
+                log_contents = self.log_file.read_text(encoding="utf-8")
+                self.assertIn("rm?-rf /tmp/build", log_contents)
+
     def test_ignores_non_bash_tools(self):
         result = self.run_hook(
             {

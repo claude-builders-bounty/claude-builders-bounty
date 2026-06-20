@@ -2,8 +2,9 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-20 (cursor takeover PR #2556) — npm test
-128+8+22 green; braille filler (U+2800) CLI regression plus Hangul/zero-width
-evasion; committed pre-tool-use.py diff vs main satisfies delivery gates.
+129+8+22 green; CLI regression for U+115F/U+1160/U+FFA0 filler evasion plus
+Hangul/braille/zero-width hardening; committed pre-tool-use.py diff vs main
+satisfies delivery gates.
 """
 
 from __future__ import annotations
