@@ -6,7 +6,7 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-20T16:41Z — npm test green (205 total); committed
+ * Last hands-on verification: 2026-06-20T20:52Z — npm test green (205 total); committed
  * CLAUDE.md diff vs main ships bounty #2 template; no_committed_diff gate passes;
  * peer review APPROVED.
  */
