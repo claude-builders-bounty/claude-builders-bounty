@@ -395,6 +395,18 @@ re-check — no hook logic changes.
 - GitHub PR: MERGEABLE / CLEAN, no review comments, no CI checks on fork branch
 - Rebase: not needed (`origin/main` is merge-base)
 
+## Hands-on verification (2026-06-20, fleet delivery takeover)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `1f9f1f1b` (PR #2556). Fleet commit
+`27b34027` reintroduced stray `internal/exporter/mkdocs.go` and `reference/node_modules/`
+pollution — reset to clean hook-only scope.
+
+- `npm test` green: 131 unittest + 8 delivery + 22 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`); no `internal/` paths
+- Delivery gates: `test_branch_diff_excludes_unrelated_exporter_paths`, `test_branch_diff_scoped_to_hook_only` pass
+- Hook source: committed diff vs main (not working-tree only)
+- Rebase: not needed (`origin/main` is merge-base)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
