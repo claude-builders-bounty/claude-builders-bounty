@@ -77,6 +77,10 @@ CONTAINER_RUNTIME_INVOCATION = re.compile(
     r"\b(?:docker(?:\s+compose|-compose)?|podman(?:\s+compose|-compose)?|kubectl(?:\s+compose|-compose)?|nerdctl(?:\s+compose|-compose)?|compose)\s+(?:exec|run)\b",
     re.IGNORECASE,
 )
+# Zero-width and bidi format chars can split rm/-rf tokens and bypass regex checks.
+_INVISIBLE_FORMAT_CHARS = re.compile(
+    r"[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]"
+)
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
 CONTAINER_EXEC_BOOL_SHORT_FLAGS = frozenset("itTd")
 # Long flags that never take a separate value token (e.g. --rm, not --workdir).
@@ -98,11 +102,12 @@ CONTAINER_EXEC_BOOL_LONG_FLAGS = frozenset(
 
 
 def normalize_command(command: str) -> str:
-    """Strip padding and neutralize null bytes that can split regex tokens."""
+    """Strip padding and neutralize null/invisible bytes that split regex tokens."""
     normalized = command.strip()
-    if "\x00" not in normalized:
+    if "\x00" not in normalized and not _INVISIBLE_FORMAT_CHARS.search(normalized):
         return normalized
-    normalized = normalized.replace("\x00", " ")
+    normalized = normalized.replace("\x00", "")
+    normalized = _INVISIBLE_FORMAT_CHARS.sub("", normalized)
     return re.sub(r" +", " ", normalized).strip()
 
 
@@ -241,11 +246,11 @@ def should_block_sql_statement(
 
 
 _RM_RECURSIVE_FLAG = re.compile(
-    r"(?:--recursive\b|(?<=\s)-[A-Za-z]*r[A-Za-z]*\b)",
+    r"(?:--recursive\b|(?:^|\s)-[A-Za-z]*r[A-Za-z]*\b)",
     re.IGNORECASE,
 )
 _RM_FORCE_FLAG = re.compile(
-    r"(?:--force\b|(?<=\s)-[A-Za-z]*f[A-Za-z]*\b)",
+    r"(?:--force\b|(?:^|\s)-[A-Za-z]*f[A-Za-z]*\b)",
     re.IGNORECASE,
 )
 
@@ -378,14 +383,15 @@ def main() -> None:
             sys.exit(0)
 
         tool_input = data.get("tool_input") or {}
-        command = normalize_command(tool_input.get("command") or "")
+        raw_command = tool_input.get("command") or ""
+        command = normalize_command(raw_command)
         if not command:
             sys.exit(0)
 
         project_path = data.get("cwd") or os.getcwd()
         block_reason = check_command(command)
         if block_reason:
-            log_blocked_attempt(command, project_path)
+            log_blocked_attempt(raw_command.strip(), project_path)
             deny(
                 f"{block_reason} blocked. "
                 f"Run this command directly in your terminal if you truly need it."

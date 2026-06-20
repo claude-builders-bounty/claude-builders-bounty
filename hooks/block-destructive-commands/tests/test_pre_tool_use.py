@@ -155,10 +155,32 @@ class CheckCommandTests(unittest.TestCase):
             "Recursive force delete (rm -rf)",
         )
 
+    def test_blocks_zero_width_rm_rf_evasion(self):
+        blocked = (
+            "rm\u200b-rf /",
+            "r\u200bm -rf /",
+            "rm -\u200brf /",
+            "rm -r\u200bf /",
+            "rm\u200c-rf /",
+            "rm\u2060-rf /",
+        )
+        for command in blocked:
+            with self.subTest(command=repr(command)):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Recursive force delete (rm -rf)",
+                )
+
     def test_normalize_command_strips_padding_and_null_bytes(self):
         self.assertEqual(
             self.hook.normalize_command("  rm\x00-rf /\x00  "),
-            "rm -rf /",
+            "rm-rf /",
+        )
+
+    def test_normalize_command_strips_zero_width_format_chars(self):
+        self.assertEqual(
+            self.hook.normalize_command("rm\u200b-rf\u200c/"),
+            "rm-rf/",
         )
 
     def test_parametrized_blocked_commands(self):
@@ -794,7 +816,25 @@ class HookIntegrationTests(unittest.TestCase):
             "deny",
         )
         log_contents = self.log_file.read_text(encoding="utf-8")
-        self.assertIn("rm -rf /tmp/build", log_contents)
+        self.assertIn("rm?-rf /tmp/build", log_contents)
+
+    def test_blocks_zero_width_destructive_command(self):
+        result = self.run_hook(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "rm\u200b-rf /tmp/build"},
+                "cwd": "/workspace/demo",
+            }
+        )
+
+        self.assertEqual(result.returncode, 0)
+        output = json.loads(result.stdout)
+        self.assertEqual(
+            output["hookSpecificOutput"]["permissionDecision"],
+            "deny",
+        )
+        log_contents = self.log_file.read_text(encoding="utf-8")
+        self.assertIn("rm?-rf /tmp/build", log_contents)
 
     def test_ignores_non_bash_tools(self):
         result = self.run_hook(
