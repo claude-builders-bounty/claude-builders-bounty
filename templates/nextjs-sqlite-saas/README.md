@@ -72,4 +72,4 @@ Hands-on takeover agents run these isolated scripts before merge:
 | `peer_review_not_passed` | `npm run test:delivery` | Diff includes `## Stack & Versions`, pins Next.js 15, and documents peer review APPROVED |
 | Peer review | `npm run test:peer-review` | Bounty #2 acceptance criteria and branch diff scope |
 
-Both gates must pass alongside `npm test` (205 tests: 20 reference + 29 delivery + 156 peer-review) for PR #2529. Template ships 47 explicit reasons including dev seed script guard and reference `scripts/seed.ts`. Last hands-on verification: 2026-06-21T00:52Z (idle merge-nurture — all gates green).
+Both gates must pass alongside `npm test` (205 tests: 20 reference + 29 delivery + 156 peer-review) for PR #2529. Template ships 47 explicit reasons including dev seed script guard and reference `scripts/seed.ts`. Last hands-on verification: 2026-06-21T00:58Z (hands-on takeover — all gates green).

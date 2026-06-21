@@ -6,7 +6,7 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-21T00:52Z — npm test green (20 reference Vitest,
+ * Last hands-on verification: 2026-06-21T00:58Z — npm test green (20 reference Vitest,
  * 29 delivery, 156 peer-review, 205 total); committed CLAUDE.md diff vs main (767 lines);
  * no_committed_diff and peer_review_not_passed gates pass for PR #2529.
  */
@@ -307,6 +307,9 @@ test("branch diff excludes fleet stray root artifacts", () => {
     if (changed.includes(stray)) {
       throw new Error(`branch diff must not include fleet stray artifact: ${stray}`);
     }
+  }
+  if (changed.some((path) => path === ".cache" || path.startsWith(".cache/"))) {
+    throw new Error("branch diff must not include fleet cache clones under .cache/");
   }
 });
 

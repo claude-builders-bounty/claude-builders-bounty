@@ -6,7 +6,7 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-21T00:52Z — npm test green (205 total); committed
+ * Last hands-on verification: 2026-06-21T00:58Z — npm test green (205 total); committed
  * CLAUDE.md diff vs main ships bounty #2 template; no_committed_diff gate passes;
  * peer review APPROVED.
  */
@@ -324,6 +324,7 @@ assert(
 assert(gitignore.includes("node_modules/"), ".gitignore excludes node_modules");
 assert(gitignore.includes("pnpm-lock.yaml"), ".gitignore excludes pnpm-lock.yaml from greenfield scaffolds");
 assert(gitignore.includes("internal/"), ".gitignore excludes local fleet artifacts");
+assert(gitignore.includes(".cache/"), ".gitignore excludes fleet cache clones");
 assert(makefile.includes("run-ci-checks.sh"), "Makefile test target runs unified validation");
 assert(makefile.includes("scripts/run-ci-checks.sh"), "Makefile uses root scripts/run-ci-checks.sh entry point");
 assert(/^test:\s*env-check/m.test(makefile), "Makefile test depends on env-check before CI validation");
@@ -715,7 +716,7 @@ assert(
 );
 
 // Branch diff scoped to template bounty paths only (reject fleet stray artifacts)
-const strayFleetArtifacts = ["example.js", "mkdocs.go"];
+const strayFleetArtifacts = ["example.js", "mkdocs.go", ".cache"];
 const allowedPrefixes = [
   "templates/nextjs-sqlite-saas/",
   ".github/workflows/test-nextjs-sqlite-template.yml",
@@ -729,7 +730,7 @@ try {
   for (const path of listBranchChangedFiles(baseRef)) {
     for (const stray of strayFleetArtifacts) {
       assert(
-        path !== stray && !path.endsWith(`/${stray}`),
+        path !== stray && !path.endsWith(`/${stray}`) && !path.startsWith(`${stray}/`),
         `branch diff includes fleet stray artifact: ${path}`,
       );
     }
