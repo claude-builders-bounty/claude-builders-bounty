@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -218,10 +219,18 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             self.skipTest("zeroeye market module not present")
 
         bad_dir = Path(tempfile.mkdtemp())
+        bad_gocache = Path(tempfile.mkdtemp())
+        bad_gotmp = Path(tempfile.mkdtemp())
         try:
+            bad_env = {
+                **os.environ,
+                "GOCACHE": str(bad_gocache),
+                "GOTMPDIR": str(bad_gotmp),
+            }
             result = subprocess.run(
                 ["go", "test", "./ai/...", "-count=1"],
                 cwd=bad_dir,
+                env=bad_env,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -229,6 +238,8 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
         finally:
             bad_dir.rmdir()
+            shutil.rmtree(bad_gocache, ignore_errors=True)
+            shutil.rmtree(bad_gotmp, ignore_errors=True)
 
         good = subprocess.run(
             ["go", "test", "./ai/...", "./gateway/...", "-count=1"],
@@ -390,7 +401,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             r"54/54 \(2 README \+ 21 peer review \+ 22 issue #2853 \+ 9 delivery\)",
         )
         self.assertRegex(latest, r"22/22 \(fresh clone|reused zeroeye")
-        self.assertIn("takeover #75", latest)
+        self.assertIn("takeover #76", latest)
         self.assertIn("verify-issue-2853.sh", latest)
         self.assertIn("run-unittest-module.sh", latest)
 

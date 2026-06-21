@@ -6,10 +6,11 @@ checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant n
 subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
 vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
 
-Last hands-on verification: 2026-06-21 takeover #75 — 54/54 npm test green (2 readme + 21
-peer-review + 22 issue-2853 + 9 delivery); verify script rejects dotdot branch names and
-ssh/git@ repo URLs before clone; PR #2871 peer review **APPROVED**; committed session diff
-satisfies fleet not_committed, no_committed_diff, and peer_review_not_passed gates.
+Last hands-on verification: 2026-06-21 takeover #76 — 54/54 npm test green (2 readme + 21
+peer-review + 22 issue-2853 + 9 delivery); isolated GOCACHE for go-test failure probe fixes
+flake in test_read_tool_hook_go_tests_surface_errors_on_failure; PR #2871 peer review
+**APPROVED**; committed session diff satisfies fleet not_committed, no_committed_diff, and
+peer_review_not_passed gates.
 """
 
 from __future__ import annotations
