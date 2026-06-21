@@ -6,10 +6,11 @@ replaced with root-absolute ``/owner/repo/issues/N`` paths) and that branch diff
 stays within README deliverable scope. Fleet delivery requires ``npm test`` green and
 a non-zero README diff vs main (guards ``no_committed_diff`` / ``peer_review_not_passed``).
 
-Last hands-on verification: 2026-06-21 (cursor hands-on takeover PR #2846, session 274) — npm test 23/23 green
+Last hands-on verification: 2026-06-21 (cursor engineer takeover PR #2846, session 276) — npm test 23/23 green
 (3 readme + 11 peer-review + 9 delivery); README committed diff vs main (12+ lines);
 fragile ../../issues/N links replaced with /claude-builders-bounty/claude-builders-bounty/issues/N;
-branch diff within README deliverable scope (8 files); peer review APPROVED; PR MERGEABLE/CLEAN.
+branch diff within README deliverable scope (8 files); removed polluted local commits that
+included node_modules/.cache; reset to clean 8-file deliverable; peer review APPROVED.
 
 Fixes #2746
 """
