@@ -34,6 +34,20 @@ You're in the right place.
 
 ---
 
+## Generate Changelog Skill
+
+This repo includes a Claude Code skill and script for generating a structured `CHANGELOG.md` from git history.
+
+Setup in 3 steps:
+
+1. Copy `changelog.sh`, `scripts/generate_changelog.py`, and `skills/generate-changelog/SKILL.md` into your project.
+2. Run `bash changelog.sh --version Unreleased` from the project root.
+3. Review and commit the generated `CHANGELOG.md`.
+
+See `examples/CHANGELOG.sample.md` for output from this GitHub repo.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
