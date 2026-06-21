@@ -72,4 +72,4 @@ Hands-on takeover agents run these isolated scripts before merge:
 | `peer_review_not_passed` | `npm run test:delivery` | Diff includes `## Stack & Versions`, pins Next.js 15, and documents peer review APPROVED |
 | Peer review | `npm run test:peer-review` | Bounty #2 acceptance criteria and branch diff scope |
 
-Both gates must pass alongside `npm test` (210 tests: 20 reference + 30 delivery + 160 peer-review) for PR #2529. Template ships 63 explicit reasons including dev seed script guard, folder READMEs, and reference `scripts/seed.ts`. Last hands-on verification: 2026-06-21T08:26Z (cursor composer takeover — peer review APPROVED; folder READMEs, CLAUDE.md TOC, security audits).
+Both gates must pass alongside `npm test` (210 tests: 20 reference + 30 delivery + 160 peer-review) for PR #2529. Template ships 63 explicit reasons including dev seed script guard, folder READMEs, and reference `scripts/seed.ts`. Last hands-on verification: 2026-06-21T08:29Z (cursor composer takeover — npm test 210/210 green; no_committed_diff and peer_review_not_passed gates pass; peer review APPROVED).
