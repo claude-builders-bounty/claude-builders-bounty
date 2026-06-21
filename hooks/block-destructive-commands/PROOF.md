@@ -19,10 +19,10 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 140 tests in ...s
+Ran 147 tests in ...s
 OK
-Ran 8 delivery verification tests — OK
-Ran 22 tests — OK
+Ran 9 delivery verification tests — OK
+Ran 23 tests — OK
 OK: peer review acceptance tests passed
 OK: all CI validation checks passed
 ```
@@ -482,6 +482,17 @@ shell `-c` payloads.
 
 - `npm test` green after committed hook source edit
 - CLI: `rm --recursive=always --force /tmp` denied; `bash -lc "rm --recursive --force /tmp"` denied; `rm --recursive build` allowed
+
+## Hands-on verification (2026-06-21, sprout-idle-nudge)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `3cb8b273` (PR #2556). Full
+re-validation; no hook logic changes required.
+
+- `npm test` green: 147 unittest + 9 delivery + 23 peer-review + attribution checks
+- Branch scope: 16 hook-only paths; `internal/exporter/*` gitignored in working tree
+- CLI spot-checks: `rm -rf /` denied; `git status` allowed; `sudo rm -rf /tmp/x` denied
+- PR state: MERGEABLE; no maintainer review feedback; head matches remote
+- Rebase: not needed (`origin/main` is merge-base)
 
 ## Acceptance criteria
 
