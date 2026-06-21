@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+// Boot-time validation: parse once at module load so misconfigured deploys fail before
+// accepting traffic. Never read process.env directly outside this module.
 const envSchema = z.object({
   DATABASE_URL: z
     .string()

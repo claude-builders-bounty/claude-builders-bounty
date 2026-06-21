@@ -25,6 +25,10 @@ Navigate by topic — each `##` section is standalone. Reference app folders inc
 | [SQL Migration Runner](#sql-migration-runner) | `scripts/migrate.ts` integrity checks |
 | [Dev Seed Script](#dev-seed-script) | Production guard and idempotent upserts |
 | [Testing Rules](#testing-rules) | Query, action, component, migration tests |
+| [Development Environment Setup](#development-environment-setup) | Local `.env.local`, migrations, and first run |
+| [Deployment](#deployment) | Turso, build, and production env checklist |
+| [Template Maintenance Best Practices](#template-maintenance-best-practices) | Keeping CLAUDE.md and reference app in sync |
+| [Security Checklist](#security-checklist) | Auth, authorization, and data-handling review |
 | [Greenfield Smoke Test](#greenfield-smoke-test) | Five-step validation checklist |
 
 ---
@@ -772,6 +776,87 @@ describe('CreateInvoiceForm', () => {
 ```
 
 Reason: testing at the query/action boundary catches most regressions without brittle full-stack E2E for every change.
+
+---
+
+## Development Environment Setup
+
+Configure a fresh clone before running the app or tests:
+
+1. **Install toolchain:** Node.js 20+, `pnpm` 9+, and native build tools for `better-sqlite3` (`python3`, `make`, `g++` on Linux).
+2. **Create `.env.local`** at the repo root (never commit it):
+
+```bash
+DATABASE_URL="file:./data/app.db"
+SESSION_SECRET="$(openssl rand -base64 32)"   # 32+ chars required
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+```
+
+3. **Initialize the database:**
+
+```bash
+mkdir -p data
+pnpm install
+pnpm db:migrate          # apply SQL migrations in filename order
+pnpm db:seed             # optional dev fixtures (blocked in production)
+pnpm typecheck           # confirm strict TS before first dev run
+pnpm dev                 # http://localhost:3000
+```
+
+Reason: validating env at boot and applying migrations explicitly prevents “works on my machine” schema drift across branches.
+
+**CI / test env:** Vitest sets `DATABASE_URL=":memory:"` in `tests/setup.ts` so unit tests never touch the on-disk `./data/app.db` file.
+
+---
+
+## Deployment
+
+Production uses **Turso** (`libsql://`) instead of local `file:` paths. Reason: replicated SQLite without managing Postgres connection pools.
+
+| Step | Command / action |
+|------|------------------|
+| Provision DB | Create a Turso database; copy the `libsql://` URL |
+| Set secrets | `DATABASE_URL`, `SESSION_SECRET` (32+ bytes), `NEXT_PUBLIC_APP_URL` (public HTTPS origin) |
+| Migrate | Run `pnpm db:migrate` in the deploy pipeline **before** `pnpm start` |
+| Build | `pnpm build` — Next.js 15 App Router with Server Actions |
+| Serve | `pnpm start` on a long-running Node process (not edge-only) |
+
+Reason: migrations must complete before traffic hits the app; `getDb()` reads `env.DATABASE_URL` validated at boot — never hardcode paths in source.
+
+**Do not** run `pnpm db:seed` in production — the seed script exits when `NODE_ENV=production`.
+
+---
+
+## Template Maintenance Best Practices
+
+When evolving this template (or a project copied from it):
+
+1. **Update CLAUDE.md first** — conventions are authoritative; code follows the doc, not the reverse.
+2. **Append migrations only** — never edit merged SQL files; add a new timestamped file for schema changes.
+3. **Mirror changes in the reference app** — if CLAUDE.md shows a pattern, `reference/` must implement and test it.
+4. **Run the full gate before pushing:** `npm test` from the monorepo root (214 tests: reference Vitest + delivery + peer-review acceptance).
+5. **Keep folder READMEs current** — each `src/`, `scripts/`, and `tests/` subdirectory documents its boundary rules.
+
+Reason: the reference app is the executable proof that CLAUDE.md conventions work in a real Next.js 15 project.
+
+---
+
+## Security Checklist
+
+Review these before shipping auth, billing, or multi-tenant features:
+
+| Area | Requirement |
+|------|-------------|
+| **Env secrets** | `SESSION_SECRET` ≥ 32 chars; parsed in `src/lib/env.ts` at boot — fail fast on missing values |
+| **SQL injection** | All queries use `?` placeholders; never interpolate user input into SQL strings |
+| **Tenant isolation** | Every org-owned query filters by `org_id` resolved via `requireOrgMember(orgSlug)` |
+| **Session cookies** | `httpOnly`, `Secure` in production, `SameSite=Lax` — never store tokens in localStorage |
+| **Server Actions** | Validate with Zod → authorize → mutate → revalidate; return structured errors, not raw throws |
+| **Webhooks** | Verify signatures (Stripe, etc.); upsert idempotently by event ID |
+| **Soft deletes** | Default to `deleted_at` instead of hard deletes for user content |
+| **Client bundle** | Never import `src/lib/db.ts` or server secrets from `"use client"` modules |
+
+Reason: parameterized queries and org-scoped authorization are the two highest-impact defenses for this SQLite SaaS stack.
 
 ---
 
