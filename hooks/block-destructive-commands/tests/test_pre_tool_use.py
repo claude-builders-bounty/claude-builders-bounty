@@ -294,10 +294,29 @@ class CheckCommandTests(unittest.TestCase):
         allowed = (
             "bash -c 'echo rm -rf; echo safe'",
             "sh -c 'grep rm -rf README.md'",
+            'bash --login -c "echo rm -rf /"',
+            'bash -i -c "printf rm -rf"',
+            'bash -lc "echo rm -rf /"',
+            'bash -ic "grep rm -rf README.md"',
         )
         for command in allowed:
             with self.subTest(command=command):
                 self.assertIsNone(self.hook.check_command(command))
+
+    def test_blocks_rm_rf_in_shell_c_with_intervening_flags(self):
+        blocked = (
+            'bash --login -c "rm -rf /"',
+            'bash -i -c "rm -rf /tmp"',
+            'bash -lc "rm -rf /"',
+            'bash -ic "rm -rf /var"',
+            'sh --login -c "rm -rf /data"',
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Recursive force delete (rm -rf)",
+                )
 
     def test_blocks_rm_with_env_prefix(self):
         self.assertEqual(

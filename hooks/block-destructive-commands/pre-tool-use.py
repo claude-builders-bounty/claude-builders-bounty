@@ -2,8 +2,8 @@
 """Claude Code PreToolUse hook — blocks destructive bash commands.
 
 Detects destructive patterns in bare commands, chained segments (; && ||),
-pipeline stages, shell -c wrappers (including bash $'...' and $"..." quoting),
-and container exec/run invocations
+pipeline stages, shell -c wrappers (including bash --login -c, bash -lc,
+bash $'...' and $"..." quoting), and container exec/run invocations
 (docker/podman/kubectl/nerdctl exec|run, compose exec|run, and compose exec|run).
 """
 
@@ -45,8 +45,11 @@ NON_SQL_TOOLS = re.compile(
     r"^\s*(?:echo|cat|printf|tee|grep|egrep|fgrep|rg|sed|awk|python3?|node|ruby|perl|head|tail|less|more|vim|nvim)\b",
     re.IGNORECASE,
 )
+# Match shell -c after optional flags (bash --login -c) or combined short flags (bash -lc).
 SHELL_C = re.compile(
-    r"\b(?:sh|bash|zsh|dash)\s+-c\s+",
+    r"\b(?:sh|bash|zsh|dash)\b"
+    r"(?:\s+(?:--(?!--)[\w-]+(?:=\S+)?|-[A-Za-z]+))*"
+    r"\s+-[A-Za-z]*c\b\s+",
     re.IGNORECASE,
 )
 INTERPRETER_INLINE = re.compile(
