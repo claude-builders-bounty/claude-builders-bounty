@@ -264,10 +264,24 @@ def is_git_force_via_config(command: str) -> bool:
     return False
 
 
+_COMMAND_WRAPPER = re.compile(
+    r"^(?:sudo\s+|"
+    r"env(?:\s+(?:-\w+|--[\w-]+|\w+=\S*))*\s+|"
+    r"command\s+)+",
+    re.IGNORECASE,
+)
+
+
+def unwrap_command_wrapper(segment: str) -> str:
+    """Peel sudo/env/command prefixes before destructive-pattern checks."""
+    stripped = segment.strip()
+    unwrapped = _COMMAND_WRAPPER.sub("", stripped, count=1).strip()
+    return unwrapped or stripped
+
+
 def stripped_segment(segment: str) -> str:
     """Remove leading sudo/env prefixes so bare SQL statements are detectable."""
-    stripped = segment.strip()
-    stripped = re.sub(r"^\s*sudo\s+", "", stripped, flags=re.IGNORECASE)
+    stripped = unwrap_command_wrapper(segment)
     stripped = re.sub(r"^(\w+=\S*\s+)+", "", stripped)
     return stripped
 
@@ -655,6 +669,7 @@ def check_segment_body(segment: str) -> str | None:
 
 
 def check_segment(segment: str) -> str | None:
+    segment = unwrap_command_wrapper(segment)
     for candidate in iter_segment_candidates(segment):
         reason = check_segment_body(candidate)
         if reason:

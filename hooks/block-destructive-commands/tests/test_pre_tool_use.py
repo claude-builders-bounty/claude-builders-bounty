@@ -319,10 +319,31 @@ class CheckCommandTests(unittest.TestCase):
                 )
 
     def test_blocks_rm_with_env_prefix(self):
-        self.assertEqual(
-            self.hook.check_command("sudo rm -rf /var/cache"),
-            "Recursive force delete (rm -rf)",
+        blocked = (
+            "sudo rm -rf /var/cache",
+            'env bash -lc "rm -rf /srv"',
+            'env -i HOME=/tmp bash -lc "rm -rf /tmp"',
+            'command bash -l -c "rm -rf /"',
+            "env bash rm -rf /data",
         )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Recursive force delete (rm -rf)",
+                )
+
+    def test_blocks_rm_in_env_wrapped_shell_c_ansi_c_quoting(self):
+        blocked = (
+            r"bash --login -c $'rm\x20-rf /'",
+            r"env bash -lc $'rm\x20-rf /tmp'",
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Recursive force delete (rm -rf)",
+                )
 
     def test_blocks_drop_table_in_shell_quotes(self):
         self.assertEqual(

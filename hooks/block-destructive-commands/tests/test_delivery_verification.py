@@ -2,9 +2,8 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-21 (hands-on takeover PR #2556) —
-npm test green; bash -lc / bash -l -c / bash --login -c / env bash -lc rm -rf
-blocked via SHELL_C flag parsing; decode bash $'...' shell -c payloads before
-pattern checks.
+npm test green; unwrap_command_wrapper peels sudo/env/command before shell -c
+and rm -rf checks; bash -lc / bash -l -c / env bash -lc / bash $'...' blocked.
 """
 
 from __future__ import annotations
@@ -123,6 +122,8 @@ class DeliveryVerificationTests(unittest.TestCase):
             'bash -lc "rm -rf /"',
             'bash -l -c "rm -rf /"',
             'env bash -lc "rm -rf /tmp"',
+            r"bash --login -c $'rm\x20-rf /'",
+            'command bash -l -c "rm -rf /var"',
         )
         for command in blocked_commands:
             with self.subTest(command=command):
