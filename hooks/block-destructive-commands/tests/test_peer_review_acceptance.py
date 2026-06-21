@@ -78,6 +78,9 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
     def test_required_destructive_patterns_block(self):
         blocked = (
             "rm -rf /tmp",
+            "rm --recursive --force /tmp",
+            "rm --recursive=always --force /srv",
+            'env bash -lc "rm --recursive --force /tmp"',
             "DROP TABLE users",
             "git push --force origin main",
             "TRUNCATE sessions",
@@ -93,10 +96,20 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
                     f"expected block: {command!r}",
                 )
 
+    def test_is_rm_rf_gnu_long_options_in_hook_source(self):
+        """Peer review: is_rm_rf must recognize GNU --recursive/--force long flags."""
+        text = HOOK_PATH.read_text(encoding="utf-8")
+        self.assertIn("def is_rm_rf(", text)
+        self.assertIn("--recursive", text)
+        self.assertIn("--force", text)
+        self.assertTrue(self.hook.is_rm_rf("rm --recursive=always --force /tmp"))
+        self.assertFalse(self.hook.is_rm_rf("rm --recursive /tmp"))
+
     def test_safe_variants_allow(self):
         allowed = (
             "git status",
             "rm -f file.txt",
+            "rm --recursive build",
             "git push --force-with-lease origin main",
             'grep "DELETE FROM users" schema.sql',
             "npm run truncate-logs",

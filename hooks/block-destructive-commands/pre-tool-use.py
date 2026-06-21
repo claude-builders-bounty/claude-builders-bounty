@@ -548,18 +548,23 @@ def should_block_sql_statement(
     return bool(pattern.match(stripped_segment(segment)))
 
 
+# GNU rm accepts --recursive/--force with optional =VALUE (e.g. --recursive=always).
 _RM_RECURSIVE_FLAG = re.compile(
-    r"(?:--recursive\b|(?:^|\s)-[A-Za-z]*r[A-Za-z]*\b)",
+    r"(?:--recursive(?:=|\b)|(?:^|\s)-[A-Za-z]*r[A-Za-z]*\b)",
     re.IGNORECASE,
 )
 _RM_FORCE_FLAG = re.compile(
-    r"(?:--force\b|(?:^|\s)-[A-Za-z]*f[A-Za-z]*\b)",
+    r"(?:--force(?:=|\b)|(?:^|\s)-[A-Za-z]*f[A-Za-z]*\b)",
     re.IGNORECASE,
 )
 
 
 def is_rm_rf(command: str) -> bool:
-    """True when rm uses both recursive (-r/--recursive) and force (-f/--force) flags."""
+    """True when rm uses both recursive (-r/--recursive) and force (-f/--force) flags.
+
+    Matches GNU long options in any order, including ``--recursive=always`` and
+    ``--force=once``, combined short flags (``-rf``), and mixed short/long forms.
+    """
     if not re.search(r"\brm\b", command, re.IGNORECASE):
         return False
     after_rm = re.split(r"\brm\b", command, maxsplit=1, flags=re.IGNORECASE)[-1]

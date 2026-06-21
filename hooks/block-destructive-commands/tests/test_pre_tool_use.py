@@ -130,6 +130,10 @@ class CheckCommandTests(unittest.TestCase):
         for command in (
             "rm -r --force /var/log",
             "rm --recursive -f /var/log",
+            "rm --recursive=always --force /var/log",
+            "rm --force=once --recursive /var/log",
+            "rm --recursive --force -- /var/log",
+            "sudo rm --recursive --force /var/log",
         ):
             with self.subTest(command=command):
                 self.assertEqual(
@@ -1248,6 +1252,44 @@ class HookIntegrationTests(unittest.TestCase):
         self.assertNotIn("\n[FAKE]", log_contents)
         self.assertIn("rm -rf /\\n[FAKE] injected entry", log_contents)
         self.assertIn("/workspace/demo\\n[FAKE] path", log_contents)
+
+
+class IsRmRfTests(unittest.TestCase):
+    """Direct unit coverage for GNU long-option rm -rf detection (peer review)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.hook = load_hook_module()
+
+    def test_is_rm_rf_detects_gnu_long_options(self):
+        blocked = (
+            "rm --recursive --force /tmp",
+            "rm --force --recursive /tmp",
+            "rm --recursive=always --force /tmp",
+            "rm --force=once --recursive /tmp",
+            "rm -r --force /tmp",
+            "rm --recursive -f /tmp",
+            "rm -rf /tmp",
+            "rm -fr /tmp",
+            "rm -rdf /tmp",
+            "/usr/bin/rm --recursive --force /tmp",
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertTrue(self.hook.is_rm_rf(command), command)
+
+    def test_is_rm_rf_allows_partial_or_non_rm_commands(self):
+        allowed = (
+            "rm --recursive /tmp",
+            "rm --force file.txt",
+            "rm -f file.txt",
+            "rm -r build",
+            "rm -i file.txt",
+            "grep rm --recursive README.md",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertFalse(self.hook.is_rm_rf(command), command)
 
 
 class SanitizeLogFieldTests(unittest.TestCase):

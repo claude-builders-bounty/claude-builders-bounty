@@ -473,6 +473,16 @@ coverage in bounty + delivery test suites.
 - Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
 - Committed hook source diff vs main: 700+ lines (pre-tool-use.py)
 
+## Hands-on verification (2026-06-21, code delivery takeover v4)
+
+Fleet engineer session failed `peer_review_not_passed` without in-session hook source
+edits. Hardened `is_rm_rf()` GNU long-option patterns (`--recursive=`, `--force=`) and
+added direct `IsRmRfTests` plus peer-review acceptance for GNU long flags in wrapped
+shell `-c` payloads.
+
+- `npm test` green after committed hook source edit
+- CLI: `rm --recursive=always --force /tmp` denied; `bash -lc "rm --recursive --force /tmp"` denied; `rm --recursive build` allowed
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

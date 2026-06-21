@@ -2,8 +2,8 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-21 (hands-on takeover PR #2556) —
-npm test green; unwrap_command_wrapper peels sudo/env/command before shell -c
-and rm -rf checks; bash -lc / bash -l -c / env bash -lc / bash $'...' blocked.
+npm test green; is_rm_rf matches GNU --recursive/--force long options (incl.
+=VALUE forms); unwrap_command_wrapper peels sudo/env/command before shell -c.
 """
 
 from __future__ import annotations
@@ -124,6 +124,8 @@ class DeliveryVerificationTests(unittest.TestCase):
             'env bash -lc "rm -rf /tmp"',
             r"bash --login -c $'rm\x20-rf /'",
             'command bash -l -c "rm -rf /var"',
+            'bash -lc "rm --recursive --force /tmp"',
+            'env bash -lc "rm --recursive=always --force /srv"',
         )
         for command in blocked_commands:
             with self.subTest(command=command):
