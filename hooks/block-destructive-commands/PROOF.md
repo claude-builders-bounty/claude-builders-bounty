@@ -407,6 +407,17 @@ pollution — reset to clean hook-only scope.
 - Hook source: committed diff vs main (not working-tree only)
 - Rebase: not needed (`origin/main` is merge-base)
 
+## Hands-on verification (2026-06-21, sprout-idle-nudge merge-nurture)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `3342cd31` (PR #2556). Merge-nurture
+re-check — no hook logic changes required.
+
+- `npm test` green: 131 unittest + 8 delivery + 22 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`); stray `internal/exporter/` gitignored only
+- CLI: `rm -rf /` denied via official `hookSpecificOutput`; `git status` allowed (empty stdout)
+- GitHub PR: MERGEABLE / CLEAN, no review comments
+- Rebase: not needed (`origin/main` is merge-base)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
