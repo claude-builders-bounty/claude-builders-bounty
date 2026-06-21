@@ -62,6 +62,19 @@ class BountyAcceptanceTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNotNone(self.hook.check_command(command))
 
+    def test_blocks_rm_in_shell_c_with_intervening_flags(self):
+        blocked = (
+            'bash --login -c "rm -rf /"',
+            'bash -lc "rm -rf /tmp"',
+            'sh --login -c "rm -rf /data"',
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Recursive force delete (rm -rf)",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

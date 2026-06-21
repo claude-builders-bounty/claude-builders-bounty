@@ -2,8 +2,8 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-21 (cursor hands-on takeover PR #2556) —
-npm test 140+8+22 green; decode bash $'...' shell -c payloads before pattern checks;
-quote-aware chain splitting preserves interpreter -c/-e payloads with embedded semicolons.
+npm test 143+9+22 green; bash -lc / bash --login -c rm -rf blocked via SHELL_C flag parsing;
+decode bash $'...' shell -c payloads before pattern checks.
 """
 
 from __future__ import annotations
@@ -116,6 +116,31 @@ class DeliveryVerificationTests(unittest.TestCase):
             log_text = log_file.read_text(encoding="utf-8")
             self.assertIn("rm -rf /", log_text)
             self.assertIn("/workspace/demo", log_text)
+
+    def test_cli_denies_bash_lc_rm_rf_with_official_schema(self):
+        with tempfile.TemporaryDirectory() as temp_home:
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            result = subprocess.run(
+                [sys.executable, str(HOOK_PATH)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": 'bash -lc "rm -rf /"'},
+                        "cwd": "/workspace/demo",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            output = json.loads(result.stdout)
+            hook_output = output["hookSpecificOutput"]
+            self.assertEqual(hook_output["permissionDecision"], "deny")
+            self.assertIn("rm -rf", hook_output["permissionDecisionReason"])
 
     def test_cli_allows_git_status_without_output(self):
         with tempfile.TemporaryDirectory() as temp_home:

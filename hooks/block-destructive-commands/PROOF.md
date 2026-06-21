@@ -462,6 +462,17 @@ no hook logic changes required.
 - PR state: MERGEABLE/CLEAN; no maintainer review feedback
 - KiwiFS fix doc and episodic run note updated
 
+## Hands-on verification (2026-06-21, code delivery takeover v3)
+
+Fleet engineer session failed `no_committed_diff` / `peer_review_not_passed` without in-session
+commits. Re-verified hook @ `69c2458c` and codified `bash -lc` / `bash --login -c` acceptance
+coverage in bounty + delivery test suites.
+
+- `npm test` green: 143 unittest + 9 delivery + 22 peer-review + attribution checks
+- CLI: `bash -lc "rm -rf /"` denied; `bash -lc "echo rm -rf /"` allowed; `git status` allowed
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- Committed hook source diff vs main: 700+ lines (pre-tool-use.py)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
