@@ -277,6 +277,28 @@ class CheckCommandTests(unittest.TestCase):
             "Recursive force delete (rm -rf)",
         )
 
+    def test_blocks_rm_rf_in_chained_shell_c_payload(self):
+        blocked = (
+            "bash -c 'echo safe; rm -rf /'",
+            "sh -c 'a=1; rm -rf /tmp'",
+            "docker exec db bash -c 'echo ok; rm -rf /data'",
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Recursive force delete (rm -rf)",
+                )
+
+    def test_allows_rm_rf_text_in_chained_shell_c_echo(self):
+        allowed = (
+            "bash -c 'echo rm -rf; echo safe'",
+            "sh -c 'grep rm -rf README.md'",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
+
     def test_blocks_rm_with_env_prefix(self):
         self.assertEqual(
             self.hook.check_command("sudo rm -rf /var/cache"),

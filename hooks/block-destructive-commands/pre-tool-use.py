@@ -348,11 +348,16 @@ def segment_has_rm_rf_invocation(segment: str) -> bool:
     shell_match = SHELL_C.search(segment)
     if shell_match:
         inner = next(group for group in shell_match.groups() if group is not None)
-        return segment_has_rm_rf_invocation(inner)
+        for sub in iter_command_segments(inner):
+            if segment_has_rm_rf_invocation(sub):
+                return True
+        return False
     inner = extract_interpreter_inline_inner(segment)
     if inner is not None and INTERPRETER_EXECUTION_HINT.search(inner):
-        if segment_has_rm_rf_invocation(inner):
-            return True
+        for sub in iter_command_segments(inner):
+            if segment_has_rm_rf_invocation(sub):
+                return True
+        return False
     for stage in iter_pipe_stages(segment):
         if NON_SQL_TOOLS.match(stage):
             continue
