@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Templates
+
+- `templates/nextjs-sqlite-saas/CLAUDE.md`: production-ready Claude Code instructions for a greenfield Next.js 15 App Router + SQLite SaaS project.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
