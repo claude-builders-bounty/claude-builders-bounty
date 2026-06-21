@@ -81,7 +81,6 @@ GIT_PUSH_FORCE_CONFIG = re.compile(
     re.IGNORECASE,
 )
 GIT_PUSH_FORCE_CONFIG_FALSE = frozenset({"false", "0", "no", "off", "n"})
-CHAIN_SPLIT = re.compile(r"\s*(?:;|&&|\|\|)\s*")
 CONTAINER_RUNTIME_INVOCATION = re.compile(
     r"\b(?:docker(?:\s+compose|-compose)?|podman(?:\s+compose|-compose)?|kubectl(?:\s+compose|-compose)?|nerdctl(?:\s+compose|-compose)?|compose)\s+(?:exec|run)\b",
     re.IGNORECASE,
@@ -175,7 +174,60 @@ def normalized_command_variants(command: str) -> list[str]:
 
 def iter_command_segments(command: str) -> list[str]:
     """Split chained bash commands so each segment is checked independently."""
-    return [segment.strip() for segment in CHAIN_SPLIT.split(command) if segment.strip()]
+    segments: list[str] = []
+    current: list[str] = []
+    in_single = False
+    in_double = False
+    escape = False
+    index = 0
+    length = len(command)
+
+    def flush() -> None:
+        segment = "".join(current).strip()
+        if segment:
+            segments.append(segment)
+        current.clear()
+
+    while index < length:
+        char = command[index]
+        if escape:
+            current.append(char)
+            escape = False
+            index += 1
+            continue
+        if char == "\\" and in_double:
+            current.append(char)
+            escape = True
+            index += 1
+            continue
+        if char == "'" and not in_double:
+            in_single = not in_single
+            current.append(char)
+            index += 1
+            continue
+        if char == '"' and not in_single:
+            in_double = not in_double
+            current.append(char)
+            index += 1
+            continue
+        if not in_single and not in_double:
+            if command.startswith("&&", index):
+                flush()
+                index += 2
+                continue
+            if command.startswith("||", index):
+                flush()
+                index += 2
+                continue
+            if char == ";":
+                flush()
+                index += 1
+                continue
+        current.append(char)
+        index += 1
+
+    flush()
+    return segments
 
 
 def is_git_force_via_config(command: str) -> bool:

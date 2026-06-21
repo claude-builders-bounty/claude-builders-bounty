@@ -593,10 +593,23 @@ class CheckCommandTests(unittest.TestCase):
         blocked = (
             ('ruby -e "system(\\"DROP TABLE users\\")"', "SQL DROP TABLE"),
             ('perl -e "exec \\"psql -c TRUNCATE sessions\\""', "SQL TRUNCATE"),
+            (
+                'python3 -c "import os; os.system(\\"DROP TABLE users\\")"',
+                "SQL DROP TABLE",
+            ),
         )
         for command, reason in blocked:
             with self.subTest(command=command):
                 self.assertEqual(self.hook.check_command(command), reason)
+
+    def test_allows_semicolons_inside_interpreter_quoted_payloads(self):
+        allowed = (
+            'python3 -c "print(\\"a; b\\")"',
+            'ruby -e "puts \\"safe; command\\""',
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
 
     def test_blocks_rm_rf_after_pipeline_display_tool(self):
         self.assertEqual(

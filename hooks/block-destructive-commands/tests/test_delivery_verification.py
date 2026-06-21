@@ -2,8 +2,8 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-21 (cursor hands-on takeover PR #2556) —
-npm test 134+8+22 green; interpreter -e/-c execution unwrapping for rm -rf and
-SQL; committed pre-tool-use.py diff vs main satisfies delivery gates.
+npm test 135+8+22 green; quote-aware chain splitting preserves interpreter -c/-e
+payloads with embedded semicolons; committed pre-tool-use.py diff vs main satisfies delivery gates.
 """
 
 from __future__ import annotations
