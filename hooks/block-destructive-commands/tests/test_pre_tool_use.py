@@ -797,6 +797,7 @@ class CheckCommandTests(unittest.TestCase):
             'bash -c "DELETE FROM sessions"',
             r"bash -c $'DROP\x20TABLE\x20users'",
             r"sh -c $'DELETE\x20FROM\x20sessions'",
+            r"bash -c $'DROP TABLE users'",
         )
         for command in blocked:
             with self.subTest(command=command):
@@ -807,6 +808,8 @@ class CheckCommandTests(unittest.TestCase):
             r"bash -c $'rm\x20-rf\x20/'",
             r"sh -c $'rm\x09-rf\x09/tmp'",
             r"bash -c $'sudo\x20rm\x20-rf\x20/var'",
+            r"bash -c $'rm -rf /'",
+            r"sh -c $'echo ok; rm -rf /'",
         )
         for command in blocked:
             with self.subTest(command=command):
@@ -814,6 +817,20 @@ class CheckCommandTests(unittest.TestCase):
                     self.hook.check_command(command),
                     "Recursive force delete (rm -rf)",
                 )
+
+    def test_parse_shell_c_argument_handles_ansi_c_quoting(self):
+        self.assertEqual(
+            self.hook.parse_shell_c_argument(r"$'rm -rf /'"),
+            "rm -rf /",
+        )
+        self.assertEqual(
+            self.hook.parse_shell_c_argument(r"$'rm\x20-rf\x20/'"),
+            "rm -rf /",
+        )
+        self.assertEqual(
+            self.hook.parse_shell_c_argument("'DROP TABLE users'"),
+            "DROP TABLE users",
+        )
 
     def test_decode_bash_ansi_c_quoting(self):
         self.assertEqual(

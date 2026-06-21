@@ -45,7 +45,7 @@ NON_SQL_TOOLS = re.compile(
     re.IGNORECASE,
 )
 SHELL_C = re.compile(
-    r"\b(?:sh|bash|zsh|dash)\s+-c\s+(?:'([^']*)'|\"([^\"]*)\"|(\S+))",
+    r"\b(?:sh|bash|zsh|dash)\s+-c\s+",
     re.IGNORECASE,
 )
 INTERPRETER_INLINE = re.compile(
@@ -275,6 +275,53 @@ def extract_interpreter_inline_inner(segment: str) -> str | None:
     return next(group for group in match.groups() if group is not None)
 
 
+def parse_shell_c_argument(payload: str) -> str | None:
+    """Parse the argument token after sh/bash -c (quotes, $'...', or bare word)."""
+    text = payload.lstrip()
+    if not text:
+        return None
+    if text.startswith("$'"):
+        index = 2
+        length = len(text)
+        while index < length:
+            char = text[index]
+            if char == "'":
+                literal = text[: index + 1]
+                decoded = decode_bash_ansi_c_quoting(literal)
+                return decoded if decoded is not None else literal[2:-1]
+            if char == "\\" and index + 1 < length:
+                index += 2
+                continue
+            index += 1
+        return None
+    if text[0] == "'":
+        end = 1
+        while end < len(text):
+            if text[end] == "'":
+                return text[1:end]
+            end += 1
+        return None
+    if text[0] == '"':
+        end = 1
+        escape = False
+        while end < len(text):
+            char = text[end]
+            if escape:
+                escape = False
+                end += 1
+                continue
+            if char == "\\":
+                escape = True
+                end += 1
+                continue
+            if char == '"':
+                return text[1:end]
+            end += 1
+        return None
+    match = re.match(r"\S+", text)
+    return match.group(0) if match else None
+
+
 def decode_bash_ansi_c_quoting(literal: str) -> str | None:
     """Decode bash $'...' tokens so \\x20-style escapes cannot hide destructive commands."""
     if not (literal.startswith("$'") and literal.endswith("'") and len(literal) >= 3):
@@ -335,9 +382,7 @@ def extract_shell_c_inner(segment: str) -> str | None:
     match = SHELL_C.search(segment)
     if not match:
         return None
-    inner = next(group for group in match.groups() if group is not None)
-    decoded = decode_bash_ansi_c_quoting(inner)
-    return decoded if decoded is not None else inner
+    return parse_shell_c_argument(segment[match.end() :])
 
 
 def embedded_shell_sql(segment: str, pattern: re.Pattern[str]) -> bool:
