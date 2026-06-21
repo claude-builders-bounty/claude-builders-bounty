@@ -95,9 +95,77 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         self.assertIn("Reusing zeroeye checkout", text)
         self.assertIn("archive_session_diff", text)
         self.assertIn("bounties/issue-2853/sessions", text)
+        self.assertIn("validate_branch_name", text)
+        self.assertIn("validate_git_remote_url", text)
         self.assertIn('trap on_fail ERR', text)
         self.assertTrue(sessions_readme.is_file())
         self.assertIn("session-", sessions_readme.read_text(encoding="utf-8"))
+        self.assertIn("verify-issue-2853.sh", sessions_readme.read_text(encoding="utf-8"))
+
+    def test_verify_issue_2853_script_rejects_invalid_branch_name(self) -> None:
+        """Shell injection in ZEROEYE_BRANCH must fail before any git clone."""
+        script = REPO_ROOT / "tests" / "verify-issue-2853.sh"
+        env = os.environ.copy()
+        env["ZEROEYE_BRANCH"] = "bad branch;rm -rf /"
+        result = subprocess.run(
+            ["bash", str(script)],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        combined = result.stdout + result.stderr
+        self.assertIn("invalid ZEROEYE_BRANCH", combined)
+
+    def test_verify_issue_2853_script_rejects_untrusted_repo_url(self) -> None:
+        """Only https://github.com/owner/repo.git remotes are accepted."""
+        script = REPO_ROOT / "tests" / "verify-issue-2853.sh"
+        env = os.environ.copy()
+        env["ZEROEYE_REPO"] = "https://evil.example/zeroeye.git"
+        result = subprocess.run(
+            ["bash", str(script)],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        combined = result.stdout + result.stderr
+        self.assertIn("invalid ZEROEYE_REPO", combined)
+
+    def test_read_tool_hook_go_tests_surface_errors_on_failure(self) -> None:
+        """Go test subprocess must propagate non-zero exit and include output in assertion."""
+        if os.environ.get("ISSUE_2853_SKIP_GO_TESTS"):
+            self.skipTest("go tests skipped via ISSUE_2853_SKIP_GO_TESTS")
+        if not (ZEROEYE_ROOT / "market").is_dir():
+            self.skipTest("zeroeye market module not present")
+
+        bad_dir = Path(tempfile.mkdtemp())
+        try:
+            result = subprocess.run(
+                ["go", "test", "./ai/...", "-count=1"],
+                cwd=bad_dir,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+        finally:
+            bad_dir.rmdir()
+
+        good = subprocess.run(
+            ["go", "test", "./ai/...", "./gateway/...", "-count=1"],
+            cwd=ZEROEYE_ROOT / "market",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(good.returncode, 0, msg=good.stdout + good.stderr)
 
     def test_zeroeye_market_go_tests_pass(self) -> None:
         if os.environ.get("ISSUE_2853_SKIP_GO_TESTS"):
@@ -247,11 +315,12 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         latest = self._latest_verification_block(text)
         self.assertRegex(
             latest,
-            r"46/46 \(2 README \+ 20 peer review \+ 15 issue #2853 \+ 9 delivery\)",
+            r"50/50 \(2 README \+ 21 peer review \+ 18 issue #2853 \+ 9 delivery\)",
         )
-        self.assertRegex(latest, r"15/15 \(fresh clone|reused zeroeye")
-        self.assertIn("takeover #69", latest)
+        self.assertRegex(latest, r"18/18 \(fresh clone|reused zeroeye")
+        self.assertIn("takeover #70", latest)
         self.assertIn("verify-issue-2853.sh", latest)
+        self.assertIn("run-unittest-module.sh", latest)
 
 
 if __name__ == "__main__":

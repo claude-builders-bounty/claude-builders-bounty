@@ -3,39 +3,24 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RUN_MODULE="${REPO_ROOT}/tests/run-unittest-module.sh"
 
 cd "$REPO_ROOT"
 
-readme_link_tests="$(
-  grep -Ec '^[[:space:]]*def test_' "${REPO_ROOT}/tests/test_readme_links.py"
-)"
-python3 -m unittest tests/test_readme_links.py -v
-echo "Ran ${readme_link_tests} README link tests — OK"
+bash "$RUN_MODULE" tests/test_readme_links.py "README link tests"
 
-peer_review_tests="$(
-  grep -Ec '^[[:space:]]*def test_' "${REPO_ROOT}/tests/test_peer_review_acceptance.py"
-)"
-python3 -m unittest tests/test_peer_review_acceptance.py -v
-echo "Ran ${peer_review_tests} peer review acceptance tests — OK"
-echo 'OK: peer review acceptance tests passed'
+bash "$RUN_MODULE" tests/test_peer_review_acceptance.py "peer review acceptance tests" \
+  "OK: peer review acceptance tests passed"
 
-issue_2853_tests="$(
-  grep -Ec '^[[:space:]]*def test_' "${REPO_ROOT}/tests/test_issue_2853_read_tool_hook.py"
-)"
-python3 -m unittest tests/test_issue_2853_read_tool_hook.py -v
-echo "Ran ${issue_2853_tests} issue #2853 read tool hook acceptance tests — OK"
-echo 'OK: issue #2853 read tool hook acceptance tests passed'
+bash "$RUN_MODULE" tests/test_issue_2853_read_tool_hook.py "issue #2853 read tool hook acceptance tests" \
+  "OK: issue #2853 read tool hook acceptance tests passed"
 
 if [[ -z "${README_CI_INNER_RUN:-}" ]]; then
   if ! git rev-parse --verify main >/dev/null 2>&1; then
     git fetch --no-tags --depth 50 origin main:main
   fi
 
-  delivery_tests="$(
-    grep -Ec '^[[:space:]]*def test_' "${REPO_ROOT}/tests/test_delivery_verification.py"
-  )"
-  python3 -m unittest tests/test_delivery_verification.py -v
-  echo "Ran ${delivery_tests} delivery verification tests — OK"
+  bash "$RUN_MODULE" tests/test_delivery_verification.py "delivery verification tests"
 fi
 
 # Scan security-critical CI paths for trailing whitespace (scoped find/grep, not full-repo diff).

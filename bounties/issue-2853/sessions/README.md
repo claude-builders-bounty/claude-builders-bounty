@@ -5,3 +5,16 @@ verification phase (`start`, `post-npm-test`, `complete`, or `failed`). Committe
 let reviewers inspect successful and failed takeover attempts without re-running CI.
 
 Patches are named `session-<timestamp>-<label>-<phase>.patch`.
+
+## Script usage
+
+```bash
+bash tests/verify-issue-2853.sh
+make verify-issue-2853
+npm run test:verify-issue-2853
+```
+
+The script validates `ZEROEYE_BRANCH`, `ZEROEYE_REPO`, `ZEROEYE_ROOT`, and
+`VERIFY_SESSION_LABEL` before cloning. Defaults clone `advancedresearcharray/zeroeye`
+branch `pr-3-read-tool-hook` into `.cache/zeroeye-pr-3-read-tool-hook`, run `npm test`,
+then `npm run test:issue-2853`.

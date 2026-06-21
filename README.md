@@ -53,3 +53,22 @@ Bounty table links use absolute `/owner/repo/issues/N` paths (for example `/clau
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Testing
+
+Issue #2853 (read tool hook) acceptance tests live under `tests/`. Run the full CI suite locally:
+
+```bash
+npm test
+```
+
+Hands-on verification against the zeroeye implementation (reuses `.cache/zeroeye-pr-3-read-tool-hook`):
+
+```bash
+bash tests/verify-issue-2853.sh
+# or: make verify-issue-2853
+```
+
+Optional env vars (`ZEROEYE_BRANCH`, `ZEROEYE_REPO`, `ZEROEYE_ROOT`, `VERIFY_SESSION_LABEL`) are validated before any clone. See `bounties/issue-2853/PROOF.md` for bounty delivery details.

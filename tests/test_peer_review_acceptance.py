@@ -89,8 +89,22 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         text = script.read_text(encoding="utf-8")
         self.assertIn("ensure_zeroeye", text)
         self.assertIn("archive_session_diff", text)
+        self.assertIn("validate_branch_name", text)
+        self.assertIn("validate_git_remote_url", text)
+        self.assertIn("validate_zeroeye_dir", text)
         self.assertIn("verify-issue-2853", makefile)
         self.assertIn("test:verify-issue-2853", package_json)
+
+    def test_run_unittest_module_deduplicates_ci_and_npm_scripts(self):
+        """PR #2871: shared runner must back run-ci-checks.sh and package.json test scripts."""
+        runner = REPO_ROOT / "tests" / "run-unittest-module.sh"
+        ci_script = (REPO_ROOT / "tests" / "run-ci-checks.sh").read_text(encoding="utf-8")
+        package_json = (REPO_ROOT / "package.json").read_text(encoding="utf-8")
+        self.assertTrue(runner.is_file())
+        self.assertTrue(runner.stat().st_mode & 0o111)
+        self.assertIn("run-unittest-module.sh", ci_script)
+        self.assertIn("run-unittest-module.sh", package_json)
+        self.assertNotIn("grep -Ec", package_json)
 
     def test_makefile_exposes_test_and_ci_validate(self):
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
@@ -133,8 +147,9 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("peer review acceptance tests passed", script)
         self.assertIn("test_delivery_verification.py", script)
         self.assertIn("git log -1 --format='%B'", script)
-        self.assertIn("Ran ${readme_link_tests} README link tests — OK", script)
-        self.assertIn("Ran ${peer_review_tests} peer review acceptance tests — OK", script)
+        self.assertIn("run-unittest-module.sh", script)
+        self.assertIn("README link tests", script)
+        self.assertIn("peer review acceptance tests", script)
         self.assertIn("Forbidden agent attribution trailer found in HEAD commit message", script)
         self.assertIn("trailing whitespace in", script)
         self.assertNotIn("git diff --check", script)
@@ -196,6 +211,9 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             "test_pr2871_proof_documents_peer_review_approved_in_resolution_section",
             "persist-credentials: false",
             "tests/verify-issue-2853.sh",
+            "validate_branch_name",
+            "run-unittest-module.sh",
+            "invalid branch/repo rejection tests",
             "test_read_tool_hook_go_layer_symbols",
             "internal/exporter/",
         ):
@@ -218,6 +236,7 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             "Makefile",
             "package.json",
             "tests/run-ci-checks.sh",
+            "tests/run-unittest-module.sh",
             "tests/verify-issue-2853.sh",
             ".gitignore",
             "tests/test_readme_links.py",

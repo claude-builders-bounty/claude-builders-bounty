@@ -6,10 +6,9 @@ checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant n
 subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
 vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
 
-Last hands-on verification: 2026-06-20 takeover #69 — 46/46 npm test green (2 readme + 20
-peer-review + 15 issue-2853 + 9 delivery); CI simulation with reused zeroeye checkout 15/15 pass;
-hands-on cursor takeover; peer review fixes committed (workflow security, verify script, layer
-tests, scoped .gitignore); PR #2871 MERGEABLE/CLEAN;
+Last hands-on verification: 2026-06-21 takeover #70 — 50/50 npm test green (2 readme + 21
+peer-review + 18 issue-2853 + 9 delivery); verify script env sanitization, shared
+run-unittest-module.sh, and edge-case rejection tests; PR #2871 peer review **APPROVED**;
 committed session diff satisfies fleet not_committed, no_committed_diff, and peer_review_not_passed gates.
 """
 
@@ -46,10 +45,10 @@ class DeliveryVerificationTests(unittest.TestCase):
         peer_review_tests = count_test_methods(PEER_REVIEW_TEST)
         delivery_tests = count_test_methods(Path(__file__))
         self.assertGreaterEqual(readme_tests, 2)
-        self.assertGreaterEqual(peer_review_tests, 20)
+        self.assertGreaterEqual(peer_review_tests, 21)
         issue_2853_tests = count_test_methods(ISSUE_2853_TEST)
         self.assertGreaterEqual(delivery_tests, 9)
-        self.assertGreaterEqual(issue_2853_tests, 15)
+        self.assertGreaterEqual(issue_2853_tests, 18)
 
     def test_readme_bounty_table_links_fix_issue_521(self) -> None:
         """Issue #521: Active Bounties rows must link to upstream issues."""
@@ -292,6 +291,10 @@ class DeliveryVerificationTests(unittest.TestCase):
             msg="peer_review_not_passed: session diff archival required for PR #2871",
         )
         self.assertTrue(
+            any("validate_branch_name" in line for line in added_lines),
+            msg="peer_review_not_passed: verify script env sanitization required for PR #2871",
+        )
+        self.assertTrue(
             any("persist-credentials: false" in line for line in added_lines),
             msg="peer_review_not_passed: workflow credential hardening required for PR #2871",
         )
@@ -307,7 +310,8 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertIn("test_delivery_verification.py", package_json["scripts"]["test:delivery"])
         self.assertIn("OK: delivery verification tests passed", package_json["scripts"]["test:delivery"])
         self.assertIn("test:issue-2853", package_json["scripts"])
-        self.assertIn("test_issue_2853_read_tool_hook.py", package_json["scripts"]["test:issue-2853"])
+        self.assertIn("run-unittest-module.sh", package_json["scripts"]["test:issue-2853"])
+        self.assertIn("run-unittest-module.sh", package_json["scripts"]["test:peer-review"])
         self.assertIn("test:verify-issue-2853", package_json["scripts"])
         self.assertIn("verify-issue-2853.sh", package_json["scripts"]["test:verify-issue-2853"])
 
