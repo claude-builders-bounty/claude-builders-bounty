@@ -77,6 +77,14 @@ assert(
   'delivery and Claude nodes read webhook/API secrets from $env only',
 );
 assert(!ciWorkflow.includes('pull_request_target'), 'CI workflow avoids pull_request_target fork secret exposure');
+assert(
+  /GitHub API integration test[\s\S]*UPSTREAM_STATUS_TOKEN:\s*\$\{\{\s*secrets\.UPSTREAM_STATUS_TOKEN\s*\}\}/.test(ciWorkflow),
+  'CI GitHub API integration test uses UPSTREAM_STATUS_TOKEN (not default GITHUB_TOKEN)',
+);
+assert(
+  !/GitHub API integration test[\s\S]*GITHUB_TOKEN:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}/.test(ciWorkflow),
+  'CI GitHub API integration test must not expose default GITHUB_TOKEN in step env',
+);
 for (const name of ['Fetch Commits', 'Fetch Closed Issues', 'Fetch Merged PRs']) {
   const node = workflow.nodes.find((n) => n.name === name);
   assert(node?.onError !== 'continueRegularOutput', `${name} fails fast instead of swallowing GitHub HTTP errors`);
@@ -257,6 +265,7 @@ assert(
     proof.includes('hands-on takeover #24') &&
     proof.includes('hands-on takeover #25') &&
     proof.includes('hands-on takeover #26') &&
+    proof.includes('hands-on takeover #27') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',

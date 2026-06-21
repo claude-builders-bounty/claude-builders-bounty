@@ -114,9 +114,11 @@ Validate GitHub token permissions before enabling the workflow:
 npm run test:validate-token
 ```
 
-Optional live GitHub API check (requires `GITHUB_TOKEN` in environment; CI sets `secrets.GITHUB_TOKEN`):
+Optional live GitHub API check (CI sets `UPSTREAM_STATUS_TOKEN`; local runs may use `GITHUB_TOKEN` or `gh auth token`):
 
 ```bash
+UPSTREAM_STATUS_TOKEN=<token> npm run test:github
+# or locally:
 GITHUB_TOKEN=<token> npm run test:github
 ```
 

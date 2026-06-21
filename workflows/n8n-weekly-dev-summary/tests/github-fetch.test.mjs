@@ -1,36 +1,25 @@
 #!/usr/bin/env node
 /**
  * Integration test: GitHub API fetch logic used by the workflow.
- * Requires GITHUB_TOKEN in the environment (CI sets secrets.GITHUB_TOKEN).
- * Falls back to `gh auth token` for local runs when gh CLI is authenticated.
+ * CI sets UPSTREAM_STATUS_TOKEN (dedicated PAT); local runs may use GITHUB_TOKEN or gh auth.
  * Optional GITHUB_REPO (default: claude-builders-bounty/claude-builders-bounty).
  */
-import { execSync } from 'node:child_process';
 import { fetchGitHubPages, validateGitHubToken } from './lib/github-collect.mjs';
+import { describeGitHubTestTokenSource, resolveGitHubTestToken } from './lib/github-test-token.mjs';
 
 const repo = process.env.GITHUB_REPO || 'claude-builders-bounty/claude-builders-bounty';
-
-function resolveToken() {
-  const fromEnv = (process.env.GITHUB_TOKEN || '').trim();
-  if (fromEnv) return fromEnv;
-  try {
-    return execSync('gh auth token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch {
-    return '';
-  }
-}
-
-const token = resolveToken();
+const token = resolveGitHubTestToken();
 const [owner, name] = repo.split('/');
 
 if (!token) {
-  console.error('FAIL: GITHUB_TOKEN environment variable is required for test:github');
-  console.error('Set GITHUB_TOKEN=<token> or authenticate the gh CLI before running this integration test.');
+  console.error('FAIL: GitHub token required for test:github');
+  console.error('Set UPSTREAM_STATUS_TOKEN=<token>, GITHUB_TOKEN=<token>, or authenticate the gh CLI.');
   process.exit(1);
 }
 
-if (!process.env.GITHUB_TOKEN) {
-  console.warn('WARN: GITHUB_TOKEN not set in environment; using gh auth token fallback for local run');
+const source = describeGitHubTestTokenSource();
+if (source !== 'UPSTREAM_STATUS_TOKEN') {
+  console.warn(`WARN: using ${source} fallback for local GitHub integration test`);
 }
 
 await validateGitHubToken(token, { repo });

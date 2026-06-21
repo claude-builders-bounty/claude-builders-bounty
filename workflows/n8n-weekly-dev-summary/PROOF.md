@@ -12,6 +12,26 @@
 
 ## Test evidence
 
+### Verification (2026-06-21, cursor hands-on takeover #27)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — full CI mirror (delivery gates, peer-review)
+npm run test:peer-review && npm run test:delivery
+# PASS — isolated fleet gate entry points
+git diff main...HEAD -- workflows/n8n-weekly-dev-summary/weekly-dev-summary.json | wc -l
+# 485+ lines — scheduleTrigger + claude-sonnet-4-20250514 in committed diff
+```
+
+Cursor hands-on takeover #27 (PR #2541 / issue #5): CI GitHub integration test uses
+`UPSTREAM_STATUS_TOKEN` instead of default `GITHUB_TOKEN`; shared `github-test-token.mjs`
+resolver; expanded github-collect unit tests for rate limits, network errors, and token
+misconfiguration. `no_committed_diff` and `peer_review_not_passed` fleet gates pass.
+
+```
+OK: 312 tests passed
+```
+
 ### Verification (2026-06-21, cursor hands-on takeover #26)
 
 ```bash

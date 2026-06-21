@@ -26,7 +26,7 @@ const requiredScripts = [
   { file: 'delivery-verification.test.mjs', mustInclude: ['Fleet delivery verification', 'test('] },
   { file: 'peer-review-acceptance.test.mjs', mustInclude: ['Peer-review acceptance', 'assert('] },
   { file: 'run-ci-checks.mjs', mustInclude: ['validate-workflow.mjs', 'delivery-verification.test.mjs'] },
-  { file: 'github-fetch.test.mjs', mustInclude: ['GITHUB_TOKEN', 'validateGitHubToken', 'api.github.com/repos'] },
+  { file: 'github-fetch.test.mjs', mustInclude: ['UPSTREAM_STATUS_TOKEN', 'validateGitHubToken', 'api.github.com/repos'] },
   { file: 'capture-execution-screenshot.mjs', mustInclude: ['playwright', 'n8n-execution-screenshot.png'] },
   { file: 'run-n8n-e2e.mjs', mustInclude: ['mockPort', 'weekly-dev-summary.e2e.json'] },
 ];
@@ -75,12 +75,12 @@ assert(
   'github-fetch.test.mjs validates token authenticity before paginated fetches',
 );
 assert(
-  githubFetch.includes('process.env.GITHUB_TOKEN') && githubFetch.includes('gh auth token'),
-  'github-fetch.test.mjs resolves token from env or gh CLI (no hardcoded credentials)',
+  githubFetch.includes('resolveGitHubTestToken') && githubFetch.includes('UPSTREAM_STATUS_TOKEN'),
+  'github-fetch.test.mjs resolves token from UPSTREAM_STATUS_TOKEN or local fallbacks (no hardcoded credentials)',
 );
 assert(
-  githubFetch.includes('GITHUB_TOKEN environment variable is required'),
-  'github-fetch.test.mjs documents GITHUB_TOKEN requirement for integration test',
+  githubFetch.includes('GitHub token required for test:github'),
+  'github-fetch.test.mjs documents token requirement for integration test',
 );
 assert(
   githubFetch.includes('process.exit(1)') && !githubFetch.includes('process.exit(0)'),

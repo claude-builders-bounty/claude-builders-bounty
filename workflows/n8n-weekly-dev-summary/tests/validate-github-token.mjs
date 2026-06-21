@@ -4,26 +4,18 @@
  * Sends GET https://api.github.com/repos/{owner}/{repo} and fails on 401/403/404.
  *
  * Usage:
- *   GITHUB_TOKEN=<your-token> GITHUB_REPO=owner/repo node tests/validate-github-token.mjs
+ *   UPSTREAM_STATUS_TOKEN=<token> GITHUB_REPO=owner/repo node tests/validate-github-token.mjs
+ *   GITHUB_TOKEN=<token> GITHUB_REPO=owner/repo node tests/validate-github-token.mjs
  *   npm run test:validate-token
  */
-import { execSync } from 'node:child_process';
 import { validateGitHubToken } from './lib/github-collect.mjs';
-
-function resolveToken() {
-  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN.trim();
-  try {
-    return execSync('gh auth token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch {
-    return '';
-  }
-}
+import { resolveGitHubTestToken } from './lib/github-test-token.mjs';
 
 const repo = (process.env.GITHUB_REPO || 'claude-builders-bounty/claude-builders-bounty').trim();
-const token = resolveToken();
+const token = resolveGitHubTestToken();
 
 if (!token) {
-  console.error('FAIL: Set GITHUB_TOKEN (or authenticate gh CLI) before validating repo access.');
+  console.error('FAIL: Set UPSTREAM_STATUS_TOKEN, GITHUB_TOKEN, or authenticate gh CLI before validating repo access.');
   process.exit(1);
 }
 

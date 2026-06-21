@@ -133,6 +133,62 @@ try {
   assert(error.message.includes('401'), 'fetchGitHubPages surfaces HTTP status');
 }
 
+try {
+  await fetchGitHubPages('https://api.github.com/repos/o/r/commits', 'token', {}, {
+    fetchFn: async () => mockResponse(429, { message: 'API rate limit exceeded' }),
+  });
+  assert(false, 'fetchGitHubPages throws on rate limit');
+} catch (error) {
+  assert(error.message.includes('429'), 'fetchGitHubPages surfaces rate limit status');
+  assert(error.message.includes('rate limit'), 'fetchGitHubPages includes GitHub rate limit message');
+}
+
+try {
+  await fetchGitHubPages('https://api.github.com/repos/o/r/commits', 'token', {}, {
+    fetchFn: async () => {
+      throw new Error('network unreachable');
+    },
+  });
+  assert(false, 'fetchGitHubPages propagates network errors');
+} catch (error) {
+  assert(error.message.includes('network unreachable'), 'fetchGitHubPages surfaces fetch failures');
+}
+
+try {
+  await fetchGitHubPages('https://api.github.com/search/issues', 'token', { q: 'repo:o/r' }, {
+    fetchFn: async () =>
+      mockResponse(200, { message: 'Validation Failed', documentation_url: 'https://docs.github.com' }),
+  });
+  assert(false, 'fetchGitHubPages throws on GitHub error payload');
+} catch (error) {
+  assert(error.message.includes('Validation Failed'), 'fetchGitHubPages surfaces GitHub error message');
+}
+
+try {
+  await validateGitHubToken('good-token', {
+    repo: 'octo/repo',
+    fetchFn: async () => mockResponse(200, { name: 'repo-only' }),
+  });
+  assert(false, 'validateGitHubToken rejects repo response without full_name');
+} catch (error) {
+  assert(error.message.includes('unexpected GitHub response'), 'repo validation rejects malformed body');
+}
+
+try {
+  await fetchGitHubPages('https://api.github.com/repos/o/r/commits', '', {}, {
+    fetchFn: async (_url, init) => {
+      const auth = init?.headers?.Authorization || '';
+      if (auth === 'Bearer ') {
+        return mockResponse(401, { message: 'Bad credentials' });
+      }
+      return mockResponse(200, []);
+    },
+  });
+  assert(false, 'fetchGitHubPages rejects empty token via auth header');
+} catch (error) {
+  assert(error.message.includes('401'), 'empty token yields auth failure');
+}
+
 if (failures.length) {
   console.error('FAILED github-collect unit tests:\n- ' + failures.join('\n- '));
   process.exit(1);
