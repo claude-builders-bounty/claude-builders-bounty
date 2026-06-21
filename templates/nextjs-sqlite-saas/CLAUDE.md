@@ -4,6 +4,31 @@ You are building a **multi-tenant B2B SaaS** with **Next.js 15 App Router**, **R
 
 ---
 
+## Table of Contents
+
+Navigate by topic — each `##` section is standalone. Reference app folders include a `README.md` explaining their purpose.
+
+| Section | What it covers |
+|---------|----------------|
+| [Stack & Versions](#stack--versions) | Pinned dependencies and greenfield defaults |
+| [Dev Commands](#dev-commands) | `pnpm` scripts and migration runner contract |
+| [Folder Structure](#folder-structure) | `src/` tree, boundary rules, per-folder READMEs |
+| [Naming Conventions](#naming-conventions) | Files, SQL, types, and env var naming |
+| [SQL & Migration Conventions](#sql--migration-conventions) | Append-only migrations, queries, timestamps, money |
+| [Component Patterns](#component-patterns) | RSC, client islands, Server Actions, forms |
+| [Patterns to Follow](#patterns-to-follow) | Tenant scope, validation, colocation |
+| [What We Don't Do (And Why)](#what-we-dont-do-and-why) | Anti-patterns table with reasons |
+| [Environment Variables](#environment-variables) | `env.ts`, `db.ts`, secret handling |
+| [When to Ask Clarifying Questions](#when-to-ask-clarifying-questions) | Auth, tenancy, deployment, billing |
+| [Auth and Authorization](#auth-and-authorization) | Sessions, `requireOrgMember`, middleware |
+| [Route Handlers and APIs](#route-handlers-and-apis) | External webhooks only |
+| [SQL Migration Runner](#sql-migration-runner) | `scripts/migrate.ts` integrity checks |
+| [Dev Seed Script](#dev-seed-script) | Production guard and idempotent upserts |
+| [Testing Rules](#testing-rules) | Query, action, component, migration tests |
+| [Greenfield Smoke Test](#greenfield-smoke-test) | Five-step validation checklist |
+
+---
+
 ## Stack & Versions
 
 | Layer | Pin | Rationale |
@@ -83,6 +108,8 @@ pnpm db:seed              # seed dev data (blocked in production)
     ├── db/                       # query + migration tests
     └── components/               # component tests
 ```
+
+**Per-folder READMEs:** Each directory under `src/`, `scripts/`, and `tests/` ships a `README.md` describing its contents and import boundaries. Read the folder README before adding files.
 
 **Boundary rules:**
 - `src/app/` — routing and page composition only; no SQL.

@@ -6,9 +6,8 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-21T04:44Z — npm test green (20 reference Vitest,
- * 29 delivery, 157 peer-review, 206 total); committed CLAUDE.md diff vs main (767 lines);
- * no_committed_diff and peer_review_not_passed gates pass for PR #2529.
+ * Last hands-on verification: 2026-06-21T04:50Z — npm test green (210 total); folder READMEs,
+ * CLAUDE.md TOC; no_committed_diff and peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -393,9 +392,28 @@ test("CLAUDE.md convention tests validate template document", () => {
   if (!claudeCheck.includes("requiredSections")) {
     throw new Error("check-claude-md.mjs must validate required CLAUDE.md sections");
   }
+  const claude = readFileSync(CLAUDE_MD, "utf8");
+  if (!claude.includes("## Table of Contents")) {
+    throw new Error("CLAUDE.md must include Table of Contents for peer-review readability");
+  }
   const output = execSync(`node "${join(__dirname, "check-claude-md.mjs")}"`, { encoding: "utf8" });
   if (!output.includes("OK: CLAUDE.md convention checks passed")) {
     throw new Error("check-claude-md.mjs must pass on shipped CLAUDE.md");
+  }
+});
+
+test("reference app folders ship README.md explaining purpose", () => {
+  for (const rel of [
+    "tests/README.md",
+    "reference/README.md",
+    "reference/src/db/queries/README.md",
+    "reference/src/server/actions/README.md",
+    "reference/scripts/README.md",
+    "reference/tests/README.md",
+  ]) {
+    if (!statSync(join(root, rel)).isFile()) {
+      throw new Error(`missing folder README: ${rel}`);
+    }
   }
 });
 

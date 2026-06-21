@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-21T04:44Z — npm test green (206 total); committed
- * CLAUDE.md diff vs main ships bounty #2 template; no_committed_diff gate passes;
+ * Last hands-on verification: 2026-06-21T04:50Z — npm test green (210 total); folder READMEs,
+ * CLAUDE.md Table of Contents, check-secret-tokens.mjs + check-sql-parameterization.mjs;
  * peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -112,6 +112,31 @@ const expectedSections = [
 ];
 for (const section of expectedSections) {
   assert(claude.includes(section), `CLAUDE.md includes ${section}`);
+}
+
+assert(claude.includes("## Table of Contents"), "CLAUDE.md has Table of Contents for readability");
+assert(
+  /Per-folder READMEs/.test(claude),
+  "CLAUDE.md documents per-folder README.md convention",
+);
+
+const folderReadmePaths = [
+  "tests/README.md",
+  "reference/README.md",
+  "reference/src/README.md",
+  "reference/src/db/README.md",
+  "reference/src/db/queries/README.md",
+  "reference/src/db/migrations/README.md",
+  "reference/src/server/README.md",
+  "reference/src/server/actions/README.md",
+  "reference/src/lib/README.md",
+  "reference/src/components/README.md",
+  "reference/src/components/features/README.md",
+  "reference/scripts/README.md",
+  "reference/tests/README.md",
+];
+for (const rel of folderReadmePaths) {
+  assert(statSync(join(root, rel)).isFile(), `${rel} documents folder purpose`);
 }
 
 // Stack coverage for greenfield Next.js + SQLite SaaS
