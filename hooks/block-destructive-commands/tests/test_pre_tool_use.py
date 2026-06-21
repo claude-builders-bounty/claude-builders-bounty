@@ -798,6 +798,8 @@ class CheckCommandTests(unittest.TestCase):
             r"bash -c $'DROP\x20TABLE\x20users'",
             r"sh -c $'DELETE\x20FROM\x20sessions'",
             r"bash -c $'DROP TABLE users'",
+            r'sh -c $"DROP TABLE users"',
+            r'bash -c $"DELETE FROM sessions"',
         )
         for command in blocked:
             with self.subTest(command=command):
@@ -810,6 +812,7 @@ class CheckCommandTests(unittest.TestCase):
             r"bash -c $'sudo\x20rm\x20-rf\x20/var'",
             r"bash -c $'rm -rf /'",
             r"sh -c $'echo ok; rm -rf /'",
+            r'bash -c $"rm -rf /"',
         )
         for command in blocked:
             with self.subTest(command=command):
@@ -825,6 +828,10 @@ class CheckCommandTests(unittest.TestCase):
         )
         self.assertEqual(
             self.hook.parse_shell_c_argument(r"$'rm\x20-rf\x20/'"),
+            "rm -rf /",
+        )
+        self.assertEqual(
+            self.hook.parse_shell_c_argument(r'$"rm -rf /"'),
             "rm -rf /",
         )
         self.assertEqual(

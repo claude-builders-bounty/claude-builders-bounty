@@ -2,7 +2,8 @@
 """Claude Code PreToolUse hook — blocks destructive bash commands.
 
 Detects destructive patterns in bare commands, chained segments (; && ||),
-pipeline stages, shell -c wrappers, and container exec/run invocations
+pipeline stages, shell -c wrappers (including bash $'...' and $"..." quoting),
+and container exec/run invocations
 (docker/podman/kubectl/nerdctl exec|run, compose exec|run, and compose exec|run).
 """
 
@@ -276,9 +277,26 @@ def extract_interpreter_inline_inner(segment: str) -> str | None:
 
 
 def parse_shell_c_argument(payload: str) -> str | None:
-    """Parse the argument token after sh/bash -c (quotes, $'...', or bare word)."""
+    """Parse the argument token after sh/bash -c (quotes, $'...', $\"...\", or bare word)."""
     text = payload.lstrip()
     if not text:
+        return None
+    if text.startswith('$"'):
+        end = 2
+        escape = False
+        while end < len(text):
+            char = text[end]
+            if escape:
+                escape = False
+                end += 1
+                continue
+            if char == "\\":
+                escape = True
+                end += 1
+                continue
+            if char == '"':
+                return text[2:end]
+            end += 1
         return None
     if text.startswith("$'"):
         index = 2
