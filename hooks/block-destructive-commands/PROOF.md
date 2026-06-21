@@ -19,7 +19,7 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 131 tests in ...s
+Ran 140 tests in ...s
 OK
 Ran 8 delivery verification tests — OK
 Ran 22 tests — OK
@@ -450,6 +450,17 @@ re-check — hook logic complete; no code changes required.
 - CLI: `bash -c $"rm -rf /"` denied; `git status` allowed (empty stdout)
 - Latest hook fix: `parse_shell_c_argument` decodes bash `$"..."` locale-quoted shell `-c` tokens
 - Rebase: not needed (`origin/main` is merge-base)
+
+## Hands-on verification (2026-06-21, idle merge-nurture)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `f1708d3f` (PR #2556). Full re-validation;
+no hook logic changes required.
+
+- `npm test` green: 140 unittest + 8 delivery + 22 peer-review + attribution checks
+- Branch scope: 16 hook-only paths; no `internal/exporter/*` or `.cache/*` pollution
+- CLI: `rm -rf /` denied; `git status` allowed; `bash -c 'echo safe; rm -rf /'` denied
+- PR state: MERGEABLE/CLEAN; no maintainer review feedback
+- KiwiFS fix doc and episodic run note updated
 
 ## Acceptance criteria
 
