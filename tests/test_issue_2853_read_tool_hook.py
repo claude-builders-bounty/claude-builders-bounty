@@ -120,11 +120,47 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         combined = result.stdout + result.stderr
         self.assertIn("invalid ZEROEYE_BRANCH", combined)
 
+    def test_verify_issue_2853_script_rejects_branch_with_dotdot(self) -> None:
+        """Path traversal in ZEROEYE_BRANCH must fail before any git clone."""
+        script = REPO_ROOT / "tests" / "verify-issue-2853.sh"
+        env = os.environ.copy()
+        env["ZEROEYE_BRANCH"] = "pr-3..read-tool-hook"
+        result = subprocess.run(
+            ["bash", str(script)],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        combined = result.stdout + result.stderr
+        self.assertIn("invalid ZEROEYE_BRANCH", combined)
+
     def test_verify_issue_2853_script_rejects_untrusted_repo_url(self) -> None:
         """Only https://github.com/owner/repo.git remotes are accepted."""
         script = REPO_ROOT / "tests" / "verify-issue-2853.sh"
         env = os.environ.copy()
         env["ZEROEYE_REPO"] = "https://evil.example/zeroeye.git"
+        result = subprocess.run(
+            ["bash", str(script)],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        combined = result.stdout + result.stderr
+        self.assertIn("invalid ZEROEYE_REPO", combined)
+
+    def test_verify_issue_2853_script_rejects_ssh_repo_url(self) -> None:
+        """Only https://github.com/owner/repo.git remotes are accepted (no git@ or ssh)."""
+        script = REPO_ROOT / "tests" / "verify-issue-2853.sh"
+        env = os.environ.copy()
+        env["ZEROEYE_REPO"] = "git@github.com:advancedresearcharray/zeroeye.git"
         result = subprocess.run(
             ["bash", str(script)],
             cwd=REPO_ROOT,
@@ -351,10 +387,10 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         latest = self._latest_verification_block(text)
         self.assertRegex(
             latest,
-            r"52/52 \(2 README \+ 21 peer review \+ 20 issue #2853 \+ 9 delivery\)",
+            r"54/54 \(2 README \+ 21 peer review \+ 22 issue #2853 \+ 9 delivery\)",
         )
-        self.assertRegex(latest, r"20/20 \(fresh clone|reused zeroeye")
-        self.assertIn("takeover #71", latest)
+        self.assertRegex(latest, r"22/22 \(fresh clone|reused zeroeye")
+        self.assertIn("takeover #72", latest)
         self.assertIn("verify-issue-2853.sh", latest)
         self.assertIn("run-unittest-module.sh", latest)
 

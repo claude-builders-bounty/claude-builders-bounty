@@ -193,6 +193,12 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             "Correctness: verification clone reuse and session diffs",
             "Tests: issue #2853 layer coverage",
             "Style/scope: generic .gitignore patterns",
+            "Security: verify script clones untrusted repo",
+            "Correctness: duplicated npm/unittest steps",
+            "Tests: tool hook edge cases and error handling",
+            "Documentation: verify script usage",
+            "Peer review status: APPROVED lock",
+            "Resolution column lock",
         ):
             with self.subTest(item=item):
                 self.assertIn(item, section)
