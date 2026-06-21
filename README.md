@@ -24,7 +24,7 @@ You're in the right place.
 
 ## Active Bounties
 
-Per issue #2746, the bounty table issue links use absolute `/owner/repo/issues/N` paths on `claude-builders-bounty/claude-builders-bounty` (root-absolute on GitHub). These paths resolve correctly on forks and blob views, avoiding fragile relative parent-directory issue links.
+Per issue #2746, each Active Bounties row links to upstream issues on `claude-builders-bounty/claude-builders-bounty` using absolute `/owner/repo/issues/N` paths (root-absolute on GitHub). These paths resolve correctly on forks and blob views, avoiding fragile relative parent-directory issue links.
 
 | # | Task | Amount | Status |
 |---|------|--------|--------|
