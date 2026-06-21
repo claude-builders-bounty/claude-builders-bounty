@@ -2,7 +2,7 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-21 (cursor hands-on takeover PR #2556) —
-npm test 137+8+22 green; shell -c chained payloads split before rm -rf checks;
+npm test 140+8+22 green; decode bash $'...' shell -c payloads before pattern checks;
 quote-aware chain splitting preserves interpreter -c/-e payloads with embedded semicolons.
 """
 

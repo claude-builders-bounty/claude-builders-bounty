@@ -56,6 +56,7 @@ class BountyAcceptanceTests(unittest.TestCase):
         blocked = (
             "sh -c 'DROP TABLE users'",
             'bash -c "DELETE FROM sessions"',
+            r"bash -c $'DROP\x20TABLE\x20users'",
         )
         for command in blocked:
             with self.subTest(command=command):

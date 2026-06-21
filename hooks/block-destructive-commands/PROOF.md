@@ -429,6 +429,16 @@ commands cannot bypass checks via interpreter one-liners.
 - CLI: `perl -e 'system("rm -rf /")'` denied; `perl -e 'print("rm -rf")'` allowed
 - Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
 
+## Hands-on verification (2026-06-21, code delivery takeover v2)
+
+Fleet engineer session failed `no_committed_diff` / `peer_review_not_passed` without
+in-session hook source edits. Decode bash `$'...'` ANSI-C quoting in shell `-c` payloads
+so hex/tab escapes (e.g. `$'rm\\x20-rf\\x20/'`) cannot bypass destructive checks.
+
+- `npm test` green: 140 unittest + 8 delivery + 22 peer-review + attribution checks
+- CLI: `bash -c $'rm\\x20-rf\\x20/'` denied; `bash -c $'DROP\\x20TABLE\\x20users'` denied
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

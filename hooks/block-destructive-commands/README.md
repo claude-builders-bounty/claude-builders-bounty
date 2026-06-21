@@ -40,9 +40,10 @@ Uses the official Claude Code `hookSpecificOutput` schema (`permissionDecision: 
 
 1. Intercepts every `Bash` tool call via the `PreToolUse` hook
 2. Splits chained commands on `;`, `&&`, and `||`, then checks each segment independently
-3. **Blocks** matching commands and returns a clear denial message to Claude
-4. **Logs** every blocked attempt to `~/.claude/hooks/blocked.log` with timestamp, command, and project path (command and path are sanitized before write to prevent log injection)
-5. **Allows** safe commands to pass through unchanged
+3. Decodes bash `$'...'` ANSI-C quoting in `sh -c` / `bash -c` payloads before pattern matching
+4. **Blocks** matching commands and returns a clear denial message to Claude
+5. **Logs** every blocked attempt to `~/.claude/hooks/blocked.log` with timestamp, command, and project path (command and path are sanitized before write to prevent log injection)
+6. **Allows** safe commands to pass through unchanged
 
 ## Hook protocol
 

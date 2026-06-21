@@ -114,6 +114,22 @@ def strip_invisible_format_chars(text: str, *, replacement: str = "") -> str:
     return _INVISIBLE_FILLER_CHARS.sub(replacement, stripped)
 
 
+_BASH_ANSI_C_ESCAPES = {
+    "a": "\a",
+    "b": "\b",
+    "e": "\x1b",
+    "E": "\x1b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "v": "\v",
+    "\\": "\\",
+    "'": "'",
+    '"': '"',
+    "?": "?",
+}
+
 CONTAINER_NAME = re.compile(r"^(?:[^\s\"']+|\"[^\"]*\"|'[^']*')\s*")
 CONTAINER_EXEC_BOOL_SHORT_FLAGS = frozenset("itTd")
 # Long flags that never take a separate value token (e.g. --rm, not --workdir).
@@ -259,12 +275,76 @@ def extract_interpreter_inline_inner(segment: str) -> str | None:
     return next(group for group in match.groups() if group is not None)
 
 
-def embedded_shell_sql(segment: str, pattern: re.Pattern[str]) -> bool:
-    """True when a shell -c wrapper embeds a matching SQL statement."""
+def decode_bash_ansi_c_quoting(literal: str) -> str | None:
+    """Decode bash $'...' tokens so \\x20-style escapes cannot hide destructive commands."""
+    if not (literal.startswith("$'") and literal.endswith("'") and len(literal) >= 3):
+        return None
+    body = literal[2:-1]
+    out: list[str] = []
+    index = 0
+    length = len(body)
+    while index < length:
+        char = body[index]
+        if char != "\\":
+            out.append(char)
+            index += 1
+            continue
+        index += 1
+        if index >= length:
+            out.append("\\")
+            break
+        esc = body[index]
+        index += 1
+        if esc == "x" and index + 1 < length:
+            hex_digits = body[index : index + 2]
+            if len(hex_digits) == 2 and all(
+                ch in "0123456789abcdefABCDEF" for ch in hex_digits
+            ):
+                out.append(chr(int(hex_digits, 16)))
+                index += 2
+                continue
+        if esc == "u" and index + 3 < length:
+            hex_digits = body[index : index + 4]
+            if all(ch in "0123456789abcdefABCDEF" for ch in hex_digits):
+                out.append(chr(int(hex_digits, 16)))
+                index += 4
+                continue
+        if esc == "U" and index + 7 < length:
+            hex_digits = body[index : index + 8]
+            if all(ch in "0123456789abcdefABCDEF" for ch in hex_digits):
+                out.append(chr(int(hex_digits, 16)))
+                index += 8
+                continue
+        if esc in "01234567":
+            oct_digits = esc
+            while (
+                len(oct_digits) < 3
+                and index < length
+                and body[index] in "01234567"
+            ):
+                oct_digits += body[index]
+                index += 1
+            out.append(chr(int(oct_digits, 8) & 0xFF))
+            continue
+        out.append(_BASH_ANSI_C_ESCAPES.get(esc, esc))
+    return "".join(out)
+
+
+def extract_shell_c_inner(segment: str) -> str | None:
+    """Return decoded shell -c payload (handles $'...' ANSI-C quoting)."""
     match = SHELL_C.search(segment)
     if not match:
-        return False
+        return None
     inner = next(group for group in match.groups() if group is not None)
+    decoded = decode_bash_ansi_c_quoting(inner)
+    return decoded if decoded is not None else inner
+
+
+def embedded_shell_sql(segment: str, pattern: re.Pattern[str]) -> bool:
+    """True when a shell -c wrapper embeds a matching SQL statement."""
+    inner = extract_shell_c_inner(segment)
+    if inner is None:
+        return False
     return bool(pattern.search(inner))
 
 
@@ -345,9 +425,8 @@ def iter_segment_candidates(segment: str) -> list[str]:
 
 def segment_has_rm_rf_invocation(segment: str) -> bool:
     """Block rm -rf only when rm is executed, not when echoed or searched."""
-    shell_match = SHELL_C.search(segment)
-    if shell_match:
-        inner = next(group for group in shell_match.groups() if group is not None)
+    inner = extract_shell_c_inner(segment)
+    if inner is not None:
         for sub in iter_command_segments(inner):
             if segment_has_rm_rf_invocation(sub):
                 return True
@@ -373,15 +452,15 @@ def should_block_sql_statement(
     util_exclude: re.Pattern[str] | None = None,
 ) -> bool:
     """Block SQL only in execution contexts, not search/display utilities."""
-    if not pattern.search(segment):
-        return False
     if util_exclude and util_exclude.search(segment):
         return False
-    if SQL_CLIENT.search(segment):
-        return True
     if embedded_shell_sql(segment, pattern):
         return True
     if embedded_interpreter_sql(segment, pattern):
+        return True
+    if not pattern.search(segment):
+        return False
+    if SQL_CLIENT.search(segment):
         return True
     if NON_SQL_TOOLS.match(segment):
         return False
@@ -441,6 +520,17 @@ def deny(reason: str) -> None:
     sys.exit(0)
 
 
+def segment_has_delete_from_without_where(segment: str) -> bool:
+    """True when DELETE FROM appears without WHERE in raw or decoded shell -c text."""
+    texts = [segment]
+    inner = extract_shell_c_inner(segment)
+    if inner is not None:
+        texts.append(inner)
+    return any(
+        DELETE_FROM.search(text) and not WHERE_CLAUSE.search(text) for text in texts
+    )
+
+
 def check_segment_body(segment: str) -> str | None:
     if segment_has_rm_rf_invocation(segment):
         return "Recursive force delete (rm -rf)"
@@ -471,8 +561,7 @@ def check_segment_body(segment: str) -> str | None:
         return "Git force push (git push +<ref>)"
 
     if (
-        DELETE_FROM.search(segment)
-        and not WHERE_CLAUSE.search(segment)
+        segment_has_delete_from_without_where(segment)
         and should_block_sql_statement(segment, DELETE_FROM)
     ):
         return "SQL DELETE FROM without WHERE clause"

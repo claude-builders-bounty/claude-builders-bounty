@@ -795,10 +795,36 @@ class CheckCommandTests(unittest.TestCase):
         blocked = (
             "sh -c 'DROP TABLE users'",
             'bash -c "DELETE FROM sessions"',
+            r"bash -c $'DROP\x20TABLE\x20users'",
+            r"sh -c $'DELETE\x20FROM\x20sessions'",
         )
         for command in blocked:
             with self.subTest(command=command):
                 self.assertIsNotNone(self.hook.check_command(command))
+
+    def test_blocks_bash_ansi_c_quoting_in_shell_c_rm_rf(self):
+        blocked = (
+            r"bash -c $'rm\x20-rf\x20/'",
+            r"sh -c $'rm\x09-rf\x09/tmp'",
+            r"bash -c $'sudo\x20rm\x20-rf\x20/var'",
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Recursive force delete (rm -rf)",
+                )
+
+    def test_decode_bash_ansi_c_quoting(self):
+        self.assertEqual(
+            self.hook.decode_bash_ansi_c_quoting(r"$'rm\x20-rf'"),
+            "rm -rf",
+        )
+        self.assertEqual(
+            self.hook.decode_bash_ansi_c_quoting(r"$'line\x0abreak'"),
+            "line\nbreak",
+        )
+        self.assertIsNone(self.hook.decode_bash_ansi_c_quoting("rm -rf /"))
 
 
 class InstallScriptTests(unittest.TestCase):
