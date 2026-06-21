@@ -6,9 +6,9 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-21T04:50Z — npm test green (210 total); folder READMEs,
- * CLAUDE.md Table of Contents, check-secret-tokens.mjs + check-sql-parameterization.mjs;
- * peer review APPROVED.
+ * Last hands-on verification: 2026-06-21T08:20Z (cursor composer takeover PR #2529) — npm test
+ * green (210 total: 20 reference + 30 delivery + 160 peer-review); folder READMEs, CLAUDE.md
+ * Table of Contents, check-secret-tokens.mjs + check-sql-parameterization.mjs; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";

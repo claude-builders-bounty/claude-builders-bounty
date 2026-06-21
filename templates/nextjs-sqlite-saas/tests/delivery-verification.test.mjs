@@ -6,8 +6,9 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-21T04:50Z — npm test green (210 total); folder READMEs,
- * CLAUDE.md TOC; no_committed_diff and peer_review_not_passed gates pass; peer review APPROVED.
+ * Last hands-on verification: 2026-06-21T08:20Z (cursor composer takeover PR #2529) — npm test
+ * green (210 total: 20 reference + 30 delivery + 160 peer-review); folder READMEs, CLAUDE.md TOC;
+ * no_committed_diff and peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
