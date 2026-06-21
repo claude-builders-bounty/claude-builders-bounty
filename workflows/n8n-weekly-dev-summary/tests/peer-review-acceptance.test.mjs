@@ -106,6 +106,10 @@ assert(
   loadCode.includes('SUMMARY_EMAIL_TO must be a valid email address'),
   'Load Config validates SUMMARY_EMAIL_TO format before email delivery',
 );
+assert(
+  loadCode.includes('SUMMARY_EMAIL_FROM must be a valid email address'),
+  'Load Config validates SUMMARY_EMAIL_FROM format before email delivery',
+);
 const sendEmail = workflow.nodes.find((n) => n.name === 'Send Email');
 const sendEmailTo = sendEmail?.parameters?.toEmail || '';
 assert(
@@ -252,6 +256,7 @@ assert(
     proof.includes('hands-on takeover #23') &&
     proof.includes('hands-on takeover #24') &&
     proof.includes('hands-on takeover #25') &&
+    proof.includes('hands-on takeover #26') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -324,6 +329,10 @@ assert(
   workflow.description?.includes('SUMMARY_EMAIL_TO') &&
     workflow.description.includes('valid email address'),
   'workflow description documents SUMMARY_EMAIL_TO email format validation',
+);
+assert(
+  workflow.description?.includes('SUMMARY_EMAIL_FROM'),
+  'workflow description documents SUMMARY_EMAIL_FROM email format validation',
 );
 
 if (failures.length) {

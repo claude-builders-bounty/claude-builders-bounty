@@ -107,6 +107,10 @@ assert(
   loadCode.includes('SUMMARY_EMAIL_TO must be a valid email address'),
   'Load Config validates SUMMARY_EMAIL_TO format for email delivery',
 );
+assert(
+  loadCode.includes('SUMMARY_EMAIL_FROM must be a valid email address'),
+  'Load Config validates SUMMARY_EMAIL_FROM format for email delivery',
+);
 const sendEmail = workflow.nodes.find((n) => n.name === 'Send Email');
 const sendEmailTo = sendEmail?.parameters?.toEmail || '';
 assert(

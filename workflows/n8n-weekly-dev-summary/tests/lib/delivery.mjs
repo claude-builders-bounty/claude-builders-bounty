@@ -98,6 +98,10 @@ export function resolveDeliveryChannel({
   if (channel === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((emailTo || '').trim())) {
     throw new Error('SUMMARY_EMAIL_TO must be a valid email address.');
   }
+  const emailFromRaw = (process.env.SUMMARY_EMAIL_FROM || '').trim();
+  if (channel === 'email' && emailFromRaw && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailFromRaw)) {
+    throw new Error('SUMMARY_EMAIL_FROM must be a valid email address.');
+  }
 
   return channel;
 }
