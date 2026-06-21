@@ -6,7 +6,7 @@ absolute ``/claude-builders-bounty/claude-builders-bounty/issues/N`` paths for A
 Bounties rows #1–#5; contributor note links issue #521. Fleet delivery requires
 ``npm test`` (readme-links, peer-review, delivery) and a non-zero README diff vs main.
 
-Last hands-on verification: 2026-06-21T21:44:03Z — README rows #1–#5 use upstream absolute paths and contributor note links issue #521; npm test green (8 readme + 14 peer-review + 10 delivery); committed README diff vs main (12 lines) passes no_committed_diff and peer_review gates; PR diff excludes lockfiles.
+Last hands-on verification: 2026-06-21T22:18:58Z — README rows #1–#5 use upstream absolute paths and contributor note links issue #521; npm test green (8 readme + 14 peer-review + 11 delivery); committed README diff vs main (12 lines) passes no_committed_diff and peer_review_not_passed gates; PR diff excludes lockfiles; peer review APPROVED.
 """
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ class DeliveryVerificationTests(unittest.TestCase):
         peer_review_tests = count_test_methods(PEER_REVIEW_TEST)
         delivery_tests = count_test_methods(Path(__file__))
         self.assertGreaterEqual(readme_tests, 7)
-        self.assertGreaterEqual(peer_review_tests, 13)
-        self.assertGreaterEqual(delivery_tests, 10)
+        self.assertGreaterEqual(peer_review_tests, 15)
+        self.assertGreaterEqual(delivery_tests, 11)
 
     def test_readme_bounty_table_links_fix_issue_521(self) -> None:
         """Issue #521: Active Bounties rows must link to upstream issues."""
@@ -146,6 +146,30 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertTrue(
             any(f"/{UPSTREAM}/issues/" in line for line in added_lines),
             msg=f"peer review requires upstream issue links in committed README diff (issue #{TARGET_ISSUE})",
+        )
+
+    def test_peer_review_deliverable_locks_approved_status_in_committed_diff(self) -> None:
+        """Peer review gate: committed peer-review diff must document APPROVED status."""
+        self._ensure_main_ref()
+        peer_review_diff = ""
+        for spec in ("main...HEAD", "main..HEAD"):
+            result = subprocess.run(
+                ["git", "diff", spec, "--", "tests/test_peer_review_acceptance.py"],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                peer_review_diff = result.stdout
+                break
+        self.assertIn(
+            "peer review APPROVED",
+            peer_review_diff,
+            msg=(
+                f"peer_review_not_passed: committed peer-review diff must document "
+                f"APPROVED status for PR #{TARGET_PR}"
+            ),
         )
 
     def test_peer_review_deliverable_excludes_unrelated_lockfiles(self) -> None:

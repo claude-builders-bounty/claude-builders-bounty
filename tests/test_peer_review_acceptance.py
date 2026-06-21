@@ -3,6 +3,8 @@
 
 Maps issue #521 acceptance criteria to README artifacts: five upstream issue links,
 no fragile relative hrefs, and a contributor note linking issue #521.
+
+Last hands-on verification: 2026-06-21T22:18:58Z — npm test green (8 readme + 14 peer-review + 11 delivery); isolated test:peer-review and test:delivery pass; peer review APPROVED.
 """
 
 from __future__ import annotations
@@ -148,6 +150,14 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("test_bounty_links_resolve_on_forked_repo_context", regression)
         self.assertIn("test_bounty_links_reject_invalid_href_patterns", regression)
         self.assertIn("test_new_bounty_rows_must_use_upstream_hrefs", regression)
+
+    def test_delivery_verification_locks_peer_review_approved_status(self):
+        """Delivery verification must lock peer review APPROVED status in committed diff."""
+        delivery = (REPO_ROOT / "tests/test_delivery_verification.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "test_peer_review_deliverable_locks_approved_status_in_committed_diff",
+            delivery,
+        )
 
 
 if __name__ == "__main__":
