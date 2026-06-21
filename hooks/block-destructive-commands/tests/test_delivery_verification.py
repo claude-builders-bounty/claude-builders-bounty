@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
-Last hands-on verification: 2026-06-21 (cursor hands-on takeover PR #2556) —
-npm test 143+9+22 green; bash -lc / bash --login -c rm -rf blocked via SHELL_C flag parsing;
-decode bash $'...' shell -c payloads before pattern checks.
+Last hands-on verification: 2026-06-21 (hands-on takeover PR #2556) —
+npm test green; bash -lc / bash -l -c / bash --login -c / env bash -lc rm -rf
+blocked via SHELL_C flag parsing; decode bash $'...' shell -c payloads before
+pattern checks.
 """
 
 from __future__ import annotations
@@ -118,29 +119,36 @@ class DeliveryVerificationTests(unittest.TestCase):
             self.assertIn("/workspace/demo", log_text)
 
     def test_cli_denies_bash_lc_rm_rf_with_official_schema(self):
-        with tempfile.TemporaryDirectory() as temp_home:
-            env = os.environ.copy()
-            env["HOME"] = temp_home
-            result = subprocess.run(
-                [sys.executable, str(HOOK_PATH)],
-                input=json.dumps(
-                    {
-                        "tool_name": "Bash",
-                        "tool_input": {"command": 'bash -lc "rm -rf /"'},
-                        "cwd": "/workspace/demo",
-                    }
-                ),
-                text=True,
-                capture_output=True,
-                env=env,
-                check=False,
-            )
+        blocked_commands = (
+            'bash -lc "rm -rf /"',
+            'bash -l -c "rm -rf /"',
+            'env bash -lc "rm -rf /tmp"',
+        )
+        for command in blocked_commands:
+            with self.subTest(command=command):
+                with tempfile.TemporaryDirectory() as temp_home:
+                    env = os.environ.copy()
+                    env["HOME"] = temp_home
+                    result = subprocess.run(
+                        [sys.executable, str(HOOK_PATH)],
+                        input=json.dumps(
+                            {
+                                "tool_name": "Bash",
+                                "tool_input": {"command": command},
+                                "cwd": "/workspace/demo",
+                            }
+                        ),
+                        text=True,
+                        capture_output=True,
+                        env=env,
+                        check=False,
+                    )
 
-            self.assertEqual(result.returncode, 0)
-            output = json.loads(result.stdout)
-            hook_output = output["hookSpecificOutput"]
-            self.assertEqual(hook_output["permissionDecision"], "deny")
-            self.assertIn("rm -rf", hook_output["permissionDecisionReason"])
+                    self.assertEqual(result.returncode, 0)
+                    output = json.loads(result.stdout)
+                    hook_output = output["hookSpecificOutput"]
+                    self.assertEqual(hook_output["permissionDecision"], "deny")
+                    self.assertIn("rm -rf", hook_output["permissionDecisionReason"])
 
     def test_cli_allows_git_status_without_output(self):
         with tempfile.TemporaryDirectory() as temp_home:

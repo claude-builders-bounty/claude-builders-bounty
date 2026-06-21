@@ -65,8 +65,12 @@ class BountyAcceptanceTests(unittest.TestCase):
     def test_blocks_rm_in_shell_c_with_intervening_flags(self):
         blocked = (
             'bash --login -c "rm -rf /"',
+            'bash --login --posix -c "rm -rf /"',
+            'bash -l -c "rm -rf /"',
             'bash -lc "rm -rf /tmp"',
             'sh --login -c "rm -rf /data"',
+            'zsh -lc "rm -rf /var/tmp"',
+            'env bash -lc "rm -rf /srv"',
         )
         for command in blocked:
             with self.subTest(command=command):

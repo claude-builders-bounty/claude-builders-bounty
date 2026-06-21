@@ -2,8 +2,9 @@
 """Claude Code PreToolUse hook — blocks destructive bash commands.
 
 Detects destructive patterns in bare commands, chained segments (; && ||),
-pipeline stages, shell -c wrappers (including bash --login -c, bash -lc,
-bash $'...' and $"..." quoting), and container exec/run invocations
+pipeline stages, shell -c wrappers (including bash --login -c, bash -l -c,
+bash -lc, env bash -lc, bash $'...' and $"..." quoting), and container
+exec/run invocations
 (docker/podman/kubectl/nerdctl exec|run, compose exec|run, and compose exec|run).
 """
 
