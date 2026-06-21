@@ -138,6 +138,42 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         combined = result.stdout + result.stderr
         self.assertIn("invalid ZEROEYE_REPO", combined)
 
+    def test_verify_issue_2853_script_rejects_invalid_session_label(self) -> None:
+        """Shell injection in VERIFY_SESSION_LABEL must fail before any git clone."""
+        script = REPO_ROOT / "tests" / "verify-issue-2853.sh"
+        env = os.environ.copy()
+        env["VERIFY_SESSION_LABEL"] = "bad label;rm -rf /"
+        result = subprocess.run(
+            ["bash", str(script)],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        combined = result.stdout + result.stderr
+        self.assertIn("invalid VERIFY_SESSION_LABEL", combined)
+
+    def test_verify_issue_2853_script_rejects_path_outside_cache(self) -> None:
+        """ZEROEYE_ROOT must stay under .cache/ to block arbitrary clone targets."""
+        script = REPO_ROOT / "tests" / "verify-issue-2853.sh"
+        env = os.environ.copy()
+        env["ZEROEYE_ROOT"] = "/tmp/zeroeye-outside-cache"
+        result = subprocess.run(
+            ["bash", str(script)],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        combined = result.stdout + result.stderr
+        self.assertIn("invalid ZEROEYE_ROOT", combined)
+
     def test_read_tool_hook_go_tests_surface_errors_on_failure(self) -> None:
         """Go test subprocess must propagate non-zero exit and include output in assertion."""
         if os.environ.get("ISSUE_2853_SKIP_GO_TESTS"):
@@ -310,15 +346,15 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         return text[first:second]
 
     def test_bounty_proof_documents_latest_verification_suite_count(self) -> None:
-        """Latest PROOF.md verification block must document the current 39/39 suite count."""
+        """Latest PROOF.md verification block must document the current suite count."""
         text = PROOF.read_text(encoding="utf-8")
         latest = self._latest_verification_block(text)
         self.assertRegex(
             latest,
-            r"50/50 \(2 README \+ 21 peer review \+ 18 issue #2853 \+ 9 delivery\)",
+            r"52/52 \(2 README \+ 21 peer review \+ 20 issue #2853 \+ 9 delivery\)",
         )
-        self.assertRegex(latest, r"18/18 \(fresh clone|reused zeroeye")
-        self.assertIn("takeover #70", latest)
+        self.assertRegex(latest, r"20/20 \(fresh clone|reused zeroeye")
+        self.assertIn("takeover #71", latest)
         self.assertIn("verify-issue-2853.sh", latest)
         self.assertIn("run-unittest-module.sh", latest)
 

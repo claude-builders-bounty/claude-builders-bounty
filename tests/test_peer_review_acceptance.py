@@ -213,7 +213,7 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
             "tests/verify-issue-2853.sh",
             "validate_branch_name",
             "run-unittest-module.sh",
-            "invalid branch/repo rejection tests",
+            "invalid branch/repo/session-label/checkout-path rejection tests",
             "test_read_tool_hook_go_layer_symbols",
             "internal/exporter/",
         ):

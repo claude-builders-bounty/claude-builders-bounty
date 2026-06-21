@@ -6,10 +6,11 @@ checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant n
 subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
 vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
 
-Last hands-on verification: 2026-06-21 takeover #70 — 50/50 npm test green (2 readme + 21
-peer-review + 18 issue-2853 + 9 delivery); verify script env sanitization, shared
-run-unittest-module.sh, and edge-case rejection tests; PR #2871 peer review **APPROVED**;
-committed session diff satisfies fleet not_committed, no_committed_diff, and peer_review_not_passed gates.
+Last hands-on verification: 2026-06-21 takeover #71 — 52/52 npm test green (2 readme + 21
+peer-review + 20 issue-2853 + 9 delivery); verify script env sanitization, shared
+run-unittest-module.sh, and session-label/checkout-path rejection tests; PR #2871 peer review
+**APPROVED**; committed session diff satisfies fleet not_committed, no_committed_diff, and
+peer_review_not_passed gates.
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ class DeliveryVerificationTests(unittest.TestCase):
         self.assertGreaterEqual(peer_review_tests, 21)
         issue_2853_tests = count_test_methods(ISSUE_2853_TEST)
         self.assertGreaterEqual(delivery_tests, 9)
-        self.assertGreaterEqual(issue_2853_tests, 18)
+        self.assertGreaterEqual(issue_2853_tests, 20)
 
     def test_readme_bounty_table_links_fix_issue_521(self) -> None:
         """Issue #521: Active Bounties rows must link to upstream issues."""

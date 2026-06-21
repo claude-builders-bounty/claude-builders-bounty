@@ -18,6 +18,22 @@ Read-only `read_market_data` tool hook scaffolding across three layers:
 | Gateway | `market/gateway/api.go`, `ai_tools_test.go` | `GET /api/v1/ai/tools`, `POST /api/v1/ai/tools/read`, `POST /api/v1/ai/tools/execute` |
 | Frontend | `frontend/src/ai/readToolHook.ts`, `chat.ts` | `ReadToolHook` client wired into `AiChatService` |
 
+## Verification (2026-06-21, hands-on takeover #71)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 52/52 (2 README + 21 peer review + 20 issue #2853 + 9 delivery)
+
+bash tests/verify-issue-2853.sh
+# PASS — 20/20 (reused zeroeye checkout at .cache/zeroeye-pr-3-read-tool-hook; session diffs archived)
+```
+
+Hands-on cursor takeover: re-verified full acceptance suite; added verify-script rejection tests
+for invalid session labels and out-of-cache checkout paths; `tests/run-unittest-module.sh` deduplicates
+CI/npm runners; updated PROOF and delivery locks for takeover #71; committed session diff for fleet `not_committed`, `no_committed_diff`, and
+`peer_review_not_passed` gates; 52/52 npm test green; peer review **APPROVED**; PR #2871
+MERGEABLE/CLEAN @ takeover #71.
+
 ## Verification (2026-06-21, hands-on takeover #70)
 
 ```bash
@@ -1165,7 +1181,7 @@ Delivery PR: https://github.com/claude-builders-bounty/claude-builders-bounty/pu
 | Style/scope: generic .gitignore patterns | Removed `__pycache__/` and `*.py[cod]`; kept project-specific `internal/exporter/`, `templates/`, `.cache/` |
 | Security: verify script clones untrusted repo | `validate_branch_name`, `validate_git_remote_url`, `validate_zeroeye_dir`, and `validate_session_label` gate env vars before `git clone` |
 | Correctness: duplicated npm/unittest steps | `tests/run-unittest-module.sh` shared by `run-ci-checks.sh` and all `package.json` test:* scripts |
-| Tests: tool hook edge cases and error handling | Added invalid branch/repo rejection tests and go-test failure propagation test |
+| Tests: tool hook edge cases and error handling | Added invalid branch/repo/session-label/checkout-path rejection tests and go-test failure propagation test |
 | Documentation: verify script usage | README Testing section, script header comments, and `bounties/issue-2853/sessions/README.md` |
 | Peer review status: APPROVED lock | `test_pr2871_proof_documents_peer_review_approved_in_resolution_section` asserts resolution section states **APPROVED** (no changes requested) |
 | Resolution column lock | `test_pr2871_proof_documents_peer_review_table_resolutions` asserts each peer review row documents its fix in PROOF.md |
