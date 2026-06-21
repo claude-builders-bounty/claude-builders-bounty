@@ -103,6 +103,10 @@ assert(loadCode.includes('weekEnd: now.toISOString()'), 'Load Config emits ISO86
 assert(!loadCode.includes('githubToken:'), 'Load Config does not embed githubToken in item JSON');
 assert(!loadCode.includes('anthropicApiKey:'), 'Load Config does not embed anthropicApiKey in item JSON');
 assert(loadCode.includes('emailTo:'), 'Load Config emits emailTo for email delivery');
+assert(
+  loadCode.includes('SUMMARY_EMAIL_TO must be a valid email address'),
+  'Load Config validates SUMMARY_EMAIL_TO format for email delivery',
+);
 const sendEmail = workflow.nodes.find((n) => n.name === 'Send Email');
 const sendEmailTo = sendEmail?.parameters?.toEmail || '';
 assert(

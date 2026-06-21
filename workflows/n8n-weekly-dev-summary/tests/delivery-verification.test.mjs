@@ -3,8 +3,8 @@
  * Fleet delivery verification for bounty #5 (issue #5).
  * Codifies handoff checks: test coverage, CI wiring, importable workflow.
  *
- * Last hands-on verification: 2026-06-20 cursor takeover #22 — npm test green with
- * committed weekly-dev-summary.json source diff (emailHtml payload); no_committed_diff and
+ * Last hands-on verification: 2026-06-21 cursor takeover #24 — npm test green with
+ * committed weekly-dev-summary.json source diff (Load Config email validation); no_committed_diff and
  * peer_review_not_passed fleet gates pass (PR #2541 / issue #5).
  */
 import { execSync } from 'node:child_process';
@@ -227,7 +227,7 @@ test('branch diff excludes unrelated paths from other bounties', () => {
     .split('\n')
     .filter(Boolean);
   for (const path of changed) {
-    for (const prefix of ['internal/', 'hooks/', 'agents/', 'templates/']) {
+    for (const prefix of ['internal/', 'hooks/', 'agents/', 'templates/', '.cache/']) {
       if (path.startsWith(prefix)) {
         throw new Error(`unrelated ${prefix} path in PR diff: ${path}`);
       }

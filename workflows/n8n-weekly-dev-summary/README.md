@@ -22,7 +22,7 @@ Define repo, API keys, and delivery destination in n8n **Settings → Variables*
 | `DELIVERY_CHANNEL` | ✅ | `discord`, `slack`, or `email` |
 | `DISCORD_WEBHOOK_URL` | if discord | Discord incoming webhook |
 | `SLACK_WEBHOOK_URL` | if slack | Slack incoming webhook |
-| `SUMMARY_EMAIL_TO` | if email | Recipient address |
+| `SUMMARY_EMAIL_TO` | if email | Recipient address (validated as email format in Load Config) |
 | `SUMMARY_EMAIL_FROM` | if email | Sender address (default: `n8n@localhost`) |
 | `SUMMARY_LANGUAGE` | optional | `EN` (default) or `FR` |
 

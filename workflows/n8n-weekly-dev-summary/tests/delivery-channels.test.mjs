@@ -59,6 +59,13 @@ assert(resolveDeliveryChannel({ discordWebhookUrl: 'https://hooks.example/discor
 assert(resolveDeliveryChannel({ emailTo: 'a@b.com' }) === 'email', 'resolve: infers email from SUMMARY_EMAIL_TO');
 
 try {
+  resolveDeliveryChannel({ deliveryChannel: 'email', emailTo: 'not-an-email' });
+  assert(false, 'resolve: invalid email must throw');
+} catch (error) {
+  assert(error.message.includes('valid email address'), 'resolve: invalid email error is descriptive');
+}
+
+try {
   resolveDeliveryChannel({ deliveryChannel: 'discord' });
   assert(false, 'resolve: discord without webhook must throw');
 } catch (error) {

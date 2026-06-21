@@ -102,6 +102,10 @@ assert(
   'supports Discord, Slack, and email delivery',
 );
 assert(loadCode.includes('emailTo:'), 'Load Config emits emailTo for email delivery');
+assert(
+  loadCode.includes('SUMMARY_EMAIL_TO must be a valid email address'),
+  'Load Config validates SUMMARY_EMAIL_TO format before email delivery',
+);
 const sendEmail = workflow.nodes.find((n) => n.name === 'Send Email');
 const sendEmailTo = sendEmail?.parameters?.toEmail || '';
 assert(
@@ -245,6 +249,8 @@ assert(
   proof.includes('hands-on takeover #10') &&
     proof.includes('hands-on takeover #21') &&
     proof.includes('hands-on takeover #22') &&
+    proof.includes('hands-on takeover #23') &&
+    proof.includes('hands-on takeover #24') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',

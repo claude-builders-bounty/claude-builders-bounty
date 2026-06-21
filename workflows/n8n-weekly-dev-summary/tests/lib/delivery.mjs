@@ -95,6 +95,9 @@ export function resolveDeliveryChannel({
   if (channel === 'email' && !(emailTo || '').trim()) {
     throw new Error('DELIVERY_CHANNEL=email requires SUMMARY_EMAIL_TO.');
   }
+  if (channel === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((emailTo || '').trim())) {
+    throw new Error('SUMMARY_EMAIL_TO must be a valid email address.');
+  }
 
   return channel;
 }

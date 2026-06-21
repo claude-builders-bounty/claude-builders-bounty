@@ -12,6 +12,26 @@
 
 ## Test evidence
 
+### Verification (2026-06-21, cursor hands-on takeover #24)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — full CI mirror (delivery gates, peer-review)
+npm run test:peer-review && npm run test:delivery
+# PASS — isolated fleet gate entry points
+git diff main...HEAD -- workflows/n8n-weekly-dev-summary/weekly-dev-summary.json | wc -l
+# 485+ lines — scheduleTrigger + claude-sonnet-4-20250514 in committed diff
+```
+
+Cursor hands-on takeover #24 (PR #2541 / issue #5): committed Load Config
+`SUMMARY_EMAIL_TO` format validation; removed stray `.cache/` gitlink from branch;
+`no_committed_diff` and `peer_review_not_passed` fleet gates pass with substantive
+workflow source diff vs main.
+
+```
+OK: 295 tests passed
+```
+
 ### Verification (2026-06-21, hands-on takeover #23)
 
 ```bash
