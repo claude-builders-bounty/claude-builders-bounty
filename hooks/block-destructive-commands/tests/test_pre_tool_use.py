@@ -564,6 +564,40 @@ class CheckCommandTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.hook.check_command(command))
 
+    def test_blocks_rm_rf_in_interpreter_execution_wrappers(self):
+        blocked = (
+            'perl -e "system(\\"rm -rf /\\")"',
+            "perl -e 'system(qw/rm -rf /)/'",
+            'ruby -e "system(\\"rm -rf /\\")"',
+            'node -e "require(\\"child_process\\").execSync(\\"rm -rf /\\")"',
+            'python3 -c "import os; os.system(\\"rm -rf /tmp\\")"',
+        )
+        for command in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.hook.check_command(command),
+                    "Recursive force delete (rm -rf)",
+                )
+
+    def test_allows_interpreter_display_only_rm_rf_text(self):
+        allowed = (
+            'perl -e "print(\\"rm -rf\\")"',
+            'ruby -e "puts \\"rm -rf\\""',
+            'node -e "console.log(\\"rm -rf\\")"',
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
+
+    def test_blocks_sql_in_interpreter_execution_wrappers(self):
+        blocked = (
+            ('ruby -e "system(\\"DROP TABLE users\\")"', "SQL DROP TABLE"),
+            ('perl -e "exec \\"psql -c TRUNCATE sessions\\""', "SQL TRUNCATE"),
+        )
+        for command, reason in blocked:
+            with self.subTest(command=command):
+                self.assertEqual(self.hook.check_command(command), reason)
+
     def test_blocks_rm_rf_after_pipeline_display_tool(self):
         self.assertEqual(
             self.hook.check_command("echo test | rm -rf /tmp/build"),

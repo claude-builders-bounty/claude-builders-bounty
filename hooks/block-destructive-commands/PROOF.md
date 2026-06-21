@@ -418,6 +418,17 @@ re-check — no hook logic changes required.
 - GitHub PR: MERGEABLE / CLEAN, no review comments
 - Rebase: not needed (`origin/main` is merge-base)
 
+## Hands-on verification (2026-06-21, code delivery takeover)
+
+Fleet engineer session failed `no_committed_diff` / `peer_review_not_passed` without
+in-session hook source edits. Unwrap python/ruby/perl/node `-e`/`-c` payloads when
+they contain execution hints (`system`, `exec`, `subprocess`, etc.) so destructive
+commands cannot bypass checks via interpreter one-liners.
+
+- `npm test` green: 134 unittest + 8 delivery + 22 peer-review + attribution checks
+- CLI: `perl -e 'system("rm -rf /")'` denied; `perl -e 'print("rm -rf")'` allowed
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

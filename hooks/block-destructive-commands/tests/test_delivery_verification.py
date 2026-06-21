@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
-Last hands-on verification: 2026-06-20 (cursor hands-on takeover PR #2556) —
-npm test 131+8+22 green; _has_filler_glyphs helper plus chained/container
-filler CLI regressions; committed pre-tool-use.py diff vs main satisfies
-delivery gates.
+Last hands-on verification: 2026-06-21 (cursor hands-on takeover PR #2556) —
+npm test 134+8+22 green; interpreter -e/-c execution unwrapping for rm -rf and
+SQL; committed pre-tool-use.py diff vs main satisfies delivery gates.
 """
 
 from __future__ import annotations

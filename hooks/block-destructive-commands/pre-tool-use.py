@@ -48,6 +48,14 @@ SHELL_C = re.compile(
     r"\b(?:sh|bash|zsh|dash)\s+-c\s+(?:'([^']*)'|\"([^\"]*)\"|(\S+))",
     re.IGNORECASE,
 )
+INTERPRETER_INLINE = re.compile(
+    r"\b(?:python3?|ruby|perl|node)\s+(?:-[a-zA-Z]+\s+)*-[ec]\s+(?:'([^']*)'|\"((?:\\.|[^\"\\])*)\"|(\S+))",
+    re.IGNORECASE,
+)
+INTERPRETER_EXECUTION_HINT = re.compile(
+    r"\b(?:system|exec(?:vp|ve|le)?|spawn|popen|subprocess|os\.system|child_process)\b",
+    re.IGNORECASE,
+)
 GIT_FORCE_REFSPEC = re.compile(
     r"\bgit\b.*?\bpush\b(?:\s+[^\s;|&]+)*\s+\+[^\s;|&]+",
     re.IGNORECASE,
@@ -191,12 +199,30 @@ def stripped_segment(segment: str) -> str:
     return stripped
 
 
+def extract_interpreter_inline_inner(segment: str) -> str | None:
+    """Return the -e/-c payload from python/ruby/perl/node one-liners."""
+    match = INTERPRETER_INLINE.search(segment)
+    if not match:
+        return None
+    return next(group for group in match.groups() if group is not None)
+
+
 def embedded_shell_sql(segment: str, pattern: re.Pattern[str]) -> bool:
     """True when a shell -c wrapper embeds a matching SQL statement."""
     match = SHELL_C.search(segment)
     if not match:
         return False
     inner = next(group for group in match.groups() if group is not None)
+    return bool(pattern.search(inner))
+
+
+def embedded_interpreter_sql(segment: str, pattern: re.Pattern[str]) -> bool:
+    """True when an interpreter -e/-c wrapper embeds a matching SQL statement."""
+    inner = extract_interpreter_inline_inner(segment)
+    if inner is None:
+        return False
+    if not INTERPRETER_EXECUTION_HINT.search(inner):
+        return False
     return bool(pattern.search(inner))
 
 
@@ -271,6 +297,10 @@ def segment_has_rm_rf_invocation(segment: str) -> bool:
     if shell_match:
         inner = next(group for group in shell_match.groups() if group is not None)
         return segment_has_rm_rf_invocation(inner)
+    inner = extract_interpreter_inline_inner(segment)
+    if inner is not None and INTERPRETER_EXECUTION_HINT.search(inner):
+        if segment_has_rm_rf_invocation(inner):
+            return True
     for stage in iter_pipe_stages(segment):
         if NON_SQL_TOOLS.match(stage):
             continue
@@ -293,6 +323,8 @@ def should_block_sql_statement(
     if SQL_CLIENT.search(segment):
         return True
     if embedded_shell_sql(segment, pattern):
+        return True
+    if embedded_interpreter_sql(segment, pattern):
         return True
     if NON_SQL_TOOLS.match(segment):
         return False
