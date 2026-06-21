@@ -439,6 +439,18 @@ so hex/tab escapes (e.g. `$'rm\\x20-rf\\x20/'`) cannot bypass destructive checks
 - CLI: `bash -c $'rm\\x20-rf\\x20/'` denied; `bash -c $'DROP\\x20TABLE\\x20users'` denied
 - Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
 
+## Hands-on verification (2026-06-21, sprout-idle-nudge merge-nurture)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `a10207e9` (PR #2556). Merge-nurture
+re-check — hook logic complete; no code changes required.
+
+- `npm test` green: 140 unittest + 8 delivery + 22 peer-review + attribution checks
+- `make ci-validate` green
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- CLI: `bash -c $"rm -rf /"` denied; `git status` allowed (empty stdout)
+- Latest hook fix: `parse_shell_c_argument` decodes bash `$"..."` locale-quoted shell `-c` tokens
+- Rebase: not needed (`origin/main` is merge-base)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
