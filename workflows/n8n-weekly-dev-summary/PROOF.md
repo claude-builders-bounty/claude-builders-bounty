@@ -12,6 +12,25 @@
 
 ## Test evidence
 
+### Verification (2026-06-21, hands-on takeover #23)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — 291/291 (full CI mirror, delivery gates, peer-review)
+npm run test:peer-review && npm run test:delivery && npm run test:github
+# PASS — isolated fleet gate entry points + live GitHub API
+gh pr view 2541 --json mergeable,mergeStateStatus
+# MERGEABLE / CLEAN against main @ 5a0e1467
+```
+
+Merge-nurture idle verification (PR #2541 / issue #5): no maintainer reviews;
+fork CI `test-n8n-weekly-summary` success on HEAD; all acceptance criteria covered.
+No code changes required — ready for upstream merge and `/opire try` refresh.
+
+```
+OK: 291 tests passed
+```
+
 ### Verification (2026-06-20, cursor hands-on takeover #22)
 
 ```bash
