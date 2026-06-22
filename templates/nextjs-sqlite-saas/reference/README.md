@@ -19,6 +19,7 @@ pnpm install
 pnpm db:migrate           # apply pending SQL migrations
 pnpm db:migrate:status    # list applied vs pending migrations
 pnpm db:seed              # dev fixtures (blocked in production)
+pnpm typecheck            # tsc --noEmit
 pnpm test                 # vitest run
 bash scripts/run-tests.sh # lint + vitest (CI entry point)
 ```

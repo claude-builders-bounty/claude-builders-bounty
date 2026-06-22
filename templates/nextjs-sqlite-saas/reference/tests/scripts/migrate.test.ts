@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import {
   applyPendingMigrations,
@@ -7,6 +10,10 @@ import {
 } from "../../scripts/migrate";
 
 describe("scripts/migrate", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
 
   it("lists migration files in lexicographic order", () => {
     const files = listMigrationFiles();
@@ -50,5 +57,26 @@ describe("scripts/migrate", () => {
       .get();
     expect(row).toBeTruthy();
     db.close();
+  });
+
+  it("getMigrationStatus reports applied vs pending for file database", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "migrate-status-"));
+    const dbPath = join(dir, "test.db");
+    vi.stubEnv("DATABASE_URL", `file:${dbPath}`);
+
+    const { getMigrationStatus, applyPendingMigrations, listMigrationFiles } = await import(
+      "../../scripts/migrate"
+    );
+    const files = listMigrationFiles();
+
+    expect(getMigrationStatus()).toEqual({ applied: [], pending: files });
+
+    const db = new Database(dbPath);
+    db.pragma("foreign_keys = ON");
+    applyPendingMigrations(db);
+    db.close();
+
+    expect(getMigrationStatus()).toEqual({ applied: files, pending: [] });
+    rmSync(dir, { recursive: true, force: true });
   });
 });
