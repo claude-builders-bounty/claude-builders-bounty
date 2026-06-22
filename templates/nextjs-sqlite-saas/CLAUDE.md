@@ -792,11 +792,12 @@ cp .env.example .env.local
 openssl rand -base64 32
 ```
 
-`.env.example` documents the required keys:
+`.env.example` documents the required keys (placeholder value is ≥32 chars so `src/lib/env.ts` validation passes on first copy):
 
 ```bash
 DATABASE_URL="file:./data/app.db"
-SESSION_SECRET="..."   # replace with openssl rand -base64 32 output
+# Minimum 32 characters — matches src/lib/env.ts z.string().min(32)
+SESSION_SECRET="replace-with-openssl-rand-base64-32-output"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 ```
 
@@ -842,7 +843,7 @@ When evolving this template (or a project copied from it):
 1. **Update CLAUDE.md first** — conventions are authoritative; code follows the doc, not the reverse.
 2. **Append migrations only** — never edit merged SQL files; add a new timestamped file for schema changes.
 3. **Mirror changes in the reference app** — if CLAUDE.md shows a pattern, `reference/` must implement and test it.
-4. **Run the full gate before pushing:** `npm test` from the monorepo root (231 tests: 29 reference Vitest + 34 delivery + 168 peer-review acceptance).
+4. **Run the full gate before pushing:** `npm test` from the monorepo root (233 tests: 29 reference Vitest + 35 delivery + 169 peer-review acceptance).
 5. **Keep folder READMEs current** — each `src/`, `scripts/`, and `tests/` subdirectory documents its boundary rules.
 
 Reason: the reference app is the executable proof that CLAUDE.md conventions work in a real Next.js 15 project.

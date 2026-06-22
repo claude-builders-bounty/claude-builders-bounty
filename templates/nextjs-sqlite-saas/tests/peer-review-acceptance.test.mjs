@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-22T13:38Z (cursor takeover PR #2529) — npm test
- * green (231 total: 29 reference + 34 delivery + 168 peer-review); no_committed_diff and
+ * Last hands-on verification: 2026-06-22T13:40Z (cursor takeover PR #2529) — npm test
+ * green (233 total: 29 reference + 35 delivery + 169 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -345,6 +345,18 @@ assert(
     return match !== null && match[1].length >= 32;
   })(),
   "reference/.env.example SESSION_SECRET placeholder meets min(32) length",
+);
+assert(
+  (() => {
+    const devSetup = claude.match(/## Development Environment Setup[\s\S]*?(?=\n## )/);
+    if (!devSetup) return false;
+    const match = devSetup[0].match(/SESSION_SECRET\s*=\s*["']([^"']+)["']/);
+    if (!match || match[1].length < 32) return false;
+    const refExample = readFileSync(join(root, "reference", ".env.example"), "utf8");
+    const refMatch = refExample.match(/SESSION_SECRET\s*=\s*["']([^"']+)["']/);
+    return refMatch !== null && match[1] === refMatch[1];
+  })(),
+  "CLAUDE.md .env.example example aligns with reference SESSION_SECRET placeholder",
 );
 assert(
   statSync(join(root, "reference", "scripts/migrate.ts")).isFile(),

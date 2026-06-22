@@ -6,8 +6,8 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-22T13:38Z (cursor takeover PR #2529) — npm test
- * green (231 total: 29 reference + 34 delivery + 168 peer-review); no_committed_diff and
+ * Last hands-on verification: 2026-06-22T13:40Z (cursor takeover PR #2529) — npm test
+ * green (233 total: 29 reference + 35 delivery + 169 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -481,6 +481,28 @@ test("reference .env.example SESSION_SECRET placeholder meets min(32) length", (
     throw new Error(
       `reference/.env.example SESSION_SECRET placeholder is ${match[1].length} chars (need >= 32)`,
     );
+  }
+});
+
+test("CLAUDE.md .env.example example SESSION_SECRET placeholder meets min(32) length", () => {
+  const claude = readFileSync(CLAUDE_MD, "utf8");
+  const devSetup = claude.match(/## Development Environment Setup[\s\S]*?(?=\n## )/);
+  if (!devSetup) {
+    throw new Error("CLAUDE.md must include Development Environment Setup section");
+  }
+  const match = devSetup[0].match(/SESSION_SECRET\s*=\s*["']([^"']+)["']/);
+  if (!match) {
+    throw new Error("CLAUDE.md Development Environment Setup must show SESSION_SECRET placeholder value");
+  }
+  if (match[1].length < 32) {
+    throw new Error(
+      `CLAUDE.md SESSION_SECRET placeholder is ${match[1].length} chars (need >= 32)`,
+    );
+  }
+  const refExample = readFileSync(join(root, "reference", ".env.example"), "utf8");
+  const refMatch = refExample.match(/SESSION_SECRET\s*=\s*["']([^"']+)["']/);
+  if (!refMatch || match[1] !== refMatch[1]) {
+    throw new Error("CLAUDE.md .env.example example must match reference/.env.example SESSION_SECRET placeholder");
   }
 });
 
