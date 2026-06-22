@@ -6,10 +6,10 @@ checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant n
 subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
 vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
 
-Last hands-on verification: 2026-06-22 takeover #211 — 54/54 npm test green (2 readme + 21
-peer-review + 22 issue-2853 + 9 delivery); re-verified after takeover #210 docs without
-session patches; 18 unpushed commits ready for fleet push; peer review **APPROVED**;
-committed session diff satisfies fleet delivery gates.
+Last hands-on verification: 2026-06-22 takeover #212 — 54/54 npm test green (2 readme + 21
+peer-review + 22 issue-2853 + 9 delivery); 18 unpushed commits (takeover #195–#211) plus
+takeover #212 ready for fleet push; peer review **APPROVED**; committed session diff
+satisfies fleet delivery gates.
 """
 
 from __future__ import annotations
