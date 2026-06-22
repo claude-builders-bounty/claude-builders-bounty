@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-22T13:05Z (cursor takeover PR #2529) — npm test
- * green (229 total: 29 reference + 33 delivery + 167 peer-review); no_committed_diff and
+ * Last hands-on verification: 2026-06-22T13:36Z (cursor takeover PR #2529) — npm test
+ * green (231 total: 29 reference + 34 delivery + 168 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -337,6 +337,14 @@ assert(
 assert(
   readFileSync(join(root, "reference", ".env.example"), "utf8").includes("min(32)"),
   "reference/.env.example documents SESSION_SECRET min(32) alignment with env.ts",
+);
+assert(
+  (() => {
+    const envExample = readFileSync(join(root, "reference", ".env.example"), "utf8");
+    const match = envExample.match(/SESSION_SECRET\s*=\s*["']([^"']+)["']/);
+    return match !== null && match[1].length >= 32;
+  })(),
+  "reference/.env.example SESSION_SECRET placeholder meets min(32) length",
 );
 assert(
   statSync(join(root, "reference", "scripts/migrate.ts")).isFile(),
