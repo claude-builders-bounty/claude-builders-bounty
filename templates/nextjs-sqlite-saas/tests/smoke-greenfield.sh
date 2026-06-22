@@ -2,7 +2,23 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-WORKDIR="$(mktemp -d)"
+
+# Fleet sandboxes sometimes mount /tmp noexec or non-writable; fall back to template .cache/.
+WORKDIR=""
+for base in "${TMPDIR:-/tmp}" "$ROOT/.cache/smoke-workdirs"; do
+  mkdir -p "$base" 2>/dev/null || continue
+  candidate="$(mktemp -d "$base/smoke.XXXXXX" 2>/dev/null)" || continue
+  if touch "$candidate/.write-test" 2>/dev/null; then
+    rm -f "$candidate/.write-test"
+    WORKDIR="$candidate"
+    break
+  fi
+  rm -rf "$candidate"
+done
+if [ -z "$WORKDIR" ]; then
+  echo "Unable to create writable smoke-test workdir (tried TMPDIR and $ROOT/.cache/smoke-workdirs)" >&2
+  exit 1
+fi
 trap 'rm -rf "$WORKDIR"' EXIT
 
 if ! command -v pnpm >/dev/null 2>&1; then
