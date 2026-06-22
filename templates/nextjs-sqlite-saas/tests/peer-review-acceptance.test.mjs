@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-22T06:03Z (cursor composer hands-on takeover PR #2529) — npm test
- * green (214 total: 24 reference + 30 delivery + 160 peer-review); no_committed_diff and
+ * Last hands-on verification: 2026-06-22T06:10Z (cursor composer hands-on takeover PR #2529) — npm test
+ * green (216 total: 24 reference + 30 delivery + 162 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -231,6 +231,14 @@ assert(ciStepDelivery.includes("delivery-verification.test.mjs"), "delivery step
 assert(
   ciStepDelivery.includes("delivery verification tests"),
   "delivery step prints delivery verification summary",
+);
+assert(
+  ciStepDelivery.includes("no_committed_diff gate passed"),
+  "delivery step prints no_committed_diff gate passed",
+);
+assert(
+  ciStepDelivery.includes("peer_review_not_passed gate passed"),
+  "delivery step prints peer_review_not_passed gate passed",
 );
 assert(ciStepPeerReview.includes("peer-review-acceptance.test.mjs"), "peer-review step runs acceptance suite");
 assert(

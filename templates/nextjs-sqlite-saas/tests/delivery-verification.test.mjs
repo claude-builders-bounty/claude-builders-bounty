@@ -6,8 +6,8 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-22T06:03Z (cursor composer hands-on takeover PR #2529) — npm test
- * green (214 total: 24 reference + 30 delivery + 160 peer-review); no_committed_diff and
+ * Last hands-on verification: 2026-06-22T06:10Z (cursor composer hands-on takeover PR #2529) — npm test
+ * green (216 total: 24 reference + 30 delivery + 162 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -149,6 +149,12 @@ test("ci runner declares delivery and peer-review summary lines", () => {
   }
   if (!deliveryStep.includes("delivery verification tests")) {
     throw new Error("ci-step-delivery.sh must print delivery verification summary");
+  }
+  if (!deliveryStep.includes("no_committed_diff gate passed")) {
+    throw new Error("ci-step-delivery.sh must print no_committed_diff gate passed");
+  }
+  if (!deliveryStep.includes("peer_review_not_passed gate passed")) {
+    throw new Error("ci-step-delivery.sh must print peer_review_not_passed gate passed");
   }
   if (!peerReviewStep.includes("peer review acceptance tests passed")) {
     throw new Error("ci-step-peer-review.sh must print peer review acceptance summary");
