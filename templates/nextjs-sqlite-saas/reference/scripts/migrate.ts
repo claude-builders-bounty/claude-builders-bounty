@@ -86,7 +86,17 @@ export function getMigrationStatus(): { applied: string[]; pending: string[] } {
   }
 }
 
+function printMigrationStatus(): void {
+  const { applied, pending } = getMigrationStatus();
+  console.log("Applied:", applied.length ? applied.join(", ") : "(none)");
+  console.log("Pending:", pending.length ? pending.join(", ") : "(none)");
+}
+
 const isDirectRun = process.argv[1]?.endsWith("scripts/migrate.ts");
 if (isDirectRun) {
-  runMigrations();
+  if (process.argv.includes("--status")) {
+    printMigrationStatus();
+  } else {
+    runMigrations();
+  }
 }
