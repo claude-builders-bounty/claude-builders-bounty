@@ -11,10 +11,15 @@ Minimal runnable slice of the patterns documented in `CLAUDE.md`. Used by CI to 
 | `tests/` | Vitest unit and integration suites — see `tests/README.md` |
 | `pnpm-lock.yaml` | Reproducible pnpm installs (no root `package-lock.json`) |
 
+## Environment
+
+Copy `.env.example` to `.env.local` and set a 32+ character `SESSION_SECRET` before running the app or tests locally. CI and Vitest use `:memory:` via `tests/setup.ts`.
+
 ## Run tests
 
 ```bash
 cd reference
+cp .env.example .env.local   # optional for local dev; tests use :memory:
 pnpm install
 pnpm db:migrate           # apply pending SQL migrations
 pnpm db:migrate:status    # list applied vs pending migrations

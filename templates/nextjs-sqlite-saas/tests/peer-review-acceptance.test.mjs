@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-22T11:30Z (cursor takeover PR #2529) — npm test
- * green (225 total: 29 reference + 31 delivery + 165 peer-review); vitest cacheDir fix;
+ * Last hands-on verification: 2026-06-22T12:07Z (cursor takeover PR #2529) — npm test
+ * green (225 total: 29 reference + 31 delivery + 165 peer-review); reference .env.example;
  * no_committed_diff and peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";

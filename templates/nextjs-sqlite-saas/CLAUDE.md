@@ -784,11 +784,19 @@ Reason: testing at the query/action boundary catches most regressions without br
 Configure a fresh clone before running the app or tests:
 
 1. **Install toolchain:** Node.js 20+, `pnpm` 9+, and native build tools for `better-sqlite3` (`python3`, `make`, `g++` on Linux).
-2. **Create `.env.local`** at the repo root (never commit it):
+2. **Create `.env.local`** at the repo root (never commit it). Copy `.env.example` as a starting point:
+
+```bash
+cp .env.example .env.local
+# Generate a strong SESSION_SECRET (32+ chars required):
+openssl rand -base64 32
+```
+
+`.env.example` documents the required keys:
 
 ```bash
 DATABASE_URL="file:./data/app.db"
-SESSION_SECRET="$(openssl rand -base64 32)"   # 32+ chars required
+SESSION_SECRET="..."   # replace with openssl rand -base64 32 output
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 ```
 
