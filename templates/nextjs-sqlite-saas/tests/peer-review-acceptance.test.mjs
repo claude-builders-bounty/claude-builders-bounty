@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-22T10:39Z (cursor takeover PR #2529) — npm test
- * green (222 total: 29 reference + 30 delivery + 163 peer-review); vitest cacheDir fix;
+ * Last hands-on verification: 2026-06-22T10:45Z (cursor takeover PR #2529) — npm test
+ * green (225 total: 29 reference + 31 delivery + 165 peer-review); vitest cacheDir fix;
  * no_committed_diff and peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -750,6 +750,15 @@ for (const rel of [
 assert(
   statSync(join(root, "reference", "scripts", "run-tests.sh")).isFile(),
   "reference/scripts/run-tests.sh runs Vitest suites in CI",
+);
+const vitestConfig = readFileSync(join(root, "reference", "vitest.config.ts"), "utf8");
+assert(
+  vitestConfig.includes('cacheDir: "node_modules/.vitest"'),
+  "reference vitest.config.ts uses project-local cacheDir for sequential CI runs",
+);
+assert(
+  vitestConfig.includes('pool: "forks"'),
+  "reference vitest.config.ts uses forks pool to avoid Vitest cache ENOENT flakes",
 );
 
 // Branch diff scoped to template bounty paths only (reject fleet stray artifacts)

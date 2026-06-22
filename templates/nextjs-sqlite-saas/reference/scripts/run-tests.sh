@@ -31,6 +31,8 @@ pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 echo "==> lint"
 pnpm lint
 
+# CI runs migration tests then the full suite sequentially; vitest.config.ts uses
+# project-local cacheDir + forks pool to avoid ENOENT flakes on shared cache.
 echo "==> migration tests"
 pnpm exec vitest run tests/db/migrations.test.ts
 

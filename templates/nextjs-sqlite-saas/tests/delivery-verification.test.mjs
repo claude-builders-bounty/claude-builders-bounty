@@ -6,8 +6,8 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-22T10:39Z (cursor takeover PR #2529) — npm test
- * green (222 total: 29 reference + 30 delivery + 163 peer-review); vitest cacheDir fix;
+ * Last hands-on verification: 2026-06-22T10:45Z (cursor takeover PR #2529) — npm test
+ * green (225 total: 29 reference + 31 delivery + 165 peer-review); vitest cacheDir fix;
  * no_committed_diff and peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -446,6 +446,16 @@ test("reference app ships dev seed script matching CLAUDE.md", () => {
   const seedSource = readFileSync(seedPath, "utf8");
   if (!seedSource.includes("NODE_ENV") || !seedSource.includes("ON CONFLICT(id) DO NOTHING")) {
     throw new Error("reference/scripts/seed.ts must block production and use idempotent upsert");
+  }
+});
+
+test("reference vitest config survives sequential CI migration then full suite runs", () => {
+  const vitestConfig = readFileSync(join(root, "reference", "vitest.config.ts"), "utf8");
+  if (!vitestConfig.includes('cacheDir: "node_modules/.vitest"')) {
+    throw new Error("vitest.config.ts must set project-local cacheDir for sequential CI runs");
+  }
+  if (!vitestConfig.includes('pool: "forks"')) {
+    throw new Error("vitest.config.ts must use forks pool to avoid cache ENOENT flakes");
   }
 });
 
