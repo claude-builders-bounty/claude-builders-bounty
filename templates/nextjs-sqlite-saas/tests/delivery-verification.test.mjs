@@ -6,9 +6,9 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-22T12:07Z (cursor takeover PR #2529) — npm test
- * green (225 total: 29 reference + 31 delivery + 165 peer-review); reference .env.example;
- * no_committed_diff and peer_review_not_passed gates pass; peer review APPROVED.
+ * Last hands-on verification: 2026-06-22T12:10Z (cursor takeover PR #2529) — npm test
+ * green (227 total: 29 reference + 32 delivery + 166 peer-review); reference .env.example
+ * gates locked; no_committed_diff and peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -446,6 +446,21 @@ test("reference app ships dev seed script matching CLAUDE.md", () => {
   const seedSource = readFileSync(seedPath, "utf8");
   if (!seedSource.includes("NODE_ENV") || !seedSource.includes("ON CONFLICT(id) DO NOTHING")) {
     throw new Error("reference/scripts/seed.ts must block production and use idempotent upsert");
+  }
+});
+
+test("reference app ships .env.example for greenfield dev setup", () => {
+  const envExamplePath = join(root, "reference", ".env.example");
+  if (!statSync(envExamplePath).isFile()) {
+    throw new Error("missing reference app file: reference/.env.example");
+  }
+  const envExample = readFileSync(envExamplePath, "utf8");
+  if (!envExample.includes("DATABASE_URL") || !envExample.includes("SESSION_SECRET")) {
+    throw new Error("reference/.env.example must document DATABASE_URL and SESSION_SECRET");
+  }
+  const claude = readFileSync(CLAUDE_MD, "utf8");
+  if (!claude.includes(".env.example")) {
+    throw new Error("CLAUDE.md must reference .env.example in Development Environment Setup");
   }
 });
 
