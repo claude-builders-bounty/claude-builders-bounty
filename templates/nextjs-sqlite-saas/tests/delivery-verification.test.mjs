@@ -6,7 +6,7 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-22T04:29Z (cursor composer hands-on takeover PR #2529) — npm test
+ * Last hands-on verification: 2026-06-22T04:31Z (cursor composer hands-on takeover PR #2529) — npm test
  * green (214 total: 24 reference + 30 delivery + 160 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED.
  */
