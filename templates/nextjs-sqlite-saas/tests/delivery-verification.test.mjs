@@ -6,8 +6,8 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-22T12:55Z (cursor takeover PR #2529) — npm test
- * green (227 total: 29 reference + 32 delivery + 166 peer-review); no_committed_diff and
+ * Last hands-on verification: 2026-06-22T13:00Z (cursor takeover PR #2529) — npm test
+ * green (229 total: 29 reference + 33 delivery + 167 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -461,6 +461,13 @@ test("reference app ships .env.example for greenfield dev setup", () => {
   const claude = readFileSync(CLAUDE_MD, "utf8");
   if (!claude.includes(".env.example")) {
     throw new Error("CLAUDE.md must reference .env.example in Development Environment Setup");
+  }
+});
+
+test("reference .env.example documents SESSION_SECRET min(32) alignment with env.ts", () => {
+  const envExample = readFileSync(join(root, "reference", ".env.example"), "utf8");
+  if (!envExample.includes("min(32)")) {
+    throw new Error("reference/.env.example must document SESSION_SECRET min(32) alignment with env.ts");
   }
 });
 

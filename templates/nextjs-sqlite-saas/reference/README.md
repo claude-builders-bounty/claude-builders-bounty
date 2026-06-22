@@ -13,7 +13,7 @@ Minimal runnable slice of the patterns documented in `CLAUDE.md`. Used by CI to 
 
 ## Environment
 
-Copy `.env.example` to `.env.local` and set a 32+ character `SESSION_SECRET` before running the app or tests locally. CI and Vitest use `:memory:` via `tests/setup.ts`.
+Copy `.env.example` to `.env.local` and set a 32+ character `SESSION_SECRET` before running the app or tests locally (the example file notes the `env.ts` `min(32)` requirement). CI and Vitest use `:memory:` via `tests/setup.ts`.
 
 ## Run tests
 

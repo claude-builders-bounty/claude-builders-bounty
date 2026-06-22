@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-22T12:55Z (cursor takeover PR #2529) — npm test
- * green (227 total: 29 reference + 32 delivery + 166 peer-review); no_committed_diff and
+ * Last hands-on verification: 2026-06-22T13:00Z (cursor takeover PR #2529) — npm test
+ * green (229 total: 29 reference + 33 delivery + 167 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED.
  */
 import { execSync } from "node:child_process";
@@ -333,6 +333,10 @@ assert(
 assert(
   statSync(join(root, "reference", ".env.example")).isFile(),
   "reference app ships .env.example matching CLAUDE.md dev environment setup",
+);
+assert(
+  readFileSync(join(root, "reference", ".env.example"), "utf8").includes("min(32)"),
+  "reference/.env.example documents SESSION_SECRET min(32) alignment with env.ts",
 );
 assert(
   statSync(join(root, "reference", "scripts/migrate.ts")).isFile(),
