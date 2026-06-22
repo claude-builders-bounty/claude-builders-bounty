@@ -5,22 +5,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Fleet sandboxes sometimes mount /tmp noexec or non-writable; fall back to
 # template .cache/smoke-workdirs (gitignored via root .gitignore).
-WORKDIR=""
-for base in "${TMPDIR:-/tmp}" "$ROOT/.cache/smoke-workdirs"; do
-  mkdir -p "$base" 2>/dev/null || continue
-  candidate="$(mktemp -d "$base/smoke.XXXXXX" 2>/dev/null)" || continue
-  if touch "$candidate/.write-test" 2>/dev/null; then
-    rm -f "$candidate/.write-test"
-    WORKDIR="$candidate"
-    break
-  fi
-  rm -rf "$candidate"
-done
-if [ -z "$WORKDIR" ]; then
-  echo "Unable to create writable smoke-test workdir (tried TMPDIR and $ROOT/.cache/smoke-workdirs)" >&2
-  exit 1
-fi
-trap 'rm -rf "$WORKDIR"' EXIT
+scaffold_args=(
+  --typescript
+  --tailwind
+  --eslint
+  --app
+  --src-dir
+  --import-alias "@/*"
+  --use-pnpm
+  --skip-install
+  --disable-git
+  --yes
+)
 
 if ! command -v pnpm >/dev/null 2>&1; then
   echo "pnpm not found; enabling via corepack..."
@@ -28,18 +24,29 @@ if ! command -v pnpm >/dev/null 2>&1; then
   corepack prepare pnpm@9 --activate
 fi
 
-echo "Scaffolding Next.js 15 App Router project in $WORKDIR..."
-timeout 180 npx --yes create-next-app@15 "$WORKDIR/app" \
-  --typescript \
-  --tailwind \
-  --eslint \
-  --app \
-  --src-dir \
-  --import-alias "@/*" \
-  --use-pnpm \
-  --skip-install \
-  --disable-git \
-  --yes
+WORKDIR=""
+for base in "${TMPDIR:-/tmp}" "$ROOT/.cache/smoke-workdirs"; do
+  mkdir -p "$base" 2>/dev/null || continue
+  candidate="$(mktemp -d "$base/smoke.XXXXXX" 2>/dev/null)" || continue
+  if ! touch "$candidate/.write-test" 2>/dev/null; then
+    rm -rf "$candidate"
+    continue
+  fi
+  rm -f "$candidate/.write-test"
+
+  echo "Scaffolding Next.js 15 App Router project in $candidate..."
+  if timeout 180 npx --yes create-next-app@15 "$candidate/app" "${scaffold_args[@]}"; then
+    WORKDIR="$candidate"
+    break
+  fi
+  rm -rf "$candidate"
+done
+
+if [ -z "$WORKDIR" ]; then
+  echo "Unable to scaffold Next.js 15 project in a writable workdir (tried TMPDIR and $ROOT/.cache/smoke-workdirs)" >&2
+  exit 1
+fi
+trap 'rm -rf "$WORKDIR"' EXIT
 
 cp "$ROOT/CLAUDE.md" "$WORKDIR/app/CLAUDE.md"
 

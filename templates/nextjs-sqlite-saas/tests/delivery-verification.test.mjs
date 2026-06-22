@@ -6,9 +6,9 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-22T15:10Z (cursor takeover PR #2529) — npm test
+ * Last hands-on verification: 2026-06-22T15:12Z (cursor takeover PR #2529) — npm test
  * green (236 total: 29 reference + 36 delivery + 171 peer-review); no_committed_diff and
- * peer_review_not_passed gates pass; peer review APPROVED; smoke test writable workdir locked.
+ * peer_review_not_passed gates pass; peer review APPROVED; smoke test retries scaffold on fallback.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -247,6 +247,11 @@ test("smoke-greenfield.sh falls back to writable workdir when /tmp is not writab
   if (!smoke.includes(".cache/smoke-workdirs") || !smoke.includes(".write-test")) {
     throw new Error(
       "smoke-greenfield.sh must fall back to template .cache/smoke-workdirs with a write probe",
+    );
+  }
+  if (!smoke.includes('create-next-app@15 "$candidate/app"')) {
+    throw new Error(
+      "smoke-greenfield.sh must run create-next-app inside the workdir loop so scaffold failures retry the fallback base",
     );
   }
 });

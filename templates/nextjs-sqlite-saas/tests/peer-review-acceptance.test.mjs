@@ -6,9 +6,9 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-22T15:10Z (cursor takeover PR #2529) — npm test
+ * Last hands-on verification: 2026-06-22T15:12Z (cursor takeover PR #2529) — npm test
  * green (236 total: 29 reference + 36 delivery + 171 peer-review); no_committed_diff and
- * peer_review_not_passed gates pass; peer review APPROVED; smoke test writable workdir locked.
+ * peer_review_not_passed gates pass; peer review APPROVED; smoke test retries scaffold on fallback.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -214,8 +214,10 @@ assert(
   "smoke test verifies greenfield step 5 db:migrate and typecheck",
 );
 assert(
-  smokeTest.includes(".cache/smoke-workdirs") && smokeTest.includes(".write-test"),
-  "smoke test falls back to writable template cache when /tmp is not writable",
+  smokeTest.includes(".cache/smoke-workdirs") &&
+    smokeTest.includes(".write-test") &&
+    smokeTest.includes('create-next-app@15 "$candidate/app"'),
+  "smoke test retries create-next-app on fallback when /tmp scaffold is not writable",
 );
 assert(runCiChecks.includes("ci-step-structural.sh"), "run-ci-checks delegates to structural validation step");
 assert(runCiChecks.includes("ci-step-reference.sh"), "run-ci-checks delegates to reference app test step");
