@@ -16,6 +16,9 @@ Minimal runnable slice of the patterns documented in `CLAUDE.md`. Used by CI to 
 ```bash
 cd reference
 pnpm install
-pnpm test          # vitest run
-bash scripts/run-tests.sh   # lint + vitest (CI entry point)
+pnpm db:migrate           # apply pending SQL migrations
+pnpm db:migrate:status    # list applied vs pending migrations
+pnpm db:seed              # dev fixtures (blocked in production)
+pnpm test                 # vitest run
+bash scripts/run-tests.sh # lint + vitest (CI entry point)
 ```
