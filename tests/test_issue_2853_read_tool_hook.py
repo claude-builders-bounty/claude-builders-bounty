@@ -9,8 +9,11 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+
+_GO_TEST_LOCK = threading.Lock()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ZEROEYE_ROOT = Path(os.environ.get("ZEROEYE_ROOT", "/workspace/zeroeye"))
@@ -70,11 +73,34 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         )
 
     def _fresh_go_env(self) -> tuple[dict[str, str], list[Path]]:
-        """Return env with isolated GOCACHE/GOTMPDIR and temp dirs to remove after use."""
+        """Return env with isolated GOCACHE/GOTMPDIR/TMPDIR and temp dirs to remove after use."""
         gocache = Path(tempfile.mkdtemp())
         gotmp = Path(tempfile.mkdtemp())
-        env = {**os.environ, "GOCACHE": str(gocache), "GOTMPDIR": str(gotmp)}
+        env = {
+            **os.environ,
+            "GOCACHE": str(gocache),
+            "GOTMPDIR": str(gotmp),
+            "TMPDIR": str(gotmp),
+        }
         return env, [gocache, gotmp]
+
+    def _run_go_test(
+        self,
+        args: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        """Run go test with serialized CGO builds to avoid /tmp assembler races."""
+        with _GO_TEST_LOCK:
+            return subprocess.run(
+                args,
+                cwd=cwd,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
 
     def test_read_tool_hook_go_layer_symbols(self) -> None:
         text = self._layer_text(GO_LAYER_FILES)
@@ -228,13 +254,10 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         bad_dir = Path(tempfile.mkdtemp())
         bad_env, bad_dirs = self._fresh_go_env()
         try:
-            result = subprocess.run(
-                ["go", "test", "./ai/...", "-count=1"],
+            result = self._run_go_test(
+                ["go", "test", "-p", "1", "./ai/...", "-count=1"],
                 cwd=bad_dir,
                 env=bad_env,
-                capture_output=True,
-                text=True,
-                check=False,
             )
             self.assertNotEqual(result.returncode, 0)
         finally:
@@ -244,13 +267,10 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
 
         good_env, good_dirs = self._fresh_go_env()
         try:
-            good = subprocess.run(
-                ["go", "test", "./ai/...", "./gateway/...", "-count=1"],
+            good = self._run_go_test(
+                ["go", "test", "-p", "1", "./ai/...", "./gateway/...", "-count=1"],
                 cwd=ZEROEYE_ROOT / "market",
                 env=good_env,
-                capture_output=True,
-                text=True,
-                check=False,
             )
             self.assertEqual(good.returncode, 0, msg=good.stdout + good.stderr)
         finally:
@@ -263,13 +283,10 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
 
         env, temp_dirs = self._fresh_go_env()
         try:
-            result = subprocess.run(
-                ["go", "test", "./ai/...", "./gateway/...", "-count=1"],
+            result = self._run_go_test(
+                ["go", "test", "-p", "1", "./ai/...", "./gateway/...", "-count=1"],
                 cwd=ZEROEYE_ROOT / "market",
                 env=env,
-                capture_output=True,
-                text=True,
-                check=False,
             )
             self.assertEqual(
                 result.returncode,
@@ -414,7 +431,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             r"54/54 \(2 README \+ 21 peer review \+ 22 issue #2853 \+ 9 delivery\)",
         )
         self.assertRegex(latest, r"22/22 \(fresh clone|reused zeroeye")
-        self.assertIn("takeover #182", latest)
+        self.assertIn("takeover #183", latest)
         self.assertIn("verify-issue-2853.sh", latest)
         self.assertIn("run-unittest-module.sh", latest)
 
