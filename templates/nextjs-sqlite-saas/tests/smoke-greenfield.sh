@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Fleet sandboxes sometimes mount /tmp noexec or non-writable; fall back to template .cache/.
+# Fleet sandboxes sometimes mount /tmp noexec or non-writable; fall back to
+# template .cache/smoke-workdirs (gitignored via root .gitignore).
 WORKDIR=""
 for base in "${TMPDIR:-/tmp}" "$ROOT/.cache/smoke-workdirs"; do
   mkdir -p "$base" 2>/dev/null || continue

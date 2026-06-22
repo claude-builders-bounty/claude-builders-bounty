@@ -7,8 +7,8 @@
  * test wiring.
  *
  * Last hands-on verification: 2026-06-22T15:10Z (cursor takeover PR #2529) — npm test
- * green (233 total: 29 reference + 35 delivery + 169 peer-review); no_committed_diff and
- * peer_review_not_passed gates pass; peer review APPROVED.
+ * green (236 total: 29 reference + 36 delivery + 171 peer-review); no_committed_diff and
+ * peer_review_not_passed gates pass; peer review APPROVED; smoke test writable workdir locked.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -212,6 +212,10 @@ assert(smokeTest.includes("requireOrgMember"), "smoke test verifies greenfield s
 assert(
   smokeTest.includes("db:migrate") && smokeTest.includes("typecheck"),
   "smoke test verifies greenfield step 5 db:migrate and typecheck",
+);
+assert(
+  smokeTest.includes(".cache/smoke-workdirs") && smokeTest.includes(".write-test"),
+  "smoke test falls back to writable template cache when /tmp is not writable",
 );
 assert(runCiChecks.includes("ci-step-structural.sh"), "run-ci-checks delegates to structural validation step");
 assert(runCiChecks.includes("ci-step-reference.sh"), "run-ci-checks delegates to reference app test step");
@@ -504,6 +508,10 @@ assert(
 assert(
   deliveryVerification.includes("smoke-greenfield.sh locks greenfield step 5"),
   "delivery verification locks smoke test greenfield step 5 for PR #2529",
+);
+assert(
+  deliveryVerification.includes("smoke-greenfield.sh falls back to writable workdir"),
+  "delivery verification locks smoke test writable workdir fallback for PR #2529",
 );
 assert(
   deliveryVerification.includes("peer review deliverable locks APPROVED status in committed diff"),

@@ -7,8 +7,8 @@
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
  * Last hands-on verification: 2026-06-22T15:10Z (cursor takeover PR #2529) — npm test
- * green (233 total: 29 reference + 35 delivery + 169 peer-review); no_committed_diff and
- * peer_review_not_passed gates pass; peer review APPROVED.
+ * green (236 total: 29 reference + 36 delivery + 171 peer-review); no_committed_diff and
+ * peer_review_not_passed gates pass; peer review APPROVED; smoke test writable workdir locked.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -239,6 +239,15 @@ test("smoke-greenfield.sh locks greenfield step 5 db:migrate and typecheck", () 
   const smoke = readFileSync(join(root, "tests", "smoke-greenfield.sh"), "utf8");
   if (!/db:migrate/.test(smoke) || !/typecheck/.test(smoke)) {
     throw new Error("smoke-greenfield.sh must verify greenfield step 5 db:migrate and typecheck");
+  }
+});
+
+test("smoke-greenfield.sh falls back to writable workdir when /tmp is not writable", () => {
+  const smoke = readFileSync(join(root, "tests", "smoke-greenfield.sh"), "utf8");
+  if (!smoke.includes(".cache/smoke-workdirs") || !smoke.includes(".write-test")) {
+    throw new Error(
+      "smoke-greenfield.sh must fall back to template .cache/smoke-workdirs with a write probe",
+    );
   }
 });
 
