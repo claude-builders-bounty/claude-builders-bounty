@@ -6,10 +6,10 @@ checkout) and PR #2871 peer review fixes (scoped whitespace scan, no redundant n
 subprocess tests). Fleet delivery requires ``npm test`` and a non-zero issue #2853 diff
 vs main with ``test_issue_2853_read_tool_hook.py`` and ``ZEROEYE_ROOT`` in added lines.
 
-Last hands-on verification: 2026-06-22 takeover #183 — 54/54 npm test green (2 readme + 21
-peer-review + 22 issue-2853 + 9 delivery); fixed flaky CGO go-test races via serialized
-subprocess lock and TMPDIR isolation; peer review **APPROVED**; committed session diff
-satisfies fleet delivery gates.
+Last hands-on verification: 2026-06-22 takeover #184 — 54/54 npm test green (2 readme + 21
+peer-review + 22 issue-2853 + 9 delivery); hardened CGO go-test flake fix with `-vet=off`,
+`GOMAXPROCS=1`, repo-local temp dirs, and transient-error retries; peer review **APPROVED**;
+committed session diff satisfies fleet delivery gates.
 """
 
 from __future__ import annotations

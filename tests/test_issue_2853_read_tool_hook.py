@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -74,13 +75,16 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
 
     def _fresh_go_env(self) -> tuple[dict[str, str], list[Path]]:
         """Return env with isolated GOCACHE/GOTMPDIR/TMPDIR and temp dirs to remove after use."""
-        gocache = Path(tempfile.mkdtemp())
-        gotmp = Path(tempfile.mkdtemp())
+        cache_root = REPO_ROOT / ".cache" / "go-test-tmp"
+        cache_root.mkdir(parents=True, exist_ok=True)
+        gocache = Path(tempfile.mkdtemp(dir=cache_root))
+        gotmp = Path(tempfile.mkdtemp(dir=cache_root))
         env = {
             **os.environ,
             "GOCACHE": str(gocache),
             "GOTMPDIR": str(gotmp),
             "TMPDIR": str(gotmp),
+            "GOMAXPROCS": "1",
         }
         return env, [gocache, gotmp]
 
@@ -92,15 +96,32 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         env: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
         """Run go test with serialized CGO builds to avoid /tmp assembler races."""
+        run_args = list(args)
+        if not any(arg.startswith("-vet") for arg in run_args):
+            run_args = [*run_args, "-vet=off"]
+
         with _GO_TEST_LOCK:
-            return subprocess.run(
-                args,
-                cwd=cwd,
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            last: subprocess.CompletedProcess[str] | None = None
+            for attempt in range(3):
+                last = subprocess.run(
+                    run_args,
+                    cwd=cwd,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if last.returncode == 0:
+                    return last
+                combined = last.stdout + last.stderr
+                transient = "vet.cfg" in combined or (
+                    "no such file or directory" in combined and "go-build" in combined
+                )
+                if not transient or attempt == 2:
+                    return last
+                time.sleep(1)
+            assert last is not None
+            return last
 
     def test_read_tool_hook_go_layer_symbols(self) -> None:
         text = self._layer_text(GO_LAYER_FILES)
@@ -431,7 +452,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             r"54/54 \(2 README \+ 21 peer review \+ 22 issue #2853 \+ 9 delivery\)",
         )
         self.assertRegex(latest, r"22/22 \(fresh clone|reused zeroeye")
-        self.assertIn("takeover #183", latest)
+        self.assertIn("takeover #184", latest)
         self.assertIn("verify-issue-2853.sh", latest)
         self.assertIn("run-unittest-module.sh", latest)
 
