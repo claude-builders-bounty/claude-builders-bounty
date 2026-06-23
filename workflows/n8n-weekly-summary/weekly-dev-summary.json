@@ -1,0 +1,181 @@
+{
+  "name": "Weekly Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtDay": 5,
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// CONFIGURABLE VARIABLES — edit these values\n// ============================================\nconst GITHUB_OWNER   = 'YOUR_ORG';          // GitHub org or user\nconst GITHUB_REPO    = 'YOUR_REPO';          // Repository name\nconst GITHUB_TOKEN   = 'ghp_xxxxxxxxxxxx';   // GitHub PAT (repo scope)\nconst CLAUDE_API_KEY = 'sk-ant-xxxxxxxxxx';  // Anthropic API key\nconst LANGUAGE       = 'en';                 // 'en' or 'fr'\n\n// Delivery: 'webhook' sends to Discord/Slack webhook URL\nconst DELIVERY_METHOD = 'webhook';\nconst WEBHOOK_URL     = 'https://discord.com/api/webhooks/XXXX/YYYY';\n// For Slack: use https://hooks.slack.com/services/T.../B.../xxx\n// For email: change DELIVERY_METHOD to 'email' and set SMTP creds in n8n\n\n// ============================================\nconst since = new Date(Date.now() - 7*24*60*60*1000).toISOString();\nconst weekLabel = since.slice(0,10) + ' → ' + new Date().toISOString().slice(0,10);\n\nreturn [{ json: { GITHUB_OWNER, GITHUB_REPO, GITHUB_TOKEN, CLAUDE_API_KEY,\n                   LANGUAGE, DELIVERY_METHOD, WEBHOOK_URL, since, weekLabel } }];"
+      },
+      "id": "2",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/commits?since={{ $json.since }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.GITHUB_TOKEN }}" },
+            { "name": "Accept", "value": "application/vnd.github+json" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst since = $('Set Config').item.json.since;\nconst commits = (Array.isArray(body) ? body : []).filter(\n  c => new Date(c.commit.author.date) >= new Date(since)\n).map(c => ({\n  message: c.commit.message.split('\\n')[0],\n  author: c.commit.author.name,\n  date: c.commit.author.date.slice(0,10),\n  sha: c.sha.slice(0,7)\n}));\nreturn [{ json: { ...$('Set Config').item.json, commits } }];"
+      },
+      "id": "4",
+      "name": "Store Commits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/issues?state=closed&since={{ $json.since }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.GITHUB_TOKEN }}" },
+            { "name": "Accept", "value": "application/vnd.github+json" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst since = $('Store Commits').item.json.since;\nconst issues = (Array.isArray(body) ? body : []).filter(\n  i => !i.pull_request && new Date(i.closed_at) >= new Date(since)\n).map(i => ({\n  title: i.title, number: i.number,\n  labels: (i.labels||[]).map(l => l.name)\n}));\nreturn [{ json: { ...$('Store Commits').item.json, issues } }];"
+      },
+      "id": "6",
+      "name": "Store Issues",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.GITHUB_TOKEN }}" },
+            { "name": "Accept", "value": "application/vnd.github+json" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7",
+      "name": "Fetch Closed PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst cfg = $('Store Issues').item.json;\nconst since = new Date(cfg.since);\nconst prs = (Array.isArray(body) ? body : []).filter(\n  p => p.merged_at && new Date(p.merged_at) >= since\n).map(p => ({\n  title: p.title, number: p.number, author: p.user?.login || 'unknown'\n}));\nreturn [{ json: { ...cfg, prs } }];"
+      },
+      "id": "8",
+      "name": "Store PRs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $json.CLAUDE_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"Generate a weekly dev summary in {{ $json.LANGUAGE === 'fr' ? 'French' : 'English' }} for {{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }} ({{ $json.weekLabel }}).\\n\\nCOMMITS ({{ $json.commits.length }}):\\n{{ JSON.stringify($json.commits.slice(0,50)) }}\\n\\nCLOSED ISSUES ({{ $json.issues.length }}):\\n{{ JSON.stringify($json.issues.slice(0,50)) }}\\n\\nMERGED PRs ({{ $json.prs.length }}):\\n{{ JSON.stringify($json.prs.slice(0,50)) }}\\n\\nWrite a concise engaging narrative summary with sections: ## 🌟 Highlights, ## 🔧 Key Changes, ## 🐛 Issues Resolved, ## 👥 Contributors. Use markdown. Keep under 500 words.\"\n  }]\n}",
+        "options": {}
+      },
+      "id": "9",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst cfg = $('Store PRs').item.json;\nconst summary = resp.content?.[0]?.text || 'Error: no summary generated.';\nconst title = `📋 Weekly Dev Summary — ${cfg.GITHUB_OWNER}/${cfg.GITHUB_REPO} (${cfg.weekLabel})`;\n\n// Discord/Slack use slightly different payloads\nconst isDiscord = cfg.WEBHOOK_URL.includes('discord');\nconst payload = isDiscord\n  ? { content: `**${title}**\\n\\n${summary}` }\n  : { text: `*${title}*\\n\\n${summary}`, username: 'Dev Summary Bot', mrkdwn: true };\n\nreturn [{ json: { summary, title, payload, deliveryMethod: cfg.DELIVERY_METHOD,\n                   webhookUrl: cfg.WEBHOOK_URL, EMAIL_TO: cfg.EMAIL_TO } }];"
+      },
+      "id": "10",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      },
+      "id": "11",
+      "name": "Send Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": { "main": [[{ "node": "Set Config", "type": "main", "index": 0 }]] },
+    "Set Config": { "main": [[{ "node": "Fetch Commits", "type": "main", "index": 0 }]] },
+    "Fetch Commits": { "main": [[{ "node": "Store Commits", "type": "main", "index": 0 }]] },
+    "Store Commits": { "main": [[{ "node": "Fetch Closed Issues", "type": "main", "index": 0 }]] },
+    "Fetch Closed Issues": { "main": [[{ "node": "Store Issues", "type": "main", "index": 0 }]] },
+    "Store Issues": { "main": [[{ "node": "Fetch Closed PRs", "type": "main", "index": 0 }]] },
+    "Fetch Closed PRs": { "main": [[{ "node": "Store PRs", "type": "main", "index": 0 }]] },
+    "Store PRs": { "main": [[{ "node": "Call Claude API", "type": "main", "index": 0 }]] },
+    "Call Claude API": { "main": [[{ "node": "Format Output", "type": "main", "index": 0 }]] },
+    "Format Output": { "main": [[{ "node": "Send Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "dev-summary" }]
+}
