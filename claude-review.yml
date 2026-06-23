@@ -1,0 +1,78 @@
+name: Claude Code PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+  pull_request_review:
+    types: [submitted]
+  workflow_dispatch:
+    inputs:
+      pr_url:
+        description: 'PR URL to review'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    name: Claude PR Review
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name != 'pull_request_review' ||
+      (github.event.review.state == 'approved' && github.event.review.user.type != 'Bot')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install anthropic requests
+
+      - name: Run Claude Review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ github.event.inputs.pr_url }}" ]; then
+            PR_URL="${{ github.event.inputs.pr_url }}"
+          else
+            PR_URL="${{ github.event.pull_request.html_url }}"
+          fi
+          python claude-review --pr "$PR_URL" --output review-output.md
+          echo "review_file=review-output.md" >> $GITHUB_OUTPUT
+
+      - name: Post Review Comment
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('review-output.md', 'utf8');
+
+            const prNumber = context.payload.pull_request?.number ||
+              context.payload.inputs?.pr_url?.split('/').pop();
+
+            if (!prNumber) {
+              core.warning('Could not determine PR number');
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(prNumber),
+              body: review
+            });
+
+            core.info('Review comment posted successfully');

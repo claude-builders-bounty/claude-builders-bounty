@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+"""
+Claude Code PR Review Agent
+Takes a PR URL, fetches the diff, analyzes it via Claude API,
+and returns a structured Markdown review.
+
+Usage:
+    ./claude-review --pr https://github.com/owner/repo/pull/123
+    ./claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+    ./claude-review --pr URL --model claude-sonnet-4-20250514
+"""
+
+import argparse
+import os
+import re
+import sys
+import json
+import subprocess
+from pathlib import Path
+from typing import Optional
+
+try:
+    import requests
+except ImportError:
+    print("Error: 'requests' package required. Run: pip install requests")
+    sys.exit(1)
+
+try:
+    import anthropic
+except ImportError:
+    print("Error: 'anthropic' package required. Run: pip install anthropic")
+    sys.exit(1)
+
+# ─── Constants ────────────────────────────────────────────────
+DEFAULT_MODEL = "claude-sonnet-4-20250514"
+MAX_DIFF_SIZE = 200_000  # characters — truncate if larger
+
+REVIEW_PROMPT = """You are an expert code reviewer. Analyze the following PR diff and produce a structured review.
+
+## Instructions
+1. Read the entire diff carefully
+2. Identify ALL changes — additions, deletions, modifications
+3. Evaluate for: correctness, security, performance, maintainability, and style
+4. Produce a review with these EXACT sections:
+
+### 📋 Summary
+Write 2-3 concise sentences summarizing what this PR does and its overall approach.
+
+### ⚠️ Identified Risks
+List specific risks you find. For each risk use format:
+- **Risk title**: Description of the risk and its potential impact
+If no risks found, write: "No significant risks identified."
+
+### 💡 Improvement Suggestions
+List actionable improvements. For each suggestion use format:
+- **Suggestion title**: What to change and why
+If no suggestions, write: "No improvements needed — the changes look solid."
+
+### 🎯 Confidence Score
+Pick ONE: Low / Medium / High
+- Low: Large/complex diff, limited context, or high uncertainty
+- Medium: Moderate confidence, some assumptions made
+- High: Clear, well-scoped changes that you fully understand
+
+## Important Rules
+- Only report issues you can SEE in the diff — do not guess about code you cannot see
+- If the diff is very large (>5000 lines), focus on the most impactful findings
+- Be specific — reference file names and line numbers where possible
+- Be constructive — every criticism should come with a recommendation
+- Do NOT make up vulnerabilities or issues that aren't present
+
+## PR Diff
+```diff
+{pr_diff}
+```
+"""
+
+# ─── Helpers ──────────────────────────────────────────────────
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    """Extract owner, repo, and PR number from a GitHub PR URL."""
+    pattern = r"github\.com/([^/]+)/([^/]+)/pull/(\d+)"
+    match = re.search(pattern, url)
+    if not match:
+        raise ValueError(f"Invalid GitHub PR URL: {url}")
+    return match.group(1), match.group(2), int(match.group(3))
+
+
+def fetch_pr_diff(owner: str, repo: str, pr_number: int, token: Optional[str] = None) -> str:
+    """Fetch the unified diff for a GitHub PR."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    headers = {"Accept": "application/vnd.github.v3.diff"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    resp = requests.get(url, headers=headers, timeout=30)
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Failed to fetch PR diff: HTTP {resp.status_code}\n"
+            f"URL: {url}\n"
+            f"Response: {resp.text[:500]}"
+        )
+    return resp.text
+
+
+def fetch_pr_info(owner: str, repo: str, pr_number: int, token: Optional[str] = None) -> dict:
+    """Fetch PR metadata (title, description, etc.)."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    resp = requests.get(url, headers=headers, timeout=30)
+    if resp.status_code != 200:
+        return {"title": f"{owner}/{repo}#{pr_number}", "body": ""}
+
+    data = resp.json()
+    return {
+        "title": data.get("title", ""),
+        "body": data.get("body", ""),
+        "author": data.get("user", {}).get("login", "unknown"),
+        "base": data.get("base", {}).get("ref", ""),
+        "head": data.get("head", {}).get("ref", ""),
+    }
+
+
+def run_review(diff: str, pr_title: str, model: str, api_key: str) -> str:
+    """Call Claude API to analyze the diff and return a structured review."""
+    client = anthropic.Anthropic(api_key=api_key)
+
+    # Truncate diff if needed
+    if len(diff) > MAX_DIFF_SIZE:
+        truncated_notice = (
+            f"\n\n[!NOTE] Diff truncated from {len(diff):,} to {MAX_DIFF_SIZE:,} characters. "
+            f"Review is based on the first {MAX_DIFF_SIZE:,} chars only.\n"
+        )
+        diff = diff[:MAX_DIFF_SIZE]
+    else:
+        truncated_notice = ""
+
+    prompt = REVIEW_PROMPT.format(pr_diff=diff)
+
+    message = client.messages.create(
+        model=model,
+        max_tokens=4096,
+        system="You are a senior software engineer performing a thorough code review. Be precise, constructive, and evidence-based. Every finding must reference specific code in the diff.",
+        messages=[
+            {
+                "role": "user",
+                "content": f"Review this PR titled '{pr_title}':\n\n{prompt}"
+            }
+        ],
+    )
+
+    review_text = message.content[0].text
+
+    # Build final output
+    header = f"## 🔍 PR Review: {pr_title}\n\n"
+    if truncated_notice:
+        header += truncated_notice + "\n"
+
+    return header + review_text
+
+
+# ─── Main ─────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Claude Code PR Review Agent — structured Markdown PR reviews",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --pr https://github.com/owner/repo/pull/123
+  %(prog)s --pr URL --output review.md
+  %(prog)s --pr URL --model claude-sonnet-4-20250514
+        """,
+    )
+    parser.add_argument(
+        "--pr", required=True,
+        help="GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)"
+    )
+    parser.add_argument(
+        "--output", "-o",
+        help="Save review to file instead of stdout"
+    )
+    parser.add_argument(
+        "--model", default=DEFAULT_MODEL,
+        help=f"Claude model to use (default: {DEFAULT_MODEL})"
+    )
+    args = parser.parse_args()
+
+    # Get API key
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY environment variable not set.", file=sys.stderr)
+        print("  export ANTHROPIC_API_KEY=sk-ant-...", file=sys.stderr)
+        sys.exit(1)
+
+    github_token = os.environ.get("GITHUB_TOKEN")
+
+    try:
+        # Parse URL
+        owner, repo, pr_number = parse_pr_url(args.pr)
+        print(f"🔍 Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+
+        # Fetch PR info and diff
+        pr_info = fetch_pr_info(owner, repo, pr_number, github_token)
+        diff = fetch_pr_diff(owner, repo, pr_number, github_token)
+
+        if not diff.strip():
+            print("Error: PR diff is empty. The PR may have no changes.", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"   Diff: {len(diff):,} chars | Author: {pr_info['author']} | Base: {pr_info['base']}", file=sys.stderr)
+        print(f"🤖 Running Claude review (model: {args.model})...", file=sys.stderr)
+
+        # Run review
+        review = run_review(diff, pr_info["title"], args.model, api_key)
+
+        # Output
+        if args.output:
+            Path(args.output).write_text(review, encoding="utf-8")
+            print(f"✅ Review saved to {args.output}", file=sys.stderr)
+        else:
+            print(review)
+
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except anthropic.APIError as e:
+        print(f"Claude API Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
