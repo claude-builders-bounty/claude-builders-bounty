@@ -266,6 +266,7 @@ assert(
     proof.includes('hands-on takeover #25') &&
     proof.includes('hands-on takeover #26') &&
     proof.includes('hands-on takeover #27') &&
+    proof.includes('hands-on takeover #28') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -342,6 +343,10 @@ assert(
 assert(
   workflow.description?.includes('SUMMARY_EMAIL_FROM'),
   'workflow description documents SUMMARY_EMAIL_FROM email format validation',
+);
+assert(
+  workflow.description?.includes('n8n@localhost'),
+  'workflow description documents SUMMARY_EMAIL_FROM default sender address',
 );
 
 if (failures.length) {
