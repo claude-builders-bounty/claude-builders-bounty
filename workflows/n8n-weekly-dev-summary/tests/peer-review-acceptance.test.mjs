@@ -119,7 +119,12 @@ assert(
   'Load Config validates SUMMARY_EMAIL_FROM format before email delivery',
 );
 const sendEmail = workflow.nodes.find((n) => n.name === 'Send Email');
+const sendEmailFrom = sendEmail?.parameters?.fromEmail || '';
 const sendEmailTo = sendEmail?.parameters?.toEmail || '';
+assert(
+  sendEmailFrom.includes('$json.config.emailFrom') && loadCode.includes('emailFrom:'),
+  'Send Email.fromEmail resolves to emailFrom populated by Load Config',
+);
 assert(
   sendEmailTo.includes('$json.config.emailTo') && loadCode.includes('emailTo:'),
   'Send Email.toEmail resolves to emailTo populated by Load Config',
@@ -267,6 +272,7 @@ assert(
     proof.includes('hands-on takeover #26') &&
     proof.includes('hands-on takeover #27') &&
     proof.includes('hands-on takeover #28') &&
+    proof.includes('hands-on takeover #29') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -347,6 +353,11 @@ assert(
 assert(
   workflow.description?.includes('n8n@localhost'),
   'workflow description documents SUMMARY_EMAIL_FROM default sender address',
+);
+assert(
+  workflow.description?.includes('Send Email resolves fromEmail') &&
+    workflow.description.includes('Load Config emailFrom'),
+  'workflow description documents Send Email fromEmail wiring from Load Config',
 );
 
 if (failures.length) {

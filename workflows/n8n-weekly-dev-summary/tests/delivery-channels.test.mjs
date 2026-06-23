@@ -134,6 +134,7 @@ for (const [name, envVar, bodyField] of [
 }
 
 const sendEmail = workflow.nodes.find((n) => n.name === 'Send Email');
+assert(sendEmail?.parameters?.fromEmail?.includes('emailFrom'), 'Send Email resolves sender from Load Config emailFrom');
 assert(sendEmail?.parameters?.toEmail?.includes('emailTo'), 'Send Email resolves recipient from Load Config emailTo');
 assert(sendEmail?.parameters?.subject?.includes('emailSubject'), 'Send Email uses formatted emailSubject');
 assert(sendEmail?.parameters?.text?.includes('emailText'), 'Send Email uses formatted emailText');
