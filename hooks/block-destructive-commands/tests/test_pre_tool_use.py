@@ -332,6 +332,8 @@ class CheckCommandTests(unittest.TestCase):
             'command bash -l -c "rm -rf /"',
             'command -p rm -rf /tmp',
             "env bash rm -rf /data",
+            "sudo -n rm -rf /tmp",
+            "sudo -u root -H rm -rf /tmp",
         )
         for command in blocked:
             with self.subTest(command=command):

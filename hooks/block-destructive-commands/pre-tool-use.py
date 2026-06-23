@@ -264,9 +264,21 @@ def is_git_force_via_config(command: str) -> bool:
     return False
 
 
-_SUDO_FLAGS = r"(?:-[ughpCRDUn](?:\s+\S+)?|-[a-zA-Z]+|--[\w-]+(?:=\S+|\s+\S+)?|\w+=\S*)"
-_ENV_FLAGS = r"(?:-\w+|--[\w-]+(?:=\S+|\s+\S+)?|\w+=\S*)"
-_COMMAND_FLAGS = r"(?:-\w+|--[\w-]+(?:=\S+|\s+\S+)?|\w+=\S*)"
+# Whitelist wrapper flags so rm/git short options (e.g. -rf) are never peeled as sudo/env flags.
+_SUDO_VALUE_FLAGS = r"-(?:u|g|p|C|D|R|t|U)\s+\S+"
+_SUDO_BOOL_FLAGS = r"-(?:A|b|B|E|e|h|H|i|K|k|l|L|n|P|S|s|V|v)"
+_SUDO_FLAGS = (
+    rf"(?:{_SUDO_VALUE_FLAGS}|{_SUDO_BOOL_FLAGS}|--[\w-]+(?:=\S+|\s+\S+)?|\w+=\S*|--)"
+)
+_ENV_VALUE_FLAGS = r"-(?:u)\s+\S+"
+_ENV_BOOL_FLAGS = r"-(?:i|0)"
+_ENV_FLAGS = (
+    rf"(?:{_ENV_VALUE_FLAGS}|{_ENV_BOOL_FLAGS}|--[\w-]+(?:=\S+|\s+\S+)?|\w+=\S*|--)"
+)
+_COMMAND_BOOL_FLAGS = r"-(?:p|V|v|E|F)"
+_COMMAND_FLAGS = (
+    rf"(?:{_COMMAND_BOOL_FLAGS}|--[\w-]+(?:=\S+|\s+\S+)?|--)"
+)
 _COMMAND_WRAPPER = re.compile(
     r"^(?:"
     rf"sudo(?:\s+{_SUDO_FLAGS})*\s+|"

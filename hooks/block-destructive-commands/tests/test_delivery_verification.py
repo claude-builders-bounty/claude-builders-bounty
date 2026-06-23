@@ -2,9 +2,9 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-23 (code delivery takeover PR #2556) —
-unwrap sudo/command flag prefixes (e.g. sudo -u, command -p) before rm checks so
-display-only echo/grep text is not falsely blocked; npm test green
-(149 unittest + 9 delivery + 23 peer-review); hook-only branch scope.
+whitelist sudo/env/command wrapper flags so rm short options (-rf) are not
+mistaken for sudo flags; blocks sudo -n rm -rf and sudo -u root -H rm -rf;
+npm test green (150 unittest + 9 delivery + 23 peer-review); hook-only scope.
 """
 
 from __future__ import annotations
