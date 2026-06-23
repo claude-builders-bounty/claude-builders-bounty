@@ -325,9 +325,12 @@ class CheckCommandTests(unittest.TestCase):
     def test_blocks_rm_with_env_prefix(self):
         blocked = (
             "sudo rm -rf /var/cache",
+            "sudo -u root rm -rf /var/cache",
+            'sudo -u root bash -lc "rm -rf /"',
             'env bash -lc "rm -rf /srv"',
             'env -i HOME=/tmp bash -lc "rm -rf /tmp"',
             'command bash -l -c "rm -rf /"',
+            'command -p rm -rf /tmp',
             "env bash rm -rf /data",
         )
         for command in blocked:
@@ -336,6 +339,18 @@ class CheckCommandTests(unittest.TestCase):
                     self.hook.check_command(command),
                     "Recursive force delete (rm -rf)",
                 )
+
+    def test_allows_rm_rf_text_after_sudo_or_command_flags(self):
+        """sudo -u / command -p must unwrap flags so echo/grep display text is allowed."""
+        allowed = (
+            "sudo -u root echo rm -rf /",
+            "sudo -E echo rm -rf /",
+            "command -p echo rm -rf /",
+            "command -p grep rm -rf README.md",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertIsNone(self.hook.check_command(command))
 
     def test_blocks_rm_in_env_wrapped_shell_c_ansi_c_quoting(self):
         blocked = (

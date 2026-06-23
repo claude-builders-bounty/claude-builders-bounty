@@ -264,18 +264,23 @@ def is_git_force_via_config(command: str) -> bool:
     return False
 
 
+_SUDO_FLAGS = r"(?:-[ughpCRDUn](?:\s+\S+)?|-[a-zA-Z]+|--[\w-]+(?:=\S+|\s+\S+)?|\w+=\S*)"
+_ENV_FLAGS = r"(?:-\w+|--[\w-]+(?:=\S+|\s+\S+)?|\w+=\S*)"
+_COMMAND_FLAGS = r"(?:-\w+|--[\w-]+(?:=\S+|\s+\S+)?|\w+=\S*)"
 _COMMAND_WRAPPER = re.compile(
-    r"^(?:sudo\s+|"
-    r"env(?:\s+(?:-\w+|--[\w-]+|\w+=\S*))*\s+|"
-    r"command\s+)+",
+    r"^(?:"
+    rf"sudo(?:\s+{_SUDO_FLAGS})*\s+|"
+    rf"env(?:\s+{_ENV_FLAGS})*\s+|"
+    rf"command(?:\s+{_COMMAND_FLAGS})*\s+"
+    r")+",
     re.IGNORECASE,
 )
 
 
 def unwrap_command_wrapper(segment: str) -> str:
-    """Peel sudo/env/command prefixes before destructive-pattern checks."""
+    """Peel sudo/env/command prefixes (including flags) before pattern checks."""
     stripped = segment.strip()
-    unwrapped = _COMMAND_WRAPPER.sub("", stripped, count=1).strip()
+    unwrapped = _COMMAND_WRAPPER.sub("", stripped).strip()
     return unwrapped or stripped
 
 

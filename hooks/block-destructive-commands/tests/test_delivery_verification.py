@@ -2,8 +2,9 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-23 (code delivery takeover PR #2556) —
-removed stray fleet commit adding test/internal/exporter_test.go; npm test green
-(147 unittest + 9 delivery + 23 peer-review); hook-only branch scope restored.
+unwrap sudo/command flag prefixes (e.g. sudo -u, command -p) before rm checks so
+display-only echo/grep text is not falsely blocked; npm test green
+(149 unittest + 9 delivery + 23 peer-review); hook-only branch scope.
 """
 
 from __future__ import annotations
