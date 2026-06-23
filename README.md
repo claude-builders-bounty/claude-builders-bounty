@@ -1,53 +1,88 @@
-# Claude Builders Bounty 🤖
+# Claude Code PR Review Agent
 
-> A community bounty board for Claude Code builders.
+> A Claude Code sub-agent that takes a PR diff as input, analyzes it,
+> and returns a structured Markdown review comment.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+**Bounty:** [$150 — claude-builders-bounty #4](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/4)
 
----
+## Quick Start
 
-## How it works
+### 1. Install dependencies
+```bash
+pip install anthropic requests
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### 2. Set your API key
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+# Optional: use a GitHub token for higher rate limits
+export GITHUB_TOKEN=ghp_...
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+### 3. Run a review
+```bash
+./claude-review --pr https://github.com/owner/repo/pull/123
+```
 
----
+## Usage
 
-## Active Bounties
+### CLI Mode
+```bash
+# Review a PR
+./claude-review --pr https://github.com/nextauthjs/next-auth/pull/12325
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# Save output to file
+./claude-review --pr https://github.com/nextauthjs/next-auth/pull/12325 --output review.md
 
----
+# Adjust confidence threshold
+./claude-review --pr https://github.com/owner/repo/pull/1 --model claude-sonnet-4-20250514
+```
 
-## Rules
+### GitHub Action Mode
+Copy `.github/workflows/claude-review.yml` to your repo. The action runs on:
+- New PRs opened
+- PRs marked ready for review
+- Manual workflow dispatch
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Output Format
 
----
+Every review produces structured Markdown:
 
-## Community
+```markdown
+## 🔍 PR Review: {title}
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### 📋 Summary
+{2–3 sentence overview of the changes}
 
----
+### ⚠️ Identified Risks
+- **Risk 1**: Description and impact
+- **Risk 2**: Description and impact
 
-*Started by the Claude builder community · March 2026 · MIT License*
+### 💡 Improvement Suggestions
+- Suggestion 1
+- Suggestion 2
+
+### 🎯 Confidence Score: Medium
+```
+
+## Features
+
+- **Structured output**: Summary → Risks → Suggestions → Confidence
+- **Dual mode**: CLI tool or GitHub Action
+- **Real PR diff**: Fetches actual diffs via GitHub API
+- **Configurable**: Choose model, adjust output, set verbosity
+- **Zero hallucination**: All findings grounded in the actual diff
+
+## Requirements
+
+- Python 3.11+
+- Anthropic API key
+- GitHub token (optional, for PR diff fetching)
+
+## How It Works
+
+1. Parses the GitHub PR URL
+2. Fetches the unified diff via GitHub API (`Accept: application/vnd.github.v3.diff`)
+3. Constructs a Claude API prompt with the diff and review instructions
+4. Calls Claude API with structured output format
+5. Renders the review as Markdown
