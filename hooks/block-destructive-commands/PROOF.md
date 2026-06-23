@@ -494,6 +494,17 @@ re-validation; no hook logic changes required.
 - PR state: MERGEABLE; no maintainer review feedback; head matches remote
 - Rebase: not needed (`origin/main` is merge-base)
 
+## Hands-on verification (2026-06-23, code delivery takeover)
+
+Fleet commit `659305cd` added stray empty `test/internal/exporter_test.go`, failing
+`test_branch_diff_scoped_to_hook_only` and `test_branch_diff_excludes_unrelated_exporter_paths`.
+Reset to `40ff0071` (hook-only diff); no hook logic changes required.
+
+- `npm test` green: 147 unittest + 9 delivery + 23 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
+- Hook source @ `3cb8b273`: GNU long-option `is_rm_rf()` + sudo/env/command unwrapping
+- PR #2556: MERGEABLE/CLEAN; Fixes #3
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

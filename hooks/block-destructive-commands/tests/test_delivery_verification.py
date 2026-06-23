@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
-Last hands-on verification: 2026-06-21 (hands-on takeover PR #2556) —
-npm test green; is_rm_rf matches GNU --recursive/--force long options (incl.
-=VALUE forms); unwrap_command_wrapper peels sudo/env/command before shell -c.
+Last hands-on verification: 2026-06-23 (code delivery takeover PR #2556) —
+removed stray fleet commit adding test/internal/exporter_test.go; npm test green
+(147 unittest + 9 delivery + 23 peer-review); hook-only branch scope restored.
 """
 
 from __future__ import annotations
