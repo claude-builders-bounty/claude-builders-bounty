@@ -1,0 +1,99 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "id": "cron-trigger",
+      "name": "Weekly Cron (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "parameters": {
+        "rule": { "interval": [{"field": "cron", "expression": "0 17 * * 5"}] }
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "Get Weekly Commits",
+      "type": "n8n-nodes-base.github",
+      "parameters": {
+        "repository": "={{ $json.owner }}/{{ $json.repo }}",
+        "resource": "commit",
+        "operation": "list",
+        "since": "={{ $now.subtract(7, 'days').toISO() }}",
+        "until": "={{ $now.toISO() }}"
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "parameters": {
+        "repository": "={{ $json.owner }}/{{ $json.repo }}",
+        "resource": "issue",
+        "operation": "list",
+        "filters": { "state": "closed", "since": "={{ $now.subtract(7, 'days').toISO() }}" }
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "parameters": {
+        "repository": "={{ $json.owner }}/{{ $json.repo }}",
+        "resource": "pullRequest",
+        "operation": "list",
+        "filters": { "state": "closed", "since": "={{ $now.subtract(7, 'days').toISO() }}" }
+      }
+    },
+    {
+      "id": "merge-data",
+      "name": "Merge Activity Data",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "language": "javascript",
+        "code": "const commits = $input.all()[0].json;\nconst issues = $input.all()[1].json;\nconst prs = $input.all()[2].json;\nreturn {\n  commitCount: commits.length,\n  issueCount: issues.length,\n  prCount: prs.length,\n  commitMessages: commits.slice(0,20).map(c => c.commit.message.split('\\n')[0]),\n  issueTitles: issues.slice(0,10).map(i => i.title),\n  prTitles: prs.slice(0,10).map(p => p.title),\n  repoOwner: $env.REPO_OWNER,\n  repoName: $env.REPO_NAME,\n  weekStart: new Date(Date.now() - 7*86400000).toISOString().split('T')[0],\n  weekEnd: new Date().toISOString().split('T')[0]\n};"
+      }
+    },
+    {
+      "id": "claude-call",
+      "name": "Generate Summary via Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "authentication": "genericCredential",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $env.CLAUDE_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "model", "value": "claude-sonnet-4-20250514"},
+            {"name": "max_tokens", "value": 2000},
+            {"name": "messages", "value": "[{\"role\":\"user\",\"content\":\"Generate a weekly dev summary in Markdown for {{ $json.repoOwner }}/{{ $json.repoName }}.\\n\\nWeek: {{ $json.weekStart }} → {{ $json.weekEnd }}\\n\\nCommits this week: {{ $json.commitCount }}\\nTop commits:\\n{{ $json.commitMessages.slice(0,15).map((m,i) => (i+1)+'. '+m).join('\\\\n') }}\\n\\nClosed issues: {{ $json.issueCount }}\\n{{ $json.issueTitles.map((t,i) => (i+1)+'. '+t).join('\\\\n') }}\\n\\nMerged PRs: {{ $json.prCount }}\\n{{ $json.prTitles.map((p,i) => (i+1)+'. '+p).join('\\\\n') }}\\n\\nFormat with sections: Highlights, Key Changes, Stats, Notes. Keep it under 500 words.\"}]"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "slack-output",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "parameters": {
+        "channel": "={{ $env.SLACK_CHANNEL || '#dev-summary' }}",
+        "text": "={{ $json.content[0].text }}",
+        "sendAs": "markdown"
+      }
+    }
+  ],
+  "connections": {
+    "cron-trigger": {"main": [[{"node": "github-commits"}, {"node": "github-issues"}, {"node": "github-prs"}]]},
+    "github-commits": {"main": [[{"node": "merge-data", "index": 0}]]},
+    "github-issues": {"main": [[{"node": "merge-data", "index": 1}]]},
+    "github-prs": {"main": [[{"node": "merge-data", "index": 2}]]},
+    "merge-data": {"main": [[{"node": "claude-call"}]]},
+    "claude-call": {"main": [[{"node": "slack-output"}]]}
+  }
+}
