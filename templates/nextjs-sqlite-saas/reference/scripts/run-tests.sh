@@ -28,6 +28,10 @@ node "${REPO_ROOT}/scripts/validate-reference-env.mjs"
 echo "==> install dependencies"
 pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 
+# Project-local temp dir avoids Vitest ENOENT flakes when /tmp is cleared mid-run.
+mkdir -p "$ROOT/node_modules/.tmp"
+export TMPDIR="$ROOT/node_modules/.tmp"
+
 echo "==> lint"
 pnpm lint
 

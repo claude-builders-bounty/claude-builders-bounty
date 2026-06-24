@@ -15,6 +15,7 @@ CI and fleet delivery scripts for the Next.js 15 + SQLite SaaS `CLAUDE.md` templ
 | `peer-review-acceptance.test.mjs` | Bounty #2 acceptance criteria for PR #2529 |
 | `ci-step-*.sh` | Focused CI stages (security, structural, reference, delivery, peer-review) |
 | `run-ci-checks.sh` | Orchestrates all stages; invoked by repo-root `npm test` |
+| `reference/scripts/run-tests.sh` | Reference Vitest runner; sets `TMPDIR=node_modules/.tmp` to avoid cache ENOENT flakes |
 
 ## Run locally
 
