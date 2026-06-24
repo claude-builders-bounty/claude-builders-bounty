@@ -6,7 +6,7 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-24T04:20Z (cursor hands-on takeover PR #2529) — npm test
+ * Last hands-on verification: 2026-06-24T19:38Z (cursor hands-on takeover PR #2529) — npm test
  * green (236 total: 29 reference + 36 delivery + 171 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED; run-ci-checks.sh and run-tests.sh
  * set project-local TMPDIR.
