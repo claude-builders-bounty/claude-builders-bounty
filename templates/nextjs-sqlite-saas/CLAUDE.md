@@ -814,7 +814,7 @@ pnpm dev                 # http://localhost:3000
 
 Reason: validating env at boot and applying migrations explicitly prevents “works on my machine” schema drift across branches.
 
-**CI / test env:** Vitest sets `DATABASE_URL=":memory:"` in `tests/setup.ts` so unit tests never touch the on-disk `./data/app.db` file. `reference/scripts/run-tests.sh` sets `TMPDIR` to `node_modules/.tmp` (alongside `vitest.config.ts` `cacheDir: "node_modules/.vitest"`) so sequential migration + full-suite runs do not flake when `/tmp` is cleared mid-run.
+**CI / test env:** Vitest sets `DATABASE_URL=":memory:"` in `tests/setup.ts` so unit tests never touch the on-disk `./data/app.db` file. `reference/scripts/run-tests.sh` and the template `tests/run-ci-checks.sh` set `TMPDIR` under project-local `.cache/` (alongside `vitest.config.ts` `cacheDir: "node_modules/.vitest"`) so sequential migration + full-suite runs do not flake when `/tmp` is cleared mid-run.
 
 **Greenfield smoke test:** From the monorepo root, `bash templates/nextjs-sqlite-saas/tests/smoke-greenfield.sh` copies this CLAUDE.md into a fresh `create-next-app@15` scaffold and validates all bounty sections survive the copy. If `/tmp` is noexec or non-writable (common in fleet sandboxes), the script retries under `templates/nextjs-sqlite-saas/.cache/smoke-workdirs/` (gitignored).
 

@@ -33,6 +33,11 @@ run_step() {
 
 cd "$REPO_ROOT"
 
+# Project-local temp dir avoids smoke-test and subprocess flakes when /tmp is cleared mid-run.
+TEMPLATE_CACHE="${REPO_ROOT}/templates/nextjs-sqlite-saas/.cache"
+mkdir -p "${TEMPLATE_CACHE}/tmp"
+export TMPDIR="${TEMPLATE_CACHE}/tmp"
+
 run_step "git merge-base" bash "${TESTS_DIR}/ci-step-git-base.sh"
 run_step "security audits" bash "${TESTS_DIR}/ci-step-security.sh"
 run_step "structural validation" bash "${TESTS_DIR}/ci-step-structural.sh"
