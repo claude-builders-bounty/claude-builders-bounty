@@ -816,6 +816,8 @@ Reason: validating env at boot and applying migrations explicitly prevents “wo
 
 **CI / test env:** Vitest sets `DATABASE_URL=":memory:"` in `tests/setup.ts` so unit tests never touch the on-disk `./data/app.db` file.
 
+**Greenfield smoke test:** From the monorepo root, `bash templates/nextjs-sqlite-saas/tests/smoke-greenfield.sh` copies this CLAUDE.md into a fresh `create-next-app@15` scaffold and validates all bounty sections survive the copy. If `/tmp` is noexec or non-writable (common in fleet sandboxes), the script retries under `templates/nextjs-sqlite-saas/.cache/smoke-workdirs/` (gitignored).
+
 ---
 
 ## Deployment
