@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+Use `/generate-changelog` in Claude Code or `changelog.sh` to create a structured `CHANGELOG.md` from commits after the latest git tag. If the repository has no tags, the generator uses the full commit history.
+
+1. Run `/generate-changelog` in Claude Code, or run `python scripts/generate_changelog.py` from the repository root.
+2. Review the generated `CHANGELOG.md` sections: `Added`, `Fixed`, `Changed`, and `Removed`.
+3. Optional: pass a path such as `docs/CHANGELOG.md` to write to a custom location.
+
+Sample output from this repository is available in [`examples/CHANGELOG.sample.md`](examples/CHANGELOG.sample.md).
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
