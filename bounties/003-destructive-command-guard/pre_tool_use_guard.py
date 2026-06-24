@@ -29,25 +29,103 @@ def _strip_sql_comments(command: str) -> str:
 
 def _shell_tokens(command: str) -> list[str]:
     try:
-        return shlex.split(command, posix=os.name != "nt")
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        return list(lexer)
     except ValueError:
         return command.split()
 
 
+def _command_name(token: str) -> str:
+    return token.rsplit("/", 1)[-1]
+
+
+def _skip_wrapper(tokens: list[str], index: int) -> int:
+    wrapper = _command_name(tokens[index])
+    index += 1
+
+    if wrapper == "sudo":
+        sudo_options_with_value = {"-C", "-g", "-h", "-p", "-T", "-t", "-U", "-u"}
+        while index < len(tokens):
+            token = tokens[index]
+            if token == "--":
+                index += 1
+                break
+            if token in sudo_options_with_value and index + 1 < len(tokens):
+                index += 2
+                continue
+            if any(token.startswith(option) and token != option for option in sudo_options_with_value):
+                index += 1
+                continue
+            if token.startswith("-"):
+                index += 1
+                continue
+            break
+        return index
+
+    if wrapper == "env":
+        while index < len(tokens):
+            token = tokens[index]
+            if token == "--":
+                index += 1
+                break
+            if token in {"-i", "-0"} or token.startswith("-"):
+                index += 1
+                continue
+            if "=" in token and not token.startswith("="):
+                index += 1
+                continue
+            break
+        return index
+
+    if wrapper in {"command", "builtin"}:
+        while index < len(tokens) and tokens[index].startswith("-"):
+            index += 1
+        return index
+
+    if wrapper == "time":
+        if index < len(tokens) and tokens[index] == "-p":
+            index += 1
+        return index
+
+    if wrapper == "nice":
+        if index < len(tokens) and re.fullmatch(r"-n?", tokens[index]) and index + 1 < len(tokens):
+            index += 2
+        elif index < len(tokens) and re.fullmatch(r"-\d+", tokens[index]):
+            index += 1
+        return index
+
+    return index
+
+
 def _contains_rm_rf(command: str) -> bool:
     tokens = _shell_tokens(command)
-    for index, token in enumerate(tokens):
-        if token not in {"rm", "/bin/rm", "sudo"}:
+    command_separators = {";", "&&", "||", "|", "&", "("}
+    for index, _token in enumerate(tokens):
+        if index > 0 and tokens[index - 1] not in command_separators:
             continue
 
-        rm_index = index
-        if token == "sudo" and index + 1 < len(tokens) and tokens[index + 1].endswith("rm"):
-            rm_index = index + 1
-        elif token == "sudo":
+        command_index = index
+        seen_wrappers = set()
+        while command_index < len(tokens) and _command_name(tokens[command_index]) in {
+            "sudo",
+            "env",
+            "command",
+            "builtin",
+            "time",
+            "nice",
+        }:
+            wrapper = _command_name(tokens[command_index])
+            if wrapper in seen_wrappers:
+                break
+            seen_wrappers.add(wrapper)
+            command_index = _skip_wrapper(tokens, command_index)
+
+        if command_index >= len(tokens) or _command_name(tokens[command_index]) != "rm":
             continue
 
         flags = ""
-        for arg in tokens[rm_index + 1 :]:
+        for arg in tokens[command_index + 1 :]:
             if arg == "--":
                 break
             if not arg.startswith("-") or arg == "-":

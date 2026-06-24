@@ -13,6 +13,7 @@ Manual configuration is also available in `settings.example.json`.
 ## What It Blocks
 
 - `rm -rf` and equivalent recursive forced deletion variants
+  - Includes common wrappers such as `sudo -u root`, `env VAR=value`, `command`, `nice`, and `/usr/bin/rm`
 - `git push --force`, `git push -f`, `git push --force-with-lease`
 - `DROP TABLE`
 - `TRUNCATE`

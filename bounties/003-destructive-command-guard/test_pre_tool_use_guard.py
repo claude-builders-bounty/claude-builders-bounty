@@ -13,6 +13,28 @@ class GuardPatternTests(unittest.TestCase):
         self.assertIn("rm", guard.find_block_reason("rm -rf build"))
         self.assertIn("rm", guard.find_block_reason("sudo rm -fr /tmp/demo"))
 
+    def test_blocks_rm_rf_behind_common_wrappers(self):
+        examples = [
+            "sudo -n rm -rf /tmp/demo",
+            "sudo -u root -H /bin/rm -rf /tmp/demo",
+            "env FOO=bar rm -rf dist",
+            "command rm -rf dist",
+            "nice -n 10 /usr/bin/rm -rf dist",
+            "time -p rm -rf dist",
+        ]
+        for command in examples:
+            with self.subTest(command=command):
+                self.assertIn("rm", guard.find_block_reason(command))
+
+    def test_blocks_rm_rf_after_shell_separators(self):
+        self.assertIn("rm", guard.find_block_reason("pytest -q && rm -rf dist"))
+        self.assertIn("rm", guard.find_block_reason("echo ok; sudo -n rm -rf /tmp/demo"))
+
+    def test_rm_rf_wrapper_detection_avoids_echo_false_positives(self):
+        self.assertIsNone(guard.find_block_reason("echo rm -rf dist"))
+        self.assertIsNone(guard.find_block_reason("echo 'rm -rf dist'"))
+        self.assertIsNone(guard.find_block_reason("sudo -u root echo rm -rf /tmp/demo"))
+
     def test_blocks_force_push(self):
         self.assertIn("force push", guard.find_block_reason("git push --force origin main"))
         self.assertIn("force push", guard.find_block_reason("git push -f"))
