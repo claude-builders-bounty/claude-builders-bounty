@@ -4,7 +4,7 @@
 Last hands-on verification: 2026-06-25 (code delivery takeover PR #2556) —
 whitelist sudo/env/command wrapper flags so rm short options (-rf) are not
 mistaken for sudo flags; blocks sudo -n rm -rf and sudo -u root -H rm -rf;
-npm test green (148 unittest + 11 delivery + 23 peer-review); hook-only scope.
+npm test green (151 unittest + 12 delivery + 23 peer-review); hook-only scope.
 """
 
 from __future__ import annotations
@@ -189,6 +189,33 @@ class DeliveryVerificationTests(unittest.TestCase):
                     {
                         "tool_name": "Bash",
                         "tool_input": {"command": "sudo -n rm -rf /tmp"},
+                        "cwd": "/workspace/demo",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            output = json.loads(result.stdout)
+            hook_output = output["hookSpecificOutput"]
+            self.assertEqual(hook_output["hookEventName"], "PreToolUse")
+            self.assertEqual(hook_output["permissionDecision"], "deny")
+            self.assertIn("rm -rf", hook_output["permissionDecisionReason"])
+
+    def test_cli_denies_sudo_u_root_H_rm_rf_with_official_schema(self):
+        """sudo -u root -H must peel user/env flags then block rm -rf (PR #2556)."""
+        with tempfile.TemporaryDirectory() as temp_home:
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            result = subprocess.run(
+                [sys.executable, str(HOOK_PATH)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "sudo -u root -H rm -rf /tmp"},
                         "cwd": "/workspace/demo",
                     }
                 ),

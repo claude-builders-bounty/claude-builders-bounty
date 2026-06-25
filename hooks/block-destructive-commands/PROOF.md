@@ -19,9 +19,9 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 148 tests in ...s
+Ran 151 tests in ...s
 OK
-Ran 9 delivery verification tests — OK
+Ran 12 delivery verification tests — OK
 Ran 23 tests — OK
 OK: peer review acceptance tests passed
 OK: all CI validation checks passed
@@ -517,6 +517,19 @@ changes required.
 - Hook fix: `_SUDO_FLAGS` whitelist prevents rm short options (`-rf`) being peeled as sudo flags
 - PR #2556: MERGEABLE; head `e84b7d6f` matches `fork/feat/issue-3-destructive-command-hook-v2`
 - Rebase: not needed (`origin/main` is merge-base)
+
+## Hands-on verification (2026-06-25, code delivery takeover)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `244f2068` (PR #2556). Prior fleet
+session failed `no_committed_diff` with docs-only edits; codified sudo wrapper CLI
+delivery checks and re-verified hook source diff vs `main`.
+
+- `npm test` green: 151 unittest + 12 delivery + 23 peer-review + attribution checks
+- Branch scope: 16 hook-only paths; no `internal/` in `main...HEAD` diff
+- CLI: `sudo -n rm -rf /tmp` denied; `sudo -u root -H rm -rf /tmp` denied;
+  `sudo -u root echo rm -rf /` allowed; `git status` allowed
+- Hook source diff vs `main`: 749 lines on `pre-tool-use.py` (substantive committed delivery)
+- PR #2556: MERGEABLE; head matches `fork/feat/issue-3-destructive-command-hook-v2`
 
 ## Acceptance criteria
 
