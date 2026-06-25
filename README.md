@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate Changelog
+
+Create a structured `CHANGELOG.md` from git history:
+
+1. Run `bash changelog.sh`.
+2. Review the generated `CHANGELOG.md`.
+3. Optionally run `bash changelog.sh --since <tag>` to choose a starting point.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
