@@ -19,7 +19,7 @@ make ci-validate
 ## Expected output
 
 ```
-Ran 147 tests in ...s
+Ran 148 tests in ...s
 OK
 Ran 9 delivery verification tests — OK
 Ran 23 tests — OK
@@ -504,6 +504,19 @@ Reset to `40ff0071` (hook-only diff); no hook logic changes required.
 - Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`)
 - Hook source @ `3cb8b273`: GNU long-option `is_rm_rf()` + sudo/env/command unwrapping
 - PR #2556: MERGEABLE/CLEAN; Fixes #3
+
+## Hands-on verification (2026-06-25, sprout-idle-nudge merge-nurture)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `e84b7d6f` (PR #2556). Merge-nurture
+re-check after sudo flag-whitelist fixes (`e3367b42`, `e84b7d6f`); no further hook logic
+changes required.
+
+- `npm test` green: 148 unittest + 9 delivery + 23 peer-review + attribution checks
+- Branch scope: 16 hook-only paths (`git diff main...HEAD --name-only`); no `internal/` in diff
+- CLI: `sudo -n rm -rf /tmp` denied; `sudo -u root echo rm -rf /` allowed; `git status` allowed
+- Hook fix: `_SUDO_FLAGS` whitelist prevents rm short options (`-rf`) being peeled as sudo flags
+- PR #2556: MERGEABLE; head `e84b7d6f` matches `fork/feat/issue-3-destructive-command-hook-v2`
+- Rebase: not needed (`origin/main` is merge-base)
 
 ## Acceptance criteria
 
