@@ -574,6 +574,7 @@ assert(workflow.includes("Makefile"), "CI triggers on Makefile changes");
 assert(workflow.includes("package.json"), "CI triggers on package.json changes");
 assert(!workflow.includes("package-lock.json"), "CI must not trigger on redundant package-lock.json");
 assert(workflow.includes(".gitignore"), "CI triggers on .gitignore changes");
+assert(workflow.includes(".secrets.baseline"), "CI triggers on .secrets.baseline changes");
 assert(workflow.includes("scripts/"), "CI triggers on scripts/ changes");
 assert(
   /permissions:\s*\n\s*contents:\s*read/.test(workflow),
@@ -839,6 +840,7 @@ const strayFleetArtifacts = ["example.js", "mkdocs.go", ".cache"];
 const allowedPrefixes = [
   "templates/nextjs-sqlite-saas/",
   ".github/workflows/test-nextjs-sqlite-template.yml",
+  ".secrets.baseline",
   "Makefile",
   "package.json",
   ".gitignore",
