@@ -51,3 +51,17 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Generate Changelog Tool
+
+Use `bash changelog.sh` to generate a structured `CHANGELOG.md` from the current repository's git history.
+
+### Setup In 3 Steps
+
+1. Clone or open any git repository.
+2. Copy `changelog.sh` and `scripts/generate_changelog.py` into the repository root.
+3. Run `bash changelog.sh` to write `CHANGELOG.md` from commits since the latest tag.
+
+The tool auto-categorizes commits into `Added`, `Fixed`, `Changed`, and `Removed`. If a repository has no tags, it uses the full available history. See `examples/SAMPLE_CHANGELOG.md` for sample output generated from this repository.
