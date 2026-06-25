@@ -35,7 +35,7 @@ npm run env-check
 
 # Full CI validation (7 ci-step-*.sh stages: security, structural, reference, delivery, peer-review)
 npm test
-# or: make test / make ci-validate (env-check + scripts/run-ci-checks.sh)
+# or: make test (env-check + scripts/run-ci-checks.sh)
 
 # Security audits (also run at the start of npm test via run-ci-checks.sh)
 node templates/nextjs-sqlite-saas/tests/check-secret-tokens.mjs

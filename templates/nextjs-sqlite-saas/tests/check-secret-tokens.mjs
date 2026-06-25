@@ -46,6 +46,24 @@ if (!/permissions:\s*\n\s*contents:\s*read/.test(templateWorkflow)) {
 if (!templateWorkflow.includes("check-secret-tokens.mjs")) {
   failures.push("test-nextjs-sqlite-template.yml: must run check-secret-tokens.mjs");
 }
+if (!templateWorkflow.includes("::add-mask::") || !templateWorkflow.includes("SESSION_SECRET")) {
+  failures.push("test-nextjs-sqlite-template.yml: must mask SESSION_SECRET in CI logs");
+}
+if (!templateWorkflow.includes("secret-scanner")) {
+  failures.push("test-nextjs-sqlite-template.yml: must run secret-scanner to block secret exposure");
+}
+if (
+  !templateWorkflow.includes("Run component tests") ||
+  !templateWorkflow.includes("tests/components/")
+) {
+  failures.push("test-nextjs-sqlite-template.yml: must run component tests explicitly");
+}
+if (
+  !templateWorkflow.includes("file-backed SQLite") ||
+  !templateWorkflow.includes("file:./.cache/ci-sqlite")
+) {
+  failures.push("test-nextjs-sqlite-template.yml: must run migration tests against file-backed SQLite");
+}
 
 const hardcodedSecretPatterns = [
   {
@@ -121,19 +139,33 @@ for (const [index, block] of claudeCodeBlocks.entries()) {
   }
 }
 
-// Peer-review: ensure runtime env validation enforces SESSION_SECRET length/complexity.
+// Peer-review: shared env validation module and reference env script wiring.
+const envValidationUtils = readFileSync(
+  join(repoRoot, "scripts/env-validation-utils.mjs"),
+  "utf8",
+);
+if (!envValidationUtils.includes("isStrongSessionSecret") || !envValidationUtils.includes("length < 32")) {
+  failures.push(
+    "scripts/env-validation-utils.mjs: must reject SESSION_SECRET shorter than 32 characters",
+  );
+}
+if (!envValidationUtils.includes("NEXT_PUBLIC_APP_URL") || !envValidationUtils.includes("isValidAppUrl")) {
+  failures.push(
+    "scripts/env-validation-utils.mjs: must validate NEXT_PUBLIC_APP_URL as http(s) URL",
+  );
+}
 const validateReferenceEnv = readFileSync(
   join(repoRoot, "scripts/validate-reference-env.mjs"),
   "utf8",
 );
-if (!validateReferenceEnv.includes("SESSION_SECRET") || !validateReferenceEnv.includes("length < 32")) {
+if (!validateReferenceEnv.includes("env-validation-utils.mjs")) {
   failures.push(
-    "scripts/validate-reference-env.mjs: must reject SESSION_SECRET shorter than 32 characters",
+    "scripts/validate-reference-env.mjs: must import shared env-validation-utils.mjs",
   );
 }
-if (!validateReferenceEnv.includes("isStrongSessionSecret")) {
+if (!validateReferenceEnv.includes("NEXT_PUBLIC_APP_URL")) {
   failures.push(
-    "scripts/validate-reference-env.mjs: must validate SESSION_SECRET complexity (not weak or single-character)",
+    "scripts/validate-reference-env.mjs: must validate NEXT_PUBLIC_APP_URL alongside DATABASE_URL and SESSION_SECRET",
   );
 }
 

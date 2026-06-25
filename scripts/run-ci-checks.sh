@@ -26,9 +26,19 @@ on_err() {
 }
 trap on_err ERR
 
-if [[ ! -x "$TEMPLATE_RUNNER" ]]; then
-  echo "run-ci-checks failed: missing executable template runner at ${TEMPLATE_RUNNER}" >&2
+if [[ ! -f "$TEMPLATE_RUNNER" ]]; then
+  echo "run-ci-checks failed: missing template runner at ${TEMPLATE_RUNNER}" >&2
   exit 1
 fi
 
-exec bash "$TEMPLATE_RUNNER" "$@"
+if [[ ! -x "$TEMPLATE_RUNNER" ]]; then
+  echo "run-ci-checks failed: template runner is not executable at ${TEMPLATE_RUNNER}" >&2
+  exit 1
+fi
+
+echo "run-ci-checks: invoking template runner at ${TEMPLATE_RUNNER}" >&2
+if ! bash "$TEMPLATE_RUNNER" "$@"; then
+  exit_code=$?
+  echo "run-ci-checks failed: template runner exited with status ${exit_code}" >&2
+  exit "$exit_code"
+fi

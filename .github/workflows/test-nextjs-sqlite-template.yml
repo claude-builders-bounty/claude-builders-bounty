@@ -37,6 +37,11 @@ concurrency:
   group: test-nextjs-sqlite-template-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  DATABASE_URL: ":memory:"
+  SESSION_SECRET: "ci-Session-Secret-32-Chars-Minimum-X9"
+  NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -53,6 +58,15 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9
+      - name: Mask sensitive CI env vars in logs
+        run: |
+          echo "::add-mask::${SESSION_SECRET}"
+          echo "::add-mask::${DATABASE_URL}"
+          echo "::add-mask::${NEXT_PUBLIC_APP_URL}"
+      - name: Scan for secret exposure
+        uses: secret-scanner/action@v2
+        with:
+          detect_secret_additional_args: '--exclude-files \.github/workflows/test-nextjs-sqlite-template\.yml|\.env\.example|CLAUDE\.md'
       - name: Verify secret token protection
         run: node templates/nextjs-sqlite-saas/tests/check-secret-tokens.mjs
       - name: Verify SQL parameterization
@@ -63,17 +77,20 @@ jobs:
           node templates/nextjs-sqlite-saas/validate-template.mjs
       - name: Validate reference app env vars
         run: node scripts/validate-reference-env.mjs
-        env:
-          DATABASE_URL: ":memory:"
-          SESSION_SECRET: "ci-Session-Secret-32-Chars-Minimum-X9"
-      - name: Run database migration tests
+      - name: Run database migration tests (in-memory)
         run: |
           cd templates/nextjs-sqlite-saas/reference
           pnpm install --frozen-lockfile 2>/dev/null || pnpm install
           pnpm exec vitest run tests/db/migrations.test.ts
-        env:
-          DATABASE_URL: ":memory:"
-          SESSION_SECRET: "ci-Session-Secret-32-Chars-Minimum-X9"
-          NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+      - name: Run database migration tests (file-backed SQLite)
+        run: |
+          cd templates/nextjs-sqlite-saas/reference
+          mkdir -p .cache/ci-sqlite
+          export DATABASE_URL="file:./.cache/ci-sqlite/migrations-ci.db"
+          pnpm exec vitest run tests/db/migrations.test.ts
+      - name: Run component tests
+        run: |
+          cd templates/nextjs-sqlite-saas/reference
+          pnpm exec vitest run tests/components/
       - name: Run template CI validation
         run: npm test

@@ -6,10 +6,10 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-25T01:27Z (cursor hands-on takeover PR #2529) — npm test
+ * Last hands-on verification: 2026-06-25T02:15Z (cursor hands-on takeover PR #2529) — npm test
  * green (236 total: 29 reference + 36 delivery + 171 peer-review); no_committed_diff and
- * peer_review_not_passed gates pass; peer review APPROVED; dropped fleet commit 10942ec7
- * that reintroduced out-of-scope bounties/issue-2853 session patches; PR head 65a40878.
+ * peer_review_not_passed gates pass; peer review APPROVED; peer-review fixes: env masking,
+ * secret-scanner, file-backed SQLite migrations, component tests, env-validation-utils refactor.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -99,14 +99,14 @@ test("repo root exposes npm test and test:ci entry points", () => {
 test("repo root keeps reproducible npm test wiring", () => {
   const makefile = readFileSync(join(repoRoot, "Makefile"), "utf8");
   const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
-  if (!makefile.includes("ci-validate:")) {
-    throw new Error("Makefile must expose ci-validate target");
+  if (!makefile.includes("run-ci-checks.sh")) {
+    throw new Error("Makefile test must invoke scripts/run-ci-checks.sh");
+  }
+  if (makefile.includes("ci-validate:")) {
+    throw new Error("Makefile must not expose redundant ci-validate alias covered by test");
   }
   if (!/^test:\s*env-check/m.test(makefile)) {
     throw new Error("Makefile test target must depend on env-check before CI validation");
-  }
-  if (!makefile.includes("run-ci-checks.sh")) {
-    throw new Error("Makefile test must invoke scripts/run-ci-checks.sh");
   }
   if (existsSync(join(repoRoot, "package-lock.json"))) {
     throw new Error("package-lock.json must not exist — reference app uses reference/pnpm-lock.yaml");

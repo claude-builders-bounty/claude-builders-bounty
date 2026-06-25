@@ -6,10 +6,10 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-25T01:27Z (cursor hands-on takeover PR #2529) — npm test
+ * Last hands-on verification: 2026-06-25T02:15Z (cursor hands-on takeover PR #2529) — npm test
  * green (236 total: 29 reference + 36 delivery + 171 peer-review); no_committed_diff and
- * peer_review_not_passed gates pass; peer review APPROVED; dropped fleet commit 10942ec7
- * that reintroduced out-of-scope bounties/issue-2853 session patches; PR head 65a40878.
+ * peer_review_not_passed gates pass; peer review APPROVED; peer-review fixes: env masking,
+ * secret-scanner, file-backed SQLite migrations, component tests, env-validation-utils refactor.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -291,6 +291,22 @@ assert(
   "CI workflow runs database migration tests explicitly",
 );
 assert(
+  workflow.includes("file-backed SQLite") && workflow.includes("file:./.cache/ci-sqlite"),
+  "CI workflow runs migration tests against file-backed SQLite",
+);
+assert(
+  workflow.includes("Run component tests") && workflow.includes("tests/components/"),
+  "CI workflow runs component tests explicitly",
+);
+assert(
+  workflow.includes("::add-mask::") && workflow.includes("SESSION_SECRET"),
+  "CI workflow masks SESSION_SECRET in logs",
+);
+assert(
+  workflow.includes("secret-scanner"),
+  "CI workflow runs secret-scanner to block secret exposure",
+);
+assert(
   workflow.includes("validate-reference-env.mjs"),
   "CI workflow validates DATABASE_URL and SESSION_SECRET before tests",
 );
@@ -298,10 +314,22 @@ assert(
   statSync(join(repoRoot, "scripts/validate-reference-env.mjs")).isFile(),
   "scripts/validate-reference-env.mjs validates required reference app env vars",
 );
-const validateReferenceEnv = readFileSync(join(repoRoot, "scripts/validate-reference-env.mjs"), "utf8");
 assert(
-  validateReferenceEnv.includes("isStrongSessionSecret") && validateReferenceEnv.includes("length < 32"),
-  "validate-reference-env.mjs validates SESSION_SECRET length and complexity",
+  statSync(join(repoRoot, "scripts/env-validation-utils.mjs")).isFile(),
+  "scripts/env-validation-utils.mjs shares env validation logic across scripts",
+);
+const validateReferenceEnv = readFileSync(join(repoRoot, "scripts/validate-reference-env.mjs"), "utf8");
+const envValidationUtils = readFileSync(join(repoRoot, "scripts/env-validation-utils.mjs"), "utf8");
+assert(
+  validateReferenceEnv.includes("env-validation-utils.mjs") &&
+    envValidationUtils.includes("isStrongSessionSecret") &&
+    envValidationUtils.includes("length < 32"),
+  "validate-reference-env.mjs imports shared SESSION_SECRET validation from env-validation-utils.mjs",
+);
+assert(
+  validateReferenceEnv.includes("NEXT_PUBLIC_APP_URL") &&
+    envValidationUtils.includes("isValidAppUrl"),
+  "validate-reference-env.mjs validates NEXT_PUBLIC_APP_URL via shared env-validation-utils.mjs",
 );
 assert(
   workflow.includes("check-sql-parameterization.mjs"),
@@ -313,6 +341,7 @@ assert(
 );
 assert(
   checkSecretTokens.includes("validate-reference-env.mjs") &&
+    checkSecretTokens.includes("env-validation-utils.mjs") &&
     checkSecretTokens.includes("z.string().min(32)"),
   "check-secret-tokens.mjs validates SESSION_SECRET length and env.ts min(32) wiring",
 );
@@ -400,8 +429,13 @@ assert(gitignore.includes(".cache/"), ".gitignore excludes fleet cache clones");
 assert(makefile.includes("run-ci-checks.sh"), "Makefile test target runs unified validation");
 assert(makefile.includes("scripts/run-ci-checks.sh"), "Makefile uses root scripts/run-ci-checks.sh entry point");
 assert(/^test:\s*env-check/m.test(makefile), "Makefile test depends on env-check before CI validation");
-assert(makefile.includes("ci-validate:"), "Makefile exposes ci-validate alias for CI runners");
+assert(!makefile.includes("ci-validate:"), "Makefile avoids redundant ci-validate alias covered by test");
 assert(makefile.includes("env-check:"), "Makefile exposes env-check target for toolchain validation");
+assert(
+  rootCiChecks.includes("invoking template runner") &&
+    rootCiChecks.includes("template runner exited with status"),
+  "scripts/run-ci-checks.sh logs template runner failures with exit status",
+);
 assert(
   statSync(join(repoRoot, "scripts/run-ci-checks.sh")).isFile(),
   "scripts/run-ci-checks.sh is the root CI entry point referenced by npm test",
