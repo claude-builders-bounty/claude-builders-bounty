@@ -1,0 +1,245 @@
+{
+  "name": "Weekly Dev Summary (GitHub + Claude + Discord)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cron",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "1d8a1c89-2e11-48bd-b65a-df9f3791a8e1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            {
+              "name": "owner",
+              "value": "adamsithr"
+            },
+            {
+              "name": "repo",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "language",
+              "value": "EN"
+            },
+            {
+              "name": "discord_webhook_url",
+              "value": "YOUR_DISCORD_WEBHOOK_URL"
+            },
+            {
+              "name": "claude_api_key",
+              "value": "YOUR_CLAUDE_API_KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2e7a3b8c-5f9d-4e1a-8c1b-2d4e5f6a7b8c",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "owner": "={{ $json.owner }}",
+        "repository": "={{ $json.repo }}",
+        "since": "={{ $now.subtract(7, 'days').toISO() }}"
+      },
+      "id": "3d5f6e7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [550, 150]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "owner": "={{ $json.owner }}",
+        "repository": "={{ $json.repo }}",
+        "filters": {
+          "state": "closed",
+          "since": "={{ $now.subtract(7, 'days').toISO() }}"
+        }
+      },
+      "id": "4e5f6g7h-8i9j-0k1l-2m3n-4o5p6q7r8s9t",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "owner": "={{ $json.owner }}",
+        "repository": "={{ $json.repo }}",
+        "filters": {
+          "state": "closed"
+        }
+      },
+      "id": "5f6g7h8i-9j0k-1l2m-3n4o-5p6q7r8s9t0u",
+      "name": "Get Closed PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [550, 450]
+    },
+    {
+      "parameters": {
+        "language": "javascript",
+        "code": "const commits = $items(\"Get Commits\");\nconst issues = $items(\"Get Closed Issues\");\nconst prs = $items(\"Get Closed PRs\");\nconst config = $items(\"Configuration\")[0].json;\n\n// Filter PRs merged in the last 7 days\nconst sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\nconst mergedPRs = prs.filter(p => p.json.pull_request && p.json.closed_at && new Date(p.json.closed_at) >= sevenDaysAgo);\n\nreturn [{\n  json: {\n    owner: config.owner,\n    repo: config.repo,\n    language: config.language,\n    discord_webhook_url: config.discord_webhook_url,\n    claude_api_key: config.claude_api_key,\n    commits: commits.map(c => c.json.commit.message.split('\\n')[0]).slice(0, 15),\n    issues: issues.map(i => i.json.title).slice(0, 10),\n    prs: mergedPRs.map(p => p.json.title).slice(0, 10),\n    commitCount: commits.length,\n    issueCount: issues.length,\n    prCount: mergedPRs.length\n  }\n}];"
+      },
+      "id": "6g7h8i9j-0k1l-2m3n-4o5p-6q7r8s9t0u1v",
+      "name": "Merge & Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.claude_api_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": \"claude-3-5-sonnet-20241022\", \"max_tokens\": 1500, \"messages\": [{\"role\": \"user\", \"content\": \"Generate a weekly development summary in {{ $json.language }} for repository {{ $json.owner }}/{{ $json.repo }}.\\n\\nActivity Stats:\\n- Commits: {{ $json.commitCount }}\\n- Closed Issues: {{ $json.issueCount }}\\n- Merged PRs: {{ $json.prCount }}\\n\\nCommits list:\\n{{ $json.commits.join('\\\\n') }}\\n\\nIssues list:\\n{{ $json.issues.join('\\\\n') }}\\n\\nPRs list:\\n{{ $json.prs.join('\\\\n') }}\\n\\nProvide sections: 📊 Stats, 🚀 Highlights, 🛠 Fixed, and 📝 Notes. Format using Markdown suitable for Slack/Discord.\"}]}"
+      },
+      "id": "7h8i9j0k-1l2m-3n4o-5p6q-7r8s9t0u1v2w",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.discord_webhook_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content\": \"**Weekly Development Summary for {{ $items('Merge & Format Data')[0].json.owner }}/{{ $items('Merge & Format Data')[0].json.repo }}**\\n\\n{{ $json.content[0].text }}\"}"
+      },
+      "id": "8i9j0k1l-2m3n-4o5p-6q7r-8s9t0u1v2w3x",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1300, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Closed PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Closed PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge & Format Data": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
