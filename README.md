@@ -22,6 +22,12 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+1. Copy `changelog.sh` into a git repository that has commit history.
+2. Run `bash changelog.sh` or `/generate-changelog` from Claude Code.
+3. Review and commit the generated `CHANGELOG.md`.
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
