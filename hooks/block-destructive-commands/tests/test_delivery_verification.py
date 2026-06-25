@@ -2,9 +2,8 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-06-25 (code delivery takeover PR #2556) —
-whitelist sudo/env/command wrapper flags so rm short options (-rf) are not
-mistaken for sudo flags; blocks sudo -n rm -rf and sudo -u root -H rm -rf;
-npm test green (151 unittest + 12 delivery + 23 peer-review); hook-only scope.
+unwrap sudo -u#0 UID shorthand before destructive checks; blocks sudo -u#0 rm -rf
+while allowing sudo -u#0 echo rm -rf text; npm test green; hook-only scope.
 """
 
 from __future__ import annotations
@@ -231,6 +230,58 @@ class DeliveryVerificationTests(unittest.TestCase):
             self.assertEqual(hook_output["hookEventName"], "PreToolUse")
             self.assertEqual(hook_output["permissionDecision"], "deny")
             self.assertIn("rm -rf", hook_output["permissionDecisionReason"])
+
+    def test_cli_denies_sudo_u_hash_uid_rm_rf_with_official_schema(self):
+        """sudo -u#0 UID shorthand must unwrap before rm -rf detection (PR #2556)."""
+        with tempfile.TemporaryDirectory() as temp_home:
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            result = subprocess.run(
+                [sys.executable, str(HOOK_PATH)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "sudo -u#0 rm -rf /tmp"},
+                        "cwd": "/workspace/demo",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            output = json.loads(result.stdout)
+            hook_output = output["hookSpecificOutput"]
+            self.assertEqual(hook_output["hookEventName"], "PreToolUse")
+            self.assertEqual(hook_output["permissionDecision"], "deny")
+            self.assertIn("rm -rf", hook_output["permissionDecisionReason"])
+
+    def test_cli_allows_sudo_u_hash_uid_echo_rm_rf_text(self):
+        """sudo -u#0 display commands must not false-positive on rm -rf text."""
+        with tempfile.TemporaryDirectory() as temp_home:
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            result = subprocess.run(
+                [sys.executable, str(HOOK_PATH)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "sudo -u#0 echo rm -rf /"},
+                        "cwd": "/workspace/demo",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout.strip(), "")
+            log_file = Path(temp_home) / ".claude" / "hooks" / "blocked.log"
+            self.assertFalse(log_file.exists())
 
     def test_cli_allows_sudo_echo_rm_rf_text(self):
         """sudo display commands must not false-positive on rm -rf text after flags."""

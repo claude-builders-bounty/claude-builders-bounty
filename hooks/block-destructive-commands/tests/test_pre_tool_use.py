@@ -334,6 +334,7 @@ class CheckCommandTests(unittest.TestCase):
             "env bash rm -rf /data",
             "sudo -n rm -rf /tmp",
             "sudo -u root -H rm -rf /tmp",
+            "sudo -u#0 rm -rf /tmp",
         )
         for command in blocked:
             with self.subTest(command=command):
@@ -346,6 +347,7 @@ class CheckCommandTests(unittest.TestCase):
         """sudo -u / command -p must unwrap flags so echo/grep display text is allowed."""
         allowed = (
             "sudo -u root echo rm -rf /",
+            "sudo -u#0 echo rm -rf /",
             "sudo -E echo rm -rf /",
             "command -p echo rm -rf /",
             "command -p grep rm -rf README.md",
