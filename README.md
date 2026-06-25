@@ -51,3 +51,53 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Issue #3: Destructive Bash Command Blocker
+
+This repository includes a Claude Code `PreToolUse` hook that blocks destructive bash commands before they run.
+
+### What It Blocks
+
+- `rm -rf`
+- `DROP TABLE`
+- `git push --force`
+- `TRUNCATE`
+- `DELETE FROM` statements without a `WHERE` clause
+
+Every blocked attempt is appended to `~/.claude/hooks/blocked.log` with a timestamp, attempted command, project path, and reason.
+
+### Install
+
+```bash
+mkdir -p ~/.claude/hooks && curl -fsSL https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/hooks/block_destructive_commands.py -o ~/.claude/hooks/block_destructive_commands.py && chmod +x ~/.claude/hooks/block_destructive_commands.py
+```
+
+Add this hook entry to your Claude Code settings:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/block_destructive_commands.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Local Test
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+When a dangerous command is detected, the hook exits with status `2` and writes a clear explanation to stderr so Claude can see why the command was blocked. Normal bash commands exit with status `0` and continue normally.
