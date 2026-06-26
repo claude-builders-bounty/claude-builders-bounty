@@ -282,7 +282,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
         finally:
-            bad_dir.rmdir()
+            shutil.rmtree(bad_dir, ignore_errors=True)
             for path in bad_dirs:
                 shutil.rmtree(path, ignore_errors=True)
 
@@ -452,7 +452,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             r"54/54 \(2 README \+ 21 peer review \+ 22 issue #2853 \+ 9 delivery\)",
         )
         self.assertRegex(latest, r"22/22 \(fresh clone|reused zeroeye")
-        self.assertIn("takeover #297", latest)
+        self.assertIn("takeover #298", latest)
         self.assertIn("verify-issue-2853.sh", latest)
         self.assertIn("run-unittest-module.sh", latest)
 
