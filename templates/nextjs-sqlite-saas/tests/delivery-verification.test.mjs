@@ -6,8 +6,8 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-26T01:13Z (cursor hands-on takeover PR #2529) — npm test
- * green (244 total: 29 reference + 36 delivery + 179 peer-review); no_committed_diff and
+ * Last hands-on verification: 2026-06-26T01:15Z (cursor hands-on takeover PR #2529) — npm test
+ * green (247 total: 29 reference + 37 delivery + 181 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED; peer-review fixes: env masking,
  * secret-scanner, file-backed SQLite migrations, component tests, env-validation-utils refactor.
  */
@@ -165,6 +165,20 @@ test("ci runner declares delivery and peer-review summary lines", () => {
   }
   if (!peerReviewStep.includes('echo "Ran ${peer_review_tests} tests — OK"')) {
     throw new Error("ci-step-peer-review.sh must print Ran N tests — OK after peer-review suite");
+  }
+});
+
+test("package.json test:delivery prints fleet delivery gate summaries", () => {
+  const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+  const script = pkg.scripts?.["test:delivery"] ?? "";
+  if (!script.includes("no_committed_diff gate passed")) {
+    throw new Error("package.json test:delivery must print no_committed_diff gate passed");
+  }
+  if (!script.includes("peer_review_not_passed gate passed")) {
+    throw new Error("package.json test:delivery must print peer_review_not_passed gate passed");
+  }
+  if (!script.includes("OK: delivery verification tests passed")) {
+    throw new Error("package.json test:delivery must print fleet delivery summary");
   }
 });
 

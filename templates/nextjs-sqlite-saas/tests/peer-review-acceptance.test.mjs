@@ -6,8 +6,8 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-26T01:13Z (cursor hands-on takeover PR #2529) — npm test
- * green (244 total: 29 reference + 36 delivery + 179 peer-review); no_committed_diff and
+ * Last hands-on verification: 2026-06-26T01:15Z (cursor hands-on takeover PR #2529) — npm test
+ * green (247 total: 29 reference + 37 delivery + 181 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED; peer-review fixes: env masking,
  * secret-scanner, file-backed SQLite migrations, component tests, env-validation-utils refactor.
  */
@@ -511,6 +511,14 @@ assert(
 assert(
   packageJson.scripts?.["test:delivery"]?.includes("OK: delivery verification tests passed"),
   "package.json test:delivery prints fleet-expected delivery summary",
+);
+assert(
+  packageJson.scripts?.["test:delivery"]?.includes("no_committed_diff gate passed"),
+  "package.json test:delivery prints no_committed_diff gate passed",
+);
+assert(
+  packageJson.scripts?.["test:delivery"]?.includes("peer_review_not_passed gate passed"),
+  "package.json test:delivery prints peer_review_not_passed gate passed",
 );
 assert(makefile.includes("test-peer-review:"), "Makefile exposes test-peer-review target");
 assert(makefile.includes("test-delivery:"), "Makefile exposes test-delivery target");
