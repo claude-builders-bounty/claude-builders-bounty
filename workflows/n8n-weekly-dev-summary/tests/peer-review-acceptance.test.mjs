@@ -231,6 +231,14 @@ assert(
   workflowPkg.scripts?.['test:delivery']?.includes('OK: delivery verification tests passed'),
   'test:delivery prints fleet-expected delivery summary',
 );
+assert(
+  workflowPkg.scripts?.['test:delivery']?.includes('no_committed_diff gate passed'),
+  'test:delivery prints no_committed_diff gate passed for fleet delivery check',
+);
+assert(
+  workflowPkg.scripts?.['test:delivery']?.includes('peer_review_not_passed gate passed'),
+  'test:delivery prints peer_review_not_passed gate passed for fleet delivery check',
+);
 
 const makefile = readFileSync(join(repoRoot, 'Makefile'), 'utf8');
 assert(makefile.includes('test-peer-review:') && makefile.includes('test:peer-review'), 'Makefile exposes test-peer-review target');
@@ -275,6 +283,7 @@ assert(
     proof.includes('hands-on takeover #29') &&
     proof.includes('hands-on takeover #30') &&
     proof.includes('hands-on takeover #31') &&
+    proof.includes('hands-on takeover #32') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
