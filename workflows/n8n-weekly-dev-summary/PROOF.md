@@ -12,6 +12,25 @@
 
 ## Test evidence
 
+### Verification (2026-06-26, cursor hands-on takeover #31)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — full CI mirror (delivery gates, peer-review)
+npm run test:peer-review && npm run test:delivery && npm run test:github
+# PASS — isolated fleet gate entry points + live GitHub API
+git diff main...HEAD -- workflows/n8n-weekly-dev-summary/weekly-dev-summary.json | wc -l
+# 485+ lines — scheduleTrigger + claude-sonnet-4-20250514 in committed diff
+```
+
+Cursor hands-on takeover #31 (PR #2541 / issue #5): removed stray issue-2853 session
+patch files accidentally committed on bounty branch; re-verified merge-ready state
+(MERGEABLE/CLEAN); `no_committed_diff` and `peer_review_not_passed` fleet gates pass.
+
+```
+OK: 317 tests passed
+```
+
 ### Verification (2026-06-26, cursor hands-on takeover #30)
 
 ```bash
