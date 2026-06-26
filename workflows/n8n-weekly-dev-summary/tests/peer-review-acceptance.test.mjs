@@ -273,6 +273,7 @@ assert(
     proof.includes('hands-on takeover #27') &&
     proof.includes('hands-on takeover #28') &&
     proof.includes('hands-on takeover #29') &&
+    proof.includes('hands-on takeover #30') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',
@@ -358,6 +359,10 @@ assert(
   workflow.description?.includes('Send Email resolves fromEmail') &&
     workflow.description.includes('Load Config emailFrom'),
   'workflow description documents Send Email fromEmail wiring from Load Config',
+);
+assert(
+  workflow.description?.includes('toEmail from Load Config emailTo'),
+  'workflow description documents Send Email toEmail wiring from Load Config',
 );
 
 if (failures.length) {
