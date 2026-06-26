@@ -40,7 +40,7 @@ def get_latest_tag(repo):
 
 def get_commits_since(repo, tag):
     ref = f"{tag}..HEAD" if tag else "HEAD"
-    out = run(["git", "log", ref, "--format=%H%x00%s%x00%an%x00%ad", "--date=short"], cwd=repo)
+    out = run(["git", "log", ref, "--no-merges", "--format=%H%x00%s%x00%an%x00%ad", "--date=short"], cwd=repo)
     if not out:
         return []
     entries = []

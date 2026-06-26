@@ -1,3 +1,8 @@
+---
+name: generate-changelog
+description: Generate a structured CHANGELOG.md from git history since the last tag, auto-categorizing commits into Added/Fixed/Changed/Removed sections.
+---
+
 # generate-changelog
 
 Generate a structured `CHANGELOG.md` from git history since the last tag.
@@ -27,11 +32,21 @@ python3 changelog.py --preview
 ## What it does
 
 - Finds the most recent git tag with `git describe --tags`
-- Collects all commits since that tag (or all commits if no tags exist)
+- Collects all commits since that tag (skips merge commits)
 - Categorizes each commit into **Added**, **Fixed**, **Changed**, or **Removed** using:
   - Conventional commit prefixes (`feat:`, `fix:`, `refactor:`, etc.)
-  - Plain-English keyword matching in the commit subject
+  - Plain-English keyword matching as fallback
 - Writes a formatted `CHANGELOG.md` to the repo root
+
+## Categorization rules
+
+| Prefix / keyword | Category |
+|-----------------|----------|
+| `feat`, `add`, `new`, `implement` | **Added** |
+| `fix`, `bug`, `patch`, `resolve` | **Fixed** |
+| `refactor`, `update`, `bump`, `improve` | **Changed** |
+| `remove`, `drop`, `delete`, `deprecate` | **Removed** |
+| *(anything else)* | **Changed** |
 
 ## Output format
 
