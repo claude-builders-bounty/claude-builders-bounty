@@ -307,6 +307,10 @@ assert(
   "CI workflow runs secret-scanner to block secret exposure",
 );
 assert(
+  workflow.includes("detect_secrets_version: '1.5.0'"),
+  "CI workflow pins detect_secrets_version to 1.5.0 (matches .secrets.baseline)",
+);
+assert(
   workflow.includes("validate-reference-env.mjs"),
   "CI workflow validates DATABASE_URL and SESSION_SECRET before tests",
 );
