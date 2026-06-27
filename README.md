@@ -1,53 +1,102 @@
-# Claude Builders Bounty 🤖
+# CHANGELOG Generator Skill
 
-> A community bounty board for Claude Code builders.
-
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+Auto-generate a structured `CHANGELOG.md` from your project's git history.
+Works in **3 steps** or fewer.
 
 ---
 
-## How it works
+## Setup (3 Steps)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### 1. Place the files
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```
+your-project/
+├── .claude/
+│   └── skills/
+│       └── generate-changelog/
+│           └── SKILL.md      ← copy from this repo
+├── changelog.sh              ← copy from this repo
+└── README.md
+```
 
----
+### 2. (Claude Code users only) Make the skill discoverable
 
-## Active Bounties
+```bash
+cp -r .claude/skills/generate-changelog ~/.claude/skills/
+```
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### 3. Generate your changelog
 
----
+```bash
+# Standalone (no Claude Code needed)
+bash changelog.sh
 
-## Rules
+# Or inside Claude Code
+/generate-changelog
+```
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+That's it — `CHANGELOG.md` appears in your project root.
 
 ---
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## Usage
+
+```bash
+# Default: write CHANGELOG.md
+bash changelog.sh
+
+# Print to stdout (dry-run)
+bash changelog.sh --stdout
+
+# Specify a custom tag range
+bash changelog.sh --from v1.0.0 --to HEAD~5
+
+# Show help
+bash changelog.sh --help
+```
+
+## Sample Output
+
+Running against a sample repo with conventional commits:
+
+```markdown
+# Changelog
+
+## [v0.1.1] - 2026-06-27
+
+### Added
+- Add helper utilities module ([21886fe](#/commit/21886fe))
+- Add main entry point ([1e3a62a](#/commit/1e3a62a))
+
+### Fixed
+- Correct output format ([c230c51](#/commit/c230c51))
+
+### Changed
+- Add test dependency ([01f8865](#/commit/01f8865))
+
+### Removed
+- Drop unused utils module ([07fcd2d](#/commit/07fcd2d))
+
+---
+_5 change(s) since v0.1.0_
+```
+
+*(Your actual output will vary based on your project's commit history.)*
+
+---
+
+## How It Works
+
+1. Finds the **most recent git tag** reachable from `HEAD`
+2. Gathers all **non-merge commits** since that tag
+3. **Categorises** each commit using:
+   - Conventional Commit prefixes (`feat:` → Added, `fix:` → Fixed, …)
+   - Keyword fallback (`add`, `fix`, `remove`, …)
+4. Outputs a well-formatted Markdown file with commit links
+
+---
+
+## Requirements
+
+- **git** 2.x+
+- **bash** 4.x+ (or compatible)
