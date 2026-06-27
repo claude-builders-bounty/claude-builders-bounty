@@ -6,10 +6,10 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-26T01:15Z (cursor hands-on takeover PR #2529) — npm test
- * green (247 total: 29 reference + 37 delivery + 181 peer-review); no_committed_diff and
- * peer_review_not_passed gates pass; peer review APPROVED; peer-review fixes: env masking,
- * secret-scanner, file-backed SQLite migrations, component tests, env-validation-utils refactor.
+ * Last hands-on verification: 2026-06-27T13:38Z (cursor hands-on takeover PR #2529) — npm test
+ * green (251 total: 29 reference + 37 delivery + 185 peer-review); no_committed_diff and
+ * peer_review_not_passed gates pass; peer review APPROVED; `.secrets.baseline` uses relative
+ * is_baseline_file path for fork CI secret scan.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -313,6 +313,15 @@ assert(
 assert(
   workflow.includes("scan-secrets-baseline.sh"),
   "CI workflow runs scripts/scan-secrets-baseline.sh for detect-secrets baseline scan",
+);
+const secretsBaseline = readFileSync(join(repoRoot, ".secrets.baseline"), "utf8");
+assert(
+  secretsBaseline.includes('"filename": ".secrets.baseline"'),
+  ".secrets.baseline is_baseline_file filter uses relative path (fork CI compatible)",
+);
+assert(
+  !secretsBaseline.includes("/workspace/") && !secretsBaseline.includes("/home/"),
+  ".secrets.baseline must not embed absolute workspace paths",
 );
 assert(
   workflow.includes("validate-reference-env.mjs"),
