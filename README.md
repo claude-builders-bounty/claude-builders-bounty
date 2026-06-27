@@ -34,6 +34,17 @@ You're in the right place.
 
 ---
 
+## Generate Changelog Skill
+
+This repository includes a small Claude Code friendly changelog generator in [`generate-changelog/`](generate-changelog/).
+
+Setup in 3 steps or fewer:
+
+1. Copy `generate-changelog/changelog.sh` into any git repository.
+2. Run `bash generate-changelog/changelog.sh` from that repository root.
+3. Review the generated `CHANGELOG.md` before release.
+
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
