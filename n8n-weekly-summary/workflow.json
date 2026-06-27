@@ -1,0 +1,216 @@
+{
+  "name": "Weekly Dev Summary (Claude + GitHub)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": 5,
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $vars.GITHUB_OWNER + '/' + $vars.GITHUB_REPO + '/commits?since=' + $now.minus({weeks: 1}).toISO() + '&per_page=100' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, -100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $vars.GITHUB_OWNER + '/' + $vars.GITHUB_REPO + '/pulls?state=closed&sort=updated&direction=desc&per_page=100' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 50],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $vars.GITHUB_OWNER + '/' + $vars.GITHUB_REPO + '/issues?state=closed&sort=updated&direction=desc&per_page=100' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 合并 GitHub 数据\nconst commits = $input.first().json;\nconst prs = $inputs[1].first().json;\nconst issues = $inputs[2].first().json;\n\nconst oneWeekAgo = new Date();\noneWeekAgo.setDate(oneWeekAgo.getDate() - 7);\n\n// 过滤本周数据\nconst weekCommits = (Array.isArray(commits) ? commits : []).filter(c => \n  new Date(c.commit?.author?.date || c.commit?.committer?.date) > oneWeekAgo\n);\n\nconst weekPRs = (Array.isArray(prs) ? prs : []).filter(pr => \n  pr.merged_at && new Date(pr.merged_at) > oneWeekAgo\n);\n\nconst weekIssues = (Array.isArray(issues) ? issues : []).filter(issue => \n  !issue.pull_request && new Date(issue.closed_at) > oneWeekAgo\n);\n\n// 构建摘要文本\nconst summary = `## GitHub Activity (Last 7 Days)\n\n### Commits (${weekCommits.length})\n${weekCommits.slice(0, 20).map(c => `- ${c.commit?.message?.split('\\n')[0] || 'No message'} (${c.sha?.slice(0, 7)})`).join('\\n') || 'No commits'}\n\n### Merged PRs (${weekPRs.length})\n${weekPRs.slice(0, 10).map(pr => `- #${pr.number}: ${pr.title}`).join('\\n') || 'No merged PRs'}\n\n### Closed Issues (${weekIssues.length})\n${weekIssues.slice(0, 10).map(i => `- #${i.number}: ${i.title}`).join('\\n') || 'No closed issues'}`;\n\nreturn [{ json: { summary } }];"
+      },
+      "id": "merge-data",
+      "name": "Merge GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 50]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $vars.ANTHROPIC_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"You are a dev team lead writing a weekly summary. Given this GitHub activity, write a concise narrative summary in {{ $vars.LANGUAGE || 'EN' }}. Be specific about what was accomplished, highlight key changes, and note any concerns. Keep it under 300 words.\\n\\n\" + $json.summary\n  }]\n}",
+        "options": {}
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [750, 50]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 提取 Claude 回复\nconst response = $input.first().json;\nconst text = response.content?.[0]?.text || 'Failed to generate summary';\n\n// 构建最终消息\nconst message = `# 📊 Weekly Dev Summary\n\n${text}\n\n---\n*Generated by Claude on ${new Date().toISOString().split('T')[0]}*`;\n\nreturn [{ json: { message } }];"
+      },
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 50]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.DISCORD_WEBHOOK_URL }}",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": $json.message\n}",
+        "options": {}
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, -50],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $vars.FROM_EMAIL || 'noreply@example.com' }}",
+        "toEmail": "={{ $vars.TO_EMAIL }}",
+        "subject": "Weekly Dev Summary - {{ $now.format('yyyy-MM-dd') }}",
+        "text": "={{ $json.message }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1250, 100],
+      "executeOnce": true
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          { "node": "Fetch Commits", "type": "main", "index": 0 },
+          { "node": "Fetch PRs", "type": "main", "index": 0 },
+          { "node": "Fetch Issues", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [{ "node": "Merge GitHub Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch PRs": {
+      "main": [
+        [{ "node": "Merge GitHub Data", "type": "main", "index": 1 }]
+      ]
+    },
+    "Fetch Issues": {
+      "main": [
+        [{ "node": "Merge GitHub Data", "type": "main", "index": 2 }]
+      ]
+    },
+    "Merge GitHub Data": {
+      "main": [
+        [{ "node": "Call Claude API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [{ "node": "Format Output", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          { "node": "Send to Discord", "type": "main", "index": 0 },
+          { "node": "Send Email", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "weekly-dev-summary"
+  }
+}
