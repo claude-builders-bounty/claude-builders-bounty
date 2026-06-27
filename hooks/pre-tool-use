@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Pre-tool-use hook: blocks destructive bash commands in Claude Code."""
+import json, sys, os, re, datetime
+
+BLOCKED = [
+    (r'\brm\s+-rf\b',          '"rm -rf" — use a trash dir or `rm` with explicit paths'),
+    (r'\bgit\s+push\s+--force\b', '"git push --force" — use --force-with-lease instead'),
+    (r'\bDROP\s+TABLE\b',       '"DROP TABLE" — irreversible schema change, use migrations'),
+    (r'\bTRUNCATE\b',           '"TRUNCATE" — wraps DROP+CREATE, use DELETE'),
+    (r'\bDELETE\s+FROM\b(?!\s+\S*\s+WHERE\b)', '"DELETE FROM" without WHERE — will wipe the whole table'),
+]
+
+try:
+    data = json.load(sys.stdin)
+except (json.JSONDecodeError, SystemExit):
+    sys.exit(0)
+
+tool = data.get('tool', '')
+input_str = data.get('input', '')
+
+if tool != 'bash':
+    sys.exit(0)
+
+for pattern, msg in BLOCKED:
+    if re.search(pattern, input_str, re.IGNORECASE):
+        ts = datetime.datetime.now().isoformat()
+        cwd = os.environ.get('CLAUDE_CWD', os.getcwd())
+        log_line = f'{ts} | {cwd} | {input_str}\n'
+        os.makedirs(os.path.expanduser('~/.claude/hooks'), exist_ok=True)
+        with open(os.path.expanduser('~/.claude/hooks/blocked.log'), 'a') as f:
+            f.write(log_line)
+        print(json.dumps({
+            'status': 'error',
+            'message': f'🚫 Blocked: {msg}. See ~/.claude/hooks/blocked.log',
+        }))
+        sys.exit(1)
+
+sys.exit(0)
