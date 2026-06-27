@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
-Last hands-on verification: 2026-06-25 (code delivery takeover PR #2556) —
-unwrap sudo -u#0 UID shorthand before destructive checks; blocks sudo -u#0 rm -rf
-while allowing sudo -u#0 echo rm -rf text; npm test green; hook-only scope.
+Last hands-on verification: 2026-06-27 (code delivery takeover PR #2556) —
+reset accidental .venv-detect-secrets commit; gitignore guard + branch diff test;
+npm test green; hook-only scope (16 paths).
 """
 
 from __future__ import annotations
@@ -314,11 +314,22 @@ class DeliveryVerificationTests(unittest.TestCase):
         base_ref = peer_review.resolve_branch_diff_base_ref()
         changed = peer_review.list_branch_changed_files(base_ref)
 
+        blocked_prefixes = ("internal/", ".venv-detect-secrets/")
         for path in changed:
-            self.assertFalse(
-                path.startswith("internal/"),
-                f"unrelated exporter path in PR diff: {path!r}",
-            )
+            for prefix in blocked_prefixes:
+                self.assertFalse(
+                    path.startswith(prefix),
+                    f"unrelated path in PR diff: {path!r}",
+                )
+
+    def test_gitignore_blocks_local_venv_detect_secrets(self):
+        """Local detect-secrets venv must stay untracked to avoid polluting PR diffs."""
+        gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn(
+            ".venv-detect-secrets/",
+            gitignore,
+            msg="root .gitignore must ignore local detect-secrets virtualenv",
+        )
 
     def test_hook_source_is_committed_vs_main(self):
         """Fleet delivery requires a committed hook source diff, not only working-tree edits."""

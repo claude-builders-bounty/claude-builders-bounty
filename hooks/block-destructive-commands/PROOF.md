@@ -542,6 +542,18 @@ shorthand unwrapping so display commands like `sudo -u#0 echo rm -rf /` are allo
 - CLI: `sudo -u#0 rm -rf /tmp` denied; `sudo -u#0 echo rm -rf /` allowed
 - Hook source diff vs `main`: substantive committed delivery on `pre-tool-use.py`
 
+## Hands-on verification (2026-06-27, code delivery takeover)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `38c44502` (PR #2556). Prior fleet
+session failed `peer_review_not_passed` after accidentally committing `.venv-detect-secrets/`
+(2000+ unrelated paths in branch diff). Reset polluted commit; added `.venv-detect-secrets/`
+to root `.gitignore` and delivery guard tests.
+
+- `npm test` green: 153 unittest + 15 delivery + 23 peer-review + attribution checks
+- Branch scope: 16 hook-only paths; no `internal/` or `.venv-detect-secrets/` in diff
+- CLI: `rm -rf /` denied; `git status` allowed; sudo wrapper checks unchanged @ `38c44502`
+- Hook source diff vs `main`: 745 lines on `pre-tool-use.py` (committed delivery)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
