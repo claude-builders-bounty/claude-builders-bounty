@@ -52,6 +52,11 @@ if (!templateWorkflow.includes("::add-mask::") || !templateWorkflow.includes("SE
 if (!templateWorkflow.includes("secret-scanner")) {
   failures.push("test-nextjs-sqlite-template.yml: must run secret-scanner to block secret exposure");
 }
+if (!templateWorkflow.includes("scan-secrets-baseline.sh")) {
+  failures.push(
+    "test-nextjs-sqlite-template.yml: must run scripts/scan-secrets-baseline.sh for detect-secrets baseline scan",
+  );
+}
 if (!templateWorkflow.includes("detect_secrets_version: '1.5.0'")) {
   failures.push(
     "test-nextjs-sqlite-template.yml: must pin detect_secrets_version to 1.5.0 (matches .secrets.baseline)",
