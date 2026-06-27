@@ -1,0 +1,52 @@
+name: claude-review
+description: Review a GitHub PR and post a structured Markdown analysis as a comment.
+
+inputs:
+  pr-url:
+    description: GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)
+    required: true
+  github-token:
+    description: GitHub token with repo/issues write access
+    required: false
+    default: ${{ github.token }}
+  post-comment:
+    description: Whether to post the review as a PR comment (true/false)
+    required: false
+    default: "true"
+  output-file:
+    description: Path to save the review Markdown file
+    required: false
+    default: pr-review.md
+
+outputs:
+  review-file:
+    description: Path to the generated review Markdown file
+    value: ${{ steps.review.outputs.review-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Review PR
+      id: review
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        python3 ${{ github.action_path }}/claude_review.py \
+          --pr "${{ inputs.pr-url }}" \
+          --output "${{ inputs.output-file }}"
+        echo "review-file=${{ inputs.output-file }}" >> $GITHUB_OUTPUT
+
+    - name: Post review as comment
+      if: inputs.post-comment == 'true'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs')
+          const body = fs.readFileSync('${{ inputs.output-file }}', 'utf8')
+          const prUrl = '${{ inputs.pr-url }}'
+          const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/)
+          if (!match) { core.setFailed(`Cannot parse PR URL: ${prUrl}`); return; }
+          const [, owner, repo, issue_number] = match
+          await github.rest.issues.createComment({ owner, repo, issue_number: parseInt(issue_number), body })
