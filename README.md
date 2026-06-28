@@ -34,6 +34,20 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+Generate a structured `CHANGELOG.md` from commit history:
+
+1. Run `bash changelog.sh`.
+2. Review the generated `CHANGELOG.md`.
+3. Commit the changelog when it looks right.
+
+The script uses commits since the latest git tag. If the repository has no
+tags, it uses all commits. Commit subjects are grouped into `Added`, `Fixed`,
+`Changed`, and `Removed`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
