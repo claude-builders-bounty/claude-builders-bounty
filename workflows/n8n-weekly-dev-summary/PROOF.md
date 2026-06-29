@@ -12,6 +12,24 @@
 
 ## Test evidence
 
+### Verification (2026-06-29, cursor hands-on takeover #34)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — full CI mirror (delivery gates, peer-review)
+npm run test:peer-review && npm run test:delivery
+# PASS — OK: no_committed_diff gate passed / OK: peer_review_not_passed gate passed
+```
+
+Cursor hands-on takeover #34 (PR #2541 / issue #5): removed contaminated fleet commit
+(`abd63097`) that accidentally tracked `.cache/go-test-tmp/` and
+`hooks/block-destructive-commands/__pycache__/` artifacts; added `.cache/` to root
+`.gitignore`; reset branch to peer-review-clean `99710c9a`. Fleet delivery gates pass.
+
+```
+OK: 327 tests passed
+```
+
 ### Verification (2026-06-29, cursor hands-on takeover #33)
 
 ```bash
