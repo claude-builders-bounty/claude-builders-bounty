@@ -433,7 +433,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
         self.assertIn("git clone --depth 1 --branch pr-3-read-tool-hook", text)
         self.assertIn("ZEROEYE_ROOT=", text)
         self.assertIn("advancedresearcharray/zeroeye", text)
-        self.assertRegex(text, r"39/39|PASS — 39/39")
+        self.assertRegex(text, r"54/54|PASS — 54/54")
 
     def _latest_verification_block(self, text: str) -> str:
         marker = "## Verification "
@@ -452,7 +452,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             r"54/54 \(2 README \+ 21 peer review \+ 22 issue #2853 \+ 9 delivery\)",
         )
         self.assertRegex(latest, r"22/22 \(fresh clone|reused zeroeye")
-        self.assertIn("takeover #425", latest)
+        self.assertIn("takeover #426", latest)
         self.assertIn("verify-issue-2853.sh", latest)
         self.assertIn("run-unittest-module.sh", latest)
 
