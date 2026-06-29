@@ -6,7 +6,7 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-28T01:24Z (cursor merge-nurture PR #2529) — npm test
+ * Last hands-on verification: 2026-06-29T20:16Z (cursor merge-nurture PR #2529) — npm test
  * green (251 total: 29 reference + 37 delivery + 185 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED; `.secrets.baseline` uses relative
  * is_baseline_file path for fork CI secret scan.
