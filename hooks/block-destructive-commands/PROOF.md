@@ -578,6 +578,17 @@ approval and green tests. Committed source/test updates: README unit-test count 
 - Hook source diff vs `main`: substantive committed delivery on `pre-tool-use.py`
 - PR #2556: MERGEABLE/CLEAN; peer review approved
 
+## Hands-on verification (2026-06-29, code delivery takeover v2)
+
+Branch `feat/issue-3-destructive-command-hook-v2` (PR #2556). Prior fleet session failed
+`peer_review_not_passed` with docs-only edits (README/test count fixes). Unwrap `doas`,
+`pkexec`, and `runuser` privilege prefixes like `sudo` so display commands such as
+`doas echo rm -rf /` are allowed while `doas rm -rf /tmp` remains blocked.
+
+- `npm test` green after committed hook source edit on `pre-tool-use.py`
+- CLI: `doas echo rm -rf /` allowed; `doas rm -rf /tmp` denied; `pkexec --user root echo rm -rf /` allowed
+- Branch scope: 16 hook-only paths; hook source diff vs `main` substantive
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

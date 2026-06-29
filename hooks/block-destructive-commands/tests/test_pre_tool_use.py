@@ -335,6 +335,11 @@ class CheckCommandTests(unittest.TestCase):
             "sudo -n rm -rf /tmp",
             "sudo -u root -H rm -rf /tmp",
             "sudo -u#0 rm -rf /tmp",
+            "doas rm -rf /tmp",
+            "doas -u root rm -rf /tmp",
+            "pkexec rm -rf /tmp",
+            "pkexec --user root rm -rf /tmp",
+            "runuser -u root -- rm -rf /tmp",
         )
         for command in blocked:
             with self.subTest(command=command):
@@ -344,13 +349,19 @@ class CheckCommandTests(unittest.TestCase):
                 )
 
     def test_allows_rm_rf_text_after_sudo_or_command_flags(self):
-        """sudo -u / command -p must unwrap flags so echo/grep display text is allowed."""
+        """sudo/doas/pkexec/runuser must unwrap flags so echo/grep display text is allowed."""
         allowed = (
             "sudo -u root echo rm -rf /",
             "sudo -u#0 echo rm -rf /",
             "sudo -E echo rm -rf /",
             "command -p echo rm -rf /",
             "command -p grep rm -rf README.md",
+            "doas echo rm -rf /",
+            "doas -u root echo rm -rf /",
+            "pkexec echo rm -rf /",
+            "pkexec --user root echo rm -rf /",
+            "runuser -u root echo rm -rf /",
+            "runuser -u root -- echo rm -rf /",
         )
         for command in allowed:
             with self.subTest(command=command):

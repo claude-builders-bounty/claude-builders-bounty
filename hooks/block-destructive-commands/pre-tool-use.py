@@ -272,6 +272,17 @@ _SUDO_BOOL_FLAGS = r"-(?:A|b|B|E|e|h|H|i|K|k|l|L|n|P|S|s|V|v)"
 _SUDO_FLAGS = (
     rf"(?:{_SUDO_VALUE_FLAGS}|{_SUDO_BOOL_FLAGS}|--[\w-]+(?:=\S+|\s+\S+)?|\w+=\S*|--)"
 )
+_DOAS_VALUE_FLAGS = r"-(?:u)\s+\S+"
+_DOAS_BOOL_FLAGS = r"-(?:L|n|s)"
+_DOAS_FLAGS = (
+    rf"(?:{_DOAS_VALUE_FLAGS}|{_DOAS_BOOL_FLAGS}|--[\w-]+(?:=\S+|\s+\S+)?|--)"
+)
+_PKEXEC_FLAGS = r"(?:--user(?:=\S+|\s+\S+)|--[\w-]+(?:=\S+|\s+\S+)?|--)"
+_RUNUSER_VALUE_FLAGS = r"-(?:u|g|G|c|s|w|l)\s+\S+"
+_RUNUSER_BOOL_FLAGS = r"-(?:P)"
+_RUNUSER_FLAGS = (
+    rf"(?:{_RUNUSER_VALUE_FLAGS}|{_RUNUSER_BOOL_FLAGS}|--[\w-]+(?:=\S+|\s+\S+)?|--)"
+)
 _ENV_VALUE_FLAGS = r"-(?:u)\s+\S+"
 _ENV_BOOL_FLAGS = r"-(?:i|0)"
 _ENV_FLAGS = (
@@ -284,6 +295,9 @@ _COMMAND_FLAGS = (
 _COMMAND_WRAPPER = re.compile(
     r"^(?:"
     rf"sudo(?:\s+{_SUDO_FLAGS})*\s+|"
+    rf"doas(?:\s+{_DOAS_FLAGS})*\s+|"
+    rf"pkexec(?:\s+{_PKEXEC_FLAGS})*\s+|"
+    rf"runuser(?:\s+{_RUNUSER_FLAGS})*\s+|"
     rf"env(?:\s+{_ENV_FLAGS})*\s+|"
     rf"command(?:\s+{_COMMAND_FLAGS})*\s+"
     r")+",
@@ -292,7 +306,7 @@ _COMMAND_WRAPPER = re.compile(
 
 
 def unwrap_command_wrapper(segment: str) -> str:
-    """Peel sudo/env/command prefixes (including flags) before pattern checks."""
+    """Peel sudo/doas/pkexec/runuser/env/command prefixes before pattern checks."""
     stripped = segment.strip()
     unwrapped = _COMMAND_WRAPPER.sub("", stripped).strip()
     return unwrapped or stripped
