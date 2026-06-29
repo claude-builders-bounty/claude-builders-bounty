@@ -1,0 +1,171 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-friday-5pm",
+      "name": "Weekly Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/commits",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{ $json.weekStart }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        }
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 180]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/issues",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "since", "value": "={{ $json.weekStart }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        }
+      },
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/pulls",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "sort", "value": "updated" },
+            { "name": "direction", "value": "desc" },
+            { "name": "per_page", "value": "100" }
+          ]
+        }
+      },
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst weekStart = new Date(now);\nweekStart.setDate(now.getDate() - 7);\nreturn [{ json: { weekStart: weekStart.toISOString(), repo: $env.GITHUB_REPO, language: $env.SUMMARY_LANGUAGE || 'EN' } }];"
+      },
+      "id": "compute-week-window",
+      "name": "Compute Week Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Fetch Commits').all().flatMap(i => i.json);\nconst issues = $('Fetch Closed Issues').all().flatMap(i => i.json);\nconst pulls = $('Fetch Merged PRs').all().flatMap(i => i.json).filter(p => p.merged_at);\nconst language = $('Compute Week Window').first().json.language;\nconst prompt = `Write a weekly engineering narrative in ${language} for repo ${$env.GITHUB_REPO}.\\n\\nCommits (${commits.length}):\\n${commits.slice(0,30).map(c => '- ' + (c.commit?.message || '')).join('\\n')}\\n\\nClosed issues (${issues.length}):\\n${issues.slice(0,20).map(i => '- #' + i.number + ' ' + i.title).join('\\n')}\\n\\nMerged PRs (${pulls.length}):\\n${pulls.slice(0,20).map(p => '- #' + p.number + ' ' + p.title).join('\\n')}`;\nreturn [{ json: { prompt } }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1200,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}"
+      },
+      "id": "claude-summary",
+      "name": "Claude Weekly Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DELIVERY_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": {{ JSON.stringify($json.content?.[0]?.text || 'No summary generated') }},\n  \"repo\": {{ JSON.stringify($env.GITHUB_REPO) }}\n}"
+      },
+      "id": "deliver-webhook",
+      "name": "Deliver to Slack/Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 5pm": {
+      "main": [[{ "node": "Compute Week Window", "type": "main", "index": 0 }]]
+    },
+    "Compute Week Window": {
+      "main": [
+        [
+          { "node": "Fetch Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Claude Prompt": {
+      "main": [[{ "node": "Claude Weekly Summary", "type": "main", "index": 0 }]]
+    },
+    "Claude Weekly Summary": {
+      "main": [[{ "node": "Deliver to Slack/Discord", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "weekly-dev-summary-v1",
+  "meta": { "templateCredsSetupCompleted": false }
+}
