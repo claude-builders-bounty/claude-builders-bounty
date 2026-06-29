@@ -85,6 +85,32 @@ assert(
   !/GitHub API integration test[\s\S]*GITHUB_TOKEN:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}/.test(ciWorkflow),
   'CI GitHub API integration test must not expose default GITHUB_TOKEN in step env',
 );
+assert(
+  /Run workflow regression suite[\s\S]*working-directory:\s*workflows\/n8n-weekly-dev-summary[\s\S]*npm run test:ci/.test(ciWorkflow),
+  'CI validate job runs test:ci with working-directory workflows/n8n-weekly-dev-summary',
+);
+assert(
+  /GitHub API integration test[\s\S]*working-directory:\s*workflows\/n8n-weekly-dev-summary[\s\S]*npm run test:github/.test(ciWorkflow),
+  'CI github-integration job runs test:github with working-directory workflows/n8n-weekly-dev-summary',
+);
+assert(
+  ciWorkflow.includes('jobs:') &&
+    /^\s+validate:/m.test(ciWorkflow) &&
+    /^\s+github-integration:/m.test(ciWorkflow) &&
+    /^\s+report-upstream-status:/m.test(ciWorkflow),
+  'CI workflow splits validate, github-integration, and report-upstream-status jobs',
+);
+assert(
+  /Report commit status for upstream PR[\s\S]*github-token:\s*\$\{\{\s*secrets\.UPSTREAM_STATUS_TOKEN/.test(ciWorkflow) &&
+    !/Report commit status for upstream PR[\s\S]*env:[\s\S]*UPSTREAM_STATUS_TOKEN/.test(ciWorkflow),
+  'Report commit status passes UPSTREAM_STATUS_TOKEN only via github-script input (not env block)',
+);
+assert(
+  ciWorkflow.includes('npm run test:ci') &&
+    ciWorkflow.includes('validate-workflow') === false &&
+    (ciWorkflow.includes('regression suite') || ciWorkflow.includes('test:ci')),
+  'CI workflow documents validate job test suite purpose',
+);
 for (const name of ['Fetch Commits', 'Fetch Closed Issues', 'Fetch Merged PRs']) {
   const node = workflow.nodes.find((n) => n.name === name);
   assert(node?.onError !== 'continueRegularOutput', `${name} fails fast instead of swallowing GitHub HTTP errors`);
@@ -213,6 +239,10 @@ assert(
   readme.includes('test-scripts-acceptance') || readme.includes('npm test'),
   'README documents validation test entry points',
 );
+assert(
+  readme.includes('test-n8n-weekly-summary') && readme.includes('UPSTREAM_STATUS_TOKEN'),
+  'README documents CI workflow jobs and UPSTREAM_STATUS_TOKEN secret storage',
+);
 
 const workflowPkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 assert(
@@ -247,6 +277,14 @@ assert(makefile.includes('# Full n8n weekly-dev-summary regression suite'), 'Mak
 
 const rootGitignore = readFileSync(join(repoRoot, '.gitignore'), 'utf8');
 assert(rootGitignore.includes('.env') && rootGitignore.includes('node_modules/'), 'repo .gitignore excludes secrets and node_modules');
+assert(
+  !rootGitignore.includes('/hooks/') &&
+    !rootGitignore.includes('/agents/') &&
+    !rootGitignore.includes('/internal/') &&
+    !rootGitignore.includes('/templates/') &&
+    !rootGitignore.includes('/tests/'),
+  'repo .gitignore excludes only essential secrets and build artifacts (no stray bounty paths)',
+);
 const workflowGitignore = readFileSync(join(root, '.gitignore'), 'utf8');
 assert(workflowGitignore.includes('.env') && workflowGitignore.includes('node_modules/'), 'workflow .gitignore excludes secrets and local artifacts');
 
@@ -284,6 +322,7 @@ assert(
     proof.includes('hands-on takeover #30') &&
     proof.includes('hands-on takeover #31') &&
     proof.includes('hands-on takeover #32') &&
+    proof.includes('hands-on takeover #33') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',

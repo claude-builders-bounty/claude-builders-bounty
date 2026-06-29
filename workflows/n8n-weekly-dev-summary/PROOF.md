@@ -12,6 +12,26 @@
 
 ## Test evidence
 
+### Verification (2026-06-29, cursor hands-on takeover #33)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — full CI mirror (delivery gates, peer-review)
+npm run test:peer-review && npm run test:delivery
+# PASS — OK: no_committed_diff gate passed / OK: peer_review_not_passed gate passed
+```
+
+Cursor hands-on takeover #33 (PR #2541 / issue #5): addressed peer-review BLOCKED
+findings — split CI into `validate` / `github-integration` / `report-upstream-status`
+jobs; both test steps use `working-directory: workflows/n8n-weekly-dev-summary`;
+`UPSTREAM_STATUS_TOKEN` passed only via GitHub secret (github-script input, no env
+block); documented CI test suites in workflow comments and README; trimmed root
+`.gitignore` to essential entries only. Fleet delivery gates pass.
+
+```
+OK: 327 tests passed
+```
+
 ### Verification (2026-06-26, cursor hands-on takeover #32)
 
 ```bash

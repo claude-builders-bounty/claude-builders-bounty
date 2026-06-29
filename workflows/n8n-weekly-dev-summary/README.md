@@ -82,6 +82,20 @@ Friday 5pm Trigger → Load Config → parallel GitHub fetches (commits, issues,
 
 ## Validation
 
+### CI workflow (`test-n8n-weekly-summary.yml`)
+
+GitHub Actions runs three jobs (working directory: `workflows/n8n-weekly-dev-summary`):
+
+| Job | npm script | What it tests |
+|-----|------------|---------------|
+| `validate` | `test:ci` | Full local regression: workflow JSON structure, GitHub collect helpers, Claude summary, delivery channels, fleet delivery gates, peer-review acceptance (~320 tests) |
+| `github-integration` | `test:github` | Live GitHub API smoke test — repo-scoped token validation and paginated fetch against `api.github.com` |
+| `report-upstream-status` | — | Posts commit status to upstream PR (uses `UPSTREAM_STATUS_TOKEN` GitHub secret via `github-script`; token never logged) |
+
+Store `UPSTREAM_STATUS_TOKEN` as a repository or organization secret in GitHub Settings → Secrets and variables → Actions.
+
+### Local regression suite
+
 Local regression suite (workflow structure, GitHub helpers, unit/integration coverage, test-script hygiene, fleet delivery checks, peer-review acceptance):
 
 ```bash
