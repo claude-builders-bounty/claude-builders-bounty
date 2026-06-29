@@ -554,6 +554,17 @@ to root `.gitignore` and delivery guard tests.
 - CLI: `rm -rf /` denied; `git status` allowed; sudo wrapper checks unchanged @ `38c44502`
 - Hook source diff vs `main`: 745 lines on `pre-tool-use.py` (committed delivery)
 
+## Hands-on verification (2026-06-29, sprout-idle-nudge merge-nurture)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `6ec5b332` (PR #2556). Merge-nurture
+re-check; no hook logic changes required.
+
+- `npm test` green: 154 unittest + 15 delivery + 23 peer-review + attribution checks
+- Branch scope: 16 hook-only paths; no `internal/` or `.venv-detect-secrets/` in diff
+- CLI: `rm -rf /` denied (official `hookSpecificOutput` deny schema); `git status` allowed
+- PR #2556: MERGEABLE/CLEAN; head matches `fork/feat/issue-3-destructive-command-hook-v2`
+- Rebase: not needed (`main` is merge-base @ `1aeae2ad`)
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
