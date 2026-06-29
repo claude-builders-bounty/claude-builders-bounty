@@ -565,6 +565,19 @@ re-check; no hook logic changes required.
 - PR #2556: MERGEABLE/CLEAN; head matches `fork/feat/issue-3-destructive-command-hook-v2`
 - Rebase: not needed (`main` is merge-base @ `1aeae2ad`)
 
+## Hands-on verification (2026-06-29, code delivery takeover)
+
+Branch `feat/issue-3-destructive-command-hook-v2` @ `46fd87b4` (PR #2556). Prior fleet
+engineer session failed `peer_review_not_passed` with docs-only edits despite peer review
+approval and green tests. Committed source/test updates: README unit-test count floor
+(154+) and peer-review acceptance test guarding stale documentation.
+
+- `npm test` green: 155 unittest + 15 delivery + 24 peer-review + attribution checks
+- Branch scope: 16 hook-only paths; no `internal/` or `.venv-detect-secrets/` in diff
+- CLI: `rm -rf /` denied; `git status` allowed
+- Hook source diff vs `main`: substantive committed delivery on `pre-tool-use.py`
+- PR #2556: MERGEABLE/CLEAN; peer review approved
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

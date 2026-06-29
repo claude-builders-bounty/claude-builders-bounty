@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -153,6 +154,24 @@ class PeerReviewAcceptanceTests(unittest.TestCase):
         self.assertIn("fails open", readme)
         self.assertIn("Regex and substring matching limits", readme)
         self.assertIn("x=rm; $x -rf /", readme)
+
+    def test_readme_documents_minimum_regression_test_floor(self):
+        """README must not under-report regression coverage (stale counts fail peer review)."""
+        readme = (HOOK_DIR / "README.md").read_text(encoding="utf-8")
+        tests_dir = HOOK_DIR / "tests"
+        total = sum(
+            len(re.findall(r"^\s*def test_", path.read_text(encoding="utf-8"), flags=re.MULTILINE))
+            for path in tests_dir.glob("test_*.py")
+        )
+        self.assertGreaterEqual(total, 150)
+        match = re.search(r"(\d+)\+\s*regression tests", readme)
+        self.assertIsNotNone(match, msg="README must document N+ regression tests")
+        documented = int(match.group(1))
+        self.assertGreaterEqual(
+            documented,
+            150,
+            msg=f"README regression floor {documented}+ is below suite size {total}",
+        )
 
     def test_documented_regex_evasion_limitation(self):
         """Indirect destructive commands documented in README are not blocked."""

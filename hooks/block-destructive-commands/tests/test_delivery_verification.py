@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
-Last hands-on verification: 2026-06-27 (code delivery takeover PR #2556) —
-reset accidental .venv-detect-secrets commit; gitignore guard + branch diff test;
-npm test green; hook-only scope (16 paths).
+Last hands-on verification: 2026-06-29 (code delivery takeover PR #2556) —
+prior session failed peer_review_not_passed with docs-only edits; corrected README
+test counts and codified minimum floor in peer-review acceptance tests; npm test
+green; hook-only scope (16 paths).
 """
 
 from __future__ import annotations
