@@ -452,7 +452,7 @@ class Issue2853ReadToolHookTests(unittest.TestCase):
             r"54/54 \(2 README \+ 21 peer review \+ 22 issue #2853 \+ 9 delivery\)",
         )
         self.assertRegex(latest, r"22/22 \(fresh clone|reused zeroeye")
-        self.assertIn("takeover #505", latest)
+        self.assertIn("takeover #506", latest)
         self.assertIn("verify-issue-2853.sh", latest)
         self.assertIn("run-unittest-module.sh", latest)
 
