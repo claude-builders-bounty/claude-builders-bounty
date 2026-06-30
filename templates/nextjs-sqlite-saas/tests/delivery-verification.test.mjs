@@ -6,10 +6,10 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-30T16:33Z (cursor hands-on takeover PR #2529) — npm test
+ * Last hands-on verification: 2026-06-30T16:38Z (cursor hands-on takeover PR #2529) — npm test
  * green (251 total: 29 reference + 37 delivery + 185 peer-review); no_committed_diff and
  * peer_review_not_passed gates pass; peer review APPROVED; branch diff scoped to template
- * paths only (removed accidental bounties/issue-2853 session patches).
+ * paths only (dropped 592df716 mkdocs export commit that re-added issue-2853 session patches).
  */
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
