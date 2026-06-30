@@ -1,53 +1,51 @@
-# Claude Builders Bounty 🤖
+# json_to_csv
 
-> A community bounty board for Claude Code builders.
+Convert a JSON array of flat objects into a CSV file. Python 3.10+, standard library only.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Usage
 
----
+```bash
+python json_to_csv.py input.json output.csv
+```
 
-## How it works
+`input.json` must contain an array of objects, e.g.:
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+```json
+[
+  {"name": "Ada", "age": 36},
+  {"name": "Linus"}
+]
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Produces `output.csv`:
 
----
+```csv
+name,age
+Ada,36
+Linus,
+```
 
-## Active Bounties
+## Behavior
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+- **Header** = union of all keys across every object, in first-seen order (stable output).
+- **Missing keys** are filled with an empty string.
+- **`null`** becomes an empty string; booleans render as `true`/`false`.
+- Quotes, commas, and newlines inside values are escaped per RFC 4180 (via Python's `csv` module).
 
----
+## Exit codes
 
-## Rules
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Usage error (wrong number of arguments) |
+| 2 | Input not found / invalid JSON / not an array of objects |
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Tests
 
----
+```bash
+pip install pytest
+pytest -q
+```
 
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+Covers: header union ordering, missing-key fill, `null`/bool normalization,
+special-character round-trip, non-array rejection, and a full CLI end-to-end run.
