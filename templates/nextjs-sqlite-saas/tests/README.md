@@ -20,5 +20,14 @@ CI and fleet delivery scripts for the Next.js 15 + SQLite SaaS `CLAUDE.md` templ
 ## Run locally
 
 ```bash
+# Full CI (same as repo-root npm test / make test)
 bash templates/nextjs-sqlite-saas/tests/run-ci-checks.sh
+
+# Fleet delivery gates only (E2E-runs npm test + test:peer-review; ~15s)
+npm run test:delivery
+# or: make test-delivery
+
+# Peer-review acceptance only (~1s)
+npm run test:peer-review
+# or: make test-peer-review
 ```

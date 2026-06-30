@@ -6,10 +6,9 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-06-30T16:38Z (cursor hands-on takeover PR #2529) — npm test
- * green (251 total: 29 reference + 37 delivery + 185 peer-review); no_committed_diff and
- * peer_review_not_passed gates pass; peer review APPROVED; branch diff scoped to template
- * paths only (dropped 592df716 mkdocs export commit that re-added issue-2853 session patches).
+ * Last hands-on verification: 2026-06-30T16:48Z (cursor hands-on takeover PR #2529) — npm test
+ * green (257 total: 29 reference + 39 delivery + 189 peer-review); test:delivery E2E-runs npm test
+ * and test:peer-review with set -e gate summaries; ci-step-delivery sets INNER_RUN to avoid CI recursion.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -236,8 +235,12 @@ assert(
 );
 assert(ciStepDelivery.includes("delivery-verification.test.mjs"), "delivery step runs delivery verification");
 assert(
-  ciStepDelivery.includes("delivery verification tests"),
-  "delivery step prints delivery verification summary",
+  ciStepDelivery.includes("delivery verification tests passed"),
+  "delivery step prints delivery verification tests passed",
+);
+assert(
+  ciStepDelivery.includes("NEXTJS_TEMPLATE_CI_INNER_RUN=1"),
+  "delivery step sets NEXTJS_TEMPLATE_CI_INNER_RUN during full CI to avoid recursion",
 );
 assert(
   ciStepDelivery.includes("no_committed_diff gate passed"),
@@ -363,7 +366,7 @@ assert(
   "check-secret-tokens.mjs validates SESSION_SECRET length and env.ts min(32) wiring",
 );
 assert(
-  makefile.includes("test-peer-review") && makefile.includes("test-delivery") && makefile.includes("# Peer-review acceptance only"),
+  makefile.includes("test-peer-review") && makefile.includes("test-delivery") && makefile.includes("# Fleet delivery gates only"),
   "Makefile documents test-peer-review and test-delivery targets",
 );
 assert(statSync(join(repoRoot, "scripts/env-check.mjs")).isFile(), "scripts/env-check.mjs validates required toolchain");
@@ -524,6 +527,18 @@ assert(
 assert(
   packageJson.scripts?.["test:structural"]?.includes("ci-step-structural.sh"),
   "package.json test:structural runs isolated structural validation step",
+);
+assert(
+  packageJson.scripts?.["test:delivery"]?.includes("set -euo pipefail"),
+  "package.json test:delivery uses set -euo pipefail so gate summaries fail closed",
+);
+assert(
+  !packageJson.scripts?.["test:delivery"]?.includes("NEXTJS_TEMPLATE_CI_INNER_RUN=1"),
+  "package.json test:delivery must not skip E2E npm test verification at outer scope",
+);
+assert(
+  packageJson.scripts?.["test:peer-review"]?.includes("set -euo pipefail"),
+  "package.json test:peer-review uses set -euo pipefail so summaries fail closed",
 );
 assert(
   packageJson.scripts?.["test:delivery"]?.includes("OK: delivery verification tests passed"),

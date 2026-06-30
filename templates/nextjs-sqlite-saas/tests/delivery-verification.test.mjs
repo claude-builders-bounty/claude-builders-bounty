@@ -6,10 +6,9 @@
  * templates/nextjs-sqlite-saas/CLAUDE.md with structural validation, greenfield
  * smoke test, reference Vitest suites, and fleet npm test wiring for PR #2529.
  *
- * Last hands-on verification: 2026-06-30T16:38Z (cursor hands-on takeover PR #2529) — npm test
- * green (251 total: 29 reference + 37 delivery + 185 peer-review); no_committed_diff and
- * peer_review_not_passed gates pass; peer review APPROVED; branch diff scoped to template
- * paths only (dropped 592df716 mkdocs export commit that re-added issue-2853 session patches).
+ * Last hands-on verification: 2026-06-30T16:48Z (cursor hands-on takeover PR #2529) — npm test
+ * green (257 total: 29 reference + 39 delivery + 189 peer-review); test:delivery E2E-runs npm test
+ * and test:peer-review with set -e gate summaries; ci-step-delivery sets INNER_RUN to avoid CI recursion.
  */
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -171,6 +170,14 @@ test("ci runner declares delivery and peer-review summary lines", () => {
 test("package.json test:delivery prints fleet delivery gate summaries", () => {
   const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
   const script = pkg.scripts?.["test:delivery"] ?? "";
+  if (!script.includes("set -euo pipefail")) {
+    throw new Error("package.json test:delivery must use set -euo pipefail so gate summaries fail closed");
+  }
+  if (script.includes("NEXTJS_TEMPLATE_CI_INNER_RUN=1")) {
+    throw new Error(
+      "package.json test:delivery must not set NEXTJS_TEMPLATE_CI_INNER_RUN (ci-step-delivery.sh sets it during full CI)",
+    );
+  }
   if (!script.includes("no_committed_diff gate passed")) {
     throw new Error("package.json test:delivery must print no_committed_diff gate passed");
   }
@@ -179,6 +186,27 @@ test("package.json test:delivery prints fleet delivery gate summaries", () => {
   }
   if (!script.includes("OK: delivery verification tests passed")) {
     throw new Error("package.json test:delivery must print fleet delivery summary");
+  }
+});
+
+test("package.json test:peer-review fails closed on assertion errors", () => {
+  const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+  const script = pkg.scripts?.["test:peer-review"] ?? "";
+  if (!script.includes("set -euo pipefail")) {
+    throw new Error("package.json test:peer-review must use set -euo pipefail so summaries fail closed");
+  }
+  if (!script.includes("peer-review-acceptance.test.mjs")) {
+    throw new Error("package.json test:peer-review must run peer-review-acceptance.test.mjs");
+  }
+});
+
+test("ci-step-delivery sets INNER_RUN and prints fleet delivery summary", () => {
+  const deliveryStep = readFileSync(join(__dirname, "ci-step-delivery.sh"), "utf8");
+  if (!deliveryStep.includes("NEXTJS_TEMPLATE_CI_INNER_RUN=1")) {
+    throw new Error("ci-step-delivery.sh must export NEXTJS_TEMPLATE_CI_INNER_RUN=1 during full CI");
+  }
+  if (!deliveryStep.includes("OK: delivery verification tests passed")) {
+    throw new Error("ci-step-delivery.sh must print OK: delivery verification tests passed");
   }
 });
 

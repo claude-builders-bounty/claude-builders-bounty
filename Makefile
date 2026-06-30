@@ -2,9 +2,10 @@
 #
 # Targets:
 #   env-check         — verify node, bash, and git are on PATH (scripts/env-check.mjs)
-#   test              — run full template CI suite (env-check + scripts/run-ci-checks.sh)
-#   test-peer-review  — run peer-review acceptance suite only (npm run test:peer-review)
-#   test-delivery     — run delivery verification gates only (npm run test:delivery)
+#   test              — full CI: security, structural, reference Vitest, delivery + peer-review
+#   test-peer-review  — bounty #2 acceptance criteria only (185+ asserts; npm run test:peer-review)
+#   test-delivery     — fleet delivery gates only (no_committed_diff + peer_review_not_passed;
+#                       also E2E-runs npm test and test:peer-review; npm run test:delivery)
 
 .PHONY: test env-check test-peer-review test-delivery
 
@@ -16,10 +17,10 @@ env-check:
 test: env-check
 	bash scripts/run-ci-checks.sh
 
-# Peer-review acceptance only — 151+ asserts for bounty #2 / PR #2529 criteria.
+# Peer-review acceptance only — 185+ asserts for bounty #2 / PR #2529 criteria.
 test-peer-review:
 	npm run test:peer-review
 
-# Delivery gates only — no_committed_diff and peer_review_not_passed without full CI.
+# Fleet delivery gates only — no_committed_diff + peer_review_not_passed; E2E-runs npm test + test:peer-review.
 test-delivery:
 	npm run test:delivery

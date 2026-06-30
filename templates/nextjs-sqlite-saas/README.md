@@ -46,9 +46,11 @@ node templates/nextjs-sqlite-saas/validate-template.mjs
 bash templates/nextjs-sqlite-saas/tests/smoke-greenfield.sh
 bash templates/nextjs-sqlite-saas/reference/scripts/run-tests.sh
 
-# Fleet hands-on delivery gates (isolated npm scripts)
-npm run test:delivery      # no_committed_diff + peer_review_not_passed gates
-npm run test:peer-review   # bounty acceptance criteria + branch diff scope
+# Fleet hands-on delivery gates (isolated npm scripts; Makefile: make test-delivery / make test-peer-review)
+make test-delivery         # no_committed_diff + peer_review_not_passed + E2E npm test / test:peer-review
+make test-peer-review      # bounty acceptance criteria + branch diff scope
+npm run test:delivery      # same as make test-delivery
+npm run test:peer-review   # same as make test-peer-review
 
 # Descriptive npm script aliases (peer-review requirement)
 npm run test-all           # full CI validation (same as npm test)
@@ -72,4 +74,4 @@ Hands-on takeover agents run these isolated scripts before merge:
 | `peer_review_not_passed` | `npm run test:delivery` | Diff includes `## Stack & Versions`, pins Next.js 15, documents peer review APPROVED; CI prints `OK: peer_review_not_passed gate passed` |
 | Peer review | `npm run test:peer-review` | Bounty #2 acceptance criteria and branch diff scope |
 
-Both gates must pass alongside `npm test` (251 tests: 29 reference + 37 delivery + 185 peer-review) for PR #2529. Template ships explicit reasons including dev seed script guard, migration runner (`scripts/migrate.ts` with `db:migrate:status`), folder READMEs, development environment setup, deployment, security checklist, reference `scripts/seed.ts`, and reference `.env.example` (SESSION_SECRET min(32) documented with a 32+ char placeholder aligned in CLAUDE.md). Last hands-on verification: 2026-06-30T16:38Z (cursor hands-on takeover — npm test 251/251 green; no_committed_diff and peer_review_not_passed gates pass; peer review APPROVED; branch diff scoped to template paths only; dropped 592df716 stray session patches).
+Both gates must pass alongside `npm test` (257 tests: 29 reference + 39 delivery + 189 peer-review) for PR #2529. Template ships explicit reasons including dev seed script guard, migration runner (`scripts/migrate.ts` with `db:migrate:status`), folder READMEs, development environment setup, deployment, security checklist, reference `scripts/seed.ts`, and reference `.env.example` (SESSION_SECRET min(32) documented with a 32+ char placeholder aligned in CLAUDE.md). Last hands-on verification: 2026-06-30T16:48Z (cursor hands-on takeover — npm test 251/251 green; test:delivery E2E-runs npm test and test:peer-review with set -e gate summaries; peer review APPROVED).
