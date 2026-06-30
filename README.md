@@ -1,53 +1,32 @@
-# Claude Builders Bounty 🤖
+# Pre-Tool-Use Hook: Destructive Bash Command Blocker
 
-> A community bounty board for Claude Code builders.
+A [Claude Code hook](https://docs.anthropic.com/claude-code/hooks) that intercepts and blocks destructive bash commands before they execute.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation (2 commands)
 
----
+```bash
+mkdir -p ~/.claude/hooks
+cp pre-tool-use ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+```
+
+## What it blocks
+
+| Pattern | Reason |
+|---------|--------|
+| `rm -rf`, `rm -r`, `rm --recursive` | Recursive force-delete blocked |
+| `DROP TABLE` | Destructive schema change blocked |
+| `git push --force` | Force-push blocked |
+| `TRUNCATE` | Table truncation blocked |
+| `DELETE FROM` without `WHERE` clause | Unbounded delete blocked |
+
+## What it logs
+
+Every blocked attempt is logged to `~/.claude/hooks/blocked.log` with:
+- Timestamp (UTC ISO 8601)
+- Reason for blocking
+- Project path (current working directory)
+- Attempted command
 
 ## How it works
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+The hook receives each tool-use JSON from Claude Code on stdin. It extracts the command field and checks it against a set of destructive patterns. Safe commands exit immediately with code 0. A blocked command writes to the log, prints a clear explanation to stdout, and exits with code 1 to prevent execution.

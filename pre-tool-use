@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook — blocks destructive bash commands before execution.
+
+Install: cp pre-tool-use ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+"""
+
+import sys
+import json
+import os
+import datetime
+import re
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+DESTRUCTIVE_PATTERNS = [
+    (re.compile(r'\brm\s+(-rf?|--recursive|-r)\b', re.IGNORECASE), "rm -rf: recursive force-delete blocked"),
+    (re.compile(r'\bDROP\s+TABLE\b', re.IGNORECASE), "DROP TABLE: destructive schema change blocked"),
+    (re.compile(r'\bgit\s+push\s+--force\b', re.IGNORECASE), "git push --force: force-push blocked"),
+    (re.compile(r'\bTRUNCATE\b', re.IGNORECASE), "TRUNCATE: table truncation blocked"),
+    (re.compile(r'\bDELETE\s+FROM\b(?!.*\bWHERE\b)', re.IGNORECASE), "DELETE FROM without WHERE clause blocked"),
+]
+
+def log_blocked(command: str, reason: str):
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    project_path = os.getcwd()
+    log_line = f"[{timestamp}] REASON={reason} | CWD={project_path} | CMD={command}\n"
+    with open(LOG_FILE, "a") as f:
+        f.write(log_line)
+
+def main():
+    # Read the tool-use JSON from stdin
+    # Claude Code passes: {"command": "...", "args": ..., ...}
+    try:
+        data = json.load(sys.stdin)
+    except (json.JSONDecodeError, EOFError):
+        # Not a JSON input — allow
+        sys.exit(0)
+
+    command = ""
+    if isinstance(data, dict):
+        command = data.get("command") or data.get("tool") or data.get("action") or ""
+
+    if not command:
+        # No command to check — allow
+        sys.exit(0)
+
+    command_str = str(command)
+
+    for pattern, reason in DESTRUCTIVE_PATTERNS:
+        if pattern.search(command_str):
+            log_blocked(command_str, reason)
+            # Write a clear message to stderr so Claude sees why
+            msg = f"\n❌ BLOCKED: {reason}\n   Attempted: {command_str[:200]}\n   Logged to: {LOG_FILE}\n"
+            print(msg)
+            sys.exit(1)
+
+    # Command is safe — allow
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
