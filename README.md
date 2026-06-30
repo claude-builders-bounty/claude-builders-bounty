@@ -51,3 +51,12 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## 📋 Setup & Usage
+
+Vollständige Anleitung: [`SETUP.md`](SETUP.md)
+
+**3-Schritte-Schnellstart:**
+1. `chmod +x generate-changelog.sh`
+2. `./generate-changelog.sh`
+3. Fertig! → `CHANGELOG.md` erstellt
