@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook — blocks dangerous bash commands.
+
+Installation:
+    mkdir -p ~/.claude/hooks/
+    cp hooks/pre-tool-use ~/.claude/hooks/
+    chmod +x ~/.claude/hooks/pre-tool-use
+
+Claude Code calls this hook before executing every bash tool.
+Return exit code 0 to allow, 1 to block.
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+# ── Blocked patterns ────────────────────────────────────────
+
+BLOCKED_PATTERNS = [
+    (r'\brm\s+-rf\b', 'Destructive recursive delete — blocks `rm -rf` to prevent accidental data loss. Use `rm -r` with explicit file targets instead.'),
+    (r'\bgit\s+push\s+--force\b', 'Force push — overwrites remote history. Use `git push --force-with-lease` for a safer alternative.'),
+    (r'\bDROP\s+TABLE\b', 'DROP TABLE — permanently deletes a database table.'),
+    (r'\bTRUNCATE\b', 'TRUNCATE — quickly deletes all rows from a table (irreversible without backup).'),
+    (r'\bDELETE\s+FROM\b(?!\s+\w+\s+WHERE)', 'DELETE FROM without WHERE clause — would delete all rows. Add a WHERE clause to target specific rows.'),
+    (r'\bUPDATE\s+\w+\s+SET\b(?!.*\bWHERE\b)', 'UPDATE without WHERE clause — would modify all rows. Add a WHERE clause to target specific rows.'),
+]
+
+BLOCKED_LOG = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+
+def check_command(command):
+    """Check a command against blocked patterns. Returns (blocked, reason)."""
+    for pattern, reason in BLOCKED_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True, reason
+    return False, ""
+
+
+def log_blocked(command, reason):
+    """Log a blocked command attempt."""
+    os.makedirs(os.path.dirname(BLOCKED_LOG), exist_ok=True)
+    timestamp = datetime.now().isoformat()
+    project = os.getcwd()
+    with open(BLOCKED_LOG, "a") as f:
+        f.write(f"[{timestamp}] BLOCKED: {command[:200]}\n")
+        f.write(f"  Project: {project}\n")
+        f.write(f"  Reason: {reason}\n\n")
+
+
+def main():
+    """
+    Claude Code passes the command as a JSON object on stdin:
+    {"command": "ls -la", ...}
+    """
+    try:
+        data = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        # If no JSON, allow the command
+        sys.exit(0)
+
+    command = data.get("command", "")
+
+    blocked, reason = check_command(command)
+    if blocked:
+        log_blocked(command, reason)
+        # Print message Claude will see
+        print(f"⛔ **Command blocked**: {reason}")
+        sys.exit(1)
+
+    # Command is safe — allow
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
