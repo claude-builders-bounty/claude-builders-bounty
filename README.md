@@ -1,53 +1,66 @@
-# Claude Builders Bounty 🤖
+# 🤖 claude-review
 
-> A community bounty board for Claude Code builders.
+An AI-powered CLI tool that reviews GitHub Pull Requests and produces structured Markdown feedback.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+**Part of the [Claude Builders Bounty](https://github.com/claude-builders-bounty/claude-builders-bounty) — \$150 bounty for PR review sub-agent** ([issue #4](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/4))
 
----
+## Features
 
-## How it works
+- 🔍 Fetches PR diff, metadata, and commits from GitHub
+- 🤖 Analyzes code using DeepSeek (or any OpenAI-compatible API)
+- 📋 Structured output: Summary + Risks + Suggestions + Confidence Score
+- 🚀 Works as CLI or GitHub Action
+- 📦 Zero dependencies (pure Python stdlib)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Usage
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+### CLI
 
----
+```bash
+export GITHUB_TOKEN="ghp_..."
+export DEEPSEEK_API_KEY="sk-..."
 
-## Active Bounties
+# Review a PR and print to stdout
+python claude_review.py --pr https://github.com/owner/repo/pull/123
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# Save to file
+python claude_review.py --pr https://github.com/owner/repo/pull/123 --output review.md
+```
 
----
+### GitHub Action
 
-## Rules
+Add the workflow (`.github/workflows/claude-review.yml`) to your repo and set `DEEPSEEK_API_KEY` in repository secrets.
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Then comment `/review` on any PR to trigger an automated review.
 
----
+## Output Format
 
-## Community
+```markdown
+## Summary
+2-3 sentences describing what the PR does.
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Identified Risks
+- Security: ...
+- Performance: ...
+- Maintainability: ...
 
----
+## Improvement Suggestions
+1. ...
+2. ...
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## Confidence Score: Medium
+```
+
+## Example Outputs
+
+See the [`examples/`](./examples/) directory for sample reviews on real PRs.
+
+## Requirements
+
+- Python 3.10+
+- `GITHUB_TOKEN` environment variable
+- `DEEPSEEK_API_KEY` environment variable (or any OpenAI-compatible API)
+
+## License
+
+MIT
