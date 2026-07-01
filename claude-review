@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""
+Claude Code PR Reviewer Agent
+
+Usage:
+    ./claude-review --pr https://github.com/owner/repo/pull/123
+    ./claude-review --pr https://github.com/owner/repo/pull/123 --token ghp_xxx
+
+Analyzes a GitHub PR diff and produces a structured Markdown review.
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.request
+import urllib.error
+
+# ── Parse arguments ──────────────────────────────────────────
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Review a GitHub PR and produce structured Markdown output."
+    )
+    parser.add_argument("--pr", required=True,
+                        help="Full URL to the GitHub PR (e.g. https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--token", default=None,
+                        help="GitHub personal access token (or set GITHUB_TOKEN env)")
+    return parser.parse_args()
+
+
+# ── GitHub API helpers ───────────────────────────────────────
+
+def api_request(url, token):
+    req = urllib.request.Request(url)
+    req.add_header("Accept", "application/vnd.github.v3+json")
+    if token:
+        req.add_header("Authorization", f"token {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode() if e.fp else ""
+        print(f"ERROR: HTTP {e.code} — {e.reason}", file=sys.stderr)
+        if body:
+            print(body[:200], file=sys.stderr)
+        sys.exit(1)
+
+
+def parse_pr_url(pr_url):
+    """Parse a PR URL into owner, repo, pr_number."""
+    m = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)", pr_url)
+    if not m:
+        print(f"ERROR: Invalid PR URL: {pr_url}", file=sys.stderr)
+        print("Expected format: https://github.com/owner/repo/pull/123", file=sys.stderr)
+        sys.exit(1)
+    return m.group(1), m.group(2), m.group(3)
+
+
+# ── Analysis engine ──────────────────────────────────────────
+
+def analyze_diff(diff):
+    """Analyze a raw diff and produce structured review points."""
+    lines = diff.split("\n")
+    added = []
+    current_file = "unknown"
+
+    for line in lines:
+        if line.startswith("diff --git"):
+            # Extract filename from diff header: diff --git a/file b/file
+            parts = line.split()
+            if len(parts) >= 4:
+                current_file = parts[3][2:]
+        elif line.startswith("+@@"):
+            pass
+        elif line.startswith("@@"):
+            pass
+        elif line.startswith("+") and not line.startswith("+++"):
+            added.append((current_file, line[1:]))
+
+    # Summary
+    files_changed = set()
+    for f, _ in added:
+        if f and f != "unknown":
+            files_changed.add(f)
+    # Also get from diff headers
+    diff_files = set()
+    for line in lines:
+        if line.startswith("+++ b/"):
+            diff_files.add(line[6:])
+    files_changed = files_changed | diff_files if diff_files else files_changed
+    if not files_changed:
+        files_changed = {"unknown"}
+    total_added = len([c for f, c in added])
+
+    summary = (f"This PR modifies **{len(files_changed)} file(s)** "
+               f"with **{total_added} line(s) of changes**. "
+               f"Affected files: {', '.join(sorted(files_changed)[:8])}"
+               f"{' and more' if len(files_changed) > 8 else ''}.")
+
+    # Risk detection — with false positive filtering
+    risks = set()
+    for f, content in added:
+        low = content.lower()
+        stripped = content.strip()
+
+        # Skip comments and non-executable lines
+        if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("/*"):
+            continue
+
+        # Check for dangerous functions
+        if "eval(" in stripped:
+            risks.add(f"`eval()` used in `{f}` — risk of code injection if input is not sanitised")
+        if "exec(" in stripped:
+            risks.add(f"`exec()` used in `{f}` — ensure this is necessary and inputs are controlled")
+
+        # Dangerous subprocess patterns
+        if "subprocess.run" in stripped or "subprocess.call" in stripped:
+            if "shell=true" in low:
+                risks.add(f"`subprocess.*(shell=True)` in `{f}` — potential command injection")
+
+        # Hardcoded secrets (assignments, not imports or references)
+        for pattern in ["password", "secret", "api_key", "apikey", "token"]:
+            if pattern in low and "=" in stripped and "***" not in stripped:
+                # Only flag if looks like a value assignment (quoted content)
+                if ('"' in stripped or "'" in stripped) and not stripped.endswith(':') and not stripped.endswith(','):
+                    risks.add(f"Possible hardcoded `{pattern}` in `{f}` — verify it's not a real credential")
+
+    if not risks:
+        risks.add("No obvious security or correctness risks detected in the diff")
+    else:
+        risks = list(risks)
+
+    # Improvements
+    improvements = []
+
+    # Print() usage check
+    print_count = sum(1 for f, c in added if c.strip().startswith("print("))
+    if print_count > 3:
+        improvements.append(f"Extensive `print()` usage ({print_count} occurrences) — consider using a logger for production code")
+
+    # TODO/FIXME markers
+    todo_count = sum(1 for f, c in added if "# todo" in c.lower() or "# fixme" in c.lower())
+    if todo_count > 0:
+        improvements.append(f"{todo_count} TODO/FIXME marker(s) found — consider resolving before merge")
+
+    # Function docstrings
+    func_count = sum(1 for f, c in added if c.strip().startswith("def "))
+    doc_count = sum(1 for f, c in added if '"""' in c or "'''" in c)
+    if func_count > doc_count and func_count > 2:
+        improvements.append(f"{func_count - doc_count} function(s) added without docstrings — consider brief documentation for maintainability")
+
+    if not improvements and total_added > 0:
+        improvements.append("Code looks clean and well-structured. No major quality concerns.")
+
+    # Confidence
+    if not risks or (len(risks) == 1 and "No obvious" in risks[0]):
+        confidence = "High"
+    elif len(risks) <= 3:
+        confidence = "High — minor items flagged"
+    else:
+        confidence = "Medium — review recommended for flagged items"
+
+    return {
+        "summary": summary,
+        "files_changed": len(files_changed),
+        "lines_changed": total_added,
+        "risks": risks,
+        "improvements": improvements,
+        "confidence": confidence,
+    }
+
+
+def format_output(result):
+    """Format analysis result as structured Markdown."""
+    lines = []
+    lines.append("## 🤖 AI PR Review")
+    lines.append("")
+    lines.append(f"**Summary**")
+    lines.append(result["summary"])
+    lines.append("")
+    lines.append(f"**Changes:** `{result['lines_changed']} line(s)` across **{result['files_changed']} file(s)**")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("### ⚠️ Identified Risks")
+    lines.append("")
+    for r in result["risks"]:
+        lines.append(f"- [ ] {r}")
+    lines.append("")
+    lines.append("### 💡 Improvement Suggestions")
+    lines.append("")
+    for imp in result["improvements"]:
+        lines.append(f"- [ ] {imp}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append(f"**Confidence Score:** `{result['confidence']}`")
+    lines.append("")
+    return "\n".join(lines)
+
+
+# ── Main ─────────────────────────────────────────────────────
+
+def main():
+    args = parse_args()
+    token = args.token or os.environ.get("GITHUB_TOKEN")
+
+    owner, repo, pr_number = parse_pr_url(args.pr)
+    base_api = f"https://api.github.com/repos/{owner}/{repo}"
+
+    # Fetch diff via files endpoint (works for cross-fork PRs)
+    print(f"🔍 Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+    files_json = api_request(f"{base_api}/pulls/{pr_number}/files", token)
+    files = json.loads(files_json)
+
+    diff_parts = []
+    for f in files:
+        if f.get("patch"):
+            diff_parts.append(f"diff --git a/{f['filename']} b/{f['filename']}")
+            diff_parts.append(f['patch'])
+
+    diff = "\n".join(diff_parts)
+    if not diff or len(diff) < 10:
+        print("ERROR: Could not fetch diff (empty response)", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"📊 Analyzing {len(diff.split(chr(10)))} lines of diff...", file=sys.stderr)
+
+    result = analyze_diff(diff)
+    output = format_output(result)
+
+    print("\n" + output)
+
+    # Also write to file for GitHub Action mode
+    out_path = os.environ.get("OUTPUT")
+    if out_path:
+        with open(out_path, "w") as f:
+            f.write(output)
+
+
+if __name__ == "__main__":
+    main()
