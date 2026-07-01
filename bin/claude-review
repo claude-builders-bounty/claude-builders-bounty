@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import argparse, re, sys, urllib.request
+from dataclasses import dataclass
+from typing import Iterable
+PR_RE = re.compile(r"github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<num>\d+)")
+FILE_RE = re.compile(r"^diff --git a/(.*?) b/(.*?)$", re.MULTILINE)
+HUNK_RE = re.compile(r"^@@", re.MULTILINE)
+@dataclass
+class DiffSummary:
+    files: list[str]
+    additions: int
+    deletions: int
+    hunks: int
+    risky_files: list[str]
+    test_files: list[str]
+def fetch_pr_diff(pr_url: str) -> str:
+    match = PR_RE.search(pr_url)
+    if not match:
+        raise SystemExit(f"Invalid GitHub PR URL: {pr_url}")
+    owner, repo, num = match.group("owner"), match.group("repo"), match.group("num")
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{num}"
+    req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github.v3.diff", "User-Agent": "claude-review-agent"})
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return response.read().decode("utf-8", "replace")
+def summarize_diff(diff: str) -> DiffSummary:
+    files = [b for _, b in FILE_RE.findall(diff)]
+    additions = sum(1 for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    deletions = sum(1 for line in diff.splitlines() if line.startswith("-") and not line.startswith("---"))
+    hunks = len(HUNK_RE.findall(diff))
+    risky_patterns = ("auth", "security", "payment", "billing", "migration", "schema", "permission", "token", "secret")
+    risky_files = [f for f in files if any(p in f.lower() for p in risky_patterns)]
+    test_files = [f for f in files if re.search(r"(^|/)(test|tests|spec|__tests__)/|(_test|\.test|\.spec)\.", f)]
+    return DiffSummary(files, additions, deletions, hunks, risky_files, test_files)
+def changed_areas(files: Iterable[str]) -> list[str]:
+    areas=[]
+    for f in files:
+        parts=f.split("/")
+        areas.append(parts[0] if len(parts)==1 else "/".join(parts[:2]))
+    return sorted(set(areas))
+def render_review(pr: str, diff: str) -> str:
+    summary=summarize_diff(diff); areas=changed_areas(summary.files)
+    risk_level="Low"
+    if summary.risky_files or summary.deletions > 80 or len(summary.files) > 12: risk_level="Medium"
+    if summary.additions + summary.deletions > 800: risk_level="High"
+    checks=[]
+    checks.append(f"Tests touched: {', '.join(summary.test_files[:6])}" if summary.test_files else "No obvious test files changed; add/confirm tests if behavior changed.")
+    checks.append(f"Review sensitive areas carefully: {', '.join(summary.risky_files[:6])}" if summary.risky_files else "No obviously sensitive auth/payment/security files detected by filename.")
+    questions=[]
+    if not summary.test_files: questions.append("What manual or automated test covers the changed behavior?")
+    if summary.risky_files: questions.append("Are permissions, secrets, and rollback behavior covered for the sensitive files?")
+    if not questions: questions.append("Are there edge cases or deployment steps reviewers should know about?")
+    return "\n".join(["## Claude Review","",f"**PR:** {pr}",f"**Risk:** {risk_level}","","### Summary",f"- Files changed: {len(summary.files)}",f"- Additions/deletions: +{summary.additions}/-{summary.deletions}",f"- Diff hunks: {summary.hunks}",f"- Main areas: {', '.join(areas[:8]) if areas else 'none detected'}","","### Potential Issues",*[f"- {item}" for item in checks],"","### Suggested Tests","- Run the project test suite for the touched packages.","- Add focused regression coverage when the PR changes behavior.","- Smoke-test the primary user flow affected by the changed files.","","### Reviewer Questions",*[f"- {q}" for q in questions]])
+def main() -> int:
+    parser=argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR diff.")
+    parser.add_argument("--pr", help="GitHub pull request URL")
+    parser.add_argument("--diff-file", help="Local diff file for offline review/testing")
+    args=parser.parse_args()
+    if not args.pr and not args.diff_file: parser.error("provide --pr or --diff-file")
+    if args.diff_file:
+        diff=open(args.diff_file,encoding="utf-8").read(); pr=args.pr or args.diff_file
+    else:
+        pr=args.pr; diff=fetch_pr_diff(args.pr)
+    print(render_review(pr,diff)); return 0
+if __name__ == "__main__": raise SystemExit(main())
