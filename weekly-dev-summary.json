@@ -1,0 +1,373 @@
+{
+  "name": "Weekly Dev Summary (n8n + Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ],
+          "rules": [
+            {
+              "rule": {
+                "cron": "0 17 * * 5"
+              }
+            }
+          ]
+        }
+      },
+      "id": "9d3f95fc-a0fe-4688-accf-394d04369a58",
+      "name": "Weekly Trigger (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst now = new Date();\nconst oneWeekAgo = new Date(now);\noneWeekAgo.setDate(oneWeekAgo.getDate() - 7);\nconst sinceDate = oneWeekAgo.toISOString().split('T')[0];\nconst untilDate = now.toISOString().split('T')[0];\n\nreturn [{json: {\n  since: sinceDate,\n  until: untilDate\n}}];"
+      },
+      "id": "002a541a-7eac-4ab6-805a-f8d454ddb2f0",
+      "name": "Calculate Dates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{$vars.REPO_OWNER}}/{{$vars.REPO_NAME}}/commits?since={{$json.since}}T00:00:00Z&per_page=30",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "77365931-268d-4cd9-9a02-4d7ad3a7fec7",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        150
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": null,
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{$vars.REPO_OWNER}}/{{$vars.REPO_NAME}}/issues?state=closed&since={{$json.since}}T00:00:00Z&per_page=30&filter=all",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c2c3945f-6e03-4efb-b06c-a29848b3b30a",
+      "name": "Get Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": null,
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{$vars.REPO_OWNER}}/{{$vars.REPO_NAME}}/pulls?state=closed&sort=updated&direction=desc&per_page=30",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5ec55bbf-3215-43e3-beab-78f3102de931",
+      "name": "Get PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        650
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": null,
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst cfg = $vars;\nconst commits = $('Get Commits').first().json;\nconst issues = $('Get Issues').first().json;\nconst prs = $('Get PRs').first().json;\nconst dates = $('Calculate Dates').first().json;\n\nconst commitArr = Array.isArray(commits) ? commits : [commits].filter(Boolean);\nconst issueArr = Array.isArray(issues) ? issues.filter(i => !i.pull_request) : [];\nconst prArr = Array.isArray(prs) ? prs.filter(p => p.merged_at) : [];\n\nconst lang = cfg.LANG || 'EN';\nconst prompt = lang === 'FR'\n  ? `Resume hebdo ${cfg.REPO_OWNER}/${cfg.REPO_NAME} (${dates.since} a ${dates.until})...`\n  : `Generate a 3-4 paragraph narrative weekly summary for GitHub repo ${cfg.REPO_OWNER}/${cfg.REPO_NAME} for the week of ${dates.since} to ${dates.until}.\\n\\nStats:\\n- Commits: ${commitArr.length}\\n- Issues closed: ${issueArr.length}\\n- PRs merged: ${prArr.length}\\n\\nCommits:\\n${commitArr.slice(0,30).map(c => `- ${c.commit?.message?.split('\\n')[0] || '?'}`).join('\\n')}\\n\\nIssues:\\n${issueArr.slice(0,20).map(i => `- #${i.number}: ${i.title}`).join('\\n')}\\n\\nPRs:\\n${prArr.slice(0,20).map(p => `- #${p.number}: ${p.title} (by ${p.user?.login || '?'})`).join('\\n')}\\n\\nFocus on key achievements, trends, and significant changes. Be concise but insightful.`;\n\nreturn [{json: {prompt, stats: {commits: commitArr.length, issues: issueArr.length, prs: prArr.length}, language: lang, dates}}];"
+      },
+      "id": "ced4bda9-f9a1-46a6-a781-659c805d927c",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2000
+            },
+            {
+              "name": "system",
+              "value": "You are a technical writing assistant. Create concise, insightful weekly dev summaries. Use a narrative style."
+            },
+            {
+              "name": "messages[0][role]",
+              "value": "user"
+            },
+            {
+              "name": "messages[0][content]",
+              "value": "={{$json.prompt}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "508f2997-a782-44c3-8ec8-23c9cd0b7211",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": null,
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp = $input.first().json;\nconst summary = (resp?.content || []).map(c => c.text).filter(Boolean).join('\\n\\n');\nconst stats = $('Build Prompt').first().json?.stats || {};\nconst dates = $('Calculate Dates').first().json || {};\n\nconst formatted = `# Weekly Dev Summary\\n\\nRepo: {{\\\\$vars.REPO_OWNER}}/{{\\\\$vars.REPO_NAME}}\\nWeek: ${dates.since} to ${dates.until}\\n\\n**Stats:** ${stats.commits || 0} commits, ${stats.issues || 0} issues closed, ${stats.prs || 0} PRs merged\\n\\n${summary}\\n\\n---\\n*Generated by n8n + Claude Sonnet 4*\\n`;\n\nreturn [{json: {summary, formatted, stats, generatedAt: new Date().toISOString()}}];"
+      },
+      "id": "cbaf0b61-0014-48d2-853e-75f150443ab5",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.WEBHOOK_URL || ''}}",
+        "authentication": "none",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$json.formatted}}"
+            }
+          ]
+        },
+        "options": {},
+        "sendHeaders": false,
+        "sendQuery": false,
+        "sendPreDefinedJson": false
+      },
+      "id": "a497ed88-6720-43c5-8979-bd775c991019",
+      "name": "Send to Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1450,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Fri 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Calculate Dates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Dates": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Issues": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get PRs": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          {
+            "node": "Send to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "d36bf51c-ff76-4856-89c7-1aa9c7101927",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "staticData": null
+}
