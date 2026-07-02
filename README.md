@@ -51,3 +51,33 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+
+## Changelog Generator Example
+
+Generate a changelog from git history:
+
+### Setup
+
+1. Copy `changelog.sh` into your repository
+2. Make it executable with `chmod +x changelog.sh`
+3. Run `./changelog.sh`
+
+### Example Output
+
+```md
+# Changelog
+
+## Added
+- add dark mode
+
+## Fixed
+- login redirect issue
+
+## Changed
+- simplify token validation
+
+## Removed
+- legacy endpoint
+```
