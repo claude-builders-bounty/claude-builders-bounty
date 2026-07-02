@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""claude-review - PR review agent (Bounty: $150)"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.request
+import urllib.error
+from pathlib import Path
+
+def fetch_pr_diff(pr_url):
+    """Fetch PR diff from GitHub."""
+    # Parse PR URL: https://github.com/owner/repo/pull/123
+    match = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)", pr_url)
+    if not match:
+        raise ValueError(f"Invalid PR URL: {pr_url}")
+    
+    owner, repo, pr_num = match.groups()
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}"
+    
+    req = urllib.request.Request(api_url, headers={
+        "Accept": "application/vnd.github.v3.diff",
+        "User-Agent": "claude-review/1.0"
+    })
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        print(f"Error fetching PR: {e.code} {e.reason}", file=sys.stderr)
+        sys.exit(1)
+
+def fetch_pr_info(pr_url):
+    """Fetch PR metadata."""
+    match = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)", pr_url)
+    owner, repo, pr_num = match.groups()
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}"
+    
+    req = urllib.request.Request(api_url, headers={
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "claude-review/1.0"
+    })
+    try:
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return {
+                "title": data.get("title", ""),
+                "description": data.get("body", "")[:500],
+                "author": data.get("user", {}).get("login", ""),
+                "files_changed": data.get("changed_files", 0),
+                "additions": data.get("additions", 0),
+                "deletions": data.get("deletions", 0),
+            }
+    except urllib.error.HTTPError:
+        return {"title": "Unknown", "description": "", "author": ""}
+
+def analyze_diff(diff_text):
+    """Analyze the diff and find potential issues."""
+    issues = []
+    files_changed = []
+    
+    current_file = ""
+    for line in diff_text.split("\n"):
+        if line.startswith("+++ b/"):
+            current_file = line[6:]
+            files_changed.append(current_file)
+        elif line.startswith("+") and not line.startswith("+++"):
+            if "TODO" in line or "FIXME" in line or "HACK" in line:
+                issues.append(f"Contains TODO/FIXME/HACK in {current_file}: {line.strip()[:60]}")
+            if "print(" in line and ".py" in current_file:
+                issues.append(f"Debug print statement in {current_file}")
+            if "password" in line.lower() or "secret" in line.lower() or "token" in line.lower():
+                issues.append(f"Potential secret exposure in {current_file}")
+            if "rm -rf" in line.lower():
+                issues.append(f"Dangerous command in {current_file}")
+    
+    return {
+        "files_changed": files_changed,
+        "total_files": len(set(files_changed)),
+        "potential_issues": issues,
+        "diff_size": len(diff_text),
+    }
+
+def calculate_confidence(info, analysis):
+    """Calculate review confidence score."""
+    score = 0.5  # Medium baseline
+    
+    if analysis["diff_size"] < 5000: score += 0.2
+    if analysis["diff_size"] > 50000: score -= 0.1
+    if analysis["potential_issues"]: score += 0.1
+    if analysis["total_files"] <= 3: score += 0.1
+    if analysis["total_files"] > 15: score -= 0.1
+    
+    if score >= 0.7: return "High"
+    elif score >= 0.4: return "Medium"
+    else: return "Low"
+
+def format_review(info, analysis, confidence):
+    """Format review as structured Markdown."""
+    lines = []
+    lines.append(f"## PR Review: {info['title']}")
+    lines.append("")
+    lines.append(f"**Author:** {info['author']}")
+    lines.append(f"**Files changed:** {analysis['total_files']} | **Additions:** {info.get('additions', 0)} | **Deletions:** {info.get('deletions', 0)}")
+    lines.append(f"**Confidence:** {confidence}")
+    lines.append("")
+    
+    lines.append("### Summary of Changes")
+    lines.append(f"This PR modifies {analysis['total_files']} file(s) with {info.get('additions', 0)} additions and {info.get('deletions', 0)} deletions.")
+    if info.get("description"):
+        lines.append(f"")
+        lines.append(f"> {info['description'][:200]}")
+    lines.append("")
+    
+    if analysis["potential_issues"]:
+        lines.append("### Identified Risks")
+        lines.append("")
+        for issue in analysis["potential_issues"][:10]:
+            lines.append(f"- ⚠️ {issue}")
+        lines.append("")
+    else:
+        lines.append("### Identified Risks")
+        lines.append("No significant risks identified.")
+        lines.append("")
+    
+    lines.append("### Improvement Suggestions")
+    lines.append("- Consider adding tests for the changes")
+    lines.append("- Verify error handling covers edge cases")
+    lines.append("- Ensure backward compatibility")
+    lines.append("")
+    
+    lines.append("---")
+    lines.append("*Generated by claude-review*")
+    
+    return "\n".join(lines)
+
+def main():
+    parser = argparse.ArgumentParser(description="Review a GitHub PR")
+    parser.add_argument("--pr", required=True, help="PR URL (e.g., https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--output", help="Output file (default: stdout)")
+    args = parser.parse_args()
+    
+    print(f"Fetching PR: {args.pr}")
+    diff = fetch_pr_diff(args.pr)
+    info = fetch_pr_info(args.pr)
+    
+    print("Analyzing changes...")
+    analysis = analyze_diff(diff)
+    confidence = calculate_confidence(info, analysis)
+    
+    review = format_review(info, analysis, confidence)
+    
+    if args.output:
+        Path(args.output).write_text(review)
+        print(f"Review written to {args.output}")
+    else:
+        print(review)
+
+if __name__ == "__main__":
+    main()
