@@ -589,6 +589,20 @@ Branch `feat/issue-3-destructive-command-hook-v2` (PR #2556). Prior fleet sessio
 - CLI: `doas echo rm -rf /` allowed; `doas rm -rf /tmp` denied; `pkexec --user root echo rm -rf /` allowed
 - Branch scope: 16 hook-only paths; hook source diff vs `main` substantive
 
+## Hands-on verification (2026-07-03, code delivery takeover)
+
+Branch `feat/issue-3-destructive-command-hook-v2` (PR #2556). Prior fleet engineer
+session failed `tests_not_passing` / `peer_review_not_passed` without in-session hook
+source commits despite green tests on HEAD. Codified doas/pkexec/runuser CLI delivery
+checks in `test_delivery_verification.py` so fleet handoff validates privilege-wrapper
+unwrapping end-to-end.
+
+- `npm test` green: 155 unittest + 19 delivery + 24 peer-review + attribution checks
+- Branch scope: 16 hook-only paths; no `internal/` in `main...HEAD` diff
+- CLI: `doas rm -rf /tmp` denied; `doas echo rm -rf /` allowed;
+  `pkexec --user root rm -rf /tmp` denied; `pkexec --user root echo rm -rf /` allowed
+- Hook source diff vs `main`: substantive committed delivery on `pre-tool-use.py`
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)
