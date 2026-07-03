@@ -1,0 +1,157 @@
+{
+  "name": "Weekly Dev Summary — GitHub + Claude API",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "githubCommits",
+      "name": "GitHub: Fetch Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 200],
+      "parameters": {
+        "resource": "repository",
+        "operation": "get",
+        "repository": "={{ $json.owner }}/{{ $json.repo }}",
+        "additionalParameters": {}
+      }
+    },
+    {
+      "id": "githubIssues",
+      "name": "GitHub: Fetch Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 350],
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "repository": "={{ $json.owner }}/{{ $json.repo }}",
+        "filters": {
+          "state": "closed",
+          "since": "={{ $now.minus(7, 'days').toISO() }}"
+        }
+      }
+    },
+    {
+      "id": "githubPRs",
+      "name": "GitHub: Fetch Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 500],
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "repository": "={{ $json.owner }}/{{ $json.repo }}",
+        "filters": {
+          "state": "closed",
+          "since": "={{ $now.minus(7, 'days').toISO() }}"
+        }
+      }
+    },
+    {
+      "id": "merge",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [650, 350],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "template",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [850, 350],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "prompt",
+              "value": "={{ 'Generate a weekly dev summary for ' + $json.owner + '/' + $json.repo + '.\\n\\nCommits: ' + JSON.stringify($json.commits) + '\\n\\nClosed Issues: ' + JSON.stringify($json.issues) + '\\n\\nMerged PRs: ' + JSON.stringify($json.prs) + '\\n\\nFormat: Narrative summary (2-3 paragraphs), key metrics, notable changes, risks. Language: ' + ($json.language || 'EN') }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "claude",
+      "name": "Claude API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 350],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $credentials.claudeApiKey }}"},
+            { "name": "anthropic-version", "value": "2023-06-01" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "claude-sonnet-4-20250514" },
+            { "name": "max_tokens", "value": 2000 },
+            { "name": "messages", "value": "[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]" }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "output",
+      "name": "Send to Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 350],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhookUrl }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "content", "value": "={{ '📊 Weekly Dev Summary\\n' + $json.data.content[0].text }}" }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": { "main": [[ { "node": "GitHub: Fetch Commits", "type": "main" } ]] },
+    "GitHub: Fetch Commits": { "main": [[ { "node": "Merge Data", "type": "main" } ]] },
+    "GitHub: Fetch Closed Issues": { "main": [[ { "node": "Merge Data", "type": "main" } ]] },
+    "GitHub: Fetch Merged PRs": { "main": [[ { "node": "Merge Data", "type": "main" } ]] },
+    "Merge Data": { "main": [[ { "node": "Build Prompt", "type": "main" } ]] },
+    "Build Prompt": { "main": [[ { "node": "Claude API Call", "type": "main" } ]] },
+    "Claude API Call": { "main": [[ { "node": "Send to Discord Webhook", "type": "main" } ]] }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": []
+}
