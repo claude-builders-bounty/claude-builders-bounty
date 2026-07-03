@@ -340,6 +340,8 @@ class CheckCommandTests(unittest.TestCase):
             "pkexec rm -rf /tmp",
             "pkexec --user root rm -rf /tmp",
             "runuser -u root -- rm -rf /tmp",
+            "runuser -u root -c rm -rf /tmp",
+            "runuser -l root -c 'rm -rf /'",
         )
         for command in blocked:
             with self.subTest(command=command):

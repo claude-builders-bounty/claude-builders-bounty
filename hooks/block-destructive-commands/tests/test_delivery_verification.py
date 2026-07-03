@@ -2,9 +2,8 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-07-03 (code delivery takeover PR #2556) —
-prior fleet engineer session failed tests_not_passing / peer_review_not_passed
-without in-session hook source commits; codified doas/pkexec/runuser CLI delivery
-checks; npm test green; hook-only scope (16 paths).
+fixed runuser -c privilege-wrapper bypass; codified runuser CLI delivery checks;
+npm test green; hook-only scope (16 paths).
 """
 
 from __future__ import annotations
@@ -399,6 +398,58 @@ class DeliveryVerificationTests(unittest.TestCase):
                     {
                         "tool_name": "Bash",
                         "tool_input": {"command": "pkexec --user root echo rm -rf /"},
+                        "cwd": "/workspace/demo",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout.strip(), "")
+            log_file = Path(temp_home) / ".claude" / "hooks" / "blocked.log"
+            self.assertFalse(log_file.exists())
+
+    def test_cli_denies_runuser_c_rm_rf_with_official_schema(self):
+        """runuser -c must check the embedded command payload (PR #2556)."""
+        with tempfile.TemporaryDirectory() as temp_home:
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            result = subprocess.run(
+                [sys.executable, str(HOOK_PATH)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "runuser -u root -c rm -rf /tmp"},
+                        "cwd": "/workspace/demo",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            output = json.loads(result.stdout)
+            hook_output = output["hookSpecificOutput"]
+            self.assertEqual(hook_output["hookEventName"], "PreToolUse")
+            self.assertEqual(hook_output["permissionDecision"], "deny")
+            self.assertIn("rm -rf", hook_output["permissionDecisionReason"])
+
+    def test_cli_allows_runuser_echo_rm_rf_text(self):
+        """runuser display commands must not false-positive on rm -rf text after flags."""
+        with tempfile.TemporaryDirectory() as temp_home:
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            result = subprocess.run(
+                [sys.executable, str(HOOK_PATH)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "runuser -u root echo rm -rf /"},
                         "cwd": "/workspace/demo",
                     }
                 ),

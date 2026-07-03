@@ -278,7 +278,8 @@ _DOAS_FLAGS = (
     rf"(?:{_DOAS_VALUE_FLAGS}|{_DOAS_BOOL_FLAGS}|--[\w-]+(?:=\S+|\s+\S+)?|--)"
 )
 _PKEXEC_FLAGS = r"(?:--user(?:=\S+|\s+\S+)|--[\w-]+(?:=\S+|\s+\S+)?|--)"
-_RUNUSER_VALUE_FLAGS = r"-(?:u|g|G|c|s|w|l)\s+\S+"
+# runuser -c takes the rest of the line as the command (handled by extract_runuser_c_inner).
+_RUNUSER_VALUE_FLAGS = r"-(?:u|g|G|s|w|l)\s+\S+"
 _RUNUSER_BOOL_FLAGS = r"-(?:P)"
 _RUNUSER_FLAGS = (
     rf"(?:{_RUNUSER_VALUE_FLAGS}|{_RUNUSER_BOOL_FLAGS}|--[\w-]+(?:=\S+|\s+\S+)?|--)"
@@ -303,6 +304,18 @@ _COMMAND_WRAPPER = re.compile(
     r")+",
     re.IGNORECASE,
 )
+
+
+def extract_runuser_c_inner(segment: str) -> str | None:
+    """Return the command payload from ``runuser`` ``-c`` (rest of line after ``-c``)."""
+    stripped = segment.strip()
+    if not re.match(r"^runuser\b", stripped, re.IGNORECASE):
+        return None
+    match = re.search(r"\s-c\s+", stripped, re.IGNORECASE)
+    if not match:
+        return None
+    inner = stripped[match.end() :].strip()
+    return inner or None
 
 
 def unwrap_command_wrapper(segment: str) -> str:
@@ -707,6 +720,11 @@ def check_segment_body(segment: str) -> str | None:
 
 
 def check_segment(segment: str) -> str | None:
+    runuser_inner = extract_runuser_c_inner(segment)
+    if runuser_inner is not None:
+        reason = check_segment_body(runuser_inner)
+        if reason:
+            return reason
     segment = unwrap_command_wrapper(segment)
     for candidate in iter_segment_candidates(segment):
         reason = check_segment_body(candidate)
