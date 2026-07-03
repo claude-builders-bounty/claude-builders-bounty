@@ -1,0 +1,104 @@
+name: test-nextjs-sqlite-template
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'templates/nextjs-sqlite-saas/**'
+      - 'Makefile'
+      - 'package.json'
+      - '.gitignore'
+      - '.secrets.baseline'
+      - 'scripts/**'
+      - '.github/workflows/test-nextjs-sqlite-template.yml'
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'templates/nextjs-sqlite-saas/**'
+      - 'Makefile'
+      - 'package.json'
+      - '.gitignore'
+      - '.secrets.baseline'
+      - 'scripts/**'
+      - '.github/workflows/test-nextjs-sqlite-template.yml'
+  push:
+    paths:
+      - 'templates/nextjs-sqlite-saas/**'
+      - 'Makefile'
+      - 'package.json'
+      - '.gitignore'
+      - '.secrets.baseline'
+      - 'scripts/**'
+      - '.github/workflows/test-nextjs-sqlite-template.yml'
+  workflow_dispatch:
+
+# Read-only workflow — validation steps only, no privileged Actions or secret tokens.
+permissions:
+  contents: read
+
+concurrency:
+  group: test-nextjs-sqlite-template-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: ":memory:"
+  SESSION_SECRET: "ci-Session-Secret-32-Chars-Minimum-X9"
+  NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Mask sensitive CI env vars in logs
+        run: |
+          echo "::add-mask::${SESSION_SECRET}"
+          echo "::add-mask::${DATABASE_URL}"
+          echo "::add-mask::${NEXT_PUBLIC_APP_URL}"
+      # secret-scanner/action@0.2.1 detect_secrets_version: '1.5.0' — inline script; action jq breaks on 1.5.x audit JSON
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10.4'
+      - name: Scan for secret exposure
+        run: bash scripts/scan-secrets-baseline.sh
+        env:
+          DETECT_SECRETS_VERSION: '1.5.0'
+          DETECT_SECRET_ADDITIONAL_ARGS: '--exclude-files \.github/workflows/test-nextjs-sqlite-template\.yml|\.env\.example|CLAUDE\.md|pnpm-lock\.yaml'
+      - name: Verify secret token protection
+        run: node templates/nextjs-sqlite-saas/tests/check-secret-tokens.mjs
+      - name: Verify SQL parameterization
+        run: node templates/nextjs-sqlite-saas/tests/check-sql-parameterization.mjs
+      - name: Verify template structural integrity
+        run: |
+          node templates/nextjs-sqlite-saas/tests/check-claude-md.mjs
+          node templates/nextjs-sqlite-saas/validate-template.mjs
+      - name: Validate reference app env vars
+        run: node scripts/validate-reference-env.mjs
+      - name: Run database migration tests (in-memory)
+        run: |
+          cd templates/nextjs-sqlite-saas/reference
+          pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+          pnpm exec vitest run tests/db/migrations.test.ts
+      - name: Run database migration tests (file-backed SQLite)
+        run: |
+          cd templates/nextjs-sqlite-saas/reference
+          mkdir -p .cache/ci-sqlite
+          export DATABASE_URL="file:./.cache/ci-sqlite/migrations-ci.db"
+          pnpm exec vitest run tests/db/migrations.test.ts
+      - name: Run component tests
+        run: |
+          cd templates/nextjs-sqlite-saas/reference
+          pnpm exec vitest run tests/components/
+      - name: Run template CI validation
+        run: npm test
