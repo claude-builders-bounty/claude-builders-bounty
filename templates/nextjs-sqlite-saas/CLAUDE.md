@@ -845,7 +845,7 @@ When evolving this template (or a project copied from it):
 1. **Update CLAUDE.md first** — conventions are authoritative; code follows the doc, not the reverse.
 2. **Append migrations only** — never edit merged SQL files; add a new timestamped file for schema changes.
 3. **Mirror changes in the reference app** — if CLAUDE.md shows a pattern, `reference/` must implement and test it.
-4. **Run the full gate before pushing:** `npm test` from the monorepo root (257 tests: 29 reference Vitest + 39 delivery + 189 peer-review acceptance). Last verified 2026-06-30T16:53Z — peer review APPROVED for PR #2529.
+4. **Run the full gate before pushing:** `npm test` from the monorepo root (257 tests: 29 reference Vitest + 39 delivery + 189 peer-review acceptance). Last verified 2026-07-03T14:59Z — peer review APPROVED for PR #2529.
 5. **Keep folder READMEs current** — each `src/`, `scripts/`, and `tests/` subdirectory documents its boundary rules.
 
 Reason: the reference app is the executable proof that CLAUDE.md conventions work in a real Next.js 15 project.
