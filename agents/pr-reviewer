@@ -1,0 +1,762 @@
+#!/usr/bin/env python3
+"""
+pr-reviewer — Claude Code sub-agent that reviews GitHub PRs and posts structured comments.
+
+Usage:
+  claude agents/agents/pr-reviewer --pr https://github.com/owner/repo/pull/123
+  claude agents/agents/pr-reviewer --repo owner/repo --number 123
+  claude agents/agents/pr-reviewer --pr https://github.com/owner/repo/pull/123 --post
+  claude agents/agents/pr-reviewer --pr https://github.com/owner/repo/pull/123 --model gpt-4
+
+Requires: GITHUB_TOKEN env var or authenticated gh CLI.
+Optional: OPENAI_API_KEY env var for AI-powered analysis (recommended).
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from urllib.parse import urlparse
+
+# ── Configuration ────────────────────────────────────────────────────────────
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN") or (
+    subprocess.run(
+        ["gh", "auth", "token"], capture_output=True, text=True
+    ).stdout.strip()
+    or None
+)
+
+# ── GitHub API helpers ───────────────────────────────────────────────────────
+
+HEADERS = {
+    "Accept": "application/vnd.github.v3+json",
+    "User-Agent": "claude-pr-reviewer/2.0",
+}
+if GITHUB_TOKEN:
+    HEADERS["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+
+
+def api_get(path, accept=None):
+    """Make a GET request to the GitHub API."""
+    url = f"https://api.github.com{path}"
+    headers = dict(HEADERS)
+    if accept:
+        headers["Accept"] = accept
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req) as r:
+            data = r.read()
+            if accept and "diff" in accept:
+                return data.decode("utf-8")
+            return json.loads(data.decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        print(f"  ❌ GitHub API error {e.code}: {e.reason}", file=sys.stderr)
+        if body:
+            try:
+                detail = json.loads(body)
+                print(f"     {detail.get('message', body)}", file=sys.stderr)
+            except json.JSONDecodeError:
+                print(f"     {body[:300]}", file=sys.stderr)
+        sys.exit(1)
+
+
+def get_auth_user():
+    """Get the authenticated GitHub user's login."""
+    try:
+        user = api_get("/user")
+        return user.get("login", "unknown")
+    except Exception:
+        return "unknown"
+
+
+# ── PR URL parsing ───────────────────────────────────────────────────────────
+
+def parse_pr_url(url):
+    """Parse a PR URL into (owner, repo, pr_number)."""
+    path = urlparse(url).path.strip("/")
+    parts = path.split("/")
+    if len(parts) >= 4 and parts[2] == "pull":
+        return parts[0], parts[1], parts[3]
+    return None, None, None
+
+
+def parse_pr_identifier(pr_str):
+    """Parse 'owner/repo#123' or full URL or just number if repo given."""
+    if pr_str.startswith("http"):
+        return parse_pr_url(pr_str)
+    if "#" in pr_str:
+        repo_part, num = pr_str.split("#", 1)
+        parts = repo_part.split("/")
+        if len(parts) == 2:
+            return parts[0], parts[1], num
+    return None, None, None
+
+
+# ── PR data fetching ─────────────────────────────────────────────────────────
+
+def fetch_pr(owner, repo, number):
+    """Fetch PR metadata and full diff."""
+    print(f"  🔍 Fetching PR #{number} from {owner}/{repo}...", file=sys.stderr)
+
+    pr_data = api_get(f"/repos/{owner}/{repo}/pulls/{number}")
+    diff = api_get(
+        f"/repos/{owner}/{repo}/pulls/{number}",
+        accept="application/vnd.github.v3.diff",
+    )
+
+    return pr_data, diff
+
+
+def check_existing_reviews(owner, repo, number, auth_user):
+    """Check if the authenticated user has already reviewed this PR."""
+    reviews = api_get(f"/repos/{owner}/{repo}/pulls/{number}/reviews")
+    for review in reviews:
+        if review["user"]["login"] == auth_user:
+            state = review.get("state", "")
+            print(
+                f"  ⚠️  You already submitted a review (state: {state}) on this PR.",
+                file=sys.stderr,
+            )
+            return True
+    return False
+
+
+def post_review(owner, repo, number, review_body):
+    """Post a PR review comment using the GitHub API."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}/reviews"
+    payload = json.dumps({
+        "body": review_body,
+        "event": "COMMENT",
+        "comments": [],
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            **HEADERS,
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req) as r:
+            result = json.loads(r.read().decode("utf-8"))
+            print(
+                f"  ✅ Review posted: {result.get('html_url', '')}",
+                file=sys.stderr,
+            )
+            return result
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        print(f"  ❌ Failed to post review: HTTP {e.code}", file=sys.stderr)
+        print(f"     {body[:500]}", file=sys.stderr)
+        sys.exit(1)
+
+
+# ── Diff analysis engine ───────────────────────────────────────────────────
+
+def extract_files_from_diff(diff):
+    """Parse the diff into per-file changes."""
+    files = []
+    current_file = None
+    current_lines = []
+
+    for line in diff.split("\n"):
+        if line.startswith("diff --git"):
+            if current_file:
+                files.append({"path": current_file, "diff": "\n".join(current_lines)})
+            # Extract file path
+            parts = line.split()
+            current_file = parts[-1].lstrip("b/") if len(parts) > 2 else "unknown"
+            current_lines = [line]
+        elif current_file is not None:
+            current_lines.append(line)
+
+    if current_file and current_lines:
+        files.append({"path": current_file, "diff": "\n".join(current_lines)})
+
+    return files
+
+
+def analyze_diff(pr_data, diff):
+    """Analyze a PR diff for code quality, bugs, security, and style issues."""
+    title = pr_data.get("title", "Untitled PR")
+    description = pr_data.get("body") or ""
+    changed_files = pr_data.get("changed_files", 0)
+    additions = pr_data.get("additions", 0)
+    deletions = pr_data.get("deletions", 0)
+    files_data = pr_data.get("files", [])
+
+    # Parse file extensions
+    file_extensions = set()
+    file_paths = []
+    for f_data in files_data:
+        path = f_data.get("filename", "")
+        file_paths.append(path)
+        ext = os.path.splitext(path)[1].lower()
+        if ext:
+            file_extensions.add(ext)
+
+    # Determine languages
+    lang_map = {
+        ".py": "Python", ".js": "JavaScript", ".ts": "TypeScript",
+        ".tsx": "TypeScript React", ".jsx": "JavaScript React",
+        ".java": "Java", ".go": "Go", ".rb": "Ruby", ".rs": "Rust",
+        ".c": "C", ".cpp": "C++", ".h": "C/C++ Header", ".cs": "C#",
+        ".php": "PHP", ".swift": "Swift", ".kt": "Kotlin",
+        ".scala": "Scala", ".r": "R", ".m": "Objective-C",
+        ".yaml": "YAML", ".yml": "YAML", ".json": "JSON",
+        ".xml": "XML", ".md": "Markdown", ".html": "HTML",
+        ".css": "CSS", ".scss": "SCSS", ".sql": "SQL",
+        ".sh": "Shell", ".bash": "Shell", ".zsh": "Shell",
+        ".dockerfile": "Dockerfile", ".tf": "Terraform",
+        ".toml": "TOML", ".ini": "INI", ".cfg": "Config",
+    }
+    languages = sorted(set(lang_map.get(ext, ext.lstrip(".") or "Unknown") for ext in file_extensions))
+
+    # ── Analysis: Security Issues ──
+    security_issues = []
+    secrets_patterns = [
+        (r'(?i)(password\s*[=:]\s*["\'].+?["\'])', "Hardcoded password"),
+        (r'(?i)(secret\s*[=:]\s*["\'].+?["\'])', "Hardcoded secret"),
+        (r'(?i)(api[_-]?key\s*[=:]\s*["\'].+?["\'])', "Hardcoded API key"),
+        (r'(?i)(token\s*[=:]\s*["\'].{8,}["\'])', "Hardcoded token"),
+        (r'(?i)(aws_access_key_id|aws_secret_access_key)\s*[=:]', "AWS credential"),
+        (r'ghp_[a-zA-Z0-9]{36}', "GitHub personal access token"),
+        (r'sk-[a-zA-Z0-9]{32,}', "OpenAI API key"),
+        (r'(?i)(private_key|BEGIN RSA PRIVATE KEY)', "Private key"),
+        (r'(?i)(connection_string|conn_str)\s*[=:]\s*["\'].+?["\']', "Connection string"),
+    ]
+    for pattern, label in secrets_patterns:
+        if re.search(pattern, diff):
+            security_issues.append(f"Potential {label} detected in diff")
+
+    # Check for .env or secrets files
+    for path in file_paths:
+        if any(p in path.lower() for p in [".env", "credential", "secret", "password", "token"]):
+            security_issues.append(f"Sensitive file committed: `{path}`")
+
+    # ── Analysis: Bug Risks ──
+    bug_risks = []
+    # Bare except
+    if re.search(r'\bexcept\s*:', diff) and not re.search(r'\bexcept\s+\w+', diff):
+        bug_risks.append("Bare `except:` clause — catches all exceptions, may hide bugs")
+
+    # Print/debug left in
+    debug_patterns = [
+        (r'console\.log\s*\(', "`console.log()` debugging statement"),
+        (r'print\s*\(\s*["\']?[dD][eE][bB][uU][gG]', "Debug print statement"),
+        (r'(?i)\bTODO\b', "TODO comment — incomplete work"),
+        (r'(?i)\bFIXME\b', "FIXME comment — known issue"),
+        (r'(?i)\bHACK\b', "HACK comment — non-ideal solution"),
+        (r'(?i)\bXXX\b', "XXX comment — marked concern"),
+        (r'(?i)\bdebugger\b', "`debugger` statement left in code"),
+    ]
+    for pattern, label in debug_patterns:
+        if re.search(pattern, diff):
+            bug_risks.append(f"{label} left in diff")
+
+    # SQL injection risk (string concatenation in SQL)
+    if re.search(r"(?i)(execute|query|raw)\s*\(\s*['\"].*\+.*['\"]", diff):
+        bug_risks.append("Possible SQL injection — string concatenation in SQL query")
+
+    # eval/exec usage
+    if re.search(r'\b(eval|exec)\s*\(', diff):
+        bug_risks.append("`eval()`/`exec()` used — potential code injection risk")
+
+    # ── Analysis: Code Quality ──
+    quality_issues = []
+
+    # Large functions/files
+    files_data_local = extract_files_from_diff(diff)
+    for f in files_data_local:
+        line_count = len(f["diff"].split("\n"))
+        if line_count > 300:
+            quality_issues.append(f"Large diff in `{f['path']}` ({line_count} lines — consider splitting)")
+
+    # Long lines
+    for f in files_data_local:
+        ext = os.path.splitext(f["path"])[1].lower()
+        if ext in (".py", ".js", ".ts", ".tsx", ".jsx", ".java", ".go", ".rb", ".rs", ".cpp", ".c"):
+            long_lines = 0
+            for line in f["diff"].split("\n"):
+                if line.startswith("+") and len(line) > 100 and not line.startswith("+++"):
+                    long_lines += 1
+            if long_lines > 5:
+                quality_issues.append(
+                    f"`{f['path']}` has {long_lines} lines exceeding 100 characters"
+                )
+
+    # Large PR overall
+    total_changes = additions + deletions
+    if changed_files > 15:
+        quality_issues.append(
+            f"Large PR: {changed_files} files changed ({total_changes} total changes) — "
+            "consider splitting into smaller, focused PRs"
+        )
+    elif changed_files > 8:
+        quality_issues.append(
+            f"PR touches {changed_files} files — ensure changes are related to a single concern"
+        )
+
+    # Missing tests
+    has_test_changes = any("test" in p.lower() or "spec" in p.lower() or "__tests__" in p for p in file_paths)
+    has_source_changes = any(
+        re.match(r"^(src|lib|app|packages|server|client)/", p) or
+        os.path.splitext(p)[1] in (".py", ".js", ".ts", ".tsx", ".jsx", ".java", ".go", ".rb", ".rs")
+        for p in file_paths
+        if not re.search(r"(test|spec|__tests__)", p, re.IGNORECASE)
+    )
+    if has_source_changes and not has_test_changes and total_changes > 30:
+        quality_issues.append(
+            "Source code changes detected but no test files modified — consider adding tests"
+        )
+
+    # ── Analysis: Style Consistency ──
+    style_issues = []
+    indent_chars = set()
+    for f in files_data_local:
+        for line in f["diff"].split("\n"):
+            if line.startswith("+") and not line.startswith("+++"):
+                stripped = line[1:]
+                if stripped.startswith("    "):
+                    indent_chars.add("spaces")
+                elif stripped.startswith("\t"):
+                    indent_chars.add("tabs")
+
+    if len(indent_chars) > 1:
+        style_issues.append("Mixed indentation (spaces and tabs) detected")
+
+    # Trailing whitespace
+    trailing_count = 0
+    for f in files_data_local:
+        for line in f["diff"].split("\n"):
+            if line.startswith("+") and not line.startswith("+++") and line.rstrip("\n").endswith(" "):
+                trailing_count += 1
+    if trailing_count > 3:
+        style_issues.append("Trailing whitespace found in added lines")
+
+    # Check for missing newline at EOF
+    for f in files_data_local:
+        diff_content = f["diff"]
+        if diff_content and not diff_content.endswith("\n"):
+            style_issues.append(f"Missing trailing newline at end of `{f['path']}`")
+
+    # ── Summary ──
+    changes_description = (
+        f"PR **#{pr_data['number']}**: _{pr_data['title']}_ "
+        f"modifies {changed_files} file(s) with +{additions}/-{deletions} changes"
+    )
+    if languages:
+        changes_description += f" in {', '.join(languages[:3])}"
+        if len(languages) > 3:
+            changes_description += f" and {len(languages) - 3} more"
+
+    # Build the analysis result
+    total_issues = len(security_issues) + len(bug_risks) + len(quality_issues) + len(style_issues)
+
+    return {
+        "title": title,
+        "number": pr_data["number"],
+        "description": description,
+        "changed_files": changed_files,
+        "additions": additions,
+        "deletions": deletions,
+        "languages": languages,
+        "file_paths": file_paths,
+        "diff_preview": diff[:3000] if len(diff) > 0 else "",
+        "changes_description": changes_description,
+        "total_issues": total_issues,
+        "security_issues": security_issues,
+        "bug_risks": bug_risks,
+        "quality_issues": quality_issues,
+        "style_issues": style_issues,
+        "has_test_changes": has_test_changes,
+    }
+
+
+# ── Review generation (AI-powered if available) ────────────────────────────
+
+def generate_review_with_ai(analysis, pr_data, diff):
+    """Use AI to generate a comprehensive review if API key is available."""
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+
+    # Try OpenAI
+    if os.environ.get("OPENAI_API_KEY"):
+        return _call_openai(analysis, diff)
+
+    # Try Anthropic
+    return None
+
+
+def _call_openai(analysis, diff):
+    """Call OpenAI API for AI-powered review."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    model = os.environ.get("REVIEW_MODEL", "gpt-4o-mini")
+    url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1/chat/completions")
+
+    # Truncate diff to avoid token limits
+    max_diff_chars = 15000
+    truncated_diff = diff[:max_diff_chars]
+    if len(diff) > max_diff_chars:
+        truncated_diff += "\n\n... (diff truncated due to size)"
+
+    prompt = f"""You are an expert code reviewer. Analyze this GitHub PR diff and provide a structured review.
+
+PR Title: {analysis['title']}
+PR Description: {analysis['description'][:500]}
+Files changed: {analysis['changed_files']} ({'+' + str(analysis['additions'])}/{-str(analysis['deletions'])})
+Languages: {', '.join(analysis['languages']) if analysis['languages'] else 'Unknown'}
+
+D I F F:
+```diff
+{truncated_diff}
+```
+
+Please provide your review in this exact format — use the headings exactly as shown:
+
+## Summary
+(2-3 sentence summary of what this PR does)
+
+## What's Good
+- (list positive aspects — good patterns, clean code, proper tests, etc.)
+
+## Issues Found
+- (list actual issues: bugs, security problems, code smells — be specific with line references if possible)
+
+## Suggestions
+- (actionable improvement suggestions, not mandatory but would make the code better)
+
+Keep it constructive and professional."""
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are an expert, constructive code reviewer. Be thorough but kind."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 2000,
+    }).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60) as r:
+            result = json.loads(r.read().decode("utf-8"))
+            return result["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"  ⚠️  AI review failed: {e}", file=sys.stderr)
+        return None
+
+
+# ── Output formatting ────────────────────────────────────────────────────────
+
+def format_review(analysis, ai_review=None):
+    """Format the review as structured Markdown."""
+    lines = []
+    lines.append(f"## 🔍 PR Review: {analysis['title']}")
+    lines.append("")
+    lines.append(f"| Metric | Value |")
+    lines.append(f"|--------|-------|")
+    lines.append(f"| Repository | `{analysis.get('_repo', 'unknown')}` |")
+    lines.append(f"| PR | #{analysis['number']} |")
+    lines.append(f"| Files Changed | {analysis['changed_files']} |")
+    lines.append(f"| Changes | +{analysis['additions']}/-{analysis['deletions']} |")
+    if analysis['languages']:
+        langs = ', '.join(analysis['languages'][:5])
+        if len(analysis['languages']) > 5:
+            langs += f" +{len(analysis['languages']) - 5} more"
+        lines.append(f"| Languages | {langs} |")
+    lines.append("")
+
+    # If AI generated review, use it
+    if ai_review:
+        lines.append(ai_review)
+        return "\n".join(lines)
+
+    # Otherwise, use rule-based review
+    lines.append("### 📋 Summary")
+    lines.append("")
+    lines.append(analysis['changes_description'] + ".")
+    if analysis['description']:
+        desc_short = analysis['description'].strip()[:500]
+        lines.append(f"> {desc_short}")
+    lines.append("")
+
+    # Confidence score
+    total_issues = analysis['total_issues']
+    if total_issues == 0:
+        if analysis['additions'] == 0:
+            confidence = "Low — no actual changes detected"
+        else:
+            confidence = "High — no issues found"
+    elif total_issues <= 3:
+        confidence = "High — minor issues only"
+    elif total_issues <= 7:
+        confidence = "Medium — several items to address"
+    else:
+        confidence = "Medium — multiple issues found"
+    lines.append(f"**Confidence Score:** {confidence}")
+    lines.append("")
+
+    # What's Good
+    lines.append("### ✅ What's Good")
+    lines.append("")
+    positives = []
+    if analysis['has_test_changes']:
+        positives.append("Test files are included in this PR — good practice")
+    if analysis['additions'] > 0:
+        positives.append(f"PR adds {analysis['additions']} lines of new code/functionality")
+    if analysis['changed_files'] <= 5:
+        positives.append("PR is focused with minimal file changes — easy to review")
+    if not analysis['security_issues'] and not analysis['bug_risks']:
+        positives.append("No obvious security or bug risks detected in the diff")
+    if positives:
+        for p in positives:
+            lines.append(f"- {p}")
+    else:
+        lines.append("- Changes are appropriately scoped")
+    lines.append("")
+
+    # Issues Found
+    lines.append("### ⚠️ Issues Found")
+    lines.append("")
+    has_issues = False
+
+    if analysis['security_issues']:
+        has_issues = True
+        lines.append("**🔒 Security:**")
+        for issue in analysis['security_issues']:
+            lines.append(f"- 🔴 {issue}")
+
+    if analysis['bug_risks']:
+        has_issues = True
+        lines.append("**🐛 Bug Risks:**")
+        for issue in analysis['bug_risks']:
+            lines.append(f"- 🟡 {issue}")
+
+    if analysis['quality_issues']:
+        has_issues = True
+        lines.append("**📐 Code Quality:**")
+        for issue in analysis['quality_issues']:
+            lines.append(f"- 🟠 {issue}")
+
+    if analysis['style_issues']:
+        has_issues = True
+        lines.append("**🎨 Style:**")
+        for issue in analysis['style_issues']:
+            lines.append(f"- ⚪ {issue}")
+
+    if not has_issues:
+        lines.append("- ✅ No significant issues detected")
+    lines.append("")
+
+    # Suggestions
+    lines.append("### 💡 Suggestions")
+    lines.append("")
+    suggestions = []
+
+    if not analysis['has_test_changes'] and analysis['changed_files'] > 0 and analysis['additions'] > 30:
+        suggestions.append("Add tests for the new functionality to ensure reliability")
+
+    if analysis['changed_files'] > 10:
+        suggestions.append(f"Consider splitting this PR ({analysis['changed_files']} files) into smaller, more focused changes")
+
+    if "TODO" in analysis.get('diff_preview', '').upper():
+        suggestions.append("Resolve TODO comments before merging or track them in a separate issue")
+
+    if analysis['style_issues']:
+        suggestions.append("Run a linter/formatter (e.g., Prettier, Black, ESLint) to ensure consistent code style")
+
+    if analysis['languages']:
+        py_files = [f for f in analysis['file_paths'] if f.endswith('.py')]
+        if py_files:
+            suggestions.append("Run `ruff check .` or `pylint` on Python files to catch any remaining issues")
+
+    js_ts_files = [f for f in analysis['file_paths'] if f.endswith(('.js', '.ts', '.tsx', '.jsx'))]
+    if js_ts_files:
+        suggestions.append("Run `npm run lint` or `npx tsc --noEmit` to verify TypeScript/JS correctness")
+
+    if not suggestions:
+        suggestions.append("PR looks clean — no specific suggestions beyond standard code review practices")
+
+    for s in suggestions:
+        lines.append(f"- {s}")
+
+    lines.append("")
+    lines.append("---")
+    lines.append(f"*🤖 Automated review by Claude Code PR Reviewer · Analysis confidence: {confidence}*")
+
+    return "\n".join(lines)
+
+
+# ── Main CLI entry point ─────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Review a GitHub PR and post a structured comment.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  %(prog)s --pr https://github.com/owner/repo/pull/123\n"
+            "  %(prog)s --repo owner/repo --number 123\n"
+            "  %(prog)s --pr https://github.com/owner/repo/pull/123 --post\n"
+            "  %(prog)s --pr owner/repo#123\n\n"
+            "Environment:\n"
+            "  GITHUB_TOKEN   GitHub personal access token (or 'gh' CLI auth)\n"
+            "  OPENAI_API_KEY Optional: enables AI-powered analysis\n"
+            "  REVIEW_MODEL   OpenAI model to use (default: gpt-4o-mini)"
+        ),
+    )
+    parser.add_argument(
+        "--pr",
+        help="Full PR URL (e.g., https://github.com/owner/repo/pull/123) or owner/repo#123",
+    )
+    parser.add_argument("--repo", help="Repository (owner/repo)")
+    parser.add_argument(
+        "--number", "--pr-number", help="PR number (use with --repo)"
+    )
+    parser.add_argument(
+        "--post",
+        action="store_true",
+        help="Actually post the review as a PR comment via GitHub API",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip existing-review check when posting",
+    )
+    args = parser.parse_args()
+
+    # ── Resolve PR reference ──
+    owner = repo = number = None
+    if args.pr:
+        if args.pr.startswith("http"):
+            owner, repo, number = parse_pr_url(args.pr)
+        elif "#" in args.pr:
+            owner, repo, number = parse_pr_identifier(args.pr)
+        else:
+            print(
+                "Error: --pr should be a full URL (https://github.com/...) "
+                "or owner/repo#number format",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    elif args.repo and args.number:
+        parts = args.repo.split("/")
+        if len(parts) == 2:
+            owner, repo = parts
+            number = args.number
+    else:
+        parser.print_help()
+        print(
+            "\nError: Provide --pr URL or --repo + --number",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if not all([owner, repo, number]):
+        print("Error: Could not parse PR reference", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Check auth ──
+    if not GITHUB_TOKEN:
+        print(
+            "Error: GITHUB_TOKEN not set and 'gh' CLI not authenticated",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    auth_user = get_auth_user()
+
+    # ── Check if already reviewed (when --post) ──
+    if args.post and not args.force:
+        already_reviewed = check_existing_reviews(owner, repo, number, auth_user)
+        if already_reviewed:
+            # Ask if they want to continue
+            print(
+                "  Use --force to post anyway",
+                file=sys.stderr,
+            )
+            # We'll still generate the review for display
+            print(
+                "  Generating review for preview (use --force to post)...",
+                file=sys.stderr,
+            )
+
+    # ── Fetch PR data ──
+    try:
+        pr_data, diff = fetch_pr(owner, repo, number)
+    except Exception as e:
+        print(f"Error fetching PR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not diff or not diff.strip():
+        print("Error: No diff content returned (PR may be empty or merged)", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"  📝 {pr_data['title']}", file=sys.stderr)
+    print(
+        f"  📂 {pr_data['changed_files']} files | "
+        f"+{pr_data['additions']}/-{pr_data['deletions']} changes",
+        file=sys.stderr,
+    )
+
+    # ── Analyze ──
+    print("  🔬 Analyzing diff...", file=sys.stderr)
+    analysis = analyze_diff(pr_data, diff)
+    analysis["_repo"] = f"{owner}/{repo}"
+
+    # ── AI-powered review (optional) ──
+    ai_review = None
+    if os.environ.get("OPENAI_API_KEY"):
+        print("  🤖 Generating AI-powered review...", file=sys.stderr)
+        ai_review = generate_review_with_ai(analysis, pr_data, diff)
+
+    # ── Format ──
+    print("  ✍️  Formatting review...", file=sys.stderr)
+    review_body = format_review(analysis, ai_review)
+
+    # ── Output / Post ──
+    if args.post:
+        if already_reviewed and not args.force:
+            print("\n" + review_body)
+            print(
+                "\n⚠️  Not posted (already reviewed). Use --force to post anyway.",
+                file=sys.stderr,
+            )
+        else:
+            post_review(owner, repo, number, review_body)
+            print("\n" + review_body)
+            print(
+                "\n✅ Review posted to "
+                f"https://github.com/{owner}/{repo}/pull/{number}",
+                file=sys.stderr,
+            )
+    else:
+        print("\n" + review_body)
+        print(
+            "\n💡 Use --post to submit this as a PR comment on GitHub.",
+            file=sys.stderr,
+        )
+
+
+if __name__ == "__main__":
+    main()
