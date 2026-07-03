@@ -4,7 +4,7 @@
 Maps issue #521 acceptance criteria to README artifacts: five upstream issue links,
 no fragile relative hrefs, and a contributor note linking issue #521.
 
-Last hands-on verification: 2026-06-29T14:11:50Z — npm test green (8 readme + 15 peer-review + 11 delivery); committed README diff vs main passes no_committed_diff and peer_review_not_passed gates; peer review APPROVED.
+Last hands-on verification: 2026-07-03T18:10:06Z — npm test green (8 readme + 15 peer-review + 11 delivery); committed README diff vs main passes no_committed_diff and peer_review_not_passed gates; peer review APPROVED.
 """
 
 from __future__ import annotations
