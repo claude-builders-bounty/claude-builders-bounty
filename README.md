@@ -24,13 +24,15 @@ You're in the right place.
 
 ## Active Bounties
 
+**Note:** Bounty table links ([issue #521](/claude-builders-bounty/claude-builders-bounty/issues/521)) use absolute `/owner/repo/issues/N` paths (for example `/claude-builders-bounty/claude-builders-bounty/issues/1`) instead of fragile per-fork relative hrefs. This ensures bounty rows resolve to the canonical upstream repository on GitHub forks and blob views.
+
 | # | Task | Amount | Status |
 |---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+| [#1](/claude-builders-bounty/claude-builders-bounty/issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
+| [#2](/claude-builders-bounty/claude-builders-bounty/issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
+| [#3](/claude-builders-bounty/claude-builders-bounty/issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
+| [#4](/claude-builders-bounty/claude-builders-bounty/issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#5](/claude-builders-bounty/claude-builders-bounty/issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
 ---
 
