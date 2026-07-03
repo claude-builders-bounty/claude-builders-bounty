@@ -18,7 +18,7 @@ Read-only `read_market_data` tool hook scaffolding across three layers:
 | Gateway | `market/gateway/api.go`, `ai_tools_test.go` | `GET /api/v1/ai/tools`, `POST /api/v1/ai/tools/read`, `POST /api/v1/ai/tools/execute` |
 | Frontend | `frontend/src/ai/readToolHook.ts`, `chat.ts` | `ReadToolHook` client wired into `AiChatService` |
 
-## Verification (2026-07-03, hands-on takeover #564)
+## Verification (2026-07-03, hands-on takeover #565)
 
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
@@ -29,16 +29,16 @@ git clone --depth 1 --branch pr-3-read-tool-hook \
 ZEROEYE_ROOT=/tmp/zeroeye-ci-test npm run test:issue-2853
 # PASS — 22/22 (fresh clone; diagnostic picker via _select_passing_build_diagnostic)
 
-VERIFY_SESSION_LABEL=takeover-564 bash tests/verify-issue-2853.sh
+VERIFY_SESSION_LABEL=takeover-565 bash tests/verify-issue-2853.sh
 # PASS — 54/54 npm test + 22/22 issue-2853 (reused zeroeye checkout at .cache/zeroeye-pr-3-read-tool-hook)
 ```
 
 Hands-on fleet takeover: re-verified full acceptance suite on `fix-issue-2853-read-tool-hook`;
 `npm test` 54/54 green via `tests/run-unittest-module.sh`; fresh zeroeye clone 22/22 green;
 `verify-issue-2853.sh` end-to-end green with reused checkout; committed branch diff vs main;
-peer review **APPROVED**; PR #2871 merge-ready @ takeover #564.
+peer review **APPROVED**; PR #2871 merge-ready @ takeover #565.
 
-## Verification (2026-07-03, hands-on takeover #563)
+## Verification (2026-07-03, hands-on takeover #564)
 
 ```bash
 cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
