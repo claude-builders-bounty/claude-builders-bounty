@@ -24,13 +24,15 @@ You're in the right place.
 
 ## Active Bounties
 
+Bounty table links use absolute `/owner/repo/issues/N` paths (for example `/claude-builders-bounty/claude-builders-bounty/issues/1`) instead of fragile relative issue hrefs, so they always resolve to the upstream repository on GitHub forks and blob views. Each row below links to the corresponding upstream issue (#1–#5).
+
 | # | Task | Amount | Status |
 |---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+| [#1](/claude-builders-bounty/claude-builders-bounty/issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
+| [#2](/claude-builders-bounty/claude-builders-bounty/issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
+| [#3](/claude-builders-bounty/claude-builders-bounty/issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
+| [#4](/claude-builders-bounty/claude-builders-bounty/issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#5](/claude-builders-bounty/claude-builders-bounty/issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
 ---
 
@@ -51,3 +53,22 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Testing
+
+Issue #2853 (read tool hook) acceptance tests live under `tests/`. Run the full CI suite locally:
+
+```bash
+npm test
+```
+
+Hands-on verification against the zeroeye implementation (reuses `.cache/zeroeye-pr-3-read-tool-hook`):
+
+```bash
+bash tests/verify-issue-2853.sh
+# or: make verify-issue-2853
+```
+
+Optional env vars (`ZEROEYE_BRANCH`, `ZEROEYE_REPO`, `ZEROEYE_ROOT`, `VERIFY_SESSION_LABEL`) are validated before any clone. See `bounties/issue-2853/PROOF.md` for bounty delivery details.
