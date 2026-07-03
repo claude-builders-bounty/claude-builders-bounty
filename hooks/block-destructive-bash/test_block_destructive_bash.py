@@ -1,6 +1,11 @@
 import importlib.util
+import io
+import json
+import os
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).with_name("block_destructive_bash.py")
@@ -39,6 +44,36 @@ class DestructiveBashBlockerTests(unittest.TestCase):
         self.assert_allowed("truncate -s 0 app.log")
         self.assert_allowed("sqlite3 app.db 'DELETE FROM sessions WHERE id = 1'")
         self.assert_allowed("npm test")
+
+    def test_main_denies_and_logs_blocked_bash_command(self):
+        payload = {
+            "tool_name": "Bash",
+            "cwd": "/workspace/project",
+            "tool_input": {"command": "echo before && rm -rf dist"},
+        }
+
+        with tempfile.TemporaryDirectory() as temp_home:
+            stdin = io.StringIO(json.dumps(payload))
+            stdout = io.StringIO()
+            with patch.dict(os.environ, {"HOME": temp_home}, clear=False):
+                with patch.object(blocker.Path, "home", return_value=Path(temp_home)):
+                    with patch("sys.stdin", stdin), patch("sys.stdout", stdout):
+                        exit_code = blocker.main()
+
+            self.assertEqual(exit_code, 0)
+            output = json.loads(stdout.getvalue())
+            hook_output = output["hookSpecificOutput"]
+            self.assertEqual(hook_output["hookEventName"], "PreToolUse")
+            self.assertEqual(hook_output["permissionDecision"], "deny")
+            self.assertIn("rm -rf", hook_output["permissionDecisionReason"])
+
+            log_path = Path(temp_home) / ".claude" / "hooks" / "blocked.log"
+            self.assertTrue(log_path.exists())
+            log_entry = json.loads(log_path.read_text(encoding="utf-8").strip())
+            self.assertEqual(log_entry["project_path"], "/workspace/project")
+            self.assertEqual(log_entry["command"], "echo before && rm -rf dist")
+            self.assertIn("rm -rf", log_entry["reason"])
+            self.assertIn("timestamp", log_entry)
 
 
 if __name__ == "__main__":
