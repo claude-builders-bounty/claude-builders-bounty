@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""claude-review: AI-powered PR review agent. Bounty #4 - $150"""
+import os, sys, json, urllib.request, re
+from urllib.parse import urlparse
+
+GH_TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+
+def gh_api(path, accept=None):
+    url = f"https://api.github.com{path}"
+    h = {"Authorization": f"Bearer {GH_TOKEN}", "User-Agent": "claude-review"}
+    if accept: h["Accept"] = accept
+    req = urllib.request.Request(url, headers=h)
+    with urllib.request.urlopen(req) as r:
+        return r.read().decode()
+
+def parse_pr(input_str):
+    m = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)", input_str)
+    if m: return m.group(1)+"/"+m.group(2), int(m.group(3))
+    if input_str.isdigit():
+        return None, int(input_str)
+    raise ValueError("Invalid PR format")
+
+def review(pr_json, diff):
+    data = json.loads(pr_json)
+    title = data["title"]
+    body = data.get("body") or ""
+    author = data["user"]["login"]
+    base = data["base"]["ref"]
+    head = data["head"]["ref"]
+    additions = data.get("additions", 0)
+    deletions = data.get("deletions", 0)
+    changed = data.get("changed_files", 0)
+
+    # Build report
+    report = f"""# PR Review: {title}
+
+**Author:** {author}  |  {head} ? {base}
+**Generated:** N/A
+
+## ?? PR Description
+{"? Adequate description." if len(body) > 50 else "?? Very short description. Add context."}
+
+## ?? Change Summary
+| Metric | Value |
+|--------|------:|
+| Files Changed | {changed} |
+| Additions | {additions} |
+| Deletions | {deletions} |
+{'?? Large PR (>20 files). Consider splitting.' if changed > 20 else ''}
+
+## ?? Security Check
+"""
+
+    sec_issues = 0
+    for pat, msg in [
+        (r"(password|secret|token|api.?key|credential)\s*[:=]", "Potential secret/hardcoded credential"),
+        (r"(eval\(|exec\(|child_process\.exec|shell=True)", "Code execution (eval/exec/shell=True)"),
+    ]:
+        if re.search(pat, diff, re.IGNORECASE):
+            report += f"?? {msg}\n"
+            sec_issues += 1
+    if sec_issues == 0:
+        report += "? No obvious security issues.\n"
+
+    report += """
+## ?? Code Quality
+"""
+    todos = len(re.findall(r"(TODO|FIXME|HACK|XXX)", diff))
+    debugs = len(re.findall(r"(console\.log|print\(|debugger)", diff))
+    if todos: report += f"?? {todos} TODO/FIXME markers.\n"
+    if debugs: report += f"?? {debugs} debug statements.\n"
+    if not todos and not debugs:
+        report += "? No leftover debug code or TODOs.\n"
+
+    has_tests = bool(re.search(r"(test|spec|__tests__)", "\n".join(
+        re.findall(r"^\+\+\+ b/(.*)", diff, re.MULTILINE)
+    )))
+    report += f"""
+## ?? Test Coverage
+{'? Tests included.' if has_tests else '?? No test files found.'}
+
+## ? Summary
+| Category | Status |
+|----------|--------|
+| Description | {'? Good' if len(body) > 50 else '?? Short'} |
+| Size | {'? Reasonable' if changed <= 20 else '?? Large'} |
+| Security | {'? Clean' if sec_issues == 0 else '?? Issues'} |
+| Debug Code | {'? Clean' if debugs == 0 else '?? Found'} |
+| Tests | {'? Included' if has_tests else '?? Missing'} |
+| TODOs | {'? None' if todos == 0 else f'?? {todos}'} |
+"""
+    return report
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: claude-review <pr-url>")
+        print("  ./claude-review https://github.com/owner/repo/pull/42")
+        sys.exit(1)
+
+    repo, num = parse_pr(sys.argv[1])
+    if not repo:
+        repo = sys.argv[2] if len(sys.argv) > 2 else input("repo (owner/repo): ")
+
+    pr_json = gh_api(f"/repos/{repo}/pulls/{num}")
+    diff = gh_api(f"/repos/{repo}/pulls/{num}", accept="application/vnd.github.v3.diff")
+
+    report = review(pr_json, diff)
+    print(report)
+    print(f"\n? Review complete. {repo}#{num}")
