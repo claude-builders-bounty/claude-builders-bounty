@@ -6,7 +6,7 @@
  * peer review validates the CLAUDE.md template, reference Vitest suites, and npm
  * test wiring.
  *
- * Last hands-on verification: 2026-07-03T14:59Z (cursor hands-on takeover PR #2529) — npm test
+ * Last hands-on verification: 2026-07-03T15:03Z (cursor hands-on takeover PR #2529) — npm test
  * green (257 total: 29 reference + 39 delivery + 189 peer-review); test:delivery E2E-runs npm test
  * and test:peer-review with set -e gate summaries; ci-step-delivery sets INNER_RUN to avoid CI recursion.
  */
