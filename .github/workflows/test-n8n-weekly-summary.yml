@@ -1,0 +1,127 @@
+name: test-n8n-weekly-summary
+
+# Bounty #5 CI — split into validate, GitHub integration, and upstream status jobs.
+# UPSTREAM_STATUS_TOKEN is stored as a GitHub Actions secret (repo or org level);
+# it is never logged or echoed. See workflows/n8n-weekly-dev-summary/README.md.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'workflows/n8n-weekly-dev-summary/**'
+      - '.github/workflows/test-n8n-weekly-summary.yml'
+      - 'package.json'
+      - 'Makefile'
+  push:
+    paths:
+      - 'workflows/n8n-weekly-dev-summary/**'
+      - '.github/workflows/test-n8n-weekly-summary.yml'
+      - 'package.json'
+      - 'Makefile'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  # Job 1 — Local regression suite (mirrors `npm run test:ci`):
+  # workflow structure, github-collect unit/integration, Claude summary, delivery
+  # channels, test-scripts acceptance, delivery verification, peer-review gates.
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run workflow regression suite (npm run test:ci)
+        working-directory: workflows/n8n-weekly-dev-summary
+        run: npm run test:ci
+
+  # Job 2 — Live GitHub API smoke test (npm run test:github):
+  # validates repo-scoped token via GET /repos/{owner}/{repo}; uses dedicated
+  # UPSTREAM_STATUS_TOKEN secret (not default GITHUB_TOKEN).
+  github-integration:
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: GitHub API integration test (npm run test:github)
+        working-directory: workflows/n8n-weekly-dev-summary
+        env:
+          UPSTREAM_STATUS_TOKEN: ${{ secrets.UPSTREAM_STATUS_TOKEN }}
+        run: npm run test:github
+
+  # Job 3 — Report pass/fail to upstream PR commit (isolated from test execution).
+  # Token passed only via github-script input; no env block to avoid log exposure.
+  report-upstream-status:
+    runs-on: ubuntu-latest
+    needs: [validate, github-integration]
+    if: always()
+    steps:
+      - name: Report commit status for upstream PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.UPSTREAM_STATUS_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const upstream = { owner: 'claude-builders-bounty', repo: 'claude-builders-bounty' };
+            const pr = context.payload.pull_request;
+            let sha = pr?.head?.sha || context.sha;
+            let owner = pr?.base?.repo?.owner?.login || upstream.owner;
+            let repo = pr?.base?.repo?.name || upstream.repo;
+
+            if (!pr && context.eventName === 'push') {
+              const { data: pulls } = await github.rest.pulls.list({
+                owner: upstream.owner,
+                repo: upstream.repo,
+                head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
+                state: 'open',
+                per_page: 1,
+              });
+              const openPr = pulls[0];
+              if (openPr) {
+                sha = openPr.head.sha;
+                owner = openPr.base.repo.owner.login;
+                repo = openPr.base.repo.name;
+              }
+            }
+
+            const validateOk = '${{ needs.validate.result }}' === 'success';
+            const githubOk = '${{ needs.github-integration.result }}' === 'success';
+            const state = validateOk && githubOk ? 'success' : 'failure';
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const payload = {
+              owner,
+              repo,
+              sha,
+              state,
+              context: 'test-n8n-weekly-summary',
+              description: state === 'success'
+                ? 'Workflow validation and GitHub API tests passed'
+                : 'Workflow validation or GitHub API tests failed',
+              target_url: runUrl,
+            };
+
+            try {
+              await github.rest.repos.createCommitStatus(payload);
+            } catch (error) {
+              const statusCode = error.status ?? 'unknown';
+              core.warning(`Upstream status unavailable (HTTP ${statusCode}); reporting on fork commit.`);
+              await github.rest.repos.createCommitStatus({
+                ...payload,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+              });
+            }
