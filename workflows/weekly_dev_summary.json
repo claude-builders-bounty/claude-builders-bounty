@@ -1,0 +1,274 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Weekly Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2",
+      "name": "Get GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        150
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $json.owner + '/' + $json.repo + '/commits?since=' + $formatDate($moment().subtract(7, 'days').unix() * 1000, 'YYYY-MM-DDTHH:mm:ssZ') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "3",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        350
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $json.owner + '/' + $json.repo + '/issues?state=closed&since=' + $formatDate($moment().subtract(7, 'days').unix() * 1000, 'YYYY-MM-DDTHH:mm:ssZ') + '&per_page=50' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "4",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        550
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/search/issues?q=repo:' + $json.owner + '/' + $json.repo + '+type:pr+state:merged+merged:>=' + $formatDate($moment().subtract(7, 'days').unix() * 1000, 'YYYY-MM-DD') + '&per_page=50' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "5",
+      "name": "Format Data for Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        350
+      ],
+      "parameters": {
+        "language": "python",
+        "code": "# Combine all GitHub data\ncommits = items[0].get('json', []) if len(items) > 0 else []\nclosed_issues = items[1].get('json', []) if len(items) > 1 else []\nmerged_prs = items[2].get('json', {}).get('items', []) if len(items) > 2 else []\n\nif isinstance(commits, dict): commits = [commits]\nif isinstance(closed_issues, dict): closed_issues = [closed_issues]\n\ncommit_summary = []\nfor c in commits[:30]:\n    commit_summary.append({\n        'author': c.get('commit', {}).get('author', {}).get('name', 'Unknown'),\n        'message': c.get('commit', {}).get('message', '').split('\\n')[0],\n        'date': c.get('commit', {}).get('author', {}).get('date', ''),\n        'sha': c.get('sha', '')[:7]\n    })\n\nissue_summary = []\nfor i in closed_issues[:20]:\n    issue_summary.append({\n        'title': i.get('title', ''),\n        'number': i.get('number', ''),\n        'state': i.get('state', ''),\n        'labels': [l['name'] for l in i.get('labels', [])]\n    })\n\npr_summary = []\nfor p in merged_prs[:20]:\n    pr_summary.append({\n        'title': p.get('title', ''),\n        'number': p.get('number', ''),\n        'author': p.get('user', {}).get('login', 'Unknown'),\n        'labels': [l['name'] for l in p.get('labels', [])]\n    })\n\nsummary = {\n    'total_commits': len(commits),\n    'total_closed_issues': len(closed_issues),\n    'total_merged_prs': len(merged_prs),\n    'commits': commit_summary,\n    'closed_issues': issue_summary,\n    'merged_prs': pr_summary\n}\n\nreturn [{'json': summary}]"
+      }
+    },
+    {
+      "id": "6",
+      "name": "Generate AI Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        350
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "jsonBody": "{\n  \"model\": \"deepseek-chat\",\n  \"messages\": [\n    {\"role\": \"system\", \"content\": \"You are a technical writer creating a weekly GitHub repository summary. Write in a clear, narrative style. Be concise but informative. Group related changes. Highlight key contributions.\"},\n    {\"role\": \"user\", \"content\": \"Generate a weekly development summary for the following repository data. Include: key changes, new features, bug fixes, contributor highlights, and overall project trends.\\n\\nData: {{ $json | dump }}\"}\n  ],\n  \"temperature\": 0.7,\n  \"max_tokens\": 2000\n}"
+      }
+    },
+    {
+      "id": "7",
+      "name": "Format Summary Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        350
+      ],
+      "parameters": {
+        "language": "python",
+        "code": "import datetime\nnow = datetime.datetime.now()\nai_text = items[0]['json'].get('choices', [{}])[0].get('message', {}).get('content', '')\nreport = f\"\"\"# Weekly Development Summary\n# Week ending: {now.strftime('%Y-%m-%d')}\n\n---\n\n{ai_text}\n\n---\n*Generated automatically by n8n workflow*\n\"\"\"\n\nhtml = report.replace('\\n', '<br>')\nreturn [{'json': {'summary': report, 'html_summary': html}}]"
+      }
+    },
+    {
+      "id": "8",
+      "name": "Webhook Output",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        350
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "webhookId": "weekly-summary-output"
+    }
+  ],
+  "connections": {
+    "1": {
+      "main": [
+        [
+          {
+            "node": "2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2": {
+      "main": [
+        [
+          {
+            "node": "5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3": {
+      "main": [
+        [
+          {
+            "node": "5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4": {
+      "main": [
+        [
+          {
+            "node": "5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5": {
+      "main": [
+        [
+          {
+            "node": "6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6": {
+      "main": [
+        [
+          {
+            "node": "7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7": {
+      "main": [
+        [
+          {
+            "node": "8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "active": false,
+  "settings": {},
+  "tags": []
+}
