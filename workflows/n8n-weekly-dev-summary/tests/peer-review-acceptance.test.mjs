@@ -324,6 +324,7 @@ assert(
     proof.includes('hands-on takeover #32') &&
     proof.includes('hands-on takeover #33') &&
     proof.includes('hands-on takeover #34') &&
+    proof.includes('hands-on takeover #35') &&
     proof.includes('no_committed_diff') &&
     proof.includes('peer_review_not_passed'),
   'PROOF.md records hands-on fleet delivery gate verification',

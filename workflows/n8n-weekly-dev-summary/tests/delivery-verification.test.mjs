@@ -3,7 +3,7 @@
  * Fleet delivery verification for bounty #5 (issue #5).
  * Codifies handoff checks: test coverage, CI wiring, importable workflow.
  *
- * Last hands-on verification: 2026-06-26 cursor takeover #32 — npm test green;
+ * Last hands-on verification: 2026-07-03 cursor takeover #35 — npm test green;
  * test:delivery emits no_committed_diff and peer_review_not_passed gate summaries for
  * fleet delivery check (PR #2541 / issue #5).
  */
@@ -211,7 +211,11 @@ test('repo root Makefile exposes test and ci-validate', () => {
 
 test('tracked files belong to bounty #5 n8n workflow only', () => {
   const tracked = execSync('git ls-files', { cwd: repoRoot, encoding: 'utf8' });
-  for (const stray of ['hooks/block-destructive-commands', 'agents/claude-review']) {
+  for (const stray of [
+    'hooks/block-destructive-commands',
+    'agents/claude-review',
+    'internal/exporter/mkdocs.go',
+  ]) {
     if (tracked.includes(stray)) {
       throw new Error(`wrong bounty files must not be committed on n8n workflow branch (${stray})`);
     }

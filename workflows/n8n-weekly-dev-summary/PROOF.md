@@ -12,6 +12,27 @@
 
 ## Test evidence
 
+### Verification (2026-07-03, cursor hands-on takeover #35)
+
+```bash
+cd /workspace/claude-builders-bounty/claude-builders-bounty && npm test
+# PASS — full CI mirror (delivery gates, peer-review)
+npm run test:peer-review && npm run test:delivery
+# PASS — OK: no_committed_diff gate passed / OK: peer_review_not_passed gate passed
+git diff main...HEAD -- workflows/n8n-weekly-dev-summary/weekly-dev-summary.json | wc -l
+# 485+ lines — scheduleTrigger + claude-sonnet-4-20250514 in committed diff
+```
+
+Cursor hands-on takeover #35 (PR #2541 / issue #5): prior fleet engineer session ran tests
+on a clean tree without committing (`no_committed_diff` / `peer_review_not_passed` delivery
+failure). Committed delivery hardening — guard `internal/exporter/mkdocs.go` in tracked-file
+check (fleet publish keeps reintroducing cross-bounty mkdocs contamination). Fleet delivery
+gates pass.
+
+```
+OK: 327 tests passed
+```
+
 ### Verification (2026-06-29, cursor hands-on takeover #34)
 
 ```bash
