@@ -2,7 +2,7 @@
 """End-to-end delivery verification for bounty #3 fleet handoff.
 
 Last hands-on verification: 2026-07-03 (code delivery takeover PR #2556) —
-fixed runuser -c privilege-wrapper bypass; codified runuser CLI delivery checks;
+fixed runuser -c echo rm -rf false positive; codified runuser -c display CLI check;
 npm test green; hook-only scope (16 paths).
 """
 
@@ -450,6 +450,31 @@ class DeliveryVerificationTests(unittest.TestCase):
                     {
                         "tool_name": "Bash",
                         "tool_input": {"command": "runuser -u root echo rm -rf /"},
+                        "cwd": "/workspace/demo",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout.strip(), "")
+            log_file = Path(temp_home) / ".claude" / "hooks" / "blocked.log"
+            self.assertFalse(log_file.exists())
+
+    def test_cli_allows_runuser_c_echo_rm_rf_text(self):
+        """runuser -c display commands must not false-positive on rm -rf text (PR #2556)."""
+        with tempfile.TemporaryDirectory() as temp_home:
+            env = os.environ.copy()
+            env["HOME"] = temp_home
+            result = subprocess.run(
+                [sys.executable, str(HOOK_PATH)],
+                input=json.dumps(
+                    {
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "runuser -u root -c echo rm -rf /"},
                         "cwd": "/workspace/demo",
                     }
                 ),

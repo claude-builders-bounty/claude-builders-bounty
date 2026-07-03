@@ -615,6 +615,18 @@ token, leaving `-rf /tmp` undetected; extract full `-c` payload before pattern c
 - CLI: `runuser -u root -c rm -rf /tmp` denied; `runuser -u root echo rm -rf /` allowed
 - Hook source diff vs `main`: substantive committed delivery on `pre-tool-use.py`
 
+## Hands-on verification (2026-07-03, code delivery takeover v3)
+
+Branch `feat/issue-3-destructive-command-hook-v2` (PR #2556). Prior fleet engineer
+session failed `tests_not_passing` / `peer_review_not_passed` without in-session hook
+source commits. Fixed `runuser -c echo rm -rf /` false positive where the unwrapped
+`-c ...` tail was re-checked after the safe inner payload passed.
+
+- `npm test` green: 162 unittest + 22 delivery + 24 peer-review + attribution checks
+- Branch scope: 16 hook-only paths; no `internal/` in `main...HEAD` diff
+- CLI: `runuser -u root -c echo rm -rf /` allowed; `runuser -u root -c rm -rf /tmp` denied
+- Hook source diff vs `main`: substantive committed delivery on `pre-tool-use.py`
+
 ## Acceptance criteria
 
 - [x] PreToolUse hook in Claude Code format (`~/.claude/hooks/`)

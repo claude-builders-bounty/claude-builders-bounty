@@ -722,9 +722,8 @@ def check_segment_body(segment: str) -> str | None:
 def check_segment(segment: str) -> str | None:
     runuser_inner = extract_runuser_c_inner(segment)
     if runuser_inner is not None:
-        reason = check_segment_body(runuser_inner)
-        if reason:
-            return reason
+        # runuser -c payload is authoritative; do not re-check unwrapped "-c ..." tail.
+        return check_segment_body(runuser_inner)
     segment = unwrap_command_wrapper(segment)
     for candidate in iter_segment_candidates(segment):
         reason = check_segment_body(candidate)

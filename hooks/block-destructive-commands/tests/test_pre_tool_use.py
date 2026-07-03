@@ -364,6 +364,7 @@ class CheckCommandTests(unittest.TestCase):
             "pkexec --user root echo rm -rf /",
             "runuser -u root echo rm -rf /",
             "runuser -u root -- echo rm -rf /",
+            "runuser -u root -c echo rm -rf /",
         )
         for command in allowed:
             with self.subTest(command=command):
