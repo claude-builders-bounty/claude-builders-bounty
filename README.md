@@ -43,6 +43,18 @@ You're in the right place.
 
 ---
 
+## Generate A Changelog
+
+Use the included script to create a structured `CHANGELOG.md` from git history.
+
+1. Run `bash changelog.sh`
+2. Review the generated `CHANGELOG.md`
+3. Commit the changelog if the categories look correct
+
+The script reads commits since the latest git tag, or all commits when the repository has no tags. It groups entries into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
