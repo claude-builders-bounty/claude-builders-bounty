@@ -1,0 +1,346 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude API)",
+  "nodes": [
+    {
+      "id": "add14872-1fb2-4006-98fc-90997fe8259a",
+      "name": "Weekly Trigger (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fa4a9bee-72f0-4bbd-8512-1767af6e2ccf",
+      "name": "Fetch GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.owner || $env.GITHUB_OWNER }}/{{ $json.repo || $env.GITHUB_REPO }}/commits",
+        "authentication": "genericCredential",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus(7, 'days').toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        }
+      }
+    },
+    {
+      "id": "9836f5f5-7b94-4fbe-8f59-8963ab5605dc",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        350
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.owner || $env.GITHUB_OWNER }}/{{ $json.repo || $env.GITHUB_REPO }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus(7, 'days').toISO() }}"
+            },
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        }
+      }
+    },
+    {
+      "id": "e02c4489-4a80-4b43-b973-00b5f36bf10a",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.owner || $env.GITHUB_OWNER }}/{{ $json.repo || $env.GITHUB_REPO }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "base",
+              "value": "main"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        }
+      }
+    },
+    {
+      "id": "d2016fa2-bdac-4dd4-8f19-d0272c1715d7",
+      "name": "Merge All Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.2,
+      "position": [
+        700,
+        350
+      ],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      }
+    },
+    {
+      "id": "86ced441-f316-4cf6-b350-f5260eb274ab",
+      "name": "Format Data for Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2.2,
+      "position": [
+        900,
+        350
+      ],
+      "parameters": {
+        "language": "python",
+        "code": "import json\nimport datetime\n\n# Get input data\nitems = items or []\nif not items:\n    return [{\"json\": {\"error\": \"No data received\"}}]\n\ncommits = items[0].get('json', items[0])\nissues = items[1].get('json', items[1]) if len(items) > 1 else []\nprs = items[2].get('json', items[2]) if len(items) > 2 else []\n\n# Clean data\nif isinstance(issues, dict) and 'json' in issues:\n    issues = issues['json']\nif isinstance(prs, dict) and 'json' in prs:\n    prs = prs['json']\nif isinstance(commits, dict) and 'json' in commits:\n    commits = commits['json']\n\n# Ensure lists\nif not isinstance(commits, list): commits = [commits] if commits else []\nif not isinstance(issues, list): issues = [issues] if issues else []\nif not isinstance(prs, list): prs = [prs] if prs else []\n\n# Filter: only closed issues (not PRs that show up as issues)\nclosed_issues = [i for i in issues if i.get('pull_request') is None]\nmerged_prs = [p for p in prs if p.get('merged_at') is not None]\n\n# Format commits\ncommit_lines = []\nfor c in commits[:20]:\n    msg = c.get('commit',{}).get('message','').split('\\n')[0][:100]\n    author = c.get('commit',{}).get('author',{}).get('name','Unknown')\n    date = c.get('commit',{}).get('author',{}).get('date','')[:10]\n    commit_lines.append(f\"- {date} | {author}: {msg}\")\n\n# Format issues\nissue_lines = []\nfor i in closed_issues[:15]:\n    issue_lines.append(f\"- #{i.get('number')} {i.get('title')}\")\n\n# Format PRs\npr_lines = []\nfor p in merged_prs[:15]:\n    pr_lines.append(f\"- #{p.get('number')} {p.get('title')} by {p.get('user',{}).get('login','Unknown')}\")\n\ncontext = {\n    \"commits_text\": \"\\n\".join(commit_lines),\n    \"issues_text\": \"\\n\".join(issue_lines),\n    \"prs_text\": \"\\n\".join(pr_lines),\n    \"commit_count\": len(commits),\n    \"issue_count\": len(closed_issues),\n    \"pr_count\": len(merged_prs),\n    \"repo_name\": items[0].get('owner','unknown') + '/' + items[0].get('repo','unknown'),\n    \"week_start\": (datetime.datetime.now() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'),\n    \"week_end\": datetime.datetime.now().strftime('%Y-%m-%d')\n}\n\nreturn [{\"json\": context}]"
+      }
+    },
+    {
+      "id": "2e43e4cb-c4b7-443c-a3ec-67adc98eee4f",
+      "name": "Claude API - Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        350
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredential",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "jsonBody": "{\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Generate a weekly development summary for the repository {{ $json.repo_name }} covering {{ $json.week_start }} to {{ $json.week_end }}.\\n\\n## Stats\\n- Commits: {{ $json.commit_count }}\\n- Issues closed: {{ $json.issue_count }}\\n- PRs merged: {{ $json.pr_count }}\\n\\n## Commits\\n{{ $json.commits_text }}\\n\\n## Issues Closed\\n{{ $json.issues_text }}\\n\\n## Merged PRs\\n{{ $json.prs_text }}\\n\\n---\\n\\nPlease write a narrative summary in {{ $json.language || 'EN' }} covering:\\n1. Key highlights of the week\\n2. Major features or fixes\\n3. Areas of focus\\n4. Contributors to thank\\n\\nKeep it professional but engaging, like a weekly standup update.\"\n    }\n  ]\n}",
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        }
+      }
+    },
+    {
+      "id": "cc4efe00-47c6-43b5-9ffb-a5a5002c1515",
+      "name": "Parse Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        350
+      ],
+      "parameters": {
+        "language": "python",
+        "code": "# Parse Claude API response\nitems = items or []\nif not items:\n    return [{\"json\": {\"error\": \"No data\"}}]\n\nitem = items[0].get('json', items[0])\n\n# Extract the summary text\nsummary = \"\"\nif isinstance(item, dict):\n    for key in ['content', 'text', 'summary']:\n        if key in item:\n            val = item[key]\n            if isinstance(val, list):\n                for block in val:\n                    if isinstance(block, dict) and block.get('type') == 'text':\n                        summary = block.get('text', '')\n                        break\n                    elif isinstance(block, str):\n                        summary = block\n            elif isinstance(val, str):\n                summary = val\n\n# Build output\noutput = {\n    \"summary\": summary,\n    \"generated_at\": items[0].get('json', {}).get('generated_at', ''),\n    \"repo\": items[0].get('json', {}).get('repo_name', ''),\n    \"week\": f\"{items[0].get('json', {}).get('week_start', '')} to {items[0].get('json', {}).get('week_end', '')}\"\n}\n\nreturn [{\"json\": output}]"
+      }
+    },
+    {
+      "id": "a8e93d66-412a-4284-9e4e-51403175f8e7",
+      "name": "Send Email Summary",
+      "type": "n8n-nodes-base.sendEmail",
+      "typeVersion": 1.2,
+      "position": [
+        1500,
+        350
+      ],
+      "parameters": {
+        "fromEmail": "={{ $env.EMAIL_FROM || 'noreply@weekly.summary' }}",
+        "toEmail": "={{ $json.to_email || $env.EMAIL_TO }}",
+        "subject": "=\ud83d\udcca Weekly Dev Summary: {{ $json.repo }} ({{ $json.week }})",
+        "text": "={{ $json.summary }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "add14872-1fb2-4006-98fc-90997fe8259a": {
+      "Schedule": [
+        {
+          "node": "fa4a9bee-72f0-4bbd-8512-1767af6e2ccf",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "fa4a9bee-72f0-4bbd-8512-1767af6e2ccf": {
+      "main": [
+        [
+          {
+            "node": "d2016fa2-bdac-4dd4-8f19-d0272c1715d7",
+            "type": "main",
+            "index": 0,
+            "inputIndex": 0
+          }
+        ]
+      ]
+    },
+    "9836f5f5-7b94-4fbe-8f59-8963ab5605dc": {
+      "main": [
+        [
+          {
+            "node": "d2016fa2-bdac-4dd4-8f19-d0272c1715d7",
+            "type": "main",
+            "index": 0,
+            "inputIndex": 1
+          }
+        ]
+      ]
+    },
+    "e02c4489-4a80-4b43-b973-00b5f36bf10a": {
+      "main": [
+        [
+          {
+            "node": "d2016fa2-bdac-4dd4-8f19-d0272c1715d7",
+            "type": "main",
+            "index": 0,
+            "inputIndex": 2
+          }
+        ]
+      ]
+    },
+    "d2016fa2-bdac-4dd4-8f19-d0272c1715d7": {
+      "main": [
+        [
+          {
+            "node": "86ced441-f316-4cf6-b350-f5260eb274ab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "86ced441-f316-4cf6-b350-f5260eb274ab": {
+      "main": [
+        [
+          {
+            "node": "2e43e4cb-c4b7-443c-a3ec-67adc98eee4f",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2e43e4cb-c4b7-443c-a3ec-67adc98eee4f": {
+      "main": [
+        [
+          {
+            "node": "cc4efe00-47c6-43b5-9ffb-a5a5002c1515",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cc4efe00-47c6-43b5-9ffb-a5a5002c1515": {
+      "main": [
+        [
+          {
+            "node": "a8e93d66-412a-4284-9e4e-51403175f8e7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "4a7b90eb-af1e-4bc0-87f0-f0b64151206c",
+  "active": false,
+  "settings": {},
+  "tags": [],
+  "id": "47b880ec-1165-4187-957e-3ce709dda5ee",
+  "meta": {}
+}
