@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# claude-review — AI-powered PR review agent
+# Usage: ./claude-review --pr https://github.com/owner/repo/pull/123
+#        ./claude-review --diff /path/to/diff.patch
+set -euo pipefail
+
+CLAUDE_API="${CLAUDE_API_URL:-https://api.anthropic.com/v1/messages}"
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-20250514}"
+TEMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TEMP_DIR"' EXIT
+
+show_help() {
+  cat <<EOF
+Usage: claude-review [options]
+
+Options:
+  --pr <url>         Review a GitHub PR by URL
+  --diff <file>      Review a local diff/patch file
+  --output <file>    Write review to file (default: stdout)
+  --api-key <key>    Claude API key (or set CLAUDE_API_KEY env)
+  --help             Show this help
+
+Examples:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr 123 --repo owner/repo
+  claude-review --diff changes.patch --output review.md
+EOF
+  exit 0
+}
+
+PR_URL=""
+DIFF_FILE=""
+OUTPUT_FILE=""
+REPO=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="$2"; shift 2 ;;
+    --diff) DIFF_FILE="$2"; shift 2 ;;
+    --output) OUTPUT_FILE="$2"; shift 2 ;;
+    --repo) REPO="$2"; shift 2 ;;
+    --api-key) CLAUDE_API_KEY="$2"; shift 2 ;;
+    --help|-h) show_help ;;
+    *) echo "Unknown: $1"; exit 1 ;;
+  esac
+done
+
+# Check for API key
+if [[ -z "${CLAUDE_API_KEY:-}" ]]; then
+  echo "Error: CLAUDE_API_KEY is not set. Provide via --api-key or environment variable."
+  exit 1
+fi
+
+# --- Load the diff ---
+if [[ -n "$PR_URL" ]]; then
+  echo "Fetching PR diff from $PR_URL ..." >&2
+  
+  # Parse PR URL
+  if echo "$PR_URL" | grep -qE 'github\.com/.+/.+/pull/[0-9]+'; then
+    REPO=$(echo "$PR_URL" | sed -E 's|https?://github.com/([^/]+/[^/]+)/pull/[0-9]+|\1|')
+    PR_NUM=$(echo "$PR_URL" | sed -E 's|.*/pull/([0-9]+).*|\1|')
+  elif [[ -n "$REPO" ]] && echo "$PR_URL" | grep -qE '^[0-9]+$'; then
+    PR_NUM="$PR_URL"
+  else
+    echo "Error: Could not parse PR URL. Use format: https://github.com/owner/repo/pull/123"
+    exit 1
+  fi
+
+  DIFF_FILE="$TEMP_DIR/pr_diff.patch"
+  curl -sL -H "Accept: application/vnd.github.v3.diff" \
+    "https://api.github.com/repos/${REPO}/pulls/${PR_NUM}" > "$DIFF_FILE"
+  
+  if [[ ! -s "$DIFF_FILE" ]]; then
+    echo "Error: Failed to fetch diff. Check the PR URL and repository visibility."
+    exit 1
+  fi
+  echo "Fetched diff ($(wc -l < "$DIFF_FILE") lines)" >&2
+  
+  # Also get PR info
+  PR_INFO=$(curl -s "https://api.github.com/repos/${REPO}/pulls/${PR_NUM}")
+  PR_TITLE=$(echo "$PR_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('title',''))" 2>/dev/null || echo "PR #${PR_NUM}")
+  PR_DESC=$(echo "$PR_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('body','')[:2000])" 2>/dev/null || echo "")
+
+elif [[ -n "$DIFF_FILE" ]]; then
+  if [[ ! -f "$DIFF_FILE" ]]; then
+    echo "Error: File not found: $DIFF_FILE"
+    exit 1
+  fi
+  PR_TITLE="Local diff review"
+  PR_DESC=""
+  echo "Loading local diff file..." >&2
+else
+  echo "Error: Provide --pr or --diff"
+  exit 1
+fi
+
+# Truncate diff if too large
+DIFF_CONTENT=$(head -c 30000 "$DIFF_FILE")
+
+# --- Build the prompt ---
+read -r -d '' SYSTEM_PROMPT << 'SYSPROMPT' || true
+You are a senior software engineer performing a thorough code review. 
+Analyze the provided PR diff and produce a structured review.
+
+Your review must include:
+1. **Summary** — 2-3 sentences describing what the PR does and whether it's well-structured.
+2. **Identified Risks** — List of potential bugs, edge cases, security concerns, or performance issues.
+3. **Improvement Suggestions** — Actionable, specific suggestions for improvement.
+4. **Confidence Score** — Low / Medium / High (based on how confident you are in your assessment).
+
+Be constructive and specific. Don't just say "this looks good" — point to exact lines.
+If you see no issues, say so and explain why the approach is sound.
+SYSPROMPT
+
+read -r -d '' USER_PROMPT << PROMPT || true
+## PR Title
+${PR_TITLE}
+
+## Description
+${PR_DESC}
+
+## Diff
+\`\`\`diff
+${DIFF_CONTENT}
+\`\`\`
+PROMPT
+
+# --- Call Claude API ---
+echo "Analyzing PR with ${CLAUDE_MODEL}..." >&2
+
+RESPONSE=$(curl -s "$CLAUDE_API" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: ${CLAUDE_API_KEY}" \
+  -H "anthropic-version: 2023-06-01" \
+  -d "$(cat <<BODY
+{
+  "model": "${CLAUDE_MODEL}",
+  "max_tokens": 4096,
+  "system": ${SYSTEM_PROMPT@j},
+  "messages": [{"role": "user", "content": ${USER_PROMPT@j}}]
+}
+BODY
+)" 2>/dev/null || echo '{"error":"API call failed"}')
+
+# --- Format output ---
+CONTENT=$(echo "$RESPONSE" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    if 'error' in d:
+        print(f'Error: {d[\"error\"]}')
+        sys.exit(1)
+    for block in d.get('content', []):
+        if block.get('type') == 'text':
+            print(block['text'])
+except Exception as e:
+    print(f'Parse error: {e}')
+" 2>/dev/null || echo "Error: Failed to parse API response")
+
+# Build the final review
+REVIEW="# 🤖 Code Review: ${PR_TITLE}\n\n"
+REVIEW+="*Review generated by claude-review on $(date '+%Y-%m-%d %H:%M UTC')*\n\n"
+REVIEW+="---\n\n"
+REVIEW+="${CONTENT}\n\n"
+REVIEW+="---\n"
+REVIEW+="*Powered by ${CLAUDE_MODEL}*"
+
+if [[ -n "$OUTPUT_FILE" ]]; then
+  echo -e "$REVIEW" > "$OUTPUT_FILE"
+  echo "✅ Review written to $OUTPUT_FILE" >&2
+else
+  echo -e "$REVIEW"
+fi
