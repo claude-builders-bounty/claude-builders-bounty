@@ -34,6 +34,42 @@ You're in the right place.
 
 ---
 
+## Destructive Bash Hook
+
+This repository includes a Claude Code pre-tool-use hook for [#3](../../issues/3). It blocks dangerous Bash commands such as `rm -rf`, `git push --force`, `DROP TABLE`, `TRUNCATE`, and `DELETE FROM` without a `WHERE` clause, then logs blocked attempts to `~/.claude/hooks/blocked.log`.
+
+Install in two commands:
+
+```bash
+mkdir -p ~/.claude/hooks && cp .claude/hooks/block_destructive_bash.py ~/.claude/hooks/block_destructive_bash.py
+```
+
+```bash
+chmod +x ~/.claude/hooks/block_destructive_bash.py
+```
+
+Add the hook to your Claude Code settings:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/block_destructive_bash.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
