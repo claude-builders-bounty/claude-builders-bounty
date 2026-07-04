@@ -1,0 +1,103 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR Diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" \
+            --jq '.body' > /tmp/pr_body.txt 2>/dev/null || echo "" > /tmp/pr_body.txt
+          gh api \
+            -H "Accept: application/vnd.github.v3.diff" \
+            "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" \
+            > /tmp/pr_diff.patch 2>/dev/null || echo "No diff available" > /tmp/pr_diff.patch
+          echo "diff_size=$(wc -c < /tmp/pr_diff.patch)" >> $GITHUB_OUTPUT
+
+      - name: Run Claude Review
+        id: review
+        if: steps.diff.outputs.diff_size > 0
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 -c "
+import json, os, requests
+
+api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+if not api_key:
+    print('No API key configured - skipping review')
+    exit(0)
+
+with open('/tmp/pr_diff.patch') as f:
+    diff = f.read()
+
+diff = diff[:30000]  # truncate if too large
+
+prompt = f'''Review this PR diff. Provide:
+1. Summary (2-3 sentences)
+2. Identified Risks (list)
+3. Improvement Suggestions (list)
+4. Confidence Score (Low/Medium/High)
+
+\`\`\`diff
+{diff}
+\`\`\`'''
+
+payload = {
+    'model': 'claude-sonnet-4-20250514',
+    'max_tokens': 4096,
+    'system': 'You are a senior software engineer performing a thorough code review. Be specific, constructive, and reference exact lines.',
+    'messages': [{'role': 'user', 'content': prompt}]
+}
+
+resp = requests.post(
+    'https://api.anthropic.com/v1/messages',
+    headers={
+        'x-api-key': api_key,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+    },
+    json=payload
+)
+
+result = resp.json()
+review_text = ''
+for block in result.get('content', []):
+    if block.get('type') == 'text':
+        review_text = block['text']
+
+with open('/tmp/review_output.md', 'w') as f:
+    f.write(review_text)
+print('Review complete')
+"
+          echo "review_ready=true" >> $GITHUB_OUTPUT
+
+      - name: Post Review Comment
+        if: steps.review.outputs.review_ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REVIEW_BODY=$(cat /tmp/review_output.md)
+          gh api "/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --field body="## 🤖 Claude Code Review
+
+$REVIEW_BODY
+
+---
+*Powered by claude-sonnet-4-20250514*" > /dev/null 2>&1 || echo "Could not post comment (may need write permission)"
