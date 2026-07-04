@@ -1,0 +1,314 @@
+{
+  "name": "GitHub Weekly Dev Summary",
+  "nodes": [
+    {
+      "id": "trigger-cron",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "github-config",
+      "name": "GitHub Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repo",
+              "value": "={{ $json.owner_repo || 'owner/repo' }}"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.since_date || $moment().subtract(7, 'days').format('YYYY-MM-DD') }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.until_date || $moment().format('YYYY-MM-DD') }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 200],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits?since={{ $json.since }}T00:00:00Z&until={{ $json.until }}T23:59:59Z&per_page=100",
+        "authentication": "genericCredential",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-workflow"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 350],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues?state=closed&since={{ $json.since }}T00:00:00Z&per_page=100&sort=updated&direction=desc",
+        "authentication": "genericCredential",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-workflow"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 500],
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/pulls?state=closed&per_page=100&sort=updated&direction=desc",
+        "authentication": "genericCredential",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-workflow"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "merge-data",
+      "name": "Merge Data Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [850, 350],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "format-data",
+      "name": "Format Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 350],
+      "parameters": {
+        "language": "javascript",
+        "code": "// Format GitHub data into a structured summary for Claude\nconst commits = $input.all()[0]?.json?.commits || [];\nconst issues = $input.all()[0]?.json?.issues || [];\nconst pulls = $input.all()[0]?.json?.pulls || [];\n\n// Filter merged PRs\nconst mergedPRs = (pulls || []).filter(p => p.merged_at);\n\n// Categorize commits by type\nconst categorizedCommits = {\n  features: commits.filter(c => c.commit.message.startsWith('feat')),\n  fixes: commits.filter(c => c.commit.message.startsWith('fix')),\n  docs: commits.filter(c => c.commit.message.startsWith('docs')),\n  other: commits.filter(c => !c.commit.message.match(/^(feat|fix|docs|chore|refactor|test)/))\n};\n\nreturn [{\n  json: {\n    repo: $json.repo || 'N/A',\n    weekRange: `${$json.since} to ${$json.until}`,\n    stats: {\n      totalCommits: commits.length,\n      closedIssues: issues.length,\n      mergedPRs: mergedPRs.length,\n      contributors: [...new Set(commits.map(c => c.commit.author?.name || 'Unknown'))],\n      topContributor: Object.entries(\n        commits.reduce((acc, c) => {\n          const name = c.commit.author?.name || 'Unknown';\n          acc[name] = (acc[name] || 0) + 1;\n          return acc;\n        }, {})\n      ).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A'\n    },\n    categorizedCommits,\n    recentIssues: issues.slice(0, 10).map(i => ({\n      title: i.title,\n      number: i.number,\n      state: i.state,\n      labels: i.labels?.map(l => l.name).join(', ') || ''\n    })),\n    recentPRs: mergedPRs.slice(0, 10).map(pr => ({\n      title: pr.title,\n      number: pr.number,\n      author: pr.user?.login || 'unknown',\n      additions: pr.additions || 0,\n      deletions: pr.deletions || 0\n    }))\n  }\n}];"
+      }
+    },
+    {
+      "id": "claude-api",
+      "name": "Claude API - Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 350],
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredential",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.apiKey }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "2048"
+            },
+            {
+              "name": "system",
+              "value": "You are a technical writing assistant that generates concise, insightful weekly development summaries. Use a positive, professional tone. Highlight achievements, trends, and notable patterns."
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": `Generate a weekly development summary for the repo ${$json.repo} covering ${$json.weekRange}.\n\n## Stats\n- Total Commits: ${$json.stats.totalCommits}\n- Closed Issues: ${$json.stats.closedIssues}\n- Merged PRs: ${$json.stats.mergedPRs}\n- Contributors: ${$json.stats.contributors.length}\n- Top Contributor: ${$json.stats.topContributor}\n\n## Commits by Category\n**Features (${$json.categorizedCommits.features.length}):** ${$json.categorizedCommits.features.map(c => '- ' + c.commit.message.split('\\n')[0]).join('\\n') || 'None'}\n**Fixes (${$json.categorizedCommits.fixes.length}):** ${$json.categorizedCommits.fixes.map(c => '- ' + c.commit.message.split('\\n')[0]).join('\\n') || 'None'}\n**Documentation (${$json.categorizedCommits.docs.length}):** ${$json.categorizedCommits.docs.map(c => '- ' + c.commit.message.split('\\n')[0]).join('\\n') || 'None'}\n\n## Recent PRs\n${$json.recentPRs.map(pr => `- #${pr.number}: ${pr.title} (${pr.author}, +${pr.additions}/-${pr.deletions} lines)`).join('\\n') || 'None'}\n\n## Closed Issues\n${$json.recentIssues.map(i => `- #${i.number}: ${i.title} [${i.labels || 'no labels'}]`).join('\\n') || 'None'}\n\nPlease write a narrative summary (3-5 paragraphs) covering: what was accomplished, notable patterns, areas of focus, and suggestions for next week.`}]"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "parse-response",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 350],
+      "parameters": {
+        "language": "javascript",
+        "code": "// Extract the text content from Claude's response\nconst data = $input.first().json;\nconst content = data.content || [];\nconst textBlock = content.find(b => b.type === 'text');\n\nif (textBlock) {\n  return [{\n    json: {\n      summary: textBlock.text,\n      repo: $json.repo,\n      weekRange: $json.weekRange,\n      stats: $json.stats,\n      generatedAt: new Date().toISOString()\n    }\n  }];\n}\n\nreturn [$json];"
+      }
+    },
+    {
+      "id": "email-output",
+      "name": "Send Email Summary",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "parameters": {
+        "fromEmail": "={{ $json.from_email || 'weekly@devsummary.dev' }}",
+        "toEmail": "={{ $json.to_email || 'team@example.com' }}",
+        "subject": "=📊 Weekly Dev Summary: {{ $json.repo }} ({{ $json.weekRange }})",
+        "emailType": "html",
+        "message": "=<html><body style=\"font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\">\n<h1 style=\"color: #2563eb;\">📊 Weekly Development Summary</h1>\n<p style=\"color: #6b7280;\">{{ $json.repo }} · {{ $json.weekRange }}</p>\n<hr style=\"border: 1px solid #e5e7eb;\" />\n\n<div style=\"background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;\">\n<h3>📈 This Week at a Glance</h3>\n<table style=\"width: 100%;\">\n<tr>\n<td style=\"text-align: center; padding: 8px;\">\n<div style=\"font-size: 24px; font-weight: bold; color: #2563eb;\">{{ $json.stats.totalCommits }}</div>\n<div style=\"font-size: 12px; color: #6b7280;\">Commits</div>\n</td>\n<td style=\"text-align: center; padding: 8px;\">\n<div style=\"font-size: 24px; font-weight: bold; color: #059669;\">{{ $json.stats.mergedPRs }}</div>\n<div style=\"font-size: 12px; color: #6b7280;\">PRs Merged</div>\n</td>\n<td style=\"text-align: center; padding: 8px;\">\n<div style=\"font-size: 24px; font-weight: bold; color: #d97706;\">{{ $json.stats.closedIssues }}</div>\n<div style=\"font-size: 12px; color: #6b7280;\">Issues Closed</div>\n</td>\n<td style=\"text-align: center; padding: 8px;\">\n<div style=\"font-size: 24px; font-weight: bold; color: #7c3aed;\">{{ $json.stats.contributors.length }}</div>\n<div style=\"font-size: 12px; color: #6b7280;\">Contributors</div>\n</td>\n</tr>\n</table>\n</div>\n\n<div style=\"white-space: pre-wrap; line-height: 1.6;\">\n{{ $json.summary }}\n</div>\n\n<hr style=\"border: 1px solid #e5e7eb; margin-top: 32px;\" />\n<p style=\"color: #9ca3af; font-size: 12px;\">Generated automatically by n8n + Claude API</p>\n</body></html>"
+      }
+    },
+    {
+      "id": "webhook-output",
+      "name": "Slack/Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 500],
+      "parameters": {
+        "url": "={{ $json.webhook_url || '' }}",
+        "method": "POST",
+        "authentication": "none",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "=📊 *Weekly Dev Summary: {{ $json.repo }}*\n_{{ $json.weekRange }}_\n\n📈 Commits: {{ $json.stats.totalCommits }} | PRs: {{ $json.stats.mergedPRs }} | Issues: {{ $json.stats.closedIssues }}\n👥 Contributors: {{ $json.stats.contributors.length }}\n\n{{ $json.summary.substring(0, 1500) }}\n\n_Generated by n8n + Claude API_"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [
+        [{ "node": "GitHub Config", "type": "main", "index": 0 }]
+      ]
+    },
+    "GitHub Config": {
+      "main": [
+        [
+          { "node": "Get Commits", "type": "main", "index": 0 },
+          { "node": "Get Closed Issues", "type": "main", "index": 0 },
+          { "node": "Get Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [{ "node": "Merge Data Sources", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Closed Issues": {
+      "main": [
+        [{ "node": "Merge Data Sources", "type": "main", "index": 1 }]
+      ]
+    },
+    "Get Merged PRs": {
+      "main": [
+        [{ "node": "Merge Data Sources", "type": "main", "index": 2 }]
+      ]
+    },
+    "Merge Data Sources": {
+      "main": [
+        [{ "node": "Format Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Summary": {
+      "main": [
+        [{ "node": "Claude API - Generate Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API - Generate Summary": {
+      "main": [
+        [{ "node": "Parse Claude Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          { "node": "Send Email Summary", "type": "main", "index": 0 },
+          { "node": "Slack/Discord Webhook", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "active": true,
+  "settings": {},
+  "tags": [],
+  "createdAt": "2026-07-04T12:00:00.000Z",
+  "updatedAt": "2026-07-04T12:00:00.000Z"
+}
