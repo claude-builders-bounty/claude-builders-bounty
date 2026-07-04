@@ -34,6 +34,20 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+Generate a structured `CHANGELOG.md` from git commits since the latest tag:
+
+1. Copy `changelog.py` and `changelog.sh` into the target repository.
+2. Run `bash changelog.sh` from inside that repository.
+3. Review the generated `CHANGELOG.md` before committing it.
+
+The generator groups commits into `Added`, `Fixed`, `Changed`, and `Removed`.
+If the repository has no tags, it uses the full git history. A sample output is
+available in `examples/sample-output.md`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
