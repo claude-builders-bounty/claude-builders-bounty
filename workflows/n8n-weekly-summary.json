@@ -1,0 +1,319 @@
+{
+  "name": "Weekly GitHub Dev Summary [BOUNTY #5]",
+  "nodes": [
+    {
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Set Repo Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repoOwner",
+              "value": "bambooshadow-studio"
+            },
+            {
+              "name": "repoName",
+              "value": "claude-safe-shell-hook"
+            },
+            {
+              "name": "destChannel",
+              "value": "email"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        150
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{$json.repoOwner}}/{{$json.repoName}}/commits?since={{$moment().subtract(7,'days').format()}}&per_page=20",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Fetch Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        350
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{$json.repoOwner}}/{{$json.repoName}}/issues?state=closed&since={{$moment().subtract(7,'days').format()}}&per_page=20",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        550
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{$json.repoOwner}}/{{$json.repoName}}/pulls?state=closed&sort=updated&direction=desc&per_page=20",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        350
+      ],
+      "parameters": {
+        "language": "python",
+        "sourceCode": "# Merge all data and prepare for Claude\nimport json\n# Input data comes as array of items\noutput = []\nrepo = 'bambooshadow-studio/claude-safe-shell-hook'\nsummary = {\n    'repo': repo,\n    'commits': [{'sha': c['sha'][:7], 'msg': c['commit']['message'].split(chr(10))[0]} for c in items if 'sha' in c],\n    'total_commits': len([c for c in items if 'sha' in c]),\n    'total_issues': 0,\n    'total_prs': 0\n}\noutput.append({'json': summary})\nreturn output\n"
+      }
+    },
+    {
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1050,
+        350
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1500
+            },
+            {
+              "name": "system",
+              "value": "You are a technical writer creating weekly dev summaries."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Format Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        350
+      ],
+      "parameters": {
+        "language": "python",
+        "sourceCode": "# Format the Claude response into Markdown\nimport json\noutput = []\nfor item in items:\n    if 'content' in item:\n        text = item['content'][0]['text'] if isinstance(item['content'], list) else item['content']\n    else:\n        text = json.dumps(item, indent=2)\n    report = '# Weekly Development Summary' + chr(10) + chr(10) + text\n    output.append({'json': {'report': report}})\nreturn output\n"
+      }
+    },
+    {
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        350
+      ],
+      "parameters": {
+        "fromEmail": "wukongkong3580@agent.qq.com",
+        "toEmail": "wukongkong3580@agent.qq.com",
+        "subject": "=Weekly Dev Summary - {{$json.repo}}",
+        "text": "={{$json.report}}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [
+        [
+          {
+            "node": "Set Repo Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Repo Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Issues",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Format Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Report": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
