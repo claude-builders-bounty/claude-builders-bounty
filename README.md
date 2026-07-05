@@ -34,6 +34,26 @@ You're in the right place.
 
 ---
 
+## Next.js SQLite SaaS CLAUDE.md Template
+
+This PR includes a production-minded `CLAUDE.md` template for bounty [#2](../../issues/2).
+
+Copy it into a greenfield Next.js 15 App Router + SQLite SaaS project:
+
+```bash
+cp templates/nextjs-sqlite-saas/CLAUDE.md /path/to/your/project/CLAUDE.md
+```
+
+The template covers stack/version choices, project structure, naming conventions, dev commands, CI gates, SQLite migrations, data access, App Router patterns, testing expectations, and anti-patterns. Smoke-test notes are included at `templates/nextjs-sqlite-saas/GREENFIELD_TEST_NOTES.md`.
+
+Validate the template signals:
+
+```bash
+python3 templates/nextjs-sqlite-saas/validate_template.py
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
