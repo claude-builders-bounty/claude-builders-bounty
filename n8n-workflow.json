@@ -1,0 +1,364 @@
+ {
+   "name": "Weekly GitHub Dev Summary (n8n + Claude)",
+   "nodes": [
+     {
+       "id": "schedule-trigger",
+       "name": "Weekly Schedule Trigger",
+       "type": "n8n-nodes-base.scheduleTrigger",
+       "typeVersion": 1.1,
+       "position": [240, 300],
+       "parameters": {
+         "rule": {
+           "interval": [
+             {
+               "field": "cronExpression",
+               "expression": "0 17 * * 5"
+             }
+           ]
+         }
+       }
+     },
+     {
+       "id": "set-date-range",
+       "name": "Set Date Range",
+       "type": "n8n-nodes-base.set",
+       "typeVersion": 3.4,
+       "position": [460, 300],
+       "parameters": {
+         "values": {
+           "string": [
+             {
+               "name": "startDate",
+               "value": "={{$now.startOf('week').toISOString().split('T')[0]}}"
+             },
+             {
+               "name": "endDate",
+               "value": "={{$now.format('yyyy-MM-dd')}}"
+             }
+           ]
+         }
+       }
+     },
+     {
+       "id": "github-commits",
+       "name": "Fetch Commits",
+       "type": "n8n-nodes-base.github",
+       "typeVersion": 1,
+       "position": [700, 200],
+       "parameters": {
+         "resource": "commit",
+         "operation": "list",
+         "repo": "={{$json.githubRepo}}",
+         "since": "={{$json.startDate}}"
+       },
+       "credentials": {
+         "githubApiAccessToken": {
+           "id": "github-pat-credential",
+           "name": "GitHub PAT"
+         }
+       }
+     },
+     {
+       "id": "github-issues",
+       "name": "Fetch Closed Issues",
+       "type": "n8n-nodes-base.github",
+       "typeVersion": 1,
+       "position": [700, 400],
+       "parameters": {
+         "resource": "issue",
+         "operation": "search",
+         "repo": "={{$json.githubRepo}}",
+         "filter": "is:closed closed:{{$json.startDate}}..{{$json.endDate}}",
+         "limit": 50
+       },
+       "credentials": {
+         "githubApiAccessToken": {
+           "id": "github-pat-credential",
+           "name": "GitHub PAT"
+         }
+       }
+     },
+     {
+       "id": "github-prs",
+       "name": "Fetch Merged PRs",
+       "type": "n8n-nodes-base.github",
+       "typeVersion": 1,
+       "position": [700, 600],
+       "parameters": {
+         "resource": "pullRequest",
+         "operation": "search",
+         "repo": "={{$json.githubRepo}}",
+         "filter": "is:pr merged:{{$json.startDate}}..{{$json.endDate}}",
+         "limit": 50
+       },
+       "credentials": {
+         "githubApiAccessToken": {
+           "id": "github-pat-credential",
+           "name": "GitHub PAT"
+         }
+       }
+     },
+     {
+       "id": "combine-data",
+       "name": "Combine GitHub Data",
+       "type": "n8n-nodes-base.merge",
+       "typeVersion": 3.1,
+       "position": [940, 400],
+       "parameters": {
+         "inputItems": 3,
+         "options": {
+           "suffix": "_{{index}}"
+         }
+       }
+     },
+     {
+       "id": "build-prompt",
+       "name": "Build Claude Prompt",
+       "type": "n8n-nodes-base.set",
+       "typeVersion": 3.4,
+       "position": [1160, 400],
+       "parameters": {
+         "values": {
+           "string": [
+             {
+               "name": "prompt",
+               "value": "=You are a technical writer. Create a weekly narrative summary of GitHub repo activity.\n\nRepo: {{$json.githubRepo}}\nWeek: {{$json.startDate}} to {{$json.endDate}}\nLanguage: {{$json.language || 'EN'}}\n\nCommits (last 30):\n{{JSON.stringify($json.commits_list_0, null, 2)}}\n\nClosed Issues:\n{{JSON.stringify($json.issues_search_0, null, 2)}}\n\nMerged PRs:\n{{JSON.stringify($json.pulls_search_0, null, 2)}}\n\nWrite a concise, engaging narrative summary with these sections:\n1. Overview (1-2 sentences about the week's activity level)\n2. Highlights (key achievements and significant changes)\n3. Issues Resolved (what problems were fixed)\n4. New Features (what was added via merged PRs)\n5. Community (new contributors or notable activity)\n\nKeep it under 500 words. Use markdown formatting."
+             }
+           ]
+         }
+       }
+     },
+     {
+       "id": "claude-api",
+       "name": "Claude API Call",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [1380, 400],
+       "parameters": {
+         "method": "POST",
+         "url": "https://api.anthropic.com/v1/messages",
+         "sendBody": true,
+         "bodyParameters": {
+           "parameters": [
+             {
+               "name": "model",
+               "value": "claude-sonnet-4-20250514"
+             },
+             {
+               "name": "max_tokens",
+               "value": "4096"
+             },
+             {
+               "name": "system",
+               "value": "You are a technical writer specializing in creating engaging weekly development summaries. Write in a clear, narrative style that highlights the human story behind the code changes."
+             },
+             {
+               "name": "messages",
+               "value": "[{\"role\":\"user\",\"content\":\"={{$json.prompt}}\"}]"
+             }
+           ]
+         },
+         "options": {
+           "headers": {
+             "x-api-key": "={{$env.ANTHROPIC_API_KEY}}",
+             "anthropic-version": "2023-06-01",
+             "content-type": "application/json"
+           }
+         }
+       }
+     },
+     {
+       "id": "extract-summary",
+       "name": "Extract Summary Text",
+       "type": "n8n-nodes-base.set",
+       "typeVersion": 3.4,
+       "position": [1600, 400],
+       "parameters": {
+         "values": {
+           "string": [
+             {
+               "name": "summary",
+               "value": "={{$json.content[0].text}}"
+             },
+             {
+               "name": "repo",
+               "value": "={{$json.githubRepo}}"
+             },
+             {
+               "name": "week",
+               "value": "={{$json.startDate + ' to ' + $json.endDate}}"
+             }
+           ]
+         }
+       }
+     },
+     {
+       "id": "discord-webhook",
+       "name": "Send to Discord",
+       "type": "n8n-nodes-base.httpRequest",
+       "typeVersion": 4.2,
+       "position": [1820, 300],
+       "parameters": {
+         "method": "POST",
+         "url": "={{$env.DISCORD_WEBHOOK_URL}}",
+         "sendBody": true,
+         "bodyParameters": {
+           "parameters": [
+             {
+               "name": "content",
+               "value": "=**Weekly Dev Summary: {{$json.repo}}**\n*Week of {{$json.week}}*\n\n{{$json.summary}}"
+             }
+           ]
+         },
+         "options": {}
+       },
+       "alwaysOutputData": false,
+       "executeOnce": true
+     },
+     {
+       "id": "email-send",
+       "name": "Send Email",
+       "type": "n8n-nodes-base.emailSend",
+       "typeVersion": 2.1,
+       "position": [1820, 500],
+       "parameters": {
+         "fromEmail": "={{$env.EMAIL_FROM || 'n8n@devsummaries.com'}}",
+         "toEmail": "={{$env.EMAIL_TO}}",
+         "subject": "=Weekly Dev Summary: {{$json.repo}} ({{$json.week}})",
+         "text": "=**Weekly Dev Summary: {{$json.repo}}**\n\nWeek of: {{$json.week}}\n\n{{$json.summary}}"
+       },
+       "credentials": {
+         "smtpCredentials": {
+           "id": "smtp-credential",
+           "name": "SMTP Credentials"
+         }
+       },
+       "alwaysOutputData": false,
+       "executeOnce": true
+     }
+   ],
+   "connections": {
+     "Weekly Schedule Trigger": {
+       "main": [
+         [
+           {
+             "node": "Set Date Range",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+     },
+     "Set Date Range": {
+       "main": [
+         [
+           {
+             "node": "Fetch Commits",
+             "type": "main",
+             "index": 0
+           },
+           {
+             "node": "Fetch Closed Issues",
+             "type": "main",
+             "index": 0
+           },
+           {
+             "node": "Fetch Merged PRs",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+     },
+     "Fetch Commits": {
+       "main": [
+         [
+           {
+             "node": "Combine GitHub Data",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+     },
+     "Fetch Closed Issues": {
+       "main": [
+         [
+           {
+             "node": "Combine GitHub Data",
+             "type": "main",
+             "index": 1
+           }
+         ]
+       ]
+     },
+     "Fetch Merged PRs": {
+       "main": [
+         [
+           {
+             "node": "Combine GitHub Data",
+             "type": "main",
+             "index": 2
+           }
+         ]
+       ]
+     },
+     "Combine GitHub Data": {
+       "main": [
+         [
+           {
+             "node": "Build Claude Prompt",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+     },
+     "Build Claude Prompt": {
+       "main": [
+         [
+           {
+             "node": "Claude API Call",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+     },
+     "Claude API Call": {
+       "main": [
+         [
+           {
+             "node": "Extract Summary Text",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+     },
+     "Extract Summary Text": {
+       "main": [
+         [
+           {
+             "node": "Send to Discord",
+             "type": "main",
+             "index": 0
+           },
+           {
+             "node": "Send Email",
+             "type": "main",
+             "index": 0
+           }
+         ]
+       ]
+     }
+   },
+   "pinData": {},
+   "settings": {
+     "timezone": "America/New_York",
+     "saveExecutionProgress": true,
+     "saveManualExecutions": true,
+     "saveFailedExecutions": true
+   },
+   "tags": []
+ }
