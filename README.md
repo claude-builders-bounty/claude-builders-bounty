@@ -34,6 +34,29 @@ You're in the right place.
 
 ---
 
+## Generate a CHANGELOG
+
+Use `generate_changelog.py` to create a structured `CHANGELOG.md` from the
+commits in any git repository. The script automatically reads commits since the
+latest tag, groups them into `Added`, `Fixed`, `Changed`, and `Removed`, and
+writes Markdown output.
+
+### Setup
+
+1. Copy `generate_changelog.py` and `changelog.sh` into a git repository.
+2. Run `python3 generate_changelog.py --version v1.3.0` or `./changelog.sh --version v1.3.0`.
+3. Review the generated `CHANGELOG.md` before committing it.
+
+For a preview without writing a file, run:
+
+```sh
+python3 generate_changelog.py --dry-run
+```
+
+See `examples/CHANGELOG.sample.md` for sample output.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
