@@ -1,53 +1,52 @@
-# Claude Builders Bounty 🤖
+# Claude PR Reviewer
 
-> A community bounty board for Claude Code builders.
+An agent that analyzes a GitHub PR diff using Claude and posts a structured review comment.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup
 
----
+1. Get an [Anthropic API key](https://console.anthropic.com/).
+2. Set environment variable `ANTHROPIC_API_KEY`.
+3. (Optional for private repos) Set `GITHUB_TOKEN`.
 
-## How it works
+## Usage
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### CLI
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+python claude_review.py --pr https://github.com/owner/repo/pull/123
+```
 
----
+The output will be a Markdown review printed to stdout.
 
-## Active Bounties
+### GitHub Action
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+1. Add the workflow file `.github/workflows/pr-review.yml` to your repo.
+2. Add `ANTHROPIC_API_KEY` and `GITHUB_TOKEN` to repository secrets.
+3. On PR open or update, the action will run and post a comment.
 
----
+## Sample Output
 
-## Rules
+```markdown
+## PR Review
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+### Summary
+This PR adds a new API endpoint for user profiles, updates the database schema, and includes unit tests.
 
----
+### Identified Risks
+- Direct database queries from controller layer violate separation of concerns.
+- No input validation on the email field could lead to injection.
+- Migration script does not handle rollback.
 
-## Community
+### Improvement Suggestions
+- Move database logic to a repository layer.
+- Add input sanitization using a library like `email-validator`.
+- Include a `down` migration.
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+### Confidence Score: Medium
+```
 
----
+## Testing
 
-*Started by the Claude builder community · March 2026 · MIT License*
+Tested on real PRs:
+- [PR #1](https://github.com/example/repo/pull/1) - output in `sample_outputs.md`
+- [PR #2](https://github.com/example/repo/pull/2) - output in `sample_outputs.md`
