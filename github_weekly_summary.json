@@ -1,0 +1,209 @@
+{
+  "name": "GitHub Weekly Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "intervalUnit": "weeks",
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "triggerAtDay": 5
+            }
+          ]
+        }
+      },
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const config = {\n  github_token: process.env.GITHUB_API_TOKEN,\n  github_repo: process.env.GITHUB_REPO || 'claude-builders-bounty/claude-builders-bounty',\n  claude_api_key: process.env.CLAUDE_API_KEY,\n  language: process.env.SUMMARY_LANGUAGE || 'EN',\n  delivery_method: process.env.DELIVERY_METHOD || 'slack',\n  slack_webhook: process.env.SLACK_WEBHOOK,\n  discord_webhook: process.env.DISCORD_WEBHOOK,\n  email_to: process.env.EMAIL_TO,\n  from_email: process.env.FROM_EMAIL || 'noreply@example.com',\n  sendgrid_key: process.env.SENDGRID_API_KEY\n};\nreturn { config };"
+      },
+      "name": "Load Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.config.github_repo }}/commits?since={{ $now.add(-7, 'days').toISOString() }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "token {{ $json.config.github_token }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 150]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.config.github_repo }}/issues?state=closed&since={{ $now.add(-7, 'days').toISOString() }}&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "token {{ $json.config.github_token }}"
+            }
+          ]
+        }
+      },
+      "name": "Get Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.config.github_repo }}/pulls?state=closed&since={{ $now.add(-7, 'days').toISOString() }}&per_page=50",
+        "authentication": "genericCredentialType",
+        "genericCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "token {{ $json.config.github_token }}"
+            }
+          ]
+        }
+      },
+      "name": "Get PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 450]
+    },
+    {
+      "parameters": {
+        "functionCode": "const commits = $input.item.json.Get_Commits || [];\nconst issues = $input.item.json.Get_Issues || [];\nconst prs = $input.item.json.Get_PRs || [];\nconst config = $input.item.json.config;\nconst mergedPRs = prs.filter(pr => pr.merged_at !== null);\nconst data = {\n  week_of: $now.add(-7, 'days').format('YYYY-MM-DD'),\n  repo: config.github_repo,\n  stats: {\n    commits: commits.length,\n    issues_closed: issues.length,\n    prs_merged: mergedPRs.length\n  },\n  commits_sample: commits.slice(0, 5).map(c => c.commit.message.split('\\n')[0]).join(' | '),\n  issues_sample: issues.slice(0, 5).map(i => i.title).join(' | '),\n  prs_sample: mergedPRs.slice(0, 5).map(pr => pr.title).join(' | ')\n};\nreturn { github_data: data, config };"
+      },
+      "name": "Process Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericCredentialType": "httpCustomAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.config.claude_api_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyType": "json",
+        "body": "{\"model\": \"claude-sonnet-4-20250514\", \"max_tokens\": 1024, \"messages\": [{\"role\": \"user\", \"content\": \"Generate a narrative summary of this GitHub repo activity this week:\nRepo: {{ $json.github_data.repo }}\nCommits: {{ $json.github_data.stats.commits }}\nIssues Closed: {{ $json.github_data.stats.issues_closed }}\nPRs Merged: {{ $json.github_data.stats.prs_merged }}\nSamples: {{ $json.github_data.commits_sample }}\"}]}"
+      },
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.slack_webhook }}",
+        "sendBody": true,
+        "bodyType": "json",
+        "body": "{\"blocks\": [{\"type\": \"header\", \"text\": {\"type\": \"plain_text\", \"text\": \"📊 Weekly Summary: {{ $json.github_data.repo }}\"}}, {\"type\": \"section\", \"text\": {\"type\": \"mrkdwn\", \"text\": \"{{ $json.body.content[0].text }}\"}}, {\"type\": \"context\", \"elements\": [{\"type\": \"mrkdwn\", \"text\": \"📈 *{{ $json.github_data.stats.commits }}* commits • *{{ $json.github_data.stats.issues_closed }}* issues • *{{ $json.github_data.stats.prs_merged }}* PRs\"}]}]}"
+      },
+      "name": "Send Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 150]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.discord_webhook }}",
+        "sendBody": true,
+        "bodyType": "json",
+        "body": "{\"content\": \"📊 Weekly GitHub Summary\", \"embeds\": [{\"title\": \"{{ $json.github_data.repo }}\", \"description\": \"{{ $json.body.content[0].text }}\", \"color\": 3447003, \"fields\": [{\"name\": \"Commits\", \"value\": \"{{ $json.github_data.stats.commits }}\", \"inline\": true}, {\"name\": \"Issues\", \"value\": \"{{ $json.github_data.stats.issues_closed }}\", \"inline\": true}, {\"name\": \"PRs\", \"value\": \"{{ $json.github_data.stats.prs_merged }}\", \"inline\": true}], \"footer\": {\"text\": \"Week of {{ $json.github_data.week_of }}\"}}]}"
+      },
+      "name": "Send Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.sendgrid.com/v3/mail/send",
+        "authentication": "genericCredentialType",
+        "genericCredentialType": "httpCustomAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $json.config.sendgrid_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyType": "json",
+        "body": "{\"personalizations\": [{\"to\": [{\"email\": \"{{ $json.config.email_to }}\"}], \"subject\": \"Weekly GitHub Summary - {{ $json.github_data.repo }}\"}], \"from\": {\"email\": \"{{ $json.config.from_email }}\"}, \"content\": [{\"type\": \"text/html\", \"value\": \"<h2>Weekly Summary for {{ $json.github_data.repo }}</h2><p>{{ $json.body.content[0].text }}</p><hr><p><strong>Stats:</strong> {{ $json.github_data.stats.commits }} commits • {{ $json.github_data.stats.issues_closed }} issues • {{ $json.github_data.stats.prs_merged }} PRs</p>\"}]}"
+      },
+      "name": "Send Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 450]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [[{"node": "Load Config", "index": 0}]]
+    },
+    "Load Config": {
+      "main": [[{"node": "Get Commits", "index": 0}, {"node": "Get Issues", "index": 0}, {"node": "Get PRs", "index": 0}]]
+    },
+    "Get Commits": {
+      "main": [[{"node": "Process Data", "index": 0}]]
+    },
+    "Get Issues": {
+      "main": [[{"node": "Process Data", "index": 0}]]
+    },
+    "Get PRs": {
+      "main": [[{"node": "Process Data", "index": 0}]]
+    },
+    "Process Data": {
+      "main": [[{"node": "Claude Summary", "index": 0}]]
+    },
+    "Claude Summary": {
+      "main": [[{"node": "Send Slack", "index": 0}, {"node": "Send Discord", "index": 0}, {"node": "Send Email", "index": 0}]]
+    }
+  }
+}
