@@ -34,6 +34,27 @@ You're in the right place.
 
 ---
 
+## Changelog generator
+
+`tools/generate_changelog.py` builds a structured `CHANGELOG.md` from git history.
+
+- Commits are read with `git log --pretty=format:"%h|%ad|%s" --date=short`
+- With git tags: one section per release (`## [vX.Y.Z] - YYYY-MM-DD`) plus `Unreleased` for commits after the latest tag
+- Without tags: commits are grouped by month/year (`## [YYYY-MM] - YYYY-MM-DD`)
+
+```bash
+python tools/generate_changelog.py --output CHANGELOG.md .
+```
+
+Run tests:
+
+```bash
+pip install -e ".[dev]"
+pytest -q
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
