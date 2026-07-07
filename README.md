@@ -34,6 +34,50 @@ You're in the right place.
 
 ---
 
+## Bounty #3: Destructive Command Guard
+
+This repository includes a Claude Code `PreToolUse` hook that blocks destructive
+Bash commands before they run.
+
+### Install
+
+```bash
+./install.sh
+```
+
+The installer copies `hooks/destructive-command-guard.py` into
+`~/.claude/hooks/` and adds a `PreToolUse` Bash matcher to
+`~/.claude/settings.json`.
+
+### What It Blocks
+
+- `rm -rf`
+- `git push --force` and equivalent force-push flags
+- `DROP TABLE`
+- `TRUNCATE`
+- `DELETE FROM` statements without a `WHERE` clause
+
+Blocked attempts are appended to `~/.claude/hooks/blocked.log` as JSON lines
+with `timestamp`, `attempted_command`, and `project_path`.
+
+### Test
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+Sample successful test output:
+
+```text
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.04s
+
+OK
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
