@@ -1,0 +1,70 @@
+#!/bin/bash
+# Generate a structured CHANGELOG.md from git history
+# Usage: ./generate-changelog [output-file]
+# Default output: CHANGELOG.md
+
+OUTPUT="${1:-CHANGELOG.md}"
+REPO_DIR="$(pwd)"
+
+cd "$REPO_DIR" || exit 1
+
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "Error: Not a git repository"
+    exit 1
+fi
+
+cat > "$OUTPUT" << 'HEADER'
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+HEADER
+
+# Get all tags sorted by version
+TAGS=$(git tag --sort=-version:refname 2>/dev/null)
+CURRENT_SECTION=""
+
+if [ -z "$TAGS" ]; then
+    # No tags - just show unreleased
+    CURRENT_SECTION="## [Unreleased]"
+    echo -e "\n$CURRENT_SECTION" >> "$OUTPUT"
+else
+    echo -e "\n## [Unreleased]" >> "$OUTPUT"
+    
+    FIRST=true
+    PREV_TAG=""
+    for TAG in $TAGS; do
+        if [ "$FIRST" = true ]; then
+            RANGE="HEAD..$TAG"
+            FIRST=false
+        else
+            RANGE="${PREV_TAG}..${TAG}"
+        fi
+        
+        echo -e "\n### [$TAG]" >> "$OUTPUT"
+        
+        # Features
+        FEATURES=$(git log --no-merges --format="- %s (%an)" "$RANGE" --grep="^feat" 2>/dev/null)
+        [ -n "$FEATURES" ] && echo -e "\n#### Added\n$FEATURES" >> "$OUTPUT"
+        
+        # Fixes
+        FIXES=$(git log --no-merges --format="- %s (%an)" "$RANGE" --grep="^fix" 2>/dev/null)
+        [ -n "$FIXES" ] && echo -e "\n#### Fixed\n$FIXES" >> "$OUTPUT"
+        
+        # All commits categorized
+        COMMITS=$(git log --no-merges --format="  - %s (%an)" "$RANGE" 2>/dev/null)
+        [ -n "$COMMITS" ] && echo -e "\n#### Commits\n$COMMITS" >> "$OUTPUT"
+        
+        PREV_TAG="$TAG"
+    done
+fi
+
+# Unreleased changes
+UNRELEASED=$(git log --no-merges --format="- %s (%an)" HEAD 2>/dev/null | head -50)
+if [ -n "$UNRELEASED" ]; then
+    echo -e "\n### Changes\n$UNRELEASED" >> "$OUTPUT"
+fi
+
+echo "Changelog generated at $OUTPUT"

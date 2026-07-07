@@ -1,8 +1,29 @@
----
-name: generate-changelog
-description: Generate a structured CHANGELOG.md from git history
----
+# Generate CHANGELOG
 
-Run `python skills/generate-changelog/changelog.py` in your project root.
+A Claude Code skill that automatically generates a structured `CHANGELOG.md` from git history.
 
-Optionally pass a custom output path: `python skills/generate-changelog/changelog.py docs/CHANGES.md`
+## Usage
+
+```
+# In any git repository:
+./generate-changelog
+# Or specify output file:
+./generate-changelog CHANGELOG.md
+```
+
+## How it works
+
+1. Detects all version tags in the repository
+2. Categorizes commits by type (feat, fix, etc.)
+3. Generates a Keep a Changelog-formatted file
+4. Includes unreleased changes since the last tag
+
+## Installation
+
+Add this skill to your Claude Code hooks:
+
+```bash
+mkdir -p ~/.claude/skills/
+cp generate-changelog ~/.claude/skills/
+chmod +x ~/.claude/skills/generate-changelog
+```
