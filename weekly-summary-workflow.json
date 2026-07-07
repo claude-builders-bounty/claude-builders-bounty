@@ -1,0 +1,201 @@
+{
+  "name": "Weekly Dev Summary (n8n + Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": 1
+        }
+      },
+      "id": "trigger-cron",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repo_url }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "n8n-nodes-base.httpQueryAuth",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json"
+          }
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus({ days: $json.days_back || 7 }).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        }
+      },
+      "id": "github-commits",
+      "name": "Get GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repo_url }}/issues?state=closed&sort=updated&direction=desc",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "n8n-nodes-base.httpQueryAuth",
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus({ days: $json.days_back || 7 }).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        }
+      },
+      "id": "github-issues",
+      "name": "Get Closed Issues & PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repoUrl = $getWorkflowStaticData('global').repo_url || 'https://api.github.com/repos/owner/repo';\nconst daysBack = $getWorkflowStaticData('global').days_back || 7;\nconst language = $getWorkflowStaticData('global').language || 'EN';\nconst deliveryType = $getWorkflowStaticData('global').delivery_type || 'slack';\nconst webhookUrl = $getWorkflowStaticData('global').webhook_url || '';\nconst channel = $getWorkflowStaticData('global').channel || '#general';\n\nreturn [{\n  repo_url: repo_url,\n  days_back: daysBack,\n  language: language,\n  delivery_type: deliveryType,\n  webhook_url: webhookUrl,\n  channel: channel\n}];"
+      },
+      "id": "config",
+      "name": "Load Config (Edit Here)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine commits + issues/PRs into a structured weekly report\nconst commits = $input.all()[0].json;\nconst issuesAndPRs = $input.all()[1].json;\n\nconst commitList = Array.isArray(commits) ? commits : [commits];\nconst issueList = Array.isArray(issuesAndPRs) ? issuesAndPRs : [issuesAndPRs];\n\nconst formattedCommits = commitList.map(c => ({\n  message: c.commit?.message?.split('\\n')[0] || c.message || '',\n  author: c.author?.login || c.commit?.author?.name || 'Unknown',\n  date: c.commit?.author?.date || c.created_at || '',\n  sha: c.sha?.substring(0, 7) || ''\n}));\n\nconst formattedIssues = issueList.filter(i => !i.pull_request).map(i => ({\n  title: i.title || '',\n  number: i.number || '',\n  state: i.state || 'closed',\n  author: i.user?.login || 'Unknown',\n  url: i.html_url || ''\n}));\n\nconst formattedPRs = issueList.filter(i => i.pull_request).map(i => ({\n  title: i.title || '',\n  number: i.number || '',\n  state: i.state || 'merged',\n  author: i.user?.login || 'Unknown',\n  url: i.html_url || ''\n}));\n\nreturn [{\n  commits: formattedCommits,\n  issues: formattedIssues,\n  pull_requests: formattedPRs,\n  stats: {\n    total_commits: formattedCommits.length,\n    total_issues: formattedIssues.length,\n    total_prs: formattedPRs.length\n  },\n  repo: $getWorkflowStaticData('global').repo_url || 'N/A',\n  week_start: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0],\n  week_end: new Date().toISOString().split('T')[0]\n}];"
+      },
+      "id": "combine-data",
+      "name": "Combine & Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst language = $getWorkflowStaticData('global').language || 'EN';\n\nconst promptLang = language === 'ZH' \n  ? `请用中文生成以下GitHub仓库的周报总结。\n格式：\n## 周报摘要 (data.week_start ~ data.week_end)\n### 提交概况\n### Issues 动态\n### PR 动态\n### 亮点与趋势`\n  : `Generate a weekly development summary for the following GitHub activity.\nFormat:\n## Weekly Summary (data.week_start ~ data.week_end)\n### Commit Overview\n### Issues Activity\n### PR Activity\n### Highlights & Trends`;\n\nconst prompt = promptLang + `\n\nRepository: ${data.repo}\nPeriod: ${data.week_start} to ${data.week_end}\n\nCommits:${JSON.stringify(data.commits.slice(0, 30))}\n\nClosed Issues:${JSON.stringify(data.issues.slice(0, 20))}\n\nMerged PRs:${JSON.stringify(data.pull_requests.slice(0, 20))}\n\nStats: ${data.stats.total_commits} commits, ${data.stats.total_issues} issues closed, ${data.stats.total_prs} PRs merged.\n\nGenerate a concise, well-structured narrative summary highlighting key changes, patterns, and notable events from this week's development activity.`;\n\nreturn [{ prompt: prompt }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "n8n-nodes-base.httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2048
+            }
+          ]
+        },
+        "jsonBody": "= {\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": $json.prompt\n    }\n  ]\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "claude-api",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nlet summary = response.content?.[0]?.text || response.content || JSON.stringify(response);\n\nconst data = $input.first().json;\n\nreturn [{\n  summary: summary,\n  stats: data.stats,\n  repo: data.repo,\n  week_start: data.week_start,\n  week_end: data.week_end,\n  generated_at: new Date().toISOString()\n}];"
+      },
+      "id": "extract-summary",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1260, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { summary, repo, week_start, week_end, stats } = $input.first().json;\nconst deliveryType = $getWorkflowStaticData('global').delivery_type || 'slack';\nconst webhookUrl = $getWorkflowStaticData('global').webhook_url || '';\nconst channel = $getWorkflowStaticData('global').channel || '#general';\n\nconst message = `📊 *Weekly Dev Report*\\n📅 ${week_start} ~ ${week_end}\\n📦 ${repo}\\n\\n📈 Stats: ${stats.total_commits} commits | ${stats.total_issues} issues | ${stats.total_prs} PRs\\n\\n${summary}`;\n\nif (deliveryType === 'slack' && webhookUrl) {\n  return [{\n    webhook_url: webhookUrl,\n    message: JSON.stringify({ text: message, channel: channel }),\n    headers: { 'Content-Type': 'application/json' }\n  }];\n} else if (deliveryType === 'discord' && webhookUrl) {\n  return [{\n    webhook_url: webhookUrl,\n    message: JSON.stringify({ content: message }),\n    headers: { 'Content-Type': 'application/json' }\n  }];\n}\n\n// Default: output to console\nreturn [{ message: message }];"
+      },
+      "id": "format-delivery",
+      "name": "Format for Delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.webhook_url }}",
+        "authentication": "none",
+        "sendBody": true,
+        "bodyParameters": {},
+        "jsonBody": "={{ JSON.parse($json.message) }}",
+        "options": {}
+      },
+      "id": "send-webhook",
+      "name": "Send to Slack/Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1660, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [[{ "node": "Load Config (Edit Here)", "type": "main", "index": 0 }]]
+    },
+    "Load Config (Edit Here)": {
+      "main": [
+        [
+          { "node": "Get GitHub Commits", "type": "main", "index": 0 },
+          { "node": "Get Closed Issues & PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Get GitHub Commits": {
+      "main": [[{ "node": "Combine & Format Data", "type": "main", "index": 0 }]]
+    },
+    "Get Closed Issues & PRs": {
+      "main": [[{ "node": "Combine & Format Data", "type": "main", "index": 0 }]]
+    },
+    "Combine & Format Data": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Claude Prompt": {
+      "main": [[{ "node": "Call Claude API", "type": "main", "index": 0 }]]
+    },
+    "Call Claude API": {
+      "main": [[{ "node": "Extract Summary", "type": "main", "index": 0 }]]
+    },
+    "Extract Summary": {
+      "main": [[{ "node": "Format for Delivery", "type": "main", "index": 0 }]]
+    },
+    "Format for Delivery": {
+      "main": [[{ "node": "Send to Slack/Discord", "type": "main", "index": 0 }]]
+    }
+  }
+}
