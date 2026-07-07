@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Claude Code pre-tool-use hook that blocks destructive bash commands."""
+
+import os
+import re
+import sys
+import time
+from pathlib import Path
+
+LOG_FILE = Path.home() / ".claude" / "hooks" / "blocked.log"
+PROJECT_PATH = os.environ.get("CLAUDE_PROJECT_PATH", os.getcwd())
+
+DESTRUCTIVE_PATTERNS = {
+    "rm_rf": re.compile(r'\brm\s+-rf\b'),
+    "drop_table": re.compile(r'\bDROP\s+TABLE\b', re.IGNORECASE),
+    "git_force_push": re.compile(r'\bgit\s+push\s+.*--force\b'),
+    "truncate": re.compile(r'\bTRUNCATE\b', re.IGNORECASE),
+    "delete_without_where": re.compile(r'\bDELETE\s+FROM\b.*\bWHERE\b', re.IGNORECASE),
+    "delete_no_where": re.compile(r'\bDELETE\s+FROM\b(?!.*\bWHERE\b)', re.IGNORECASE),
+}
+
+
+def main():
+    command = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else ""
+
+    if not command:
+        return 0
+
+    blocked_reason = None
+
+    if DESTRUCTIVE_PATTERNS["rm_rf"].search(command) and "rm -rf /" not in command:
+        blocked_reason = "rm -rf detected (recursive force delete)"
+    elif DESTRUCTIVE_PATTERNS["drop_table"].search(command) and not any(
+        kw in command.lower() for kw in ["--dry-run", "--if-exists"]
+    ):
+        blocked_reason = "DROP TABLE detected (destructive schema change)"
+    elif DESTRUCTIVE_PATTERNS["git_force_push"].search(command):
+        blocked_reason = "git push --force detected (destructive history rewrite)"
+    elif DESTRUCTIVE_PATTERNS["truncate"].search(command):
+        blocked_reason = "TRUNCATE detected (destructive data operation)"
+    elif DESTRUCTIVE_PATTERNS["delete_no_where"].search(command) and not DESTRUCTIVE_PATTERNS["delete_without_where"].search(command):
+        if re.search(r'\bDELETE\s+FROM\b', command, re.IGNORECASE):
+            blocked_reason = "DELETE FROM without WHERE clause detected"
+
+    if blocked_reason:
+        log_entry = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] BLOCKED: {blocked_reason}\n"
+        log_entry += f"  Command: {command}\n"
+        log_entry += f"  Project: {PROJECT_PATH}\n"
+        log_entry += "-" * 60 + "\n"
+
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG_FILE, "a") as f:
+            f.write(log_entry)
+
+        print(
+            f"\n⚠️  BLOCKED: {blocked_reason}\n"
+            f"  Command: {command}\n"
+            f"  To proceed, remove the blocked pattern or use a safer alternative.\n"
+            f"  Logged to: {LOG_FILE}\n",
+            file=sys.stderr,
+        )
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
