@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+import subprocess
+import os
+import sys
+import re
+
+# Ensure UTF-8 output encoding
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
+def log(msg):
+    print(f"[changelog-gen] {msg}", file=sys.stderr)
+
+def run_git_command(args):
+    """
+    Helper to run a git command and return its stdout.
+    """
+    try:
+        res = subprocess.run(["git"] + args, capture_output=True, text=True, check=True)
+        return res.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        # Command failed (e.g. no tags found)
+        return None
+    except FileNotFoundError:
+        log("Error: git command-line tool not found on system path.")
+        sys.exit(1)
+
+def get_last_tag():
+    """
+    Finds the last git tag in the repository.
+    """
+    tag = run_git_command(["describe", "--tags", "--abbrev=0"])
+    return tag
+
+def get_commits_since(tag=None):
+    """
+    Fetches the commit history (subject and hash) since a tag.
+    If no tag is provided, fetches the entire history.
+    """
+    if tag:
+        range_str = f"{tag}..HEAD"
+        log(f"Fetching commits in range: {range_str}")
+        log_out = run_git_command(["log", range_str, "--pretty=format:%h|%s"])
+    else:
+        log("No git tags found. Fetching entire repository history.")
+        log_out = run_git_command(["log", "--pretty=format:%h|%s"])
+    
+    if not log_out:
+        return []
+        
+    commits = []
+    for line in log_out.split("\n"):
+        if "|" in line:
+            h, s = line.split("|", 1)
+            commits.append({"hash": h.strip(), "subject": s.strip()})
+    return commits
+
+def classify_commits(commits):
+    """
+    Classifies commits into standard categories using regular expressions.
+    """
+    categories = {
+        "Added": [],
+        "Fixed": [],
+        "Removed": [],
+        "Changed": []
+    }
+    
+    # Categorization regex patterns
+    added_pat = re.compile(r'^(feat|add|added)(\(.*\))?:', re.IGNORECASE)
+    fixed_pat = re.compile(r'^(fix|fixed|bugfix|hotfix)(\(.*\))?:', re.IGNORECASE)
+    removed_pat = re.compile(r'^(remove|removed|del|delete)(\(.*\))?:', re.IGNORECASE)
+    
+    for c in commits:
+        sub = c["subject"]
+        h = c["hash"]
+        
+        # Format list item with commit hash link if possible, or just commit message
+        item_str = f"{sub} ({h})"
+        
+        # Check matching
+        if added_pat.match(sub) or any(x in sub.lower() for x in ["added:", "add:"]):
+            categories["Added"].append(item_str)
+        elif fixed_pat.match(sub) or any(x in sub.lower() for x in ["fixed:", "fix:"]):
+            categories["Fixed"].append(item_str)
+        elif removed_pat.match(sub) or any(x in sub.lower() for x in ["removed:", "remove:"]):
+            categories["Removed"].append(item_str)
+        else:
+            # Everything else (chore, refactor, docs, style, test, etc.)
+            categories["Changed"].append(item_str)
+            
+    return categories
+
+def build_changelog_markdown(categories, tag=None):
+    """
+    Formats the classified categories into standard Markdown CHANGELOG format.
+    """
+    range_title = f"Unreleased (since {tag})" if tag else "All History"
+    
+    md_lines = [
+        "# Changelog\n",
+        "All notable changes to this project will be documented in this file.\n",
+        f"## [{range_title}]\n"
+    ]
+    
+    for cat_name in ["Added", "Fixed", "Changed", "Removed"]:
+        items = categories[cat_name]
+        if items:
+            md_lines.append(f"### {cat_name}\n")
+            for item in items:
+                md_lines.append(f"- {item}")
+            md_lines.append("") # Empty line after section
+            
+    return "\n".join(md_lines).strip() + "\n"
+
+def main():
+    # Detect repository path
+    git_dir = run_git_command(["rev-parse", "--git-dir"])
+    if not git_dir:
+        log("Error: Current directory is not a git repository.")
+        sys.exit(1)
+        
+    tag = get_last_tag()
+    if tag:
+        log(f"Latest Git Tag found: {tag}")
+    else:
+        log("No Git Tag found in this repository.")
+        
+    commits = get_commits_since(tag)
+    log(f"Found {len(commits)} commits to process.")
+    
+    if not commits:
+        log("No commits found since last tag. CHANGELOG is already up to date.")
+        sys.exit(0)
+        
+    categories = classify_commits(commits)
+    changelog_md = build_changelog_markdown(categories, tag)
+    
+    # Save to CHANGELOG.md in current directory
+    output_path = "CHANGELOG.md"
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(changelog_md)
+        log(f"Successfully generated and wrote changelog to {output_path}")
+        # Print preview to stdout
+        print("\n=== CHANGELOG PREVIEW ===")
+        print(changelog_md)
+    except Exception as e:
+        log(f"Error writing to {output_path}: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
