@@ -1,0 +1,79 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+    if: contains(github.event.comment.body, '/claude-review')
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/claude-review'))
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install claude-review
+        run: |
+          sudo install -m 755 .github/workflows/claude-review /usr/local/bin/
+          echo "CLAUDE_REVIEW_VERSION=$(claude-review --version 2>&1)" >> $GITHUB_ENV
+
+      - name: Get PR URL
+        id: pr-info
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "pr_url=${{ github.event.pull_request.html_url }}" >> $GITHUB_OUTPUT
+          else
+            echo "pr_url=${{ github.event.issue.pull_request.html_url }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run review
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude-review --pr "${{ steps.pr-info.outputs.pr_url }}" --output /tmp/review.md
+          echo "review_done=true" >> $GITHUB_OUTPUT
+
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('/tmp/review.md', 'utf8');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            // Remove previous claude-review comments
+            for (const comment of comments) {
+              if (comment.body.startsWith('## PR Review') && comment.user.type === 'Bot') {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id,
+                });
+              }
+            }
+
+            // Post new review
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: review,
+            });

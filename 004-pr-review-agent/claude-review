@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="1.0.0"
+RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
+
+log_info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
+log_step()  { echo -e "${CYAN}[STEP]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+
+# ── Help ──
+show_help() {
+  cat <<'HELP'
+claude-review v1.0.0 — AI-powered PR review via Claude
+
+Usage:
+  claude-review --pr <PR_URL>                 Review a PR
+  claude-review --pr <PR_URL> --output <file> Save review to file
+  claude-review --help                        Show this help
+
+Examples:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+
+Environment:
+  GITHUB_TOKEN           GitHub personal access token (or gh CLI)
+  ANTHROPIC_API_KEY      Claude API key (or claude CLI installed)
+HELP
+  exit 0
+}
+
+# ── Parse args ──
+PR_URL=""; OUTPUT_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="$2"; shift 2 ;;
+    --output) OUTPUT_FILE="$2"; shift 2 ;;
+    --help|-h) show_help ;;
+    --version) echo "claude-review v$VERSION"; exit 0 ;;
+    *) log_error "Unknown: $1"; show_help ;;
+  esac
+done
+
+[[ -z "$PR_URL" ]] && { log_error "Missing --pr <URL>"; show_help; }
+
+# ── Parse URL ──
+if [[ "$PR_URL" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+  OWNER="${BASH_REMATCH[1]}"
+  REPO="${BASH_REMATCH[2]}"
+  PR_NUM="${BASH_REMATCH[3]}"
+else
+  log_error "Invalid PR URL: $PR_URL (expected: https://github.com/owner/repo/pull/123)"
+  exit 1
+fi
+
+log_info "Reviewing ${OWNER}/${REPO} PR #${PR_NUM}"
+
+# ── Auth ──
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+if [[ -z "$GITHUB_TOKEN" ]]; then
+  GITHUB_TOKEN="$(gh auth token 2>/dev/null || true)"
+fi
+[[ -z "$GITHUB_TOKEN" ]] && { log_error "Need GITHUB_TOKEN or gh CLI"; exit 1; }
+
+GH_HDR="Authorization: token ${GITHUB_TOKEN}"
+API="https://api.github.com/repos/${OWNER}/${REPO}"
+
+# ── 1. PR metadata ──
+log_step "Fetching PR metadata..."
+PR_JSON="$(curl -sfH "$GH_HDR" "${API}/pulls/${PR_NUM}")" || {
+  log_error "Failed to fetch PR #${PR_NUM}"; exit 1; }
+
+PR_TITLE="$(echo "$PR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['title'])")"
+PR_AUTHOR="$(echo "$PR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['user']['login'])")"
+PR_BODY="$(echo "$PR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('body','') or '')")"
+PR_BASE="$(echo "$PR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['base']['ref'])")"
+PR_HEAD="$(echo "$PR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['head']['ref'])")"
+PR_CHANGED="$(echo "$PR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['changed_files'])")"
+PR_ADD="$(echo "$PR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['additions'])")"
+PR_DEL="$(echo "$PR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['deletions'])")"
+
+log_info "PR #${PR_NUM}: ${PR_TITLE} (${PR_AUTHOR}, ${PR_CHANGED} files, +${PR_ADD}/-${PR_DEL})"
+
+# ── 2. Diff ──
+log_step "Fetching PR diff..."
+PR_DIFF="$(curl -sfL -H "$GH_HDR" -H "Accept: application/vnd.github.v3.diff" \
+  "${API}/pulls/${PR_NUM}")" || { log_error "Failed to fetch diff"; exit 1; }
+
+DIFF_SIZE=${#PR_DIFF}
+TRUNCATED=false
+if [[ $DIFF_SIZE -gt 102400 ]]; then
+  PR_DIFF="$(echo "$PR_DIFF" | head -c 102400)"
+  TRUNCATED=true
+  log_info "Diff truncated to 100KB (original: ${DIFF_SIZE}B)"
+else
+  log_info "Diff size: ${DIFF_SIZE} bytes"
+fi
+
+# ── 3. File list ──
+FILES_JSON="$(curl -sfH "$GH_HDR" "${API}/pulls/${PR_NUM}/files" 2>/dev/null || echo "[]")"
+FILE_LIST="$(echo "$FILES_JSON" | python3 -c "
+import json,sys
+for f in json.load(sys.stdin):
+    print(f'- {f[\"filename\"]} (+{f[\"additions\"]}/-{f[\"deletions\"]})')
+" 2>/dev/null)" || FILE_LIST="  (no files listed)"
+
+# ── 4. Build prompt ──
+log_step "Analyzing with Claude..."
+
+SYSTEM_MSG='You are an expert senior engineer reviewing a pull request. Provide a structured markdown review.'
+
+USER_MSG=$(cat <<EOPROMPT
+## Pull Request: ${OWNER}/${REPO} #${PR_NUM}
+**Title:** ${PR_TITLE} by @${PR_AUTHOR}
+**Branch:** \`${PR_BASE}\` ← \`${PR_HEAD}\`
+**Stats:** +${PR_ADD}/-${PR_DEL} across ${PR_CHANGED} files
+
+### Description
+${PR_BODY:-*(none provided)*}
+
+### Changed Files
+${FILE_LIST}
+
+### Diff${TRUNCATED:+" (truncated — first 100KB shown)"}
+\`\`\`diff
+${PR_DIFF}
+\`\`\`
+
+Please provide a thorough code review. Format your response as:
+
+## Summary
+2-3 sentence overview of the PR and your overall assessment.
+
+## What\'s Good
+Positive aspects worth highlighting.
+
+## Risks & Concerns
+Specific issues with file:line references where applicable.
+
+## Improvement Suggestions
+Actionable fix suggestions.
+
+## Confidence Score
+**High / Medium / Low** — one-sentence justification.
+EOPROMPT
+)
+
+# ── 5. Call Claude ──
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  log_info "Using Anthropic API (claude-sonnet-4-20250514)..."
+
+  # Escape the user message for JSON
+  USER_MSG_ESCAPED="$(python3 -c "
+import json, sys
+# Read from stdin
+msg = sys.stdin.read()
+print(json.dumps({'role': 'user', 'content': msg}))
+" <<< "$USER_MSG")"
+
+  SYSTEM_ESCAPED="$(python3 -c "
+import json
+print(json.dumps({'type': 'text', 'text': '$SYSTEM_MSG'}))
+")"
+
+  PAYLOAD="$(python3 -c "
+import json
+payload = {
+    'model': 'claude-sonnet-4-20250514',
+    'max_tokens': 4096,
+    'system': '$SYSTEM_MSG',
+    'messages': [json.loads('$USER_MSG_ESCAPED')]
+}
+print(json.dumps(payload))
+")"
+
+  RESPONSE="$(curl -sf -X POST https://api.anthropic.com/v1/messages \
+    -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+    -H "anthropic-version: 2023-06-01" \
+    -H "content-type: application/json" \
+    -d "$PAYLOAD")" || { log_error "Claude API failed"; exit 1; }
+
+  REVIEW="$(echo "$RESPONSE" | python3 -c "
+import json,sys; d=json.load(sys.stdin)
+print(d['content'][0]['text'])
+")" || REVIEW="*(Failed to parse Claude response)*"
+
+elif command -v claude &>/dev/null; then
+  log_info "Using Claude Code CLI..."
+  REVIEW="$(echo -e "${SYSTEM_MSG}\n\n${USER_MSG}" | claude -p - 2>/dev/null)" || {
+    log_error "Claude CLI failed"; exit 1; }
+else
+  log_error "Set ANTHROPIC_API_KEY or install Claude Code CLI"
+  exit 1
+fi
+
+# ── 6. Output ──
+OUTPUT="## PR Review: ${OWNER}/${REPO} #${PR_NUM}
+**${PR_TITLE}** by @${PR_AUTHOR}
+\`${PR_BASE}\` ← \`${PR_HEAD}\` | +${PR_ADD}/-${PR_DEL} | ${PR_CHANGED} files
+*Reviewed by claude-review v${VERSION}*
+
+---
+${REVIEW}"
+
+echo ""
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}          REVIEW COMPLETE              ${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo "$OUTPUT"
+
+if [[ -n "$OUTPUT_FILE" ]]; then
+  echo "$OUTPUT" > "$OUTPUT_FILE"
+  log_info "Saved to ${OUTPUT_FILE}"
+fi
