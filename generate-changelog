@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+#
+# generate-changelog — Auto-generated structured CHANGELOG.md from git history
+#
+# Usage: ./generate-changelog [--since <tag|ref>] [--output FILE]
+#
+# Fetches commits since the last git tag (or a specific ref),
+# categorizes them into Added / Fixed / Changed / Removed,
+# and writes a structured CHANGELOG.md.
+
+set -euo pipefail
+
+# ── helpers ──────────────────────────────────────────────────
+bold()   { tput bold 2>/dev/null || true; echo -n "$*"; }
+normal() { tput sgr0 2>/dev/null || true; echo -n "$*"; }
+red()    { tput setaf 1 2>/dev/null || true; echo -n "$*"; tput sgr0 2>/dev/null || true; }
+green()  { tput setaf 2 2>/dev/null || true; echo -n "$*"; tput sgr0 2>/dev/null || true; }
+
+# ── defaults ─────────────────────────────────────────────────
+OUTPUT="${CHANGELOG_FILE:-CHANGELOG.md}"
+SINCE=""
+
+# ── parse args ───────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --since) SINCE="$2"; shift 2 ;;
+    --output) OUTPUT="$2"; shift 2 ;;
+    -o) OUTPUT="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: $0 [--since <tag|ref>] [--output FILE]"
+      echo ""
+      echo "Generate a structured CHANGELOG.md from git history."
+      echo ""
+      echo "Options:"
+      echo "  --since <ref>   Start from a specific tag/ref (default: last git tag)"
+      echo "  --output, -o    Output file (default: CHANGELOG.md or \$CHANGELOG_FILE)"
+      exit 0
+      ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
+
+# ── ensure we are in a git repo ──────────────────────────────
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "$(red '✗') Not inside a git repository."
+  exit 1
+fi
+
+# ── determine the "since" ref ────────────────────────────────
+if [[ -z "$SINCE" ]]; then
+  # Find the most recent annotated or lightweight tag
+  SINCE="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+  if [[ -z "$SINCE" ]]; then
+    # Fall back to initial commit
+    SINCE="$(git rev-list --max-parents=0 HEAD 2>/dev/null || true)"
+    if [[ -z "$SINCE" ]]; then
+      echo "$(red '✗') No commits found in this repository."
+      exit 1
+    fi
+    echo "$(bold 'ℹ') No tags found — starting from the initial commit."
+  else
+    echo "$(bold 'ℹ') Using tag: $SINCE"
+  fi
+else
+  echo "$(bold 'ℹ') Using custom ref: $SINCE"
+fi
+
+# ── current version / date ───────────────────────────────────
+VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo "unreleased")"
+DATE="$(date +%Y-%m-%d)"
+
+# ── categorize commits ───────────────────────────────────────
+CAT_ADDED=()
+CAT_FIXED=()
+CAT_CHANGED=()
+CAT_REMOVED=()
+CAT_OTHER=()
+
+while IFS=$'\t' read -r COMMIT_HASH COMMIT_MSG; do
+  # Extract the subject line (first line)
+  SUBJECT="$(echo "$COMMIT_MSG" | head -1)"
+  # Categorize based on conventional commits
+  CATEGORY="other"
+  if echo "$SUBJECT" | grep -qiE '^(feat|feature|add|new|implement):?\s'; then
+    CATEGORY="added"
+  elif echo "$SUBJECT" | grep -qiE '^(fix|bugfix|hotfix|patch|correct):?\s'; then
+    CATEGORY="fixed"
+  elif echo "$SUBJECT" | grep -qiE '^(change|refactor|update|modify|improve|perf):?\s'; then
+    CATEGORY="changed"
+  elif echo "$SUBJECT" | grep -qiE '^(remove|delete|drop|deprecate):?\s'; then
+    CATEGORY="removed"
+  fi
+
+  # Build the changelog entry
+  SHORT_HASH="${COMMIT_HASH:0:7}"
+  # Clean up the subject for display: remove conventional commit prefix
+  DISPLAY_SUBJECT="$(echo "$SUBJECT" | sed -E 's/^(feat|feature|fix|bugfix|hotfix|patch|change|refactor|update|modify|improve|perf|remove|delete|drop|deprecate|add|new|implement|correct)(\([^)]*\))?:\s*//i')"
+  if [[ -z "$DISPLAY_SUBJECT" ]]; then
+    DISPLAY_SUBJECT="$SUBJECT"
+  fi
+  ENTRY="- ${DISPLAY_SUBJECT} ([${SHORT_HASH}](https://github.com/USER/REPO/commit/${COMMIT_HASH}))"
+
+  case "$CATEGORY" in
+    added)   CAT_ADDED+=("$ENTRY") ;;
+    fixed)   CAT_FIXED+=("$ENTRY") ;;
+    changed) CAT_CHANGED+=("$ENTRY") ;;
+    removed) CAT_REMOVED+=("$ENTRY") ;;
+    *)       CAT_OTHER+=("$ENTRY") ;;
+  esac
+done < <(git log --oneline "${SINCE}..HEAD" --format="%H%x00%s" 2>/dev/null || true)
+
+# ── detect repo info for links ───────────────────────────────
+REPO_URL=""
+REMOTE_URL="$(git config --get remote.origin.url 2>/dev/null || true)"
+if echo "$REMOTE_URL" | grep -q 'github.com'; then
+  REPO_URL="$(echo "$REMOTE_URL" | sed -E 's#.*github\.com[:/]([^/]+/[^./]+)(\.git)?#https://github.com/\1#')"
+fi
+
+# ── generate CHANGELOG.md ────────────────────────────────────
+{
+  echo "# Changelog"
+  echo ""
+  echo "## [${VERSION}] - ${DATE}"
+  echo ""
+
+  has_content=false
+
+  if [[ ${#CAT_ADDED[@]} -gt 0 ]]; then
+    echo "### ✨ Added"
+    for entry in "${CAT_ADDED[@]}"; do
+      # Replace placeholder repo URL if found
+      if [[ -n "$REPO_URL" ]]; then
+        entry="${entry//USER\/REPO/${REPO_URL#https://github.com/}}"
+      fi
+      echo "$entry"
+    done
+    echo ""
+    has_content=true
+  fi
+
+  if [[ ${#CAT_FIXED[@]} -gt 0 ]]; then
+    echo "### 🐛 Fixed"
+    for entry in "${CAT_FIXED[@]}"; do
+      if [[ -n "$REPO_URL" ]]; then
+        entry="${entry//USER\/REPO/${REPO_URL#https://github.com/}}"
+      fi
+      echo "$entry"
+    done
+    echo ""
+    has_content=true
+  fi
+
+  if [[ ${#CAT_CHANGED[@]} -gt 0 ]]; then
+    echo "### 🔄 Changed"
+    for entry in "${CAT_CHANGED[@]}"; do
+      if [[ -n "$REPO_URL" ]]; then
+        entry="${entry//USER\/REPO/${REPO_URL#https://github.com/}}"
+      fi
+      echo "$entry"
+    done
+    echo ""
+    has_content=true
+  fi
+
+  if [[ ${#CAT_REMOVED[@]} -gt 0 ]]; then
+    echo "### 🗑 Removed"
+    for entry in "${CAT_REMOVED[@]}"; do
+      if [[ -n "$REPO_URL" ]]; then
+        entry="${entry//USER\/REPO/${REPO_URL#https://github.com/}}"
+      fi
+      echo "$entry"
+    done
+    echo ""
+    has_content=true
+  fi
+
+  if [[ ${#CAT_OTHER[@]} -gt 0 ]]; then
+    echo "### 📦 Other"
+    for entry in "${CAT_OTHER[@]}"; do
+      if [[ -n "$REPO_URL" ]]; then
+        entry="${entry//USER\/REPO/${REPO_URL#https://github.com/}}"
+      fi
+      echo "$entry"
+    done
+    echo ""
+    has_content=true
+  fi
+
+  if [[ "$has_content" == false ]]; then
+    echo "_No new commits since last release._"
+    echo ""
+  fi
+
+  echo "---"
+  echo "_Generated by [generate-changelog](https://github.com/claude-builders-bounty/claude-builders-bounty)_"
+} > "$OUTPUT"
+
+echo "$(green '✔') Written to: $OUTPUT"
