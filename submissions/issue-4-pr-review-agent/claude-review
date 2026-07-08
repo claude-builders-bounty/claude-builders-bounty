@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+PR_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
+CODE_EXTENSIONS = {
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cs",
+    ".go",
+    ".java",
+    ".js",
+    ".jsx",
+    ".kt",
+    ".mjs",
+    ".php",
+    ".py",
+    ".rb",
+    ".rs",
+    ".sh",
+    ".ts",
+    ".tsx",
+}
+DEPENDENCY_FILES = {
+    "go.mod",
+    "go.sum",
+    "package-lock.json",
+    "package.json",
+    "poetry.lock",
+    "pyproject.toml",
+    "requirements.txt",
+    "Cargo.lock",
+    "Cargo.toml",
+}
+
+
+@dataclass(frozen=True)
+class PullRequestRef:
+    owner: str
+    repo: str
+    number: int
+
+
+def parse_pr_url(url: str) -> PullRequestRef:
+    match = PR_RE.match(url.strip())
+    if not match:
+        raise ValueError("Expected a GitHub PR URL like https://github.com/owner/repo/pull/123")
+    owner, repo, number = match.groups()
+    return PullRequestRef(owner=owner, repo=repo, number=int(number))
+
+
+def github_json(url: str, token: str | None) -> tuple[Any, dict[str, str]]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "claude-review-agent",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            headers = {key.lower(): value for key, value in response.headers.items()}
+            return json.loads(response.read().decode("utf-8")), headers
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub API request failed: HTTP {exc.code} {detail}") from exc
+
+
+def fetch_pr(ref: PullRequestRef, token: str | None, max_files: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    base = f"https://api.github.com/repos/{urllib.parse.quote(ref.owner)}/{urllib.parse.quote(ref.repo)}"
+    pr, _ = github_json(f"{base}/pulls/{ref.number}", token)
+    files: list[dict[str, Any]] = []
+    page = 1
+    while len(files) < max_files:
+        payload, _ = github_json(f"{base}/pulls/{ref.number}/files?per_page=100&page={page}", token)
+        if not payload:
+            break
+        files.extend(payload)
+        if len(payload) < 100:
+            break
+        page += 1
+    return pr, files[:max_files]
+
+
+def path_ext(path: str) -> str:
+    return Path(path).suffix.lower()
+
+
+def is_test_path(path: str) -> bool:
+    lowered = path.lower()
+    return any(part in lowered for part in ("test", "tests", "spec", "__tests__"))
+
+
+def is_doc_path(path: str) -> bool:
+    lowered = path.lower()
+    return lowered.endswith((".md", ".rst", ".txt")) or "docs/" in lowered or "documentation" in lowered
+
+
+def is_config_path(path: str) -> bool:
+    lowered = path.lower()
+    return lowered.startswith(".github/") or lowered.endswith((".yml", ".yaml", ".toml", ".ini", ".cfg", ".json"))
+
+
+def review_facts(pr: dict[str, Any], files: list[dict[str, Any]]) -> dict[str, Any]:
+    filenames = [str(item.get("filename", "")) for item in files]
+    additions = int(pr.get("additions") or sum(int(item.get("additions") or 0) for item in files))
+    deletions = int(pr.get("deletions") or sum(int(item.get("deletions") or 0) for item in files))
+    changed_files = int(pr.get("changed_files") or len(files))
+    code_files = [name for name in filenames if path_ext(name) in CODE_EXTENSIONS]
+    test_files = [name for name in filenames if is_test_path(name)]
+    doc_files = [name for name in filenames if is_doc_path(name)]
+    config_files = [name for name in filenames if is_config_path(name)]
+    dependency_files = [name for name in filenames if Path(name).name in DEPENDENCY_FILES]
+    return {
+        "title": pr.get("title") or "(untitled)",
+        "state": pr.get("state") or "unknown",
+        "merged": bool(pr.get("merged")),
+        "additions": additions,
+        "deletions": deletions,
+        "changed_files": changed_files,
+        "filenames": filenames,
+        "code_files": code_files,
+        "test_files": test_files,
+        "doc_files": doc_files,
+        "config_files": config_files,
+        "dependency_files": dependency_files,
+    }
+
+
+def list_or_default(items: list[str], default: str, limit: int = 6) -> str:
+    if not items:
+        return default
+    visible = items[:limit]
+    suffix = "" if len(items) <= limit else f", plus {len(items) - limit} more"
+    return ", ".join(f"`{item}`" for item in visible) + suffix
+
+
+def build_risks(facts: dict[str, Any]) -> list[str]:
+    risks: list[str] = []
+    if facts["changed_files"] > 20 or facts["additions"] + facts["deletions"] > 1200:
+        risks.append("Large review surface; split verification by subsystem before merge.")
+    if facts["code_files"] and not facts["test_files"]:
+        risks.append("Code changed without an obvious test/spec file in the diff.")
+    if facts["dependency_files"]:
+        risks.append("Dependency or package metadata changed; lockfile and compatibility checks matter.")
+    if facts["config_files"]:
+        risks.append("Configuration or CI files changed; validate behavior in a clean environment.")
+    if not risks:
+        risks.append("No obvious structural risks detected from the changed-file metadata.")
+    return risks
+
+
+def build_suggestions(facts: dict[str, Any]) -> list[str]:
+    suggestions: list[str] = []
+    if facts["code_files"] and not facts["test_files"]:
+        suggestions.append("Add or link a focused test that exercises the modified code path.")
+    if facts["doc_files"] and facts["code_files"]:
+        suggestions.append("Confirm the documentation reflects the implemented behavior, not only the intended behavior.")
+    if facts["dependency_files"]:
+        suggestions.append("Run dependency resolution and the project test suite from a clean checkout.")
+    suggestions.append("Ask the author to call out any intentionally untested edge cases in the PR thread.")
+    suggestions.append("Review the highest-churn files first, then scan the remaining diff for integration breakage.")
+    return suggestions
+
+
+def confidence(facts: dict[str, Any]) -> str:
+    churn = facts["additions"] + facts["deletions"]
+    if facts["changed_files"] <= 8 and churn <= 500 and facts["test_files"]:
+        return "High"
+    if facts["changed_files"] <= 25 and churn <= 1500:
+        return "Medium"
+    return "Low"
+
+
+def render_review(pr_url: str, pr: dict[str, Any], files: list[dict[str, Any]]) -> str:
+    facts = review_facts(pr, files)
+    risks = build_risks(facts)
+    suggestions = build_suggestions(facts)
+    file_sample = list_or_default(facts["filenames"], "No changed files returned by the API.")
+    summary = (
+        f"This PR, `{facts['title']}`, changes {facts['changed_files']} file(s) with "
+        f"{facts['additions']} addition(s) and {facts['deletions']} deletion(s). "
+        f"The diff touches {len(facts['code_files'])} code file(s), {len(facts['test_files'])} test/spec file(s), "
+        f"and {len(facts['doc_files'])} documentation file(s), so review should focus on behavior coverage and integration impact."
+    )
+    lines = [
+        f"# PR Review: {pr_url}",
+        "",
+        "## Summary of Changes",
+        summary,
+        "",
+        "## Identified Risks",
+        *[f"- {item}" for item in risks],
+        "",
+        "## Improvement Suggestions",
+        *[f"- {item}" for item in suggestions],
+        "",
+        f"## Confidence Score: {confidence(facts)}",
+        "",
+        "## Evidence Used",
+        f"- PR state: `{facts['state']}`; merged: `{facts['merged']}`",
+        f"- Changed files sampled: {file_sample}",
+        f"- Test/spec files detected: {list_or_default(facts['test_files'], 'none')}",
+        f"- Dependency files detected: {list_or_default(facts['dependency_files'], 'none')}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Generate a structured Markdown review for a GitHub PR.")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL.")
+    parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"), help="Optional GitHub token.")
+    parser.add_argument("--output", default=None, help="Optional path to write Markdown output.")
+    parser.add_argument("--max-files", type=int, default=300, help="Maximum changed files to inspect.")
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    try:
+        ref = parse_pr_url(args.pr)
+        pr, files = fetch_pr(ref, args.token, args.max_files)
+        review = render_review(args.pr, pr, files)
+        if args.output:
+            output_path = Path(args.output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(review)
+        else:
+            print(review, end="")
+    except Exception as exc:
+        print(f"claude-review-error={exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
