@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook — blocks dangerous bash commands.
+
+Install: cp safe-hook ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+# ── Configuration ──
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+
+# ── Dangerous patterns ──
+DANGEROUS_PATTERNS = [
+    # File destruction
+    (r'\brm\s+-rf\b', "Use `rm -rf` without caution can permanently delete files. Use `rm -r` with explicit file list or move to trash instead."),
+    (r'\brm\s+-rf\s+/\b', "Attempted to delete root filesystem (rm -rf /). This is never safe."),
+    (r'\brm\s+-rf\s+/\s', "Attempted to delete root filesystem."),
+    (r'\brm\s+-rf\s+\.\b', "Removing the current directory recursively."),
+    (r'\brm\s+-rf\s+\*\b', "Glob delete all files in current directory."),
+    (r'\brm\s+-rf\s+~\b', "Removing home directory."),
+    (r'\brm\s+-rf\s+\$HOME\b', "Removing home directory."),
+
+    # Git destructive
+    (r'\bgit\s+push\s+--force\b', "`git push --force` overwrites remote history. Use `--force-with-lease` to only overwrite your own branches."),
+    (r'\bgit\s+push\s+-f\b', "`git push -f` overwrites remote history. Use `--force-with-lease` instead."),
+
+    # Database destructive
+    (r'\bDROP\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW|PROCEDURE|FUNCTION)\b', "DROP operations permanently delete database objects. Verify target and use with extreme care."),
+    (r'\bTRUNCATE\b', "TRUNCATE permanently removes all rows from a table. Consider DELETE with a WHERE clause."),
+
+    # DELETE without WHERE (dangerous in SQL)
+    (r'\bDELETE\s+FROM\b(?!.*\bWHERE\b)', "DELETE FROM without a WHERE clause removes ALL rows. Add a WHERE clause to target specific rows."),
+
+    # Other dangerous operations
+    (r'\bchmod\s+-R\s+777\b', "`chmod -R 777` makes all files world-writable. Use more restrictive permissions."),
+    (r'\bchown\s+-R\b(?!.*\b\w+:\w+\b)', "`chown -R` without a valid user:group can break system permissions."),
+    (r'\bdd\s+if=.*\bof=/dev/sd[a-z]\b', "dd writing directly to a block device can corrupt the filesystem."),
+    (r'\bmkfs\b|\\bmke2fs\b|\\bmkfs\.\w+\b', "Creating a filesystem destroys all existing data on the device."),
+    (r'\b>:?\s*/dev/sd[a-z]\b', "Writing directly to a block device can corrupt the filesystem."),
+    (r'\bsudo\s+halt\b|\bsudo\s+poweroff\b|\bsudo\s+shutdown\b|\bsudo\s+reboot\b', "System shutdown/reboot commands should be verified before execution."),
+    (r'\bwget\s+.*\s*\|\s*bash\b|\bcurl\s+.*\s*\|\s*bash\b', "Piping downloaded scripts to bash is a security risk. Download first and inspect."),
+]
+
+# ── Safe exceptions (paths that are known safe) ──
+SAFE_RM_PATTERNS = [
+    r'rm\s+-rf\s+node_modules',
+    r'rm\s+-rf\s+\.git',
+    r'rm\s+-rf\s+__pycache__',
+    r'rm\s+-rf\s+\.venv',
+    r'rm\s+-rf\s+\.tox',
+    r'rm\s+-rf\s+dist\b',
+    r'rm\s+-rf\s+build\b',
+    r'rm\s+-rf\s+\.next\b',
+    r'rm\s+-rf\s+/tmp/',
+    r'rm\s+-rf\s+target\b',
+]
+
+SAFE_GIT_PATTERNS = [
+    r'git\s+push\s+-f\s+origin\s+[a-zA-Z]',
+]
+
+
+def is_safe(command: str) -> bool:
+    """Check if command matches known safe patterns."""
+    for pattern in SAFE_RM_PATTERNS + SAFE_GIT_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True
+    return False
+
+
+def check_command(tool_name: str, command: str) -> dict:
+    """Check if a bash command is dangerous. Returns {'approved': bool, 'message': str|None}."""
+
+    if tool_name != "Bash":
+        return {"approved": True}
+
+    if not command or not command.strip():
+        return {"approved": True}
+
+    command_stripped = command.strip()
+
+    # Check safe exceptions first
+    if is_safe(command_stripped):
+        return {"approved": True}
+
+    # Check against dangerous patterns
+    for pattern, message in DANGEROUS_PATTERNS:
+        if re.search(pattern, command_stripped, re.IGNORECASE):
+            # Log the blocked attempt
+            log_entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "command": command_stripped,
+                "pattern": pattern,
+                "project_path": os.getcwd(),
+            }
+            try:
+                with open(LOG_FILE, "a") as f:
+                    f.write(json.dumps(log_entry) + "\n")
+            except Exception:
+                pass  # Don't crash if log write fails
+
+            return {
+                "approved": False,
+                "message": (
+                    f"🚫 **Command blocked by safe-hook** 🚫\n\n"
+                    f"The following command matches a dangerous pattern (`{pattern}`):\n\n"
+                    f"```\n{command_stripped}\n```\n\n"
+                    f"**Reason:** {message}\n\n"
+                    f"Logged to `{LOG_FILE}`.\n\n"
+                    f"If you believe this is a false positive, use the exact path "
+                    f"description needed instead."
+                ),
+            }
+
+    return {"approved": True}
+
+
+def main():
+    """Read JSON from stdin, return JSON to stdout."""
+    try:
+        raw = sys.stdin.read()
+        data = json.loads(raw)
+    except (json.JSONDecodeError, EOFError):
+        # If we can't parse, allow the command
+        print(json.dumps({"approved": True}))
+        return
+
+    tool_call = data.get("tool_call", {})
+    tool_name = tool_call.get("tool_name", "")
+    tool_input = tool_call.get("input", {})
+
+    # Handle both Bash and command line tool
+    command = ""
+    if tool_name == "Bash":
+        command = tool_input.get("command", "")
+    elif tool_name == "CommandLineTool":
+        command = tool_input.get("command", "")
+
+    result = check_command(tool_name, command)
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()
