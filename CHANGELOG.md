@@ -1,0 +1,18 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased] - 2026-07-09
+
+_Generated from full git history (no tags found)._
+
+### Added
+
+- Initial README with bounty board (`1aeae2a`)
+
+### Changed
+
+- Initial commit (`a80a580`)

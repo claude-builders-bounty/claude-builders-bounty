@@ -8,6 +8,41 @@ You're in the right place.
 
 ---
 
+## Skill: Generate Changelog
+
+Automatically build a Keep a Changelog–style `CHANGELOG.md` from git history since the last tag. Commits are sorted into **Added** / **Fixed** / **Changed** / **Removed**.
+
+### Setup (3 steps)
+
+1. **Clone** this repo and enter it  
+   `git clone <repo-url> && cd <repo>`
+2. **Run** either entrypoint  
+   `bash changelog.sh`  ·  or  ·  `python generate_changelog.py`
+3. **Open** the generated `CHANGELOG.md` (sample output: [`docs/sample-changelog.md`](docs/sample-changelog.md))
+
+Optional Claude Code usage: install the skill under `.claude/skills/generate-changelog/` and run `/generate-changelog`.
+
+| Entrypoint | Command |
+|------------|---------|
+| Bash | `bash changelog.sh` or `bash generate-changelog.sh` |
+| Python | `python generate_changelog.py` |
+| Claude Code | `/generate-changelog` |
+
+**What it does**
+
+- Finds the latest git tag (`git describe --tags --abbrev=0`); uses full history if none
+- Lists non-merge commits in that range
+- Maps conventional commits (`feat`, `fix`, `refactor`, …) and keyword fallbacks into the four categories
+- Writes a formatted `CHANGELOG.md`
+
+Validate deliverables:
+
+```bash
+python validate_changelog_work.py
+```
+
+---
+
 ## How it works
 
 **To post a bounty**
