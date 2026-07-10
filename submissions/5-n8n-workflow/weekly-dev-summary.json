@@ -1,0 +1,210 @@
+{
+  "name": "📊 Weekly Dev Summary — Claude AI",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "cron-trigger",
+      "name": "⏰ Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": null,
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "schedule": {
+          "item": [
+            {
+              "mode": "everyWeek",
+              "hour": 9,
+              "minute": 0,
+              "weekday": 1
+            }
+          ]
+        }
+      },
+      "id": "cron-config",
+      "name": "Every Monday at 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "n8n-nodes-base.httpRequest",
+        "sendQuery": true,
+        "sendHeaders": true,
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "id": "github-commits",
+      "name": "📡 Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300],
+      "credentials": {
+        "httpRequest": "github-api"
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.parameters?.repoUrl }}/pulls?state=closed&sort=updated&direction=desc&per_page=20",
+        "sendQuery": true,
+        "sendHeaders": true,
+        "options": {}
+      },
+      "id": "github-prs",
+      "name": "📡 Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 450],
+      "credentials": {
+        "httpRequest": "github-api"
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.parameters?.repoUrl }}/issues?state=all&labels=bug&sort=updated&direction=desc&per_page=20",
+        "sendQuery": true,
+        "sendHeaders": true,
+        "options": {}
+      },
+      "id": "github-issues",
+      "name": "📡 Fetch Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 600],
+      "credentials": {
+        "httpRequest": "github-api"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const repoUrl = $json.parameters?.repoUrl || 'https://api.github.com/repos/owner/repo';\nconst owner = repoUrl.split('/').slice(-2, -1)[0];\nconst repo = repoUrl.split('/').slice(-1)[0];\n\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst isoWeekAgo = weekAgo.toISOString();\n\nreturn {\n  owner,\n  repo,\n  since: isoWeekAgo,\n  repoUrl: `${repoUrl}`,\n  commitsUrl: `${repoUrl}/commits?since=${isoWeekAgo}&per_page=50`,\n  weekStart: weekAgo.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),\n  weekEnd: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })\n};"
+      },
+      "id": "build-context",
+      "name": "🔧 Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 150]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all GitHub data\nconst commits = $input.all().find(n => n.json.commits)?.json.commits || [];\nconst prs = $input.all().find(n => n.json.prs)?.json.prs || [];\nconst issues = $input.all().find(n => n.json.issues)?.json.issues || [];\nconst context = $input.all().find(n => n.json.owner)?.json || {};\n\nconst formatList = (items, max = 10) => {\n  return items.slice(0, max).map(item => `- ${item.title}`).join('\\n');\n};\n\nconst summary = {\n  repo: `${context.owner}/${context.repo}`,\n  week: `${context.weekStart} - ${context.weekEnd}`,\n  stats: {\n    commits: commits.length,\n    merged_prs: prs.filter(p => p.merged_at).length,\n    open_issues: issues.filter(i => i.state === 'open').length\n  },\n  recent_commits: formatList(commits),\n  merged_prs_list: formatList(prs.filter(p => p.merged_at)),\n  bug_fixes: formatList(issues.filter(i => i.labels?.some(l => l.name === 'bug') && i.state === 'closed')),\n  highlights: []\n};\n\nreturn summary;"
+      },
+      "id": "aggregate-data",
+      "name": "📊 Aggregate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "maxTokens": 4096,
+        "temperature": 0.3,
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "={{ \nconst data = $json;\nreturn `You are a technical project manager. Generate a concise weekly dev summary.\n\nRepository: ${data.repo}\nWeek: ${data.week}\n\n📊 Stats:\n- Commits: ${data.stats.commits}\n- Merged PRs: ${data.stats.merged_prs}\n- Open Issues: ${data.stats.open_issues}\n\nRecent Commits:\n${data.recent_commits}\n\nMerged PRs:\n${data.merged_prs_list}\n\nBug Fixes:\n${data.bug_fixes}\n\nWrite a structured summary with:\n1. ⭐ Highlights\n2. 📈 Progress (key metrics vs last week)\n3. 🐛 Bug Fixes\n4. 🎯 Focus for Next Week\n\nKeep it concise, actionable, and professional. Use emojis for readability.`\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-api",
+      "name": "🤖 Claude Sonnet",
+      "type": "n8n-nodes-base.n8nLlm",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "anthropicApi": "claude-api-key"
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "dev-summary@yourcompany.com",
+        "toEmail": "={{ $json.email || 'team@yourcompany.com' }}",
+        "subject": "={{ '📊 Weekly Dev Summary — ' + $json.repo + ' (' + $json.week + ')' }}",
+        "text": "={{ $json.aiSummary || $json.report }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "📧 Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "smtp": "smtp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.webhookUrl || 'https://hooks.slack.com/services/YOUR/WEBHOOK' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ '*📊 Weekly Dev Summary*\\n' + $json.repo + ' (' + $json.week + ')*\\n\\n' + $json.aiSummary }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-slack",
+      "name": "💬 Slack Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 450],
+      "credentials": {}
+    }
+  ],
+  "connections": {
+    "⏰ Weekly Schedule": {
+      "main": [[ { "node": "🔧 Build Context", "type": "main", "index": 0 } ]]
+    },
+    "🔧 Build Context": {
+      "main": [
+        [
+          { "node": "📡 Fetch Commits", "type": "main", "index": 0 },
+          { "node": "📡 Fetch Merged PRs", "type": "main", "index": 0 },
+          { "node": "📡 Fetch Issues", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "📡 Fetch Commits": {
+      "main": [[ { "node": "📊 Aggregate Data", "type": "main", "index": 0 } ]]
+    },
+    "📡 Fetch Merged PRs": {
+      "main": [[ { "node": "📊 Aggregate Data", "type": "main", "index": 0 } ]]
+    },
+    "📡 Fetch Issues": {
+      "main": [[ { "node": "📊 Aggregate Data", "type": "main", "index": 0 } ]]
+    },
+    "📊 Aggregate Data": {
+      "main": [[ { "node": "🤖 Claude Sonnet", "type": "main", "index": 0 } ]]
+    },
+    "🤖 Claude Sonnet": {
+      "main": [
+        [
+          { "node": "📧 Email Report", "type": "main", "index": 0 },
+          { "node": "💬 Slack Notification", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "active": true,
+  "settings": {}
+}
