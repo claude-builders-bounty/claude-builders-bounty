@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Claude Code PR Review Agent — analyze a GitHub PR and post a structured review."""
+import os, sys, json, argparse, re, subprocess
+
+def main():
+    parser = argparse.ArgumentParser(description='Review a GitHub PR using Claude API')
+    parser.add_argument('--pr', required=True, help='PR URL (github.com/owner/repo/pull/N)')
+    parser.add_argument('--api-key', help='Anthropic API key (or set ANTHROPIC_API_KEY)')
+    args = parser.parse_args()
+
+    api_key = args.api_key or os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        print('Error: ANTHROPIC_API_KEY not set. Use --api-key or export ANTHROPIC_API_KEY.', file=sys.stderr)
+        sys.exit(1)
+
+    parsed = parse_pr_url(args.pr)
+    if not parsed:
+        print(f'Error: Invalid PR URL: {args.pr}', file=sys.stderr)
+        sys.exit(1)
+
+    owner, repo, pr_num = parsed
+    print(f'Fetching PR diff for {owner}/{repo}#{pr_num}...')
+
+    diff = fetch_pr_diff(owner, repo, pr_num)
+    if not diff:
+        print('Error: Could not fetch PR diff.', file=sys.stderr)
+        sys.exit(1)
+
+    print(f'Diff size: {len(diff)} chars. Sending to Claude for analysis...')
+    review = call_claude(diff, owner, repo, pr_num, api_key)
+    print(review)
+
+def parse_pr_url(url):
+    m = re.match(r'https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)', url)
+    return (m.group(1), m.group(2), int(m.group(3))) if m else None
+
+def fetch_pr_diff(owner, repo, pr_num):
+    url = f'https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}'
+    headers = {'Accept': 'application/vnd.github.v3.diff'}
+    token = os.environ.get('GITHUB_TOKEN', '')
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    try:
+        r = subprocess.run(['curl', '-sL', '-H', f'Accept: {headers["Accept"]}', url], capture_output=True, text=True, timeout=30)
+        return r.stdout if r.returncode == 0 else None
+    except:
+        return None
+
+def call_claude(diff, owner, repo, pr_num, api_key):
+    prompt = f"""You are a senior code reviewer. Analyze this GitHub pull request diff and provide a structured review.
+PR: {owner}/{repo}#{pr_num}
+
+## PR Diff
+
+
+Return a Markdown-formatted review with these sections:
+## Summary
+(2-3 sentences describing the changes)
+
+## Identified Risks
+- Risk 1
+- Risk 2
+
+## Improvement Suggestions
+- Suggestion 1
+- Suggestion 2
+
+## Confidence Score
+**High** / **Medium** / **Low** (with brief justification)"""
+
+    payload = {
+        'model': 'claude-sonnet-4-20250514',
+        'max_tokens': 4000,
+        'messages': [{'role': 'user', 'content': prompt}]
+    }
+    r = subprocess.run(['curl', '-s', 'https://api.anthropic.com/v1/messages',
+        '-H', f'x-api-key: {api_key}',
+        '-H', 'anthropic-version: 2023-06-01',
+        '-H', 'Content-Type: application/json',
+        '-d', json.dumps(payload)], capture_output=True, text=True, timeout=120)
+    data = json.loads(r.stdout)
+    return data['content'][0]['text']
+
+if __name__ == '__main__':
+    main()
