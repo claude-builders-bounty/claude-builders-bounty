@@ -34,6 +34,52 @@ You're in the right place.
 
 ---
 
+## Claude Code Destructive Command Hook
+
+This repository includes a Claude Code `pre-tool-use` hook that blocks high-risk Bash commands before they run.
+
+### Install
+
+```bash
+npm run build
+node scripts/install-block-dangerous-bash.js
+```
+
+### Configure Claude Code
+
+Add the installed hook script to your Claude Code `pre-tool-use` hooks configuration for Bash tools:
+
+```json
+{
+  "hooks": {
+    "pre-tool-use": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/block-dangerous-bash.js"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The hook blocks `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` statements without a `WHERE` clause. Every blocked command is written to `~/.claude/hooks/blocked.log` as a JSON line with the timestamp, matched pattern, attempted command, and project path.
+
+Run the local checks with:
+
+```bash
+npm run type-check
+npm test
+npm run lint
+npm run build
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
