@@ -1,0 +1,65 @@
+name: 🤖 Claude PR Review Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    name: AI PR Review
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR diff
+        id: diff
+        run: |
+          PR_URL="https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+
+      - name: Run Claude Code Review
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x .github/workflows/claude-review.sh
+          REVIEW_FILE="/tmp/pr-review-${{ github.event.pull_request.number }}.md"
+          bash .github/workflows/claude-review.sh \
+            --pr "${{ steps.diff.outputs.pr_url }}" \
+            --output "$REVIEW_FILE"
+          echo "review_file=$REVIEW_FILE" >> $GITHUB_OUTPUT
+
+      - name: Post Review as PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reviewFile = '${{ steps.review.outputs.review_file }}';
+            const review = fs.readFileSync(reviewFile, 'utf8');
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: review
+            });
+            
+            // Set review status
+            await github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ['🤖 reviewed']
+            });
