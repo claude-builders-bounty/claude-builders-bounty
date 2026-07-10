@@ -1,0 +1,376 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "dayOfWeek": [
+                5
+              ]
+            }
+          ]
+        }
+      },
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        320
+      ],
+      "id": "c1407317-b91b-4717-a384-361118265ec2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "189ae749-9ae9-4b01-bb05-bfa87c398c67",
+              "name": "owner",
+              "type": "string",
+              "value": "={{ $env.GH_OWNER }}"
+            },
+            {
+              "id": "5466f991-f4cf-459d-a5c0-5b9b77d7727d",
+              "name": "repo",
+              "type": "string",
+              "value": "={{ $env.GH_REPO }}"
+            },
+            {
+              "id": "8337919e-1076-4be9-a740-5f68c6775160",
+              "name": "language",
+              "type": "string",
+              "value": "={{ $env.LANG || 'EN' }}"
+            },
+            {
+              "id": "1c3930c1-b300-4d91-bc94-bc799616e6d3",
+              "name": "sinceISO",
+              "type": "string",
+              "value": "={{ $now.minus({days:7}).toISO() }}"
+            },
+            {
+              "id": "bbe4b349-5d06-4d60-b517-a25cfce3c500",
+              "name": "sinceDate",
+              "type": "string",
+              "value": "={{ $now.minus({days:7}).toFormat('yyyy-MM-dd') }}"
+            }
+          ]
+        }
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        320
+      ],
+      "id": "c1981424-88e6-4ce1-9d63-18427fd098ca"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GH_OWNER }}/{{ $env.GH_REPO }}/commits?since={{ $json.sinceISO }}&per_page=100",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        }
+      },
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        160
+      ],
+      "id": "0755760a-ce42-48a7-b65c-98b7ae5c3eeb"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GH_OWNER }}/{{ $env.GH_REPO }}/issues?state=closed&since={{ $json.sinceISO }}&per_page=100",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        }
+      },
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        320
+      ],
+      "id": "01481fd1-68c4-4b89-9228-20edfa611a84"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/search/issues?q=repo:{{ $env.GH_OWNER }}/{{ $env.GH_REPO }}+is:pr+is:merged+merged:>{{ $json.sinceDate }}&per_page=100",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        }
+      },
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        480
+      ],
+      "id": "f3f9a46d-b61d-4077-847b-368bd50f4009"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate the three GitHub API branches into one prompt for Claude\nconst commits = ($items(\"Get Commits\")[0]?.json) || [];\nconst issuesRaw = ($items(\"Get Closed Issues\")[0]?.json) || [];\nconst prSearch = ($items(\"Get Merged PRs\")[0]?.json) || {};\nconst prs = prSearch.items || [];\n\nconst issues = issuesRaw.filter(i => !i.pull_request); // issues endpoint also returns PRs\n\nconst lang = ($env.LANG || 'EN').toUpperCase();\nconst L = lang === 'FR'\n  ? 'Rédige le résumé en français.'\n  : 'Write the summary in English.';\n\nconst commitLines = commits.slice(0, 30).map(c => `- ${String(c.commit?.message || '').split('\\n')[0]} (${(c.author?.login) || c.commit?.author?.name || '?'})`).join('\\n');\nconst issueLines = issues.slice(0, 30).map(i => `- #${i.number} ${i.title} (${(i.user?.login) || '?'})`).join('\\n');\nconst prLines = prs.slice(0, 30).map(p => `- #${p.number} ${p.title} (${(p.user?.login) || '?'})`).join('\\n');\n\nconst prompt = `You are an engineering lead writing a concise weekly narrative summary for a GitHub repository.\n${L}\n\nRepository: ${$env.GH_OWNER}/${$env.GH_REPO}\nWindow: the last 7 days.\n\nProduce:\n1. A 2-4 sentence narrative overview of what progressed this week.\n2. Bullet highlights grouped as: Merged PRs, Closed Issues, Notable Commits.\n3. A short \"looking ahead\" sentence if warranted.\n\n=== MERGED PRS (${prs.length}) ===\n${prLines || '(none)'}\n\n=== CLOSED ISSUES (${issues.length}) ===\n${issueLines || '(none)'}\n\n=== COMMITS (${commits.length}) ===\n${commitLines || '(none)'}\n`;\nreturn [{ json: { prompt, counts: { commits: commits.length, issues: issues.length, prs: prs.length } } }];\n"
+      },
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        320
+      ],
+      "id": "6e30053a-1bd4-4296-8054-ad8406ecd0bd"
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { \"model\": \"claude-sonnet-4-20250514\", \"max_tokens\": 1500, \"system\": \"You write crisp, professional weekly engineering summaries. Be factual and avoid fluff.\", \"messages\": [ { \"role\": \"user\", \"content\": $json.prompt } ] } }}",
+        "options": {}
+      },
+      "name": "Generate Summary (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        320
+      ],
+      "id": "94f52384-519e-4fcc-b8aa-ce3161b318cc"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ec64e221-4b7a-4ec2-8295-aa33bfd1acaa",
+              "name": "summary",
+              "type": "string",
+              "value": "={{ $json.content[0].text }}"
+            }
+          ]
+        }
+      },
+      "name": "Format Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1340,
+        320
+      ],
+      "id": "c1cfc90d-e2fe-4d33-a9e9-2b65f125f4a6"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DELIVERY_WEBHOOK }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { \"text\": $json.summary, \"content\": $json.summary } }}",
+        "options": {}
+      },
+      "name": "Deliver (Slack/Discord)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        320
+      ],
+      "id": "9492353d-ef7c-461d-8e84-50d9532a4f65"
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Format Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Summary": {
+      "main": [
+        [
+          {
+            "node": "Deliver (Slack/Discord)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "42166ad3-38d6-4dd9-9281-1ec5ab2e4cb5",
+  "meta": {
+    "templateId": null,
+    "instanceId": null
+  },
+  "id": "c06413e6-2fdb-4d97-be98-f508722b2e58",
+  "pinData": {}
+}
