@@ -1,0 +1,241 @@
+{
+  "name": "GitHub Weekly Dev Summary — n8n + Claude (Bounty Submission)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "weekly-trigger",
+      "name": "Every Friday at 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "notes": "Fires every Friday at 17:00 local time. Change timezone in Settings."
+    },
+    {
+      "parameters": {
+        "jsCode": "// === CONFIGURATION — edit these variables ===\nconst CONFIG = {\n  GITHUB_OWNER: 'claude-builders-bounty',     // GitHub username or org\n  GITHUB_REPO: 'claude-builders-bounty',       // Repository name\n  LANGUAGE: 'EN',                              // 'EN' or 'FR'\n  DELIVERY_TYPE: 'slack',                      // 'slack', 'discord', or 'email'\n  SLACK_WEBHOOK: 'https://hooks.slack.com/services/YOUR_WEBHOOK',\n  DISCORD_WEBHOOK: 'https://discord.com/api/webhooks/YOUR_WEBHOOK',\n  EMAIL_TO: 'dev-team@yourcompany.com'\n};\n\n// Calculate date range: last 7 days\nconst now = new Date();\nconst since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst sinceISO = since.toISOString();\nconst untilISO = now.toISOString();\n\nconsole.log(`Generating weekly summary for ${CONFIG.GITHUB_OWNER}/${CONFIG.GITHUB_REPO}`);\nconsole.log(`Period: ${sinceISO} to ${untilISO}`);\n\nreturn [{\n  json: {\n    ...CONFIG,\n    since_date: sinceISO,\n    until_date: untilISO,\n    week_label: `Week of ${since.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`\n  }\n}];"
+      },
+      "id": "config",
+      "name": "Set Config & Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "notes": "Edit GITHUB_OWNER, GITHUB_REPO, LANGUAGE, and DELIVERY_TYPE here"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{ $json.since_date }}" },
+            { "name": "until", "value": "={{ $json.until_date }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 200],
+      "notes": "GitHub API — set Authorization header: token YOUR_GITHUB_TOKEN"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Set Config & Date Range').first().json.GITHUB_OWNER }}/{{ $('Set Config & Date Range').first().json.GITHUB_REPO }}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "since", "value": "={{ $('Set Config & Date Range').first().json.since_date }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 340]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Set Config & Date Range').first().json.GITHUB_OWNER }}/{{ $('Set Config & Date Range').first().json.GITHUB_REPO }}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "sort", "value": "updated" },
+            { "name": "direction", "value": "desc" },
+            { "name": "per_page", "value": "50" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all GitHub data into a structured summary\nconst config = $('Set Config & Date Range').first().json;\nconst since = new Date(config.since_date);\n\n// Process commits\nconst commits = $('Fetch Commits').first().json;\nconst commitList = (Array.isArray(commits) ? commits : []).map(c => ({\n  sha: c.sha?.substring(0, 7),\n  author: c.commit?.author?.name || c.author?.login,\n  message: c.commit?.message?.split('\\n')[0] || '',\n  date: c.commit?.author?.date\n}));\n\n// Process issues\nconst issues = $('Fetch Closed Issues').first().json;\nconst closedIssues = (Array.isArray(issues) ? issues : [])\n  .filter(i => !i.pull_request && new Date(i.closed_at) >= since)\n  .map(i => ({\n    number: i.number,\n    title: i.title,\n    closed_by: i.closed_by?.login,\n    labels: i.labels?.map(l => l.name).join(', ')\n  }));\n\n// Process PRs\nconst prs = $('Fetch Merged PRs').first().json;\nconst mergedPRs = (Array.isArray(prs) ? prs : [])\n  .filter(p => p.merged_at && new Date(p.merged_at) >= since)\n  .map(p => ({\n    number: p.number,\n    title: p.title,\n    author: p.user?.login,\n    merged_at: p.merged_at\n  }));\n\n// Build stats\nconst uniqueAuthors = [...new Set(commitList.map(c => c.author).filter(Boolean))];\n\nconsole.log(`Stats: ${commitList.length} commits, ${closedIssues.length} issues, ${mergedPRs.length} merged PRs`);\n\nreturn [{\n  json: {\n    config,\n    week_label: config.week_label,\n    repo: `${config.GITHUB_OWNER}/${config.GITHUB_REPO}`,\n    stats: {\n      total_commits: commitList.length,\n      unique_contributors: uniqueAuthors.length,\n      closed_issues: closedIssues.length,\n      merged_prs: mergedPRs.length\n    },\n    commits: commitList.slice(0, 30),\n    closed_issues: closedIssues.slice(0, 20),\n    merged_prs: mergedPRs.slice(0, 15),\n    contributors: uniqueAuthors\n  }\n}];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 340]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1500,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.config.LANGUAGE === 'FR' ? 'Génère un résumé narratif hebdomadaire en français pour ce dépôt GitHub. Le ton doit être professionnel, clair et engageant. Mets en avant les accomplissements clés, les tendances, et tout problème notable.' : 'Generate a weekly narrative summary for this GitHub repository. Tone: professional, concise, and engaging. Highlight key accomplishments, trends, and any notable issues.' }}\\n\\nRepository: {{ $json.repo }}\\nPeriod: {{ $json.week_label }}\\n\\nSTATS:\\n- Total commits: {{ $json.stats.total_commits }}\\n- Unique contributors: {{ $json.stats.unique_contributors }} ({{ $json.contributors.join(', ') }})\\n- Closed issues: {{ $json.stats.closed_issues }}\\n- Merged PRs: {{ $json.stats.merged_prs }}\\n\\nCOMMITS THIS WEEK:\\n{{ $json.commits.map(c => `[${c.sha}] ${c.author}: ${c.message}`).join('\\\\n') }}\\n\\nCLOSED ISSUES:\\n{{ $json.closed_issues.map(i => `#${i.number} ${i.title} [closed by: ${i.closed_by}]`).join('\\\\n') }}\\n\\nMERGED PULL REQUESTS:\\n{{ $json.merged_prs.map(p => `#${p.number} ${p.title} by @${p.author}`).join('\\\\n') }}\\n\\nFormat your response as:\\n1. **{{ $json.config.LANGUAGE === 'FR' ? 'Résumé de la semaine' : 'Week in Review' }}** (2-3 sentence narrative overview)\\n2. **{{ $json.config.LANGUAGE === 'FR' ? 'Points clés' : 'Key Highlights' }}** (3-5 bullet points)\\n3. **{{ $json.config.LANGUAGE === 'FR' ? 'Contributeurs' : 'Contributors' }}** (brief shoutout)\\n4. **{{ $json.config.LANGUAGE === 'FR' ? 'À suivre' : 'Looking Ahead' }}** (1-2 sentences based on open work)\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude-summary",
+      "name": "Claude: Generate Narrative Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 340],
+      "notes": "Uses claude-sonnet-4-20250514 as required by bounty spec. Set X-API-Key header in credentials."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build the final formatted message for delivery\nconst data = $('Aggregate GitHub Data').first().json;\nconst claudeResponse = $input.first().json;\n\nconst narrative = claudeResponse.content?.[0]?.text || 'Summary unavailable.';\nconst stats = data.stats;\n\n// Format for different platforms\nconst slackMessage = {\n  text: `📊 *Weekly Dev Summary: ${data.repo}*\\n_${data.week_label}_`,\n  blocks: [\n    {\n      type: 'header',\n      text: { type: 'plain_text', text: `📊 Weekly Dev Summary: ${data.repo}` }\n    },\n    {\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: `*${data.week_label}*\\n\\n*Quick Stats:* ${stats.total_commits} commits · ${stats.merged_prs} PRs merged · ${stats.closed_issues} issues closed · ${stats.unique_contributors} contributors`\n      }\n    },\n    {\n      type: 'section',\n      text: { type: 'mrkdwn', text: narrative }\n    },\n    {\n      type: 'context',\n      elements: [{ type: 'mrkdwn', text: `Generated by n8n + Claude Sonnet · Every Friday 5pm` }]\n    }\n  ]\n};\n\nconst discordMessage = {\n  content: null,\n  embeds: [{\n    title: `📊 Weekly Dev Summary: ${data.repo}`,\n    description: `**${data.week_label}**\\n\\n**Stats:** ${stats.total_commits} commits · ${stats.merged_prs} PRs · ${stats.closed_issues} issues closed · ${stats.unique_contributors} contributors\\n\\n${narrative}`,\n    color: 0x4361EE,\n    footer: { text: 'Generated by n8n + Claude Sonnet' }\n  }]\n};\n\nconst emailBody = `Weekly Dev Summary: ${data.repo}\\n${data.week_label}\\n\\nStats: ${stats.total_commits} commits, ${stats.merged_prs} PRs merged, ${stats.closed_issues} issues closed, ${stats.unique_contributors} contributors\\n\\n${narrative}`;\n\nreturn [{\n  json: {\n    config: data.config,\n    narrative,\n    slack_payload: slackMessage,\n    discord_payload: discordMessage,\n    email_body: emailBody,\n    subject: `Dev Summary: ${data.repo} — ${data.week_label}`,\n    delivery_type: data.config.DELIVERY_TYPE\n  }\n}];"
+      },
+      "id": "format-message",
+      "name": "Format Delivery Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 340]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.delivery_type }}",
+              "rightValue": "slack",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "route-delivery",
+      "name": "Route by Delivery Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1560, 340]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.config.SLACK_WEBHOOK }}",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.slack_payload) }}",
+        "options": {}
+      },
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 220],
+      "notes": "Posts the rich Slack block message to your webhook"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.config.DISCORD_WEBHOOK }}",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.discord_payload) }}",
+        "options": {}
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 380],
+      "notes": "Posts the embed to your Discord channel"
+    },
+    {
+      "parameters": {
+        "fromEmail": "hello@santos-ops.com",
+        "toEmail": "={{ $json.config.EMAIL_TO }}",
+        "subject": "={{ $json.subject }}",
+        "text": "={{ $json.email_body }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1780, 540],
+      "notes": "Configure SMTP credentials for email delivery"
+    }
+  ],
+  "connections": {
+    "Every Friday at 5pm": {
+      "main": [[{ "node": "Set Config & Date Range", "type": "main", "index": 0 }]]
+    },
+    "Set Config & Date Range": {
+      "main": [[
+        { "node": "Fetch Commits", "type": "main", "index": 0 },
+        { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+        { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+      ]]
+    },
+    "Fetch Commits": {
+      "main": [[{ "node": "Aggregate GitHub Data", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{ "node": "Aggregate GitHub Data", "type": "main", "index": 0 }]]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{ "node": "Aggregate GitHub Data", "type": "main", "index": 0 }]]
+    },
+    "Aggregate GitHub Data": {
+      "main": [[{ "node": "Claude: Generate Narrative Summary", "type": "main", "index": 0 }]]
+    },
+    "Claude: Generate Narrative Summary": {
+      "main": [[{ "node": "Format Delivery Message", "type": "main", "index": 0 }]]
+    },
+    "Format Delivery Message": {
+      "main": [[{ "node": "Route by Delivery Type", "type": "main", "index": 0 }]]
+    },
+    "Route by Delivery Type": {
+      "slack": [[{ "node": "Send to Slack", "type": "main", "index": 0 }]],
+      "discord": [[{ "node": "Send to Discord", "type": "main", "index": 0 }]],
+      "email": [[{ "node": "Send Email", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["bounty", "github", "claude", "weekly-summary", "devops"],
+  "meta": { "instanceId": "santos-ops-github-weekly-summary-v1" }
+}
