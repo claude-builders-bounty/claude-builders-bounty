@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""
+pre-tool-use hook for Claude Code.
+Blocks destructive bash commands before execution.
+Install: cp this file to ~/.claude/hooks/pre-tool-use
+"""
+
+import json
+import sys
+import os
+import re
+from datetime import datetime
+
+# 危险命令模式 (case-insensitive)
+DANGEROUS_PATTERNS = [
+    # 递归删除
+    (r'\brm\s+(-[rRfF]+.*)?\s*/\s', 'rm -rf / (recursive root delete)'),
+    (r'\brm\s+-[rRfF]+', 'rm -rf (recursive force delete)'),
+    # 数据库破坏
+    (r'\bDROP\s+(TABLE|DATABASE|SCHEMA)\b', 'DROP TABLE/DATABASE/SCHEMA'),
+    (r'\bTRUNCATE\s+\w+', 'TRUNCATE table'),
+    (r'\bDELETE\s+FROM\s+\w+\s*(?!\s*WHERE)', 'DELETE FROM without WHERE clause'),
+    # git破坏性操作
+    (r'\bgit\s+push\s+.*\s+--force\b', 'git push --force'),
+    (r'\bgit\s+push\s+.*\s+-f\b(?!\s+\w)', 'git push -f (force push)'),
+    (r'\bgit\s+reset\s+.*\s+--hard\b', 'git reset --hard'),
+    (r'\bgit\s+clean\s+.*-[d]*f', 'git clean -df'),
+    # 磁盘操作
+    (r'\b(?:dd|mkfs|fdisk| parted)\s+', 'raw disk operation'),
+    (r'\bchmod\s+-R\s+777\s+/', 'chmod -R 777 /'),
+    (r'\bchown\s+-R\s+.*\s+/', 'chown -R on root'),
+    # 高危网络
+    (r'\bwget\s+.*\||\bcurl\s+.*\||\bbash\s+<(?:curl|wget)', 'pipe-from-internet (curl | bash)'),
+    # 权限提升
+    (r'\bsudo\s+rm\s', 'sudo rm'),
+    (r'\bchmod\s+4777\b', 'SUID bit 4777'),
+]
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+def log_blocked(command, reason, project):
+    """记录被阻止的命令"""
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    timestamp = datetime.now().isoformat()
+    entry = f"[{timestamp}] BLOCKED: {reason}\n  Command: {command[:200]}\n  Project: {project}\n  ---\n"
+    with open(LOG_FILE, 'a') as f:
+        f.write(entry)
+
+def check_command(command):
+    """检查命令是否危险，返回 (blocked, reason)"""
+    command_lower = command.lower()
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command_lower):
+            return True, reason
+    
+    # DELETE FROM without WHERE - 需要特殊处理
+    if re.search(r'\bDELETE\s+FROM\b', command_lower):
+        # 确保删除带WHERE
+        if not re.search(r'\bWHERE\b', command_lower, re.IGNORECASE):
+            return True, 'DELETE FROM without WHERE clause'
+    
+    return False, ""
+
+def main():
+    """主处理逻辑"""
+    # 读取输入 (Claude Code 通过stdin传递工具调用信息)
+    try:
+        input_data = json.loads(sys.stdin.read())
+    except json.JSONDecodeError:
+        # 如果不是JSON格式，允许通过
+        print(json.dumps({"allow": True}))
+        return
+    
+    tool_name = input_data.get("name", "")
+    tool_input = input_data.get("input", {})
+    
+    # 只检查 bash 工具
+    if tool_name not in ["bash", "execute_command", "shell"]:
+        print(json.dumps({"allow": True}))
+        return
+    
+    command = ""
+    if isinstance(tool_input, dict):
+        command = tool_input.get("command", "") or tool_input.get("cmd", "")
+    elif isinstance(tool_input, str):
+        command = tool_input
+    
+    if not command:
+        print(json.dumps({"allow": True}))
+        return
+    
+    # 检查是否危险
+    blocked, reason = check_command(command)
+    
+    if blocked:
+        project = os.getcwd()
+        log_blocked(command, reason, project)
+        
+        response = {
+            "allow": False,
+            "message": (
+                f"⛔ 安全拦截: `{reason}`\n\n"
+                f"该操作已被 pre-tool-use hook 阻止。\n"
+                f"如需执行，请手动在终端中执行，并确认安全性。\n"
+                f"已记录到: {LOG_FILE}"
+            )
+        }
+        print(json.dumps(response, ensure_ascii=False))
+    else:
+        print(json.dumps({"allow": True}))
+
+if __name__ == "__main__":
+    main()
