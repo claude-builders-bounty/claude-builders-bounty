@@ -1,0 +1,131 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/{{$env.GITHUB_REPO}}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "since", "value": "={{ $today.minus(7, 'days').toISO() }}"},
+            {"name": "per_page", "value": "100"}
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "Bearer {{$env.GITHUB_TOKEN}}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        }
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/{{$env.GITHUB_REPO}}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "state", "value": "closed"},
+            {"name": "since", "value": "={{ $today.minus(7, 'days').toISO() }}"},
+            {"name": "per_page", "value": "100"}
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "Bearer {{$env.GITHUB_TOKEN}}"},
+            {"name": "Accept", "value": "application/vnd.github.v3+json"}
+          ]
+        }
+      },
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 480]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{$env.CLAUDE_API_KEY}}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "content-type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 4096,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Create a weekly development summary for a GitHub repo. Summarize commits, closed issues, and merged PRs into a clear narrative.\\n\\nCommits: {{ $json.length }} total.\\nIssue titles: {{$node[\"Fetch Closed Issues\"].json.map(i => i.title).join(\"\\n\")}}\\n\\nWrite the summary:\"\n    }\n  ]\n}"
+      },
+      "id": "claude-api",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [920, 390]
+    },
+    {
+      "parameters": {
+        "subject": "=Weekly Dev Summary - {{$today.toFormat('yyyy-MM-dd')}}",
+        "text": "={{ JSON.parse($json.content)[0].text }}",
+        "html": "<pre>{{ JSON.parse($json.content)[0].text }}</pre>"
+      },
+      "id": "send-email",
+      "name": "Send Summary Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1160, 390]
+    }
+  ],
+  "connections": {
+    "Every Friday 5pm": {
+      "main": [[
+        {"node": "Fetch Commits", "type": "main", "index": 0},
+        {"node": "Fetch Closed Issues", "type": "main", "index": 0}
+      ]]
+    },
+    "Fetch Commits": {
+      "main": [[
+        {"node": "Generate Summary", "type": "main", "index": 0}
+      ]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[
+        {"node": "Generate Summary", "type": "main", "index": 0}
+      ]]
+    },
+    "Generate Summary": {
+      "main": [[
+        {"node": "Send Summary Email", "type": "main", "index": 0}
+      ]]
+    }
+  },
+  "settings": {"executionOrder": "v1"}
+}
