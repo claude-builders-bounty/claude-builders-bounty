@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook — 拦截危险 bash 命令
+安装: ln -s $(pwd)/pre-tool-use ~/.claude/hooks/pre-tool-use
+"""
+
+import json
+import re
+import sys
+import os
+from datetime import datetime, timezone
+
+LOG_FILE = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+# 危险模式 (正则)
+DANGEROUS_PATTERNS = [
+    (r"rm\s+-rf\b", "rm -rf (递归强制删除)"),
+    (r"rm\s+-r\b", "rm -r (递归删除)"),
+    (r"DROP\s+TABLE", "DROP TABLE (删除数据库表)"),
+    (r"DROP\s+DATABASE", "DROP DATABASE (删除数据库)"),
+    (r"TRUNCATE\b", "TRUNCATE (清空表数据)"),
+    (r"git\s+push\s+--force", "git push --force (强制推送)"),
+    (r"git\s+push\s+-f\b", "git push -f (强制推送)"),
+    (r"DELETE\s+FROM\s+\w+(?!\s+WHERE)", "DELETE FROM 无 WHERE 子句"),
+    (r"chmod\s+777", "chmod 777 (过度开放权限)"),
+    (r">\s*/dev/sd[a-z]", "写入块设备 (磁盘破坏)"),
+    (r"mkfs\.", "mkfs (格式化文件系统)"),
+    (r":\(\)\s*\{\s*:\|:&\s*\};:", "fork bomb"),
+    (r"dd\s+if=.*of=/dev/", "dd 写入块设备"),
+]
+
+
+def log_block(command: str, reason: str, project_path: str):
+    """记录拦截事件"""
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "command": command[:500],
+        "reason": reason,
+        "project": project_path or os.getcwd(),
+    }
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def main():
+    try:
+        data = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        sys.exit(0)  # 非 JSON 输入，放行
+
+    tool_name = data.get("tool_name", "")
+    tool_input = data.get("tool_input", {})
+
+    # 只拦截 Bash 命令
+    if tool_name != "Bash":
+        sys.exit(0)
+
+    command = tool_input.get("command", "")
+    if not command:
+        sys.exit(0)
+
+    project_path = data.get("cwd", os.getcwd())
+
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            log_block(command, reason, project_path)
+
+            # 向 Claude 输出阻止信息
+            print(json.dumps({
+                "decision": "block",
+                "reason": f"⛔ 命令被 pre-tool-use hook 拦截\n\n"
+                          f"危险操作: {reason}\n"
+                          f"匹配模式: `{pattern}`\n"
+                          f"日志: {LOG_FILE}\n\n"
+                          f"如需执行，请在 hook 配置中添加白名单。",
+            }))
+            sys.exit(1)
+
+    sys.exit(0)  # 放行
+
+
+if __name__ == "__main__":
+    main()
