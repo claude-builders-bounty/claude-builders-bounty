@@ -1,3 +1,22 @@
+CLAUDE.md
+<<<<<<< HEAD
+CLAUDE.md
+=======
+
+# CLAUDE.md for Next.js + SQLite SaaS Project
+
+## Stack & Versions
+
+- **Next.js Version**: 15 (using App Router)
+- **Database**: SQLite (better-sqlite3)
+- **TypeScript**: 5.0+
+- **Node.js**: 18.x+
+- **TailwindCSS**: 3.x
+- **Zod**: 3.x for validation
+
+## Project Structure
+
+
 # Claude Builders Bounty 🤖
 
 > A community bounty board for Claude Code builders.

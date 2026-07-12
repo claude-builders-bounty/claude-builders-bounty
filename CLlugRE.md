@@ -1,0 +1,3 @@
+# CLAUDE.MD
+
+## Project Structure
