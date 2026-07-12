@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook to block destructive bash commands.
+
+Place this file at:
+    ~/.claude/hooks/block-destructive-bash/pre-tool-use
+
+And make it executable:
+    chmod +x ~/.claude/hooks/block-destructive-bash/pre-tool-use
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+HOOK_DIR = Path(__file__).parent
+LOG_FILE = HOOK_DIR / "blocked.log"
+
+# Patterns that are always blocked
+DANGEROUS_PATTERNS = [
+    # rm -rf (any variant)
+    r"\brm\s+(?:-[a-zA-Z]*[rf]|[a-zA-Z]*\s+)-[a-zA-Z]*[rf]",
+    # DROP TABLE
+    r"\bDROP\s+TABLE\b",
+    # git push --force or -f
+    r"\bgit\s+push\s+(?:-[a-zA-Z]*f|--force)\b",
+    # TRUNCATE
+    r"\bTRUNCATE\b",
+]
+
+# Patterns that require additional validation
+CONDITIONAL_PATTERNS = [
+    # DELETE FROM without WHERE
+    r"\bDELETE\s+FROM\b",
+]
+
+
+def log_blocked(command: str, project_path: str):
+    timestamp = datetime.now().isoformat()
+    with open(LOG_FILE, "a") as f:
+        f.write(f"{timestamp} | {project_path} | {command}\n")
+
+
+def is_dangerous(command: str) -> tuple[bool, str]:
+    for pattern in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True, f"Matched dangerous pattern: {pattern}"
+
+    for pattern in CONDITIONAL_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            if "WHERE" not in command.upper():
+                return True, f"Matched dangerous pattern: {pattern} (no WHERE clause)"
+
+    return False, ""
+
+
+def main():
+    try:
+        payload = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+    tool_name = payload.get("tool_name", "")
+    tool_input = payload.get("tool_input", {})
+
+    if tool_name != "bash":
+        sys.exit(0)
+
+    command = tool_input.get("command", "")
+    project_path = payload.get("project_path", os.getcwd())
+
+    dangerous, reason = is_dangerous(command)
+    if dangerous:
+        log_blocked(command, project_path)
+        print(f"🚫 BLOCKED: This command was prevented from running.\nReason: {reason}\nCommand: {command}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

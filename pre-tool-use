@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+
+import json
+import sys
+import re
+import datetime
+from pathlib import Path
+
+# Configuration
+DANGEROUS_PATTERNS = [
+    r'rm\s+-rf',
+    r'rm\s+.*-r.*f',
+    r'rm\s+.*-f.*r',
+    r'DROP\s+TABLE',
+    r'git\s+push\s+--force',
+    r'TRUNCATE',
+    r'DELETE\s+FROM(?!\s+\w+\s+WHERE).'
+]
+
+def log_blocked_command(command, project_path):
+    """Log blocked commands to file"""
+    log_file = Path.home() / '.claude' / 'hooks' / 'blocked.log'
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.datetime.now().isoformat()
+    entry = f"[{timestamp}] Command: {command} | Project: {project_path}\n"
+    
+    with open(log_file, 'a') as f:
+        f.write(entry)
+
+def is_dangerous(command):
+    """Check if command matches dangerous patterns"""
+    for pattern in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True
+    return False
+
+def main():
+    # Read the tool use request from stdin
+    input_data = sys.stdin.read().strip()
+    if not input_model:
+        print("Error: No input received", file=sys.stderr)
+        sys.exit(1)
+    
+    try:
+        tool_use = json.loads(input_data)
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Only process bash commands
+    if tool_use.get('tool') != 'bash':
+        # Not a bash command, allow it
+        print(input_data)
+        return
+    
+    # Get the command
+    command = tool_use.get('command', '')
+    project_path = tool_use.get('project_path', 'unknown')
+    
+    # Check if command is dangerous
+    if is_dangerous(command):
+        # Log the blocked attempt
+        log_blocked_command(command, project_path)
+        
+        # Create response for Claude
+        response = {
+            "blocked": True,
+            "reason": f"Blocked dangerous command: {command}",
+            "message": f"⚠️  Claude, I've blocked a potentially destructive command: '{command}'. This helps prevent accidental data loss.",
+            "tool": "bash",
+            "command": command
+        }
+        
+        # Write block message to log for Claude's context
+        log_entry = f"[{datetime.datetime.now().isoformat()}] Blocked command: {command} in project: {project_path}\n"
+        log_file = Path.home() / '.claude' / 'hooks' / 'blocked.log'
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_file, 'a') as f:
+            f.write(log_entry)
+        
+        print(json.dumps(response))
+        sys.exit(0)
+    
+    # Safe command, pass through
+    print(input_data)
+
+if __name__ == '__main__':
+    main()

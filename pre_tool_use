@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import json
+import datetime
+from pathlib import Path
+
+# Configuration
+LOG_FILE = Path.home() / '.claude' / 'hooks' / 'blocked.log'
+LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+# Ensure log file exists
+LOG_FILE.touch(exist_ok=True)
+
+# Destructive patterns to block
+BLOCKED_PATTERNS = [
+    'rm -rf',
+    'DROP TABLE',
+    'git push --force',
+    'TRUNCATE',
+    'DELETE FROM'
+]
+
+def should_block_command(command):
+    """Check if a command should be blocked based on predefined patterns"""
+    # Check for exact matches and variations
+    if 'rm -rf' in command:
+        return True, 'rm -rf'
+    
+    if 'DROP TABLE' in command:
+        return True, 'DROP TABLE'
+    
+    if 'git push --force' in command:
+        return True, 'git push --force'
+    
+    if 'TRUNCATE' in command:
+        return True, 'TRUNCATE'
+    
+    # Special handling for DELETE FROM without WHERE clause
+    if 'DELETE FROM' in command and 'TRUNCATE' and 'WHERE' not in command:
+        return True, 'DELETE FROM (without WHERE clause)'
+    
+    if 'TRUNCATE' in command:
+        return True, 'TRUNCATE'
+    
+    return False, None
+
+def log_blocked_command(command, project_path):
+    """Log the blocked command attempt to file"""
+    timestamp = datetime.datetime.now().isoformat()
+    log_entry = f"[{timestamp}] Blocked command: {command} (Project: {project_path})\n"
+    
+    with open(LOG_FILE, 'a') as f:
+        f.write(log_entry)
+
+def main():
+    """Main hook function"""
+    if len(sys.argv) < 2:
+        return 0  # No command provided, allow normal operation
+
+    # Read the command from stdin (passed by Claude Code)
+    input_data = sys.stdin.read()
+    if not input_data:
+        return 0
+    
+    try:
+        data = json.loads(input_data)
+        command = data.get('command', '')
+        project_path = data.get('project_path', 'Unknown')
+    except:
+        command = input_data.strip()
+        project_path = 'Unknown'
+
+    # Check if command should be blocked
+    should_block, pattern = should_block_command(command)
+    
+    if should_block:
+        # Log the blocked attempt
+        log_blocked_command(command, project_path)
+        
+        # Print explanation to stdout for Claude
+        print(f"BLOCKED: Dangerous command pattern '{pattern}' detected and prevented.")
+        print(f"Blocked command: {command}")
+        print("This command has been blocked for security reasons.")
+        print("Check ~/.claude/hooks/blocked.log for details.")
+        return 1
+    
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

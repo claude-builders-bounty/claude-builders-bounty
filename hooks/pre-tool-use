@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook that intercepts dangerous bash commands.
+Blocks destructive patterns like rm -rf, DROP TABLE, git push --force, etc.
+Logs blocked attempts to ~/.claude/hooks/blocked.log
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
+BLOCKED_LOG = os.path.join(HOOKS_DIR, "blocked.log")
+
+# Patterns that will be blocked
+DANGEROUS_PATTERNS = [
+    # rm -rf variations
+    (r'\brm\s+.*-rf\b', "rm -rf (recursive force remove)"),
+    (r'\brm\s+.*-r\s+.*-f\b', "rm -r -f (recursive force remove)"),
+    (r'\brm\s+.*--recursive\s+.*--force\b', "rm --recursive --force"),
+    (r'\brm\s+-rf\b', "rm -rf (recursive force remove)"),
+    
+    # SQL destructive commands
+    (r'\bDROP\s+TABLE\b', "DROP TABLE (destroys table and all data)"),
+    (r'\bDROP\s+DATABASE\b', "DROP DATABASE (destroys entire database)"),
+    (r'\bTRUNCATE\s+(TABLE\s+)?\w+', "TRUNCATE (removes all rows from table)"),
+    (r'\bDELETE\s+FROM\s+\w+\s*$', "DELETE FROM without WHERE clause (deletes all rows)"),
+    (r'\bDELETE\s+FROM\s+\w+\s*;', "DELETE FROM without WHERE clause (deletes all rows)"),
+    
+    # Git destructive commands
+    (r'\bgit\s+push\s+.*--force\b', "git push --force (overwrites remote history)"),
+    (r'\bgit\s+push\s+.*-f\b', "git push -f (force push, overwrites remote)"),
+    (r'\bgit\s+push\s+--force-with-lease\b', "git push --force-with-lease (destructive force push)"),
+    (r'\bgit\s+reset\s+--hard\b', "git reset --hard (discards all uncommitted changes)"),
+    (r'\bgit\s+clean\s+.*-f[dx]?\b', "git clean -f (force remove untracked files)"),
+    
+    # Other destructive commands
+    (r'\bchmod\s+777\b', "chmod 777 (world-writable permissions)"),
+    (r'\bchmod\s+-R\s+777\b', "chmod -R 777 (recursive world-writable)"),
+    (r'\b:(){ :\|:& };:\b', "Fork bomb detected"),
+    (r'\bdd\s+if=.*of=/dev/sd[a-z]\b', "dd to block device (can destroy data)"),
+    (r'\bmkfs\.\w+\s+/dev/', "mkfs on device (destroys filesystem)"),
+]
+
+
+def log_blocked_attempt(command: str, project_path: str) -> None:
+    """Log a blocked command attempt to the blocked log file."""
+    os.makedirs(HOOKS_DIR, exist_ok=True)
+    
+    timestamp = datetime.now().isoformat()
+    log_entry = (
+        f"[{timestamp}] BLOCKED\n"
+        f"  Command: {command}\n"
+        f"  Project: {project_path}\n"
+        f"{'-' * 60}\n"
+    )
+    
+    with open(BLOCKED_LOG, "a") as f:
+        f.write(log_entry)
+
+
+def check_command(command: str) -> tuple[bool, str | None]:
+    """
+    Check if a command matches any dangerous pattern.
+    Returns (is_dangerous, reason).
+    """
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True, reason
+    return False, None
+
+
+def main():
+    """Main hook handler."""
+    try:
+        hook_input = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        # If we can't parse input, allow the command through
+        sys.exit(0)
+    
+    tool_name = hook_input.get("tool_name", "")
+    tool_input = hook_input.get("tool_input", {})
+    
+    # Only intercept Bash commands
+    if tool_name != "Bash":
+        sys.exit(0)
+    
+    command = tool_input.get("command", "")
+    if not command:
+        sys.exit(0)
+    
+    project_path = hook_input.get("cwd", os.getcwd())
+    
+    is_dangerous, reason = check_command(command)
+    
+    if is_dangerous:
+        log_blocked_attempt(command, project_path)
+        
+        # Output a clear message to Claude explaining why it was blocked
+        response = {
+            "decision": "block",
+            "reason": (
+                f"🚫 BLOCKED: This command was intercepted by the safety hook.\n"
+                f"   Pattern detected: {reason}\n"
+                f"   Command: {command}\n"
+                f"   This command could cause irreversible damage.\n"
+                f"   If you are absolutely certain this is safe, you can:\n"
+                f"   1. Review the command manually\n"
+                f"   2. Temporarily disable the hook\n"
+                f"   3. Use a safer alternative\n"
+            ),
+        }
+        print(json.dumps(response))
+        sys.exit(2)
+    
+    # Allow the command
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

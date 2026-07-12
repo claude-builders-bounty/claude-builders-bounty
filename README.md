@@ -1,3 +1,5 @@
+<!-- BEGIN_README -->
+
 # Claude Builders Bounty 🤖
 
 > A community bounty board for Claude Code builders.
@@ -43,9 +45,11 @@ You're in the right place.
 
 ---
 
-## Community
+---
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
+*Started by the Claude builder community · March 2026 · MIT License*
+
+<!-- END_README -->
 - 📧 Contact: claudebounty@gmail.com
 
 ---

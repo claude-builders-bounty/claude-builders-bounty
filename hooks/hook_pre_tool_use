@@ -1,0 +1,82 @@
+#!/bin/bash
+
+# Hook that blocks destructive bash commands before they are executed
+
+# List of blocked patterns (case insensitive)
+BLOCKED_PATTERNS=(
+    "rm -rf"
+    "DROP TABLE"
+    "git push --force"
+    "TRUNCATE"
+    "DELETE FROM"
+)
+
+# Log file location
+LOG_FILE="$HOME/.claude/hooks/blocked.log"
+
+# Ensure log file exists
+mkdir -p "$(dirname "$LOG_FILE")"
+touch "$LOG_FILE"
+
+# Get the command from Claude Code
+COMMAND="$1"
+
+# Current working directory (project path)
+PROJECT_PATH="$(pwd)"
+
+# Function to check if command contains blocked patterns
+is_blocked() {
+    local cmd="$1"
+    local pattern
+    
+    for pattern in "${BLOCKED_PATTERNS[@]}"; do
+        # Case insensitive check
+        if [[ "${cmd,,}" == *"${pattern,,}"* ]]; then
+            # Special handling for DELETE FROM to check for WHERE clause
+            if [[ "${pattern,,}" == "delete from" ]]; then
+                # Check if it contains "where" (to allow safe DELETE statements)
+                if [[ ! "${cmd,,}" == *where* ]]; then
+                    return 0  # DELETE without WHERE is blocked
+                fi
+            else
+                # For all other patterns, block them
+                return 0
+            fi
+        fi
+    done
+    return 1  # Not blocked
+}
+
+# Check if the command is blocked
+if is_blocked "$COMMAND"; then
+    # Log the blocked attempt with timestamp and project path
+    TIMESTAMP=$(date -Iseconds)
+    echo "[$TIMESTAMP] Blocked command: $COMMAND (Project: $PROJECT_PATH)" >> "$LOG_FILE"
+    
+    # Output to Claude explaining why it's blocked
+    cat << EOF
+{
+  "blocked": true,
+  "message": "❌ Blocked destructive command: $COMMAND",
+  "reason": "The command contains potentially destructive patterns that are blocked for safety",
+  "safety_violation": true
+}
+EOF
+    exit 0
+fi
+
+# For non-blocked commands, return normal execution response
+cat << EOF
+{
+  "blocked": false,
+  "message": "Command allowed: $COMMAND",
+  "executed": false
+}
+EOF
+
+# Also create the blocked.log file if it doesn't exist
+if [ ! -f "$LOG_FILE" ]; then
+    touch "$LOG_FILE"
+fi
+
+exit 0
