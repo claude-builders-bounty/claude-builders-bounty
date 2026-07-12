@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""
+Claude Code PR Review Agent
+Reviews GitHub PRs and generates structured Markdown comments.
+"""
+
+import argparse
+import os
+import re
+import sys
+from urllib.parse import urlparse
+
+import requests
+
+
+def parse_pr_url(url):
+    """Extract owner, repo, and PR number from GitHub PR URL."""
+    patterns = [
+        r"github\.com/([^/]+)/([^/]+)/pull/(\d+)",
+        r"github\.com/([^/]+)/([^/]+)/pulls/(\d+)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1), match.group(2), match.group(3)
+    raise ValueError(f"Invalid GitHub PR URL: {url}")
+
+
+def fetch_pr_diff(owner, repo, pr_number, token=None):
+    """Fetch the PR diff from GitHub API."""
+    headers = {
+        "Accept": "application/vnd.github.v3.diff",
+        "User-Agent": "claude-review/1.0",
+    }
+    if token:
+        headers["Authorization"] = f"token {token}"
+    
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.text
+
+
+def fetch_pr_info(owner, repo, pr_number, token=None):
+    """Fetch PR metadata from GitHub API."""
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "claude-review/1.0",
+    }
+    if token:
+        headers["Authorization"] = f"token {token}"
+    
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+
+def review_with_claude(diff_text, pr_info, api_key):
+    """Send diff to Claude API and get structured review."""
+    import anthropic
+    
+    client = anthropic.Anthropic(api_key=api_key)
+    
+    pr_title = pr_info.get("title", "Unknown PR")
+    pr_body = pr_info.get("body", "") or ""
+    
+    prompt = f"""You are an expert code reviewer. Review the following pull request and provide a structured analysis.
+
+PR Title: {pr_title}
+PR Description: {pr_body}
+
+Diff:

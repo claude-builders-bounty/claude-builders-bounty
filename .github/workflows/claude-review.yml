@@ -1,0 +1,116 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+
+      - name: Get PR diff
+        id: get-diff
+        run: |
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3.diff" \
+            "${{ github.event.pull_request.diff_url }}" > pr.diff
+
+      - name: Run Claude Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          claude-review --pr "$PR_URL" --diff pr.diff --post-comment
+--- /dev/null
+"""Claude Code PR Review Agent."""
+
+__version__ = "0.1.0"
+
+from .reviewer import ClaudeReviewer
+"""Claude Code PR Review Agent - Core Review Logic."""
+
+import os
+import re
+import sys
+import json
+import argparse
+import subprocess
+from dataclasses import dataclass
+from typing import Optional
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+
+@dataclass
+class ReviewResult:
+    """Structured PR review result."""
+    summary: str
+    risks: list[str]
+    suggestions: list[str]
+    confidence: str  # Low, Medium, High
+    raw_response: str
+
+
+class ClaudeReviewer:
+    """Claude Code PR Review Agent."""
+
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not self.api_key:
+            raise ValueError("ANTHROPIC_API_KEY is required")
+        self.api_url = "https://api.anthropic.com/v1/messages"
+
+    def _call_claude(self, prompt: str, max_tokens: int = 4000) -> str:
+        """Call Claude API with the given prompt."""
+        headers = {
+            "x-api-key": self.api_key,
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
+        }
+
+        payload = {
+            "model": "claude-3-5-sonnet-20241022",
+            "max_tokens": max_tokens,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+        }
+
+        response = requests.post(self.api_url, headers=headers, json=payload, timeout=120)
+        response.raise_for_status()
+        data = response.json()
+        return data["content"][0]["text"]
+
+    def _build_review_prompt(self, diff: str, pr_url: str) -> str:
+        """Build the prompt for Claude to review a PR."""
+        return f"""You are an expert code reviewer. Review the following pull request diff and provide a structured analysis.
+
+PR URL: {pr_url}
+
+## Diff
+

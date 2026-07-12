@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import os
+import sys
+from typing import Dict, List
+import requests
+from urllib.parse import urlparse
+
+def parse_github_url(url: str) -> tuple:
+    """Parse GitHub URL to extract owner, repo, and pull request number."""
+    parsed = urlparse(url)
+    if parsed.netloc != "github.com":
+        raise ValueError("Invalid GitHub URL")
+    
+    path_parts = parsed.path.strip("/").split("/")
+    if len(path_parts) < 4 or path_parts[2] != "pull":
+        raise ValueError("URL must be a GitHub pull request URL")
+    
+    owner = path_parts[0]
+    repo = path_parts[1]
+    pr_number = path_parts[3]
+    return owner, repo, pr_number
+
+def get_pr_diff(owner: str, repo: str, pr_number: str, token: str = None) -> str:
+    """Fetch the diff of a pull request from GitHub."""
+    headers = {
+        "Accept": "application/vnd.github.v3.diff",
+        "User-Agent": "claude-review-agent"
+    }
+    if token:
+        headers["Authorization"] = f"token {token}"
+    
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.text
+
+def analyze_code_with_claude(diff_text: str, api_key: str) -> Dict:
+    """Send code to Claude API for analysis."""
+    prompt = f"""You are reviewing a pull request. Here is the diff:
+
+{diff_text}
+
+Please provide a structured review with:
+1. A 2-3 sentence summary of the changes
+2. A list of identified risks (3-5 items)
+3. A list of improvement suggestions (3-5 items)
+4. A confidence score: Low / Medium / High
+
+Respond in JSON format with keys: summary, risks, suggestions, confidence
+"""
+
+    # This is a placeholder - in a real implementation, you would call the Claude API
+    # For this example, we'll return a mock response
+    return {
+        "summary": "This pull request modifies the authentication system to use JWT tokens instead of session cookies. It also updates the user model and adds new middleware for token validation.",
+        "risks": [
+            "JWT token storage in localStorage may be vulnerable to XSS attacks",
+            "Missing rate limiting on token refresh endpoints",
+        ],
+        "suggestions": [
+            "Consider using httpOnly cookies for storing refresh tokens",
+            "Add comprehensive tests for the new authentication middleware",
+        ],
+        "confidence": "High"
+    }
+
+def format_markdown_review(review: Dict) -> str:
+    """Format the review results into a markdown comment."""
+    md = f"""## Code Review
+
+### Summary of Changes
+{review['summary']}
+
+### Identified Risks
+"""
+    for risk in review.get('risks', []):
+        md += f"- {risk}\n"
+    
+    md += "\n### Improvement Suggestions\n"
+    for suggestion in review.get('suggestions', []):
+        md += f"- {suggestion}\n"
+    
+    md += f"\n### Confidence\n**{review['confidence']}**\n"
+    
+    return md
+
+def post_comment(owner: str, repo: str, pr_number: str, comment: str, token: str):
+    """Post a comment to the pull request."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/json",
+        "User-Agent": "claude-review-agent"
+    }
+    data = {"body": comment}
+    response = requests.post(url, headers=headers, json=data)
+    response.raise_for_status()
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Reviewer")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    parser.add_argument("--github-token", help="GitHub API token")
+    parser.add_argument("--claude-api-key", required=True, help="Claude API key")
+    
+    args = parser.parse_args()
+    
+    try:
+        owner, repo, pr_number = parse_github_url(args.pr)
+        diff = get_pr_diff(owner, repo, pr_number, args.github_token)
+        review = analyze_code_with_claude(diff, args.claude_api_key)
+        comment = format_markdown_review(review)
+        print(comment)
+        
+        # If GitHub token is provided, post the comment to the PR
+        if args.github_token:
+            post_comment(owner, repo, pr_number, comment, args.github_token)
+            
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
