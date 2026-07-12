@@ -1,6 +1,6 @@
 # Claude Builders Bounty 🤖
 
-> A community bounty board for Claude Code builders.
+> A community bounty board for Claude Code builders — with automated weekly dev summaries.
 
 Building with Claude Code? Have tasks to delegate?
 Want to get paid for contributing to AI projects?
@@ -24,12 +24,13 @@ You're in the right place.
 
 ## Active Bounties
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
 | [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+| [#6](../../issues/6) | WORKFLOW: n8n + Claude Code — automated weekly dev summary | $200 | ✅ Done |
+
+---
+
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
 ---
@@ -41,10 +42,24 @@ You're in the right place.
 - Payment is handled by [Opire](https://opire.dev) (Stripe)
 - Quality over speed — a solid PR beats a fast one
 
+
 ---
 
-## Community
+## Workflows
 
+### Weekly Dev Summary (n8n)
+
+Automatically generates a narrative summary of this repo's weekly activity using Claude API.
+
+- **Trigger:** Every Friday at 5pm UTC
+- **Sources:** GitHub commits, closed issues, merged PRs (past 7 days)
+- **AI:** Claude Sonnet 4 (`claude-sonnet-4-20250514`)
+- **Delivery:** Email or Discord/Slack webhook (configurable)
+- **Languages:** English / French (configurable)
+- **Setup:** See [`workflows/weekly-dev-summary/README.md`](workflows/weekly-dev-summary/README.md)
+- **Workflow file:** [`workflows/weekly-dev-summary/weekly-dev-summary.json`](workflows/weekly-dev-summary/weekly-dev-summary.json)
+
+*Started by the Claude builder community · March 2026 · MIT License*
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
 - 📧 Contact: claudebounty@gmail.com
 
