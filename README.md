@@ -1,53 +1,37 @@
-# Claude Builders Bounty 🤖
+# Git Changelog Generator
 
-> A community bounty board for Claude Code builders.
+A lightweight Python script to automatically generate a formatted `CHANGELOG.md` file by parsing Git commit history. This tool is designed to help developers keep track of changes, features, and fixes in a clean, readable format.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## ✨ Features
 
----
+- **Automated Generation:** No need to manually write down every commit.
+- **Categorized Logs:** Automatically organizes commits into sections like `Features`, `Fixes`, and `Others` (based on commit messages).
+- **Clean Formatting:** Produces a well-structured Markdown file ready for documentation.
+- **Minimalistic & Fast:** A single-file script with no complex dependencies.
 
-## How it works
+## 🚀 Getting Started
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### Prerequisites
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Before running the script, ensure you have the following installed:
+- [Python 3.x](https://www.python.org/downloads/)
+- A Git repository (the script must be run inside a Git project folder).
 
----
+### Installation
 
-## Active Bounties
+1. Clone this repository or download the `changelog.py` file.
+2. Place `changelog.py` in the root directory of your Git project.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### How to Use
 
----
+1. Open your terminal (PowerShell, Bash, or Command Prompt).
+2. Navigate to your project directory.
+3. Run the script using the following command:
+```bash
+python changelog.py
+```
+### View Results
+After running the script, a new file named CHANGELOG.md will be created (or updated) in your project root. You can open it with any Markdown viewer or text editor (like VS Code).
 
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+### Technical Details
+The script works by executing git log commands under the hood to fetch commit messages and then uses pattern matching to categorize them.
