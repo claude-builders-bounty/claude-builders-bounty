@@ -1,0 +1,173 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 17 * * 5" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [200, 0],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {"name": "repo", "value": "claude-builders-bounty/claude-builders-bounty"},
+            {"name": "discordWebhook", "value": "https://discord.com/api/webhooks/your-webhook-url"},
+            {"name": "language", "value": "EN"},
+            {"name": "anthropicApiKey", "value": "your-anthropic-api-key"}
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "dates",
+      "name": "Calculate Dates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 0],
+      "parameters": {
+        "jsCode": "const lastWeek = new Date();\nlastWeek.setDate(lastWeek.getDate() - 7);\nconst since = lastWeek.toISOString();\nreturn { ...$input.first().json, since };"
+      }
+    },
+    {
+      "id": "commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 0],
+      "parameters": {
+        "url": "={{'https://api.github.com/repos/' + $json.repo + '/commits?since=' + $json.since}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ {"name": "User-Agent", "value": "n8n-workflow"} ]
+        },
+        "options": {
+          "splitIntoItems": false
+        }
+      }
+    },
+    {
+      "id": "issues",
+      "name": "Fetch Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 0],
+      "parameters": {
+        "url": "={{'https://api.github.com/repos/' + $('Config').item.json.repo + '/issues?state=closed&since=' + $('Config').item.json.since}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ {"name": "User-Agent", "value": "n8n-workflow"} ]
+        },
+        "options": {
+          "splitIntoItems": false
+        }
+      }
+    },
+    {
+      "id": "prs",
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 0],
+      "parameters": {
+        "url": "={{'https://api.github.com/repos/' + $('Config').item.json.repo + '/pulls?state=closed&sort=updated&direction=desc'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ {"name": "User-Agent", "value": "n8n-workflow"} ]
+        },
+        "options": {
+          "splitIntoItems": false
+        }
+      }
+    },
+    {
+      "id": "format",
+      "name": "Format Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 0],
+      "parameters": {
+        "jsCode": "const config = $('Config').item.json;\nconst commits = $('Fetch Commits').item.json || [];\nconst issues = $('Fetch Issues').item.json || [];\nconst prs = $('Fetch PRs').item.json || [];\n\nconst filteredPRs = Array.isArray(prs) ? prs.filter(pr => pr.merged_at && new Date(pr.merged_at) >= new Date(config.since)) : [];\n\nconst prompt = `Generate a weekly narrative summary in ${config.language} based on the following GitHub activity for ${config.repo}:\\n\\nCommits: ${commits.length || 0}\\nClosed Issues: ${issues.length || 0}\\nMerged PRs: ${filteredPRs.length}\\n\\nDetails:\\nCommits: ${(Array.isArray(commits) ? commits.slice(0, 20) : []).map(c => c.commit?.message).join('; ')}\\nIssues: ${(Array.isArray(issues) ? issues.slice(0,10) : []).map(i => i.title).join('; ')}\\nPRs: ${filteredPRs.slice(0,10).map(p => p.title).join('; ')}\\n\\nProvide a friendly, readable summary.`;\n\nreturn { prompt, config };"
+      }
+    },
+    {
+      "id": "claude",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1400, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{$json.config.anthropicApiKey}}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "content-type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": $json.prompt\n    }\n  ]\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "discord",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1600, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('Config').item.json.discordWebhook}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\"content\": $json.content[0].text}) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [ [ {"node": "Config", "type": "main", "index": 0} ] ]
+    },
+    "Config": {
+      "main": [ [ {"node": "Calculate Dates", "type": "main", "index": 0} ] ]
+    },
+    "Calculate Dates": {
+      "main": [ [ {"node": "Fetch Commits", "type": "main", "index": 0} ] ]
+    },
+    "Fetch Commits": {
+      "main": [ [ {"node": "Fetch Issues", "type": "main", "index": 0} ] ]
+    },
+    "Fetch Issues": {
+      "main": [ [ {"node": "Fetch PRs", "type": "main", "index": 0} ] ]
+    },
+    "Fetch PRs": {
+      "main": [ [ {"node": "Format Prompt", "type": "main", "index": 0} ] ]
+    },
+    "Format Prompt": {
+      "main": [ [ {"node": "Claude API", "type": "main", "index": 0} ] ]
+    },
+    "Claude API": {
+      "main": [ [ {"node": "Discord Webhook", "type": "main", "index": 0} ] ]
+    }
+  }
+}
