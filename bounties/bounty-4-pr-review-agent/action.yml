@@ -1,0 +1,79 @@
+name: "PR Review Agent"
+description: "Reviews a GitHub pull request and posts a structured Markdown review as a PR comment."
+author: "Claude Builders Bounty"
+
+branding:
+  icon: "check-square"
+  color: "blue"
+
+inputs:
+  github-token:
+    description: "GitHub token (defaults to secrets.GITHUB_TOKEN)"
+    required: false
+    default: ${{ github.token }}
+  pr-number:
+    description: "Pull request number to review. Defaults to the event PR number."
+    required: false
+    default: ${{ github.event.pull_request.number }}
+  review-template:
+    description: "Path to the review Markdown template"
+    required: false
+    default: ".github/bounties/bounty-4-pr-review-agent/review-template.md"
+  output-dir:
+    description: "Directory to write review artifact"
+    required: false
+    default: "pr-reviews"
+
+outputs:
+  review-path:
+    description: "Path to the generated review file"
+    value: ${{ steps.review.outputs.review-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Check out repository"
+      uses: actions/checkout@v4
+
+    - name: "Set up environment"
+      shell: bash
+      run: |
+        # Ensure gh CLI is present (GitHub-hosted runners include it)
+        if ! command -v gh &>/dev/null; then
+          echo "::error::gh CLI is required but not found."
+          exit 1
+        fi
+        echo "GH_TOKEN=${{ inputs.github-token }}" >> "$GITHUB_ENV"
+
+    - name: "Run PR review"
+      id: review
+      shell: bash
+      env:
+        REVIEW_TEMPLATE: ${{ inputs.review-template }}
+        PR_REVIEW_OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: |
+        SCRIPT_DIR="${{ github.action_path }}"
+        chmod +x "$SCRIPT_DIR/pr-review-agent.sh"
+        "$SCRIPT_DIR/pr-review-agent.sh" "${{ inputs.pr-number }}"
+        REVIEW_FILE=$(ls -t "${{ inputs.output-dir }}" | head -1)
+        echo "review-path=${{ inputs.output-dir }}/${REVIEW_FILE}" >> "$GITHUB_OUTPUT"
+
+    - name: "Post review as PR comment"
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        REVIEW_PATH="${{ steps.review.outputs.review-path }}"
+        if [[ -f "$REVIEW_PATH" ]]; then
+          BODY=$(cat "$REVIEW_PATH")
+          gh pr comment "${{ inputs.pr-number }}" --body "${BODY}"
+          echo "::notice::Review posted to PR #${{ inputs.pr-number }}"
+        else
+          echo "::warning::Review file not found at ${REVIEW_PATH}"
+        fi
+
+    - name: "Upload review artifact"
+      uses: actions/upload-artifact@v4
+      with:
+        name: pr-review-${{ inputs.pr-number }}
+        path: ${{ inputs.output-dir }}/
