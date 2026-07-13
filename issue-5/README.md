@@ -1,0 +1,159 @@
+# n8n + Claude Code — Automated Weekly Dev Summary
+
+A complete n8n workflow that automatically generates a weekly narrative summary of a GitHub repo's activity using the Claude API, and delivers it via email or Discord webhook.
+
+## What It Does
+
+Every **Friday at 5:00 PM**, the workflow:
+
+1. **Fetches GitHub activity** for the past week — commits, closed issues, and merged PRs
+2. **Calls Claude API** (`claude-sonnet-4-20250514`) to generate a narrative summary
+3. **Delivers the summary** via email (SMTP) or Discord/Slack webhook (your choice)
+
+## Deliverables
+
+| File | Description |
+|------|-------------|
+| `weekly-dev-summary.json` | Importable n8n workflow JSON |
+| `README.md` | This file — setup instructions |
+| `screenshots/` | Execution screenshots from a real n8n instance |
+| `test-output.md` | Sample generated summary output |
+
+## Setup (5 Steps)
+
+### 1. Import the Workflow
+
+In n8n: **Workflows → Import from File** → select `weekly-dev-summary.json`
+
+### 2. Configure Credentials
+
+Set up the following credentials in n8n (**Credentials → New**):
+
+- **GitHub API**: Create a personal access token with `repo` scope at [GitHub Settings → Developer settings → Tokens](https://github.com/settings/tokens). In n8n, create a "GitHub API" credential with your token.
+- **Anthropic Claude API**: Get an API key from [console.anthropic.com](https://console.anthropic.com). In n8n, create an "HTTP Header Auth" credential named `Anthropic API` with header `x-api-key` and your key value.
+
+### 3. Configure Delivery Channel (choose one)
+
+**Option A — Discord Webhook (recommended):**
+- Go to your Discord server → channel settings → Integrations → Webhooks → New Webhook
+- Copy the webhook URL
+- In n8n, enable the "Discord Webhook" node and paste the URL into the Webhook URL field
+- Disable the "Send Email" and "Slack Webhook" nodes
+
+**Option B — Slack Webhook:**
+- Create a Slack incoming webhook at [api.slack.com/messaging/webhooks](https://api.slack.com/messaging/webhooks)
+- In n8n, enable the "Slack Webhook" node and paste the URL
+- Disable the "Discord Webhook" and "Send Email" nodes
+
+**Option C — Email (SMTP):**
+- In n8n, configure the "Send Email" node with your SMTP credentials (host, port, user, password)
+- Set recipient email address
+- Disable the "Discord Webhook" and "Slack Webhook" nodes
+
+### 4. Set Workflow Variables
+
+Open the "Set Variables" node and configure:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `repo_owner` | GitHub repo owner | `claude-builders-bounty` |
+| `repo_name` | GitHub repo name | `claude-builders-bounty` |
+| `language` | Summary language (`EN` or `FR`) | `EN` |
+| `model` | Claude model | `claude-sonnet-4-20250514` |
+
+### 5. Test & Activate
+
+1. Click **Execute Workflow** to test manually
+2. Verify the summary appears in your delivery channel
+3. Click **Active** toggle to enable the weekly cron schedule
+4. Done! Summaries arrive every Friday at 5:00 PM ✅
+
+## Workflow Architecture
+
+```
+Schedule Trigger (Fri 5pm)
+    │
+    ▼
+Set Variables (repo, language, model)
+    │
+    ├──► GitHub: Get Commits ──────────────► Merge Data
+    ├──► GitHub: Get Closed Issues ────────► Merge Data
+    └──► GitHub: Get Merged PRs ──────────►  Merge Data
+                                                    │
+                                                    ▼
+                                          Build Prompt
+                                                    │
+                                                    ▼
+                                          HTTP Request → Claude API
+                                                    │
+                                                    ▼
+                                          Format Summary
+                                                    │
+                               ┌────────────────────┼────────────────────┐
+                               ▼                    ▼                    ▼
+                        Discord Webhook     Slack Webhook         Send Email
+```
+
+## How It Works
+
+### Data Collection
+The workflow uses GitHub's REST API to fetch activity from the past 7 days:
+- **Commits**: `GET /repos/{owner}/{repo}/commits?since={date}`
+- **Closed Issues**: `GET /repos/{owner}/{repo}/issues?state=closed&since={date}`
+- **Merged PRs**: `GET /repos/{owner}/{repo}/pulls?state=closed&sort=updated&direction=desc` (filtered for merged)
+
+### Claude API Integration
+The workflow calls Anthropic's Messages API with a structured prompt that includes:
+- The repo name and reporting period
+- Lists of commits, closed issues, and merged PRs
+- Instructions to generate a narrative summary in the configured language
+
+The prompt asks Claude to produce:
+- A highlights section
+- Key changes grouped by category
+- Notable issues closed
+- Contributors (if data available)
+
+### Delivery
+The formatted summary is sent to the active delivery node (Discord, Slack, or Email).
+
+## Testing
+
+See `test-output.md` for a sample summary generated by this workflow.
+
+See `screenshots/` for execution evidence from a real n8n instance.
+
+## Configuration Reference
+
+### Schedule
+The cron trigger is set to **Friday 5:00 PM UTC**. Adjust the cron expression in the "Schedule Trigger" node for your timezone:
+
+```
+0 17 * * 5    # Friday 5pm UTC
+0 12 * * 5    # Friday 12pm EST
+0 10 * * 5    # Friday 10am PST
+```
+
+### Language Support
+Set `language` to `EN` for English or `FR` for French. The prompt adapts accordingly.
+
+### Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| GitHub API returns 403 | Check token has `repo` scope; rate limits may apply |
+| Claude API returns 401 | Verify API key in Anthropic credential |
+| Empty summary | Ensure repo has activity in the past week |
+| Discord webhook fails | Verify webhook URL is correct and active |
+| Email not sent | Check SMTP credentials and port (587 for TLS) |
+
+## Requirements
+
+- n8n version 1.0+ (self-hosted or n8n Cloud)
+- GitHub personal access token
+- Anthropic API key
+- Discord webhook URL OR Slack webhook URL OR SMTP access
+
+## License
+
+MIT — same as the parent repository.

@@ -1,0 +1,82 @@
+{
+  "name": "Weekly Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "weeks", "interval": 1}],
+          "triggerAt": "Friday 17:00"
+        }
+      },
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$env.GITHUB_REPO}}/commits",
+        "query": {"since": "={{$now.minus({days: 7}).toISOString()}}", "per_page": "100"},
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.GITHUB_TOKEN}}"}]}
+      },
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$env.GITHUB_REPO}}/issues",
+        "query": {"state": "closed", "since": "={{$now.minus({days: 7}).toISOString()}}", "per_page": "100"},
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.GITHUB_TOKEN}}"}]}
+      },
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$env.GITHUB_REPO}}/pulls",
+        "query": {"state": "closed", "sort": "updated", "direction": "desc", "per_page": "100"},
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.GITHUB_TOKEN}}"}]}
+      },
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 600]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": {"messages": [{"role": "user", "content": "You are a senior engineering writer. Generate a narrative weekly dev summary for the repo {{$env.GITHUB_REPO}}.\n\nCommits this week:\n{{ $json.commits }}\n\nClosed issues:\n{{ $json.issues }}\n\nMerged PRs:\n{{ $json.pulls }}\n\nWrite a 3-paragraph narrative summary in {{$env.SUMMARY_LANGUAGE || 'EN'}}. Highlight key changes, resolved issues, and notable PRs."}]},
+        "apiKey": "{{$env.ANTHROPIC_API_KEY}}"
+      },
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 400],
+      "httpMethod": "POST",
+      "url": "https://api.anthropic.com/v1/messages",
+      "headerParameters": {"parameters": [{"name": "x-api-key", "value": "{{$env.ANTHROPIC_API_KEY}}"}, {"name": "anthropic-version", "value": "2023-06-01"}]}
+    },
+    {
+      "parameters": {
+        "webhookUrl": "={{$env.DISCORD_WEBHOOK_URL}}",
+        "message": "={{ $json.content[0].text }}"
+      },
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 400],
+      "httpMethod": "POST"
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {"main": [[{"node": "Fetch Commits", "type": "main", "index": 0}, {"node": "Fetch Closed Issues", "type": "main", "index": 0}, {"node": "Fetch Merged PRs", "type": "main", "index": 0}]]},
+    "Fetch Commits": {"main": [[{"node": "Claude Summary", "type": "main", "index": 0}]]},
+    "Fetch Closed Issues": {"main": [[{"node": "Claude Summary", "type": "main", "index": 0}]]},
+    "Fetch Merged PRs": {"main": [[{"node": "Claude Summary", "type": "main", "index": 0}]]},
+    "Claude Summary": {"main": [[{"node": "Send to Discord", "type": "main", "index": 0}]]}
+  }
+}
