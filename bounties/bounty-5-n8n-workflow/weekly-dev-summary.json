@@ -1,0 +1,491 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Prepare Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst day = now.getDay();\nconst diff = day === 0 ? 6 : day - 1;\nconst lastMonday = new Date(now);\nlastMonday.setDate(now.getDate() - diff - 7);\nconst thisMonday = new Date(now);\nthisMonday.setDate(now.getDate() - diff);\nconst owner = ($env.GITHUB_OWNER || process.env.GITHUB_OWNER || '').trim();\nconst repo = ($env.GITHUB_REPO || process.env.GITHUB_REPO || '').trim();\nif (!owner || !repo) {\n  throw new Error('GITHUB_OWNER and GITHUB_REPO environment variables must be set');\n}\nreturn [{\n  json: {\n    since: lastMonday.toISOString(),\n    until: thisMonday.toISOString(),\n    owner,\n    repo\n  }\n}];"
+      }
+    },
+    {
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 100],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/{{ $node['Prepare Config'].json['owner'] }}/{{ $node['Prepare Config'].json['repo'] }}/commits?since={{ $node['Prepare Config'].json['since'] }}&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gitHubApi",
+        "sendQuery": false,
+        "sendBody": false,
+        "options": {
+          "timeout": 30000,
+          "ignoreSSLIssues": false
+        }
+      },
+      "credentials": {
+        "gitHubApi": {
+          "id": "__GITHUB_CREDENTIAL_ID__",
+          "name": "GitHub API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "d4e5f6a7-b8c9-0123-def0-234567890123",
+      "name": "Get PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/{{ $node['Prepare Config'].json['owner'] }}/{{ $node['Prepare Config'].json['repo'] }}/pulls?state=all&sort=updated&direction=desc&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gitHubApi",
+        "sendQuery": false,
+        "sendBody": false,
+        "options": {
+          "timeout": 30000,
+          "ignoreSSLIssues": false
+        }
+      },
+      "credentials": {
+        "gitHubApi": {
+          "id": "__GITHUB_CREDENTIAL_ID__",
+          "name": "GitHub API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "e5f6a7b8-c9d0-1234-ef01-345678901234",
+      "name": "Get Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 500],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/{{ $node['Prepare Config'].json['owner'] }}/{{ $node['Prepare Config'].json['repo'] }}/issues?state=all&since={{ $node['Prepare Config'].json['since'] }}&sort=updated&direction=desc&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gitHubApi",
+        "sendQuery": false,
+        "sendBody": false,
+        "options": {
+          "timeout": 30000,
+          "ignoreSSLIssues": false
+        }
+      },
+      "credentials": {
+        "gitHubApi": {
+          "id": "__GITHUB_CREDENTIAL_ID__",
+          "name": "GitHub API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "f6a7b8c9-d0e1-2345-f012-456789012345",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "a7b8c9d0-e1f2-3456-0123-567890123456",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "parameters": {
+        "jsCode": "function safeItems(nodeName) {\n  try {\n    return $node[nodeName].all() || [];\n  } catch(e) {\n    return [];\n  }\n}\n\nconst since = $node['Prepare Config'].json['since'];\nconst owner = $node['Prepare Config'].json['owner'];\nconst repo = $node['Prepare Config'].json['repo'];\n\nfunction isRealPR(p) {\n  const j = p.json;\n  return j && j.number && j.title && j.html_url && j.node_id;\n}\n\nfunction isRealIssue(i) {\n  const j = i.json;\n  return j && j.number && j.title && !j.pull_request;\n}\n\nfunction isRealCommit(c) {\n  const j = c.json;\n  return j && j.sha && j.commit && j.commit.author;\n}\n\nconst rawCommits = safeItems('Get Commits').filter(isRealCommit);\nconst sinceDate = new Date(since);\nconst allPRs = safeItems('Get PRs').filter(isRealPR);\nconst relevantPRs = allPRs.filter(p => new Date(p.json.created_at) >= sinceDate);\nconst rawIssues = safeItems('Get Issues').filter(isRealIssue);\nconst relevantIssues = rawIssues.filter(i => new Date(i.json.created_at) >= sinceDate);\n\nfunction truncate(msg, len) {\n  if (!msg) return '';\n  return msg.length > len ? msg.substring(0, len) + '...' : msg;\n}\n\nconst commitLines = rawCommits.map(c => {\n  const d = c.json;\n  const msg = (d.commit.message || '').split('\\n')[0];\n  const author = d.commit.author ? d.commit.author.name || d.author?.login || 'unknown' : 'unknown';\n  const sha = d.sha ? d.sha.substring(0, 7) : '';\n  return `  - ${author}: ${truncate(msg, 80)} (${sha})`;\n}).join('\\n') || '  (none in this period)';\n\nconst prLines = relevantPRs.map(p => {\n  const d = p.json;\n  const status = d.merged_at ? 'merged' : (d.state === 'closed' ? 'closed without merge' : 'open');\n  return `  - [#${d.number}] ${d.title} — ${d.user?.login || 'unknown'} (${status})`;\n}).join('\\n') || '  (none in this period)';\n\nconst issueLines = relevantIssues.map(i => {\n  const d = i.json;\n  return `  - [#${d.number}] ${d.title} — ${d.user?.login || 'unknown'} (${d.state})`;\n}).join('\\n') || '  (none in this period)';\n\nconst mergedPRs = relevantPRs.filter(p => p.json.merged_at);\nconst openPRs = relevantPRs.filter(p => p.json.state === 'open');\nconst closedIssues = relevantIssues.filter(i => i.json.state === 'closed');\nconst openIssues = relevantIssues.filter(i => i.json.state === 'open');\n\nconst prompt = `You are a technical lead writing a concise weekly development summary for your team.\n\nRepository: ${owner}/${repo}\nPeriod: ${since.split('T')[0]} to this Monday\n\n## Stats Overview\n- Commits: ${rawCommits.length}\n- Pull Requests: ${relevantPRs.length} (merged: ${mergedPRs.length}, open: ${openPRs.length})\n- Issues: ${relevantIssues.length} (closed: ${closedIssues.length}, open: ${openIssues.length})\n\n## Commits (${rawCommits.length})\n${commitLines}\n\n## Pull Requests (${relevantPRs.length})\n${prLines}\n\n## Issues (${relevantIssues.length})\n${issueLines}\n\nPlease write a professional weekly summary covering:\n1. **Highlights** — key changes, milestones, and notable achievements\n2. **Commits Breakdown** — who contributed and which areas of the codebase changed\n3. **PR Activity** — review velocity, merge rate, and notable PRs\n4. **Issue Activity** — new bugs filed, features requested, items resolved\n5. **Action Items** — stale PRs needing review, unreviewed issues, potential blockers\n\nUse markdown formatting. Keep it concise but informative. Write in a professional, encouraging tone.`;\n\nreturn [{\n  json: {\n    prompt,\n    stats: {\n      totalCommits: rawCommits.length,\n      totalPRs: relevantPRs.length,\n      totalIssues: relevantIssues.length,\n      mergedPRs: mergedPRs.length,\n      openPRs: openPRs.length,\n      closedIssues: closedIssues.length,\n      openIssues: openIssues.length\n    },\n    owner,\n    repo,\n    since\n  }\n}];"
+      }
+    },
+    {
+      "id": "b8c9d0e1-f2a3-4567-1234-678901234567",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "jsonBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2048
+            },
+            {
+              "name": "messages",
+              "value": [
+                {
+                  "role": "user",
+                  "content": "={{ $node['Build Summary'].json['prompt'] }}"
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "headers": {
+            "parameters": [
+              {
+                "name": "anthropic-version",
+                "value": "2023-06-01"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__ANTHROPIC_CREDENTIAL_ID__",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "id": "c9d0e1f2-a3b4-5678-2345-789012345678",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 300],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nlet summary = '';\nif (response.content && Array.isArray(response.content)) {\n  summary = response.content.map(c => c.text || '').filter(Boolean).join('\\n');\n} else if (response.completion) {\n  summary = response.completion;\n} else if (response.error) {\n  summary = 'Error from Claude API: ' + JSON.stringify(response.error);\n} else {\n  try {\n    summary = JSON.stringify(response, null, 2);\n  } catch(e) {\n    summary = 'Could not parse Claude API response';\n  }\n}\nreturn [{ json: { summary } }];"
+      }
+    },
+    {
+      "id": "d0e1f2a3-b4c5-6789-3456-890123456789",
+      "name": "Route Output",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [1550, 300],
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $env.OUTPUT_CHANNEL }}",
+        "rules": [
+          {
+            "value2": "slack",
+            "output": 0
+          },
+          {
+            "value2": "email",
+            "output": 1
+          },
+          {
+            "value2": "discord",
+            "output": 2
+          }
+        ],
+        "fallbackOutput": 0
+      }
+    },
+    {
+      "id": "e1f2a3b4-c5d6-7890-4567-901234567890",
+      "name": "Send Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1700, 100],
+      "parameters": {
+        "channel": "={{ $env.SLACK_CHANNEL }}",
+        "text": "={{ $node['Extract Summary'].json['summary'] }}",
+        "jsonBody": true,
+        "otherOptions": {}
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "__SLACK_CREDENTIAL_ID__",
+          "name": "Slack"
+        }
+      }
+    },
+    {
+      "id": "f2a3b4c5-d6e7-8901-5678-012345678901",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1700, 300],
+      "parameters": {
+        "from": "={{ $env.EMAIL_FROM }}",
+        "to": "={{ $env.EMAIL_TO }}",
+        "subject": "Weekly Dev Summary — {{ $node['Build Summary'].json['owner'] }}/{{ $node['Build Summary'].json['repo'] }}",
+        "text": "={{ $node['Extract Summary'].json['summary'] }}",
+        "options": {}
+      },
+      "credentials": {
+        "smtp": {
+          "id": "__SMTP_CREDENTIAL_ID__",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "id": "a3b4c5d6-e7f8-9012-6789-123456789012",
+      "name": "Send Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1700, 500],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "authentication": "none",
+        "sendBody": true,
+        "jsonBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $node['Extract Summary'].json['summary'] }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "b4c5d6e7-f8a9-0123-7890-234567890123",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [250, 800]
+    },
+    {
+      "id": "c5d6e7f8-a9b0-1234-8901-345678901234",
+      "name": "Notify Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 800],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "authentication": "none",
+        "sendBody": true,
+        "jsonBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "=⚠️ Weekly Dev Summary — Workflow Error\n\n```\n{{ JSON.stringify($json, null, 2) }}\n```"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Config": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get PRs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary": {
+      "main": [
+        [
+          {
+            "node": "Route Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Output": {
+      "main": [
+        [
+          {
+            "node": "Send Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Handler": {
+      "main": [
+        [
+          {
+            "node": "Notify Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "bd2a71c0-8c4b-4e1f-9d3a-5f6e7a8b9c0d",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "weekly"
+    },
+    {
+      "name": "github"
+    },
+    {
+      "name": "claude"
+    },
+    {
+      "name": "dev-summary"
+    },
+    {
+      "name": "bounty-5"
+    }
+  ],
+  "staticData": null
+}
