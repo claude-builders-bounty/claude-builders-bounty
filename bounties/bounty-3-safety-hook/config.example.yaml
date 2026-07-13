@@ -1,0 +1,147 @@
+# =============================================================================
+# Safety Hook — Configuration Example
+# =============================================================================
+# Place this file at <project>/config.yaml or set the SAFETY_HOOK_CONFIG
+# environment variable to point to it.
+#
+# All rules are optional; built-in defaults apply for anything omitted.
+#
+# IMPORTANT: All patterns use POSIX ERE (Extended Regular Expression).
+# Differences from PCRE:
+#   Use [[:space:]]  instead of \s
+#   Use [|]           for literal pipe (pipe is alternation in ERE)
+#   Use [.] or \.     for literal dot
+#   No lookaheads, no \b, \d, \w shorthand classes
+# =============================================================================
+
+safety_hook:
+  # Default severity for rules that don't specify one.
+  # Valid values: block | warn | allow_with_confirmation | allow
+  default_level: warn
+
+  # Path to the audit log file (default: ~/.claude/safety-hook.log)
+  log_file: "~/.claude/safety-hook.log"
+
+# ---------------------------------------------------------------------------
+# Blocklist rules
+# ---------------------------------------------------------------------------
+rules:
+  # --- Level: block (no way to override) ---
+  - pattern: "^[[:space:]]*rm[[:space:]]+-rf[[:space:]]+/[[:space:]]*$"
+    level: block
+    message: "rm -rf / would destroy the operating system — blocked."
+
+  - pattern: "rm[[:space:]]+-rf[[:space:]]+~([[:space:]]|$)"
+    level: block
+    message: "rm -rf ~ would delete the home directory — blocked."
+
+  - pattern: "dd[[:space:]]+if="
+    level: block
+    message: "dd if= can overwrite disk devices — blocked."
+
+  - pattern: ":[(][)][[:space:]]*[{]"
+    level: block
+    message: "Fork-bomb detected — blocked."
+
+  - pattern: ">[[:space:]]+/dev/sd"
+    level: block
+    message: "Direct disk write to /dev/sd* detected — blocked."
+
+  - pattern: "mkfs[.]"
+    level: block
+    message: "mkfs. would format a filesystem — blocked."
+
+  - pattern: "chmod[[:space:]]+-R[[:space:]]+777[[:space:]]+"
+    level: block
+    message: "chmod -R 777 / makes the entire filesystem world-writable — blocked."
+
+  - pattern: "sudo[[:space:]]+rm[[:space:]]+-rf[[:space:]]+/"
+    level: block
+    message: "sudo rm -rf / destroys the system as root — blocked."
+
+  - pattern: "sudo[[:space:]]+rm[[:space:]]+-rf[[:space:]]+~"
+    level: block
+    message: "sudo rm -rf ~ deletes the home directory as root — blocked."
+
+  # --- Level: warn (requires confirmation or --dangerous) ---
+  - pattern: "curl[[:space:]]*.*[|].*bash"
+    level: warn
+    message: "Piping curl to bash is a security risk — allow only if you trust the source."
+
+  - pattern: "wget[[:space:]]*.*[|].*sh([^.]|$)"
+    level: warn
+    message: "Piping wget to sh is a security risk — allow only if you trust the source."
+
+  - pattern: "git[[:space:]]+push[[:space:]]+(--force|-f)"
+    level: warn
+    message: "Force-push rewrites Git history — confirm to proceed."
+
+  - pattern: "drop[[:space:]]+table"
+    level: warn
+    message: "DROP TABLE is irreversible — confirm."
+
+  - pattern: "delete[[:space:]]+from"
+    level: warn
+    message: "DELETE FROM without WHERE deletes all rows — confirm. (Commands containing WHERE are exempted automatically.)"
+
+  # --- Custom project-specific rules ---
+  - pattern: "rm[[:space:]]+-rf[[:space:]]+[.]git"
+    level: warn
+    message: "Deleting .git is irreversible — confirm."
+
+  - pattern: "truncate[[:space:]]+table"
+    level: warn
+    message: "TRUNCATE TABLE is irreversible — confirm."
+
+# ---------------------------------------------------------------------------
+# Allowlist — commands that bypass all rules
+# ---------------------------------------------------------------------------
+# Matched as ERE patterns against the full command string.
+# Use this for commonly used safe destructive commands.
+# ---------------------------------------------------------------------------
+allowlist:
+  - "npm run build -- --clean"
+  - "rm -rf node_modules"
+  - "rm -rf [.]next"
+  - "rm -rf dist"
+  - "docker system prune -f"
+  - "npm run dev -- --clear"
+  - "cargo clean"
+  - "make clean"
+  - "git clean -fd"
+  - "rm -rf \.cache"
+  - "rm -rf build"
+  - "rm -rf target"
+  - "npx prisma migrate reset --force"
+
+# ---------------------------------------------------------------------------
+# Scoped rules — per-directory overrides
+# ---------------------------------------------------------------------------
+# These apply only when the current working directory matches the given path.
+# Useful for tightening rules in production or relaxing them in sandbox.
+# ---------------------------------------------------------------------------
+scoped_rules:
+  # Tighten rules in production directories
+  - directory: "/home/user/projects/production"
+    rules:
+      - pattern: "git[[:space:]]+push[[:space:]]+(--force|-f)"
+        level: block
+        message: "Force-push is blocked in production repositories."
+
+      - pattern: "drop[[:space:]]+table"
+        level: block
+        message: "DROP TABLE is blocked in production databases."
+
+  # Relax rules in temp directories
+  - directory: "/tmp"
+    rules:
+      - pattern: "rm[[:space:]]+-rf"
+        level: allow
+        message: "rm -rf is allowed freely in /tmp."
+
+  # Warn on force-push in monorepo workspace
+  - directory: "/home/user/projects/monorepo"
+    rules:
+      - pattern: "git[[:space:]]+push[[:space:]]+--force"
+        level: warn
+        message: "Please coordinate force-pushes with the team before proceeding."
