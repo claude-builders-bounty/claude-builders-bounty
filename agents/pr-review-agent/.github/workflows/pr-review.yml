@@ -1,0 +1,81 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review (defaults to latest)"
+        required: false
+        type: string
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    name: AI Code Review
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install claude-review
+        run: |
+          pip install anthropic requests
+          # If published to PyPI: pip install claude-pr-review
+          # For now, install from source:
+          pip install .
+
+      - name: Determine PR number
+        id: pr
+        run: |
+          if [ -n "${{ github.event.inputs.pr_number }}" ]; then
+            echo "number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Claude Review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL="https://github.com/${{ github.repository }}/pull/${{ steps.pr.outputs.number }}"
+          claude-review \
+            --pr "$PR_URL" \
+            --github-token "$GITHUB_TOKEN" \
+            --format markdown \
+            --output review-output.md \
+            --no-color
+
+      - name: Post review comment
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Read the review output and post as PR comment
+          REVIEW_BODY=$(cat review-output.md)
+
+          # Use GitHub CLI to post comment
+          gh pr comment ${{ steps.pr.outputs.number }} \
+            --body "$REVIEW_BODY"
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-review-${{ steps.pr.outputs.number }}
+          path: review-output.md
+          retention-days: 30
