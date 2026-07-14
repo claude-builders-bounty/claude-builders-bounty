@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook — blocks dangerous bash commands.
+
+Installation:
+    mkdir -p ~/.claude/hooks/
+    cp hooks/pre-tool-use ~/.claude/hooks/
+    chmod +x ~/.claude/hooks/pre-tool-use
+
+Claude Code calls this hook before executing every bash tool.
+Return exit code 0 to allow, 1 to block the command.
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+# ── Configuration ────────────────────────────────────────────
+
+BLOCKED_LOG = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+# Pattern: (regex, reason_message, suggested_alternative)
+BLOCKED_PATTERNS = [
+    # Destructive file operations
+    (r'\brm\s+-rf\b',
+     'Destructive recursive delete',
+     'Use `rm -r` with explicit file targets or `trash` instead'),
+
+    # Force git push (rewrites history)
+    (r'\bgit\s+push\s+--force\b',
+     'Force push overwrites remote history',
+     'Use `git push --force-with-lease` for a safer alternative'),
+
+    # Dangerous database operations
+    (r'\bDROP\s+TABLE\b',
+     'DROP TABLE permanently deletes a database table',
+     'Backup the table first, then use DROP TABLE IF EXISTS'),
+
+    (r'\bTRUNCATE\b',
+     'TRUNCATE quickly deletes all rows irreversibly',
+     'Use DELETE with a WHERE clause to remove specific rows'),
+
+    (r'\bDELETE\s+FROM\b(?!\s+\w+\s+WHERE)',
+     'DELETE FROM without WHERE clause would delete all rows',
+     'Add a WHERE clause to target specific rows'),
+
+    # Additional safety patterns
+    (r'\bchmod\s+-R\s+777\b',
+     'Setting world-writable permissions recursively is unsafe',
+     'Use more restrictive permissions like 755 or 644'),
+
+    (r'\bdd\s+if=\S+\s+of=\s*/dev/',
+     'Direct disk write operation can corrupt the system',
+     'Do not write directly to block devices'),
+
+    (r'\b>:\)\s*\{[^}]*\}:&\s*;+\s*\}:',
+     'Bash fork bomb would crash the system',
+     'Do not execute fork bombs'),
+]
+
+# Commands that are ALWAYS allowed (prefix match)
+ALLOW_PREFIXES = [
+    "echo",
+    "ls",
+    "cat",
+    "head",
+    "tail",
+    "grep",
+    "find",
+    "pwd",
+    "cd",
+    "mkdir",
+    "touch",
+    "cp",
+    "mv",
+    "less",
+    "more",
+    "which",
+    "whoami",
+    "date",
+    "printf",
+    "git status",
+    "git log",
+    "git diff",
+    "git branch",
+    "git checkout",
+    "python",
+    "node",
+    "npm",
+    "pip",
+    "cargo",
+    "docker ps",
+    "docker images",
+]
+
+
+def is_obviously_safe(command):
+    """Quick check: if command starts with an allowed prefix, skip full scan."""
+    trimmed = command.strip()
+    for prefix in ALLOW_PREFIXES:
+        if trimmed.startswith(prefix):
+            return True
+    return False
+
+
+def check_command(command):
+    """Check a command against blocked patterns. Returns (blocked, reason, suggestion)."""
+    for pattern, reason, suggestion in BLOCKED_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True, reason, suggestion
+    return False, "", ""
+
+
+def log_blocked(command, reason, suggestion):
+    """Log a blocked command attempt with full context."""
+    os.makedirs(os.path.dirname(BLOCKED_LOG), exist_ok=True)
+    timestamp = datetime.now().isoformat()
+    project = os.getcwd()
+    with open(BLOCKED_LOG, "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}] BLOCKED: {command[:300]}\n")
+        f.write(f"  Project : {project}\n")
+        f.write(f"  Reason  : {reason}\n")
+        f.write(f"  Suggestion: {suggestion}\n\n")
+
+
+def main():
+    """
+    Claude Code passes the tool-use invocation as a JSON object on stdin:
+    {"command": "rm -rf /tmp", ...}
+    """
+    try:
+        data = json.load(sys.stdin)
+    except (json.JSONDecodeError, EOFError):
+        # Cannot parse input — allow to avoid breaking Claude
+        sys.exit(0)
+
+    command = data.get("command", "").strip()
+    if not command:
+        sys.exit(0)
+
+    # Quick allowlist bypass for common safe commands
+    if is_obviously_safe(command):
+        sys.exit(0)
+
+    # Deep pattern check
+    blocked, reason, suggestion = check_command(command)
+    if blocked:
+        log_blocked(command, reason, suggestion)
+        print(
+            f"⛔ **Command blocked** — {reason}.\n"
+            f"   💡 {suggestion}\n"
+            f"   📝 If you are certain, re-run with explicit confirmation."
+        )
+        sys.exit(1)
+
+    # Command passed all checks
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
