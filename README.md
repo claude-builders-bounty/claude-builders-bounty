@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Changelog Generator
+
+Generate a structured changelog from git history:
+
+1. Run `bash changelog.sh` from any git repository.
+2. Use `bash changelog.sh /path/to/repo /path/to/CHANGELOG.md` to choose the repository and output file.
+3. Review `CHANGELOG.md`, which groups commits into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+See `examples/sample-changelog.md` for sample output.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
