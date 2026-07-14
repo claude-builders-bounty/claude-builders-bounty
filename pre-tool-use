@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""
+Claude Code pre-tool-use hook — blocks destructive bash commands.
+
+Install:
+  1. mkdir -p ~/.claude/hooks
+  2. cp pre-tool-use ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+
+See README.md for details.
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+LOG_DIR = os.path.expanduser("~/.claude/hooks")
+LOG_FILE = os.path.join(LOG_DIR, "blocked.log")
+
+# ── 危险命令匹配规则 ──────────────────────────────────────────
+# 每条规则：(pattern, reason)
+# pattern 用正则匹配完整命令字符串（大小写不敏感）
+DANGEROUS_PATTERNS = [
+    # 无条件屏蔽的危险模式
+    (r'\brm\s+-rf\b',         "`rm -rf` 是毁灭性操作，禁止在 Claude Code 中使用"),
+    (r'\bgit\s+push\s+--force\b', "`git push --force` 会覆盖远端历史，禁止使用"),
+    (r'\bgit\s+push\s+-f\b',   "`git push -f` 会覆盖远端历史，禁止使用"),
+    (r'\bDROP\s+TABLE\b',      "`DROP TABLE` 会删除数据库表，禁止使用"),
+    (r'\bTRUNCATE\b',          "`TRUNCATE` 会清空数据库表，禁止使用"),
+    # 没有 WHERE 条件的 DELETE
+    (r'\bDELETE\s+FROM\b(?!\s*\S+\s+WHERE\b)', "`DELETE FROM` 没有 WHERE 子句，会删除所有行"),
+]
+
+
+def log_blocked(attempted_command: str, reason: str, cwd: str = "") -> None:
+    """日志：时间戳 | 命令 | 项目路径 | 拦截原因"""
+    os.makedirs(LOG_DIR, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry = f"[{timestamp}] {reason}\n  Command: {attempted_command}\n  CWD:     {cwd}\n---\n"
+    with open(LOG_FILE, "a") as f:
+        f.write(entry)
+
+
+def check_command(command_str: str, cwd: str = "") -> bool:
+    """
+    检查命令是否危险。
+    返回 True = 放行（安全），False = 拦截（危险）。
+    """
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command_str, re.IGNORECASE):
+            log_blocked(command_str, reason, cwd)
+
+            # 向 Claude 输出阻挡信息（JSON lines）
+            block_msg = {
+                "type": "block",
+                "reason": reason,
+                "command": command_str,
+            }
+            print(json.dumps(block_msg), flush=True)
+            return False
+
+    return True
+
+
+def main() -> None:
+    # Claude Code hooks 在 stdin 传入 JSON 格式的 tool 调用信息
+    # https://docs.anthropic.com/claude-code/hooks
+    try:
+        raw = sys.stdin.read()
+        if not raw:
+            # 没有输入，放行
+            sys.exit(0)
+
+        payload = json.loads(raw)
+
+        # 从 payload 提取命令字符串
+        # 格式因 hook 类型和 claude-code 版本可能有差异
+        command_str = ""
+
+        # 尝试多种字段路径
+        if "command" in payload:
+            command_str = payload["command"]
+        elif "tool_input" in payload and isinstance(payload["tool_input"], dict):
+            command_str = payload["tool_input"].get("command", "")
+        elif "input" in payload and isinstance(payload["input"], dict):
+            command_str = payload["input"].get("command", "")
+        elif isinstance(payload, dict):
+            # 兜底：遍历查找 command 字段
+            for key in ("cmd", "command_string", "bash_command", "full_command"):
+                if key in payload:
+                    command_str = payload[key]
+                    break
+
+        cwd = payload.get("cwd", os.getcwd()) if isinstance(payload, dict) else os.getcwd()
+
+        if not command_str:
+            # 没有可识别的命令字段，放行
+            sys.exit(0)
+
+        if not check_command(command_str, cwd):
+            sys.exit(1)
+
+        sys.exit(0)
+
+    except json.JSONDecodeError:
+        # 非 JSON 输入，放行
+        sys.exit(0)
+    except Exception as e:
+        # 钩子本身出错不阻断正常操作
+        error_log = os.path.join(LOG_DIR, "hook_error.log")
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with open(error_log, "a") as f:
+            f.write(f"[{datetime.now(timezone.utc).isoformat()}] Hook error: {e}\n")
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
