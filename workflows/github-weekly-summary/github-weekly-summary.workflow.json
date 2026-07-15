@@ -1,0 +1,186 @@
+{
+  "name": "GitHub Weekly Summary — Claude",
+  "nodes": [
+    {
+      "id": "cron-trigger",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "weekday", "value": 5}]
+        }
+      }
+    },
+    {
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [400, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            {"name": "repo", "value": "owner/repo"},
+            {"name": "since", "value": "={{ $now.minus(7, 'days').toFormat('yyyy-MM-dd') }}"},
+            {"name": "language", "value": "EN"},
+            {"name": "toEmail", "value": "user@example.com"}
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 200],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{$json.repo}}/commits?since={{$json.since}}T00:00:00Z&per_page=20",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {"parameters": []},
+        "sendBody": false,
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "Accept", "value": "application/vnd.github.v3+json"},
+          {"name": "User-Agent", "value": "n8n-workflow"}
+        ]}
+      }
+    },
+    {
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 350],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/search/issues?q=repo:{{$json.repo}}+is:issue+is:closed+updated:>{{$json.since}}&sort=updated&per_page=20",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "Accept", "value": "application/vnd.github.v3+json"},
+          {"name": "User-Agent", "value": "n8n-workflow"}
+        ]}
+      }
+    },
+    {
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 500],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/search/issues?q=repo:{{$json.repo}}+is:pr+is:merged+updated:>{{$json.since}}&sort=updated&per_page=20",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "Accept", "value": "application/vnd.github.v3+json"},
+          {"name": "User-Agent", "value": "n8n-workflow"}
+        ]}
+      }
+    },
+    {
+      "id": "merge",
+      "name": "Merge All Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [800, 350],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 350],
+      "parameters": {
+        "language": "javaScript",
+        "code": "const data = $input.first().json;\nconst repo = data.repo || 'owner/repo';\nconst lang = data.language || 'EN';\n\nlet prompt = lang === 'FR'\n  ? `Résumé hebdomadaire du projet ${repo}:\\n\\n`\n  : `Weekly summary for ${repo}:\\n\\n`;\n\nconst items = $input.all();\nitems.forEach(item => {\n  const json = item.json;\n  if (json.sha) prompt += `- Commit: ${json.commit?.message?.split('\\n')[0]?.slice(0,80)}\\n`;\n  if (json.number) {\n    if (json.pull_request) prompt += `- PR #${json.number}: ${json.title}\\n`;\n    else prompt += `- Issue #${json.number}: ${json.title}\\n`;\n  }\n});\n\nprompt += '\\nWrite a brief narrative summary of these changes.';\nreturn { prompt, repo, language: lang };\n"
+      }
+    },
+    {
+      "id": "claude",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1200, 350],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendBody": true,
+        "bodyParameters": {"parameters": [
+          {"name": "model", "value": "claude-sonnet-4-20250514"},
+          {"name": "max_tokens", "value": 2048},
+          {"name": "messages", "value": "[{\"role\":\"user\",\"content\":\"{{$json.prompt}}\"}]"}
+        ]},
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "x-api-key", "value": "={{ $credentials.claudeApiKey }}"},
+          {"name": "anthropic-version", "value": "2023-06-01"},
+          {"name": "content-type", "value": "application/json"}
+        ]},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      }
+    },
+    {
+      "id": "extract",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 350],
+      "parameters": {
+        "language": "javaScript",
+        "code": "const resp = $input.first().json;\nconst summary = resp.content?.[0]?.text || JSON.stringify(resp);\nreturn { summary, repo: $input.first().json.repo, date: new Date().toISOString().split('T')[0] };\n"
+      }
+    },
+    {
+      "id": "email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1600, 350],
+      "parameters": {
+        "fromEmail": "n8n@workflow.local",
+        "toEmail": "={{ $json.toEmail }}",
+        "subject": "=Weekly GitHub Summary — {{ $json.repo }} ({{ $json.date }})",
+        "text": "={{ $json.summary }}"
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": {"main": [[{"node":"Config","type":"main","index":0}]]},
+    "Config": {"main": [[
+      {"node":"Fetch Commits","type":"main","index":0},
+      {"node":"Fetch Closed Issues","type":"main","index":0},
+      {"node":"Fetch Merged PRs","type":"main","index":0}
+    ]]},
+    "Fetch Commits": {"main": [[{"node":"Merge All Data","type":"main","index":0}]]},
+    "Fetch Closed Issues": {"main": [[{"node":"Merge All Data","type":"main","index":0}]]},
+    "Fetch Merged PRs": {"main": [[{"node":"Merge All Data","type":"main","index":0}]]},
+    "Merge All Data": {"main": [[{"node":"Build Prompt","type":"main","index":0}]]},
+    "Build Prompt": {"main": [[{"node":"Call Claude","type":"main","index":0}]]},
+    "Call Claude": {"main": [[{"node":"Extract Summary","type":"main","index":0}]]},
+    "Extract Summary": {"main": [[{"node":"Send Email","type":"main","index":0}]]}
+  },
+  "settings": {
+    "timezone": "UTC",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [{"name":"GitHub"},{"name":"Claude"},{"name":"Weekly"}]
+}
