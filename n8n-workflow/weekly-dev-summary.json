@@ -1,0 +1,240 @@
+{
+  "name": "Claude Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get date range for the past week\nconst now = new Date();\nconst oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nconst formatDate = (date) => {\n  return date.toISOString().split('T')[0];\n};\n\nreturn [{\n  json: {\n    since: formatDate(oneWeekAgo),\n    until: formatDate(now),\n    week_start: formatDate(oneWeekAgo),\n    week_end: formatDate(now)\n  }\n}];"
+      },
+      "name": "Calculate Week Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getCommits",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "additionalFields": {
+          "since": "={{ $json.since }}"
+        }
+      },
+      "name": "Get GitHub Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "githubApi": {
+          "id": "github-api",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getIssues",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "additionalFields": {
+          "state": "all",
+          "since": "={{ $('Calculate Week Range').item.json.since }}"
+        }
+      },
+      "name": "Get GitHub Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [650, 500],
+      "credentials": {
+        "githubApi": {
+          "id": "github-api",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "owner": "={{ $env.GITHUB_OWNER }}",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "additionalFields": {
+          "state": "all"
+        }
+      },
+      "name": "Get GitHub PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [650, 700],
+      "credentials": {
+        "githubApi": {
+          "id": "github-api",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process commits, issues, and PRs for Claude\nconst commits = $input.all()[0]?.json || [];\nconst issues = $input.all()[1]?.json || [];\nconst prs = $input.all()[2]?.json || [];\n\n// Calculate week range\nconst weekRange = $('Calculate Week Range').item.json;\n\n// Process commits\nconst commitSummary = {\n  total: commits.length,\n  byAuthor: {},\n  messages: commits.slice(0, 20).map(c => ({\n    message: c.message,\n    author: c.author?.name || 'Unknown',\n    date: c.date\n  }))\n};\n\ncommits.forEach(c => {\n  const author = c.author?.name || 'Unknown';\n  commitSummary.byAuthor[author] = (commitSummary.byAuthor[author] || 0) + 1;\n});\n\n// Process issues\nconst issueSummary = {\n  opened: issues.filter(i => {\n    const created = new Date(i.created_at);\n    const since = new Date(weekRange.since);\n    return created >= since;\n  }).length,\n  closed: issues.filter(i => {\n    if (!i.closed_at) return false;\n    const closed = new Date(i.closed_at);\n    const since = new Date(weekRange.since);\n    return closed >= since;\n  }).length,\n  total: issues.length\n};\n\n// Process PRs\nconst prSummary = {\n  opened: prs.filter(p => {\n    const created = new Date(p.created_at);\n    const since = new Date(weekRange.since);\n    return created >= since;\n  }).length,\n  merged: prs.filter(p => {\n    if (!p.merged_at) return false;\n    const merged = new Date(p.merged_at);\n    const since = new Date(weekRange.since);\n    return merged >= since;\n  }).length,\n  total: prs.length\n};\n\nreturn [{\n  json: {\n    week_range: weekRange,\n    commits: commitSummary,\n    issues: issueSummary,\n    pull_requests: prSummary,\n    raw: {\n      commits: commits.slice(0, 10),\n      issues: issues.slice(0, 10),\n      prs: prs.slice(0, 10)\n    }\n  }\n}];"
+      },
+      "name": "Summarize Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "model": "claude-3-sonnet-20240229",
+        "options": {},
+        "messages": {
+          "message": "=You are a technical documentation assistant. Generate a weekly development summary based on the following GitHub activity data.\n\n## Week Range: {{ $json.week_range.week_start }} to {{ $json.week_range.week_end }}\n\n## Commits\n- Total: {{ $json.commits.total }}\n- By Author: {{ JSON.stringify($json.commits.byAuthor) }}\n- Recent Messages:\n{{ $json.commits.messages.map(m => `- ${m.message} (${m.author})`).join('\\n') }}\n\n## Issues\n- Opened this week: {{ $json.issues.opened }}\n- Closed this week: {{ $json.issues.closed }}\n- Total open: {{ $json.issues.total }}\n\n## Pull Requests\n- Opened this week: {{ $json.pull_requests.opened }}\n- Merged this week: {{ $json.pull_requests.merged }}\n- Total: {{ $json.pull_requests.total }}\n\nPlease generate a well-formatted weekly summary with:\n1. Executive Summary\n2. Key Highlights\n3. Commits Summary\n4. Issues & PRs Activity\n5. Next Week Focus\n\nFormat in Markdown with emojis for readability.",
+          "options": {}
+        }
+      },
+      "name": "Claude API",
+      "type": "n8n-nodes-base.claude",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "credentials": {
+        "claudeApi": {
+          "id": "claude-api",
+          "name": "Claude API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "={{ $env.SLACK_CHANNEL || '#dev-updates' }}",
+        "text": "=:loud_sound: *Weekly Development Summary*\n{{ $json.content[0].text }}",
+        "options": {}
+      },
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1250, 400],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-api",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "={{ JSON.stringify($json) }}",
+        "fileName": "weekly-summary-{{ Date.now() }}.json"
+      },
+      "name": "Save Report",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [1050, 600]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Calculate Week Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Week Range": {
+      "main": [
+        [
+          {
+            "node": "Get GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get GitHub Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get GitHub PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Summarize Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get GitHub Issues": {
+      "main": [
+        [
+          {
+            "node": "Summarize Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get GitHub PRs": {
+      "main": [
+        [
+          {
+            "node": "Summarize Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Activity": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["claude", "weekly", "automation"]
+}
