@@ -1,0 +1,547 @@
+#!/usr/bin/env python3
+"""claude-review — structured Markdown PR review from a GitHub PR URL or diff."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from typing import Any
+
+PR_URL_RE = re.compile(
+    r"github\.com[/:](?P<owner>[^/]+)/(?P<repo>[^/]+?)(?:\.git)?/pull/(?P<number>\d+)",
+    re.I,
+)
+
+RISK_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("Hard-coded secret or credential pattern", re.compile(
+        r"(?i)(api[_-]?key|secret|password|token|private[_-]?key)\s*[:=]\s*['\"][^'\"]{8,}"
+    )),
+    ("SQL string concatenation (injection risk)", re.compile(
+        r"(?i)(execute|query|raw)\s*\(.*\+|SELECT\s+.+\+|INSERT\s+.+\+"
+    )),
+    ("Shell command with user-controlled interpolation", re.compile(
+        r"(?i)(os\.system|subprocess\.(call|run|Popen)|exec\(|eval\()"
+    )),
+    ("Disabled TLS / certificate verification", re.compile(
+        r"(?i)(verify\s*=\s*False|insecureSkipVerify|NODE_TLS_REJECT_UNAUTHORIZED)"
+    )),
+    ("Privilege or permission change", re.compile(
+        r"(?i)(chmod\s+777|sudo\s|setuid|iam:|ADMIN|ROOT)"
+    )),
+    ("Destructive data operation", re.compile(
+        r"(?i)(DROP\s+TABLE|TRUNCATE\s|DELETE\s+FROM|rm\s+-rf|unlinkSync)"
+    )),
+    ("Auth / session boundary change", re.compile(
+        r"(?i)(auth|jwt|oauth|session|csrf|cors|permission|role)"
+    )),
+    ("Network / public exposure", re.compile(
+        r"(?i)(0\.0\.0\.0|allow.?origin|public|listen\()"
+    )),
+]
+
+IMPROVEMENT_HINTS: list[tuple[str, re.Pattern[str], str]] = [
+    ("no_tests", re.compile(r"(?i)(test|spec|_test\.|tests/)"), 
+     "No test files appear in the diff — add or update tests for the changed behavior."),
+    ("todo", re.compile(r"(?i)\b(TODO|FIXME|XXX|HACK)\b"),
+     "Unresolved TODO/FIXME markers were introduced — track or resolve before merge."),
+    ("large_file", re.compile(r"."),  # handled specially
+     ""),
+    ("logging", re.compile(r"(?i)(console\.(log|debug)|print\(|logger\.(debug|info))"),
+     "New debug logging may be noisy in production — consider log levels or guards."),
+    ("error_swallow", re.compile(r"(?i)(except\s*:|catch\s*\([^)]*\)\s*\{\s*\})"),
+     "Broad exception handling may hide failures — narrow the catch and re-raise or log."),
+]
+
+
+@dataclass
+class PRInfo:
+    owner: str
+    repo: str
+    number: int
+    title: str = ""
+    body: str = ""
+    author: str = ""
+    url: str = ""
+    base: str = ""
+    head: str = ""
+    additions: int = 0
+    deletions: int = 0
+    changed_files: int = 0
+    files: list[dict[str, Any]] = field(default_factory=list)
+    diff: str = ""
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    m = PR_URL_RE.search(url.strip())
+    if not m:
+        raise SystemExit(
+            f"Invalid PR URL: {url!r}\n"
+            "Expected: https://github.com/owner/repo/pull/123"
+        )
+    return m.group("owner"), m.group("repo"), int(m.group("number"))
+
+
+def run_gh(args: list[str]) -> str:
+    env = os.environ.copy()
+    # Prevent ANSI color in captured JSON/diff (GH_FORCE_TTY / CLICOLOR_FORCE).
+    env["NO_COLOR"] = "1"
+    env["CLICOLOR"] = "0"
+    env.pop("CLICOLOR_FORCE", None)
+    env.pop("GH_FORCE_TTY", None)
+    try:
+        proc = subprocess.run(
+            ["gh", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        return proc.stdout
+    except FileNotFoundError:
+        raise SystemExit("gh CLI not found. Install GitHub CLI: https://cli.github.com/")
+    except subprocess.CalledProcessError as e:
+        err = (e.stderr or e.stdout or str(e)).strip()
+        raise SystemExit(f"gh failed: {err}")
+
+
+def fetch_pr(owner: str, repo: str, number: int) -> PRInfo:
+    """Fetch PR metadata and unified diff via gh (preferred) or REST API."""
+    info = PRInfo(owner=owner, repo=repo, number=number,
+                  url=f"https://github.com/{owner}/{repo}/pull/{number}")
+
+    if _have_gh():
+        meta_raw = run_gh([
+            "pr", "view", str(number),
+            "--repo", f"{owner}/{repo}",
+            "--json",
+            "title,body,author,url,baseRefName,headRefName,"
+            "additions,deletions,changedFiles,files",
+        ])
+        meta = json.loads(meta_raw)
+        info.title = meta.get("title") or ""
+        info.body = meta.get("body") or ""
+        author = meta.get("author") or {}
+        info.author = author.get("login") or ""
+        info.url = meta.get("url") or info.url
+        info.base = meta.get("baseRefName") or ""
+        info.head = meta.get("headRefName") or ""
+        info.additions = int(meta.get("additions") or 0)
+        info.deletions = int(meta.get("deletions") or 0)
+        info.changed_files = int(meta.get("changedFiles") or 0)
+        info.files = meta.get("files") or []
+        info.diff = run_gh(["pr", "diff", str(number), "--repo", f"{owner}/{repo}"])
+        return info
+
+    return _fetch_pr_api(info)
+
+
+def _have_gh() -> bool:
+    try:
+        subprocess.run(["gh", "--version"], capture_output=True, check=True)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+
+def _github_request(url: str, accept: str = "application/vnd.github+json") -> bytes:
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-review",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise SystemExit(f"GitHub API error {e.code} for {url}: {body[:300]}")
+
+
+def _fetch_pr_api(info: PRInfo) -> PRInfo:
+    base = f"https://api.github.com/repos/{info.owner}/{info.repo}/pulls/{info.number}"
+    meta = json.loads(_github_request(base).decode())
+    info.title = meta.get("title") or ""
+    info.body = meta.get("body") or ""
+    info.author = (meta.get("user") or {}).get("login") or ""
+    info.url = meta.get("html_url") or info.url
+    info.base = (meta.get("base") or {}).get("ref") or ""
+    info.head = (meta.get("head") or {}).get("ref") or ""
+    info.additions = int(meta.get("additions") or 0)
+    info.deletions = int(meta.get("deletions") or 0)
+    info.changed_files = int(meta.get("changed_files") or 0)
+    files = json.loads(_github_request(base + "/files?per_page=100").decode())
+    info.files = [
+        {
+            "path": f.get("filename"),
+            "additions": f.get("additions"),
+            "deletions": f.get("deletions"),
+            "changeType": f.get("status", "").upper(),
+        }
+        for f in files
+    ]
+    info.diff = _github_request(base, accept="application/vnd.github.v3.diff").decode(
+        "utf-8", errors="replace"
+    )
+    return info
+
+
+def _added_lines(diff: str) -> list[str]:
+    lines: list[str] = []
+    for line in diff.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            lines.append(line[1:])
+    return lines
+
+
+def _file_paths(info: PRInfo, diff: str) -> list[str]:
+    paths = [f.get("path") or f.get("filename") or "" for f in info.files]
+    paths = [p for p in paths if p]
+    if paths:
+        return paths
+    return re.findall(r"(?m)^diff --git a/(.+?) b/", diff)
+
+
+def analyze_local(info: PRInfo) -> dict[str, Any]:
+    """Heuristic structured review (no API key required)."""
+    diff = info.diff or ""
+    added = _added_lines(diff)
+    paths = _file_paths(info, diff)
+    path_blob = "\n".join(paths)
+    added_blob = "\n".join(added)
+
+    risks: list[str] = []
+    seen_risk: set[str] = set()
+    for label, pat in RISK_PATTERNS:
+        if pat.search(added_blob) or pat.search(diff):
+            if label not in seen_risk:
+                risks.append(label)
+                seen_risk.add(label)
+
+    total_churn = info.additions + info.deletions
+    if total_churn == 0 and diff:
+        total_churn = sum(
+            1 for ln in diff.splitlines()
+            if (ln.startswith("+") and not ln.startswith("+++"))
+            or (ln.startswith("-") and not ln.startswith("---"))
+        )
+
+    if total_churn > 500:
+        risks.append(
+            f"Large change set (~{total_churn} lines) — higher chance of unnoticed regressions"
+        )
+    if info.changed_files > 20 or len(paths) > 20:
+        risks.append(
+            f"Many files touched ({info.changed_files or len(paths)}) — review scope may be broad"
+        )
+
+    # Sensitive paths
+    for p in paths:
+        pl = p.lower()
+        if any(s in pl for s in (
+            "auth", "security", "crypto", "password", "secret",
+            "migration", "deploy", "dockerfile", "kubernetes", "helm",
+        )):
+            msg = f"Sensitive path modified: `{p}`"
+            if msg not in risks:
+                risks.append(msg)
+
+    if not risks:
+        risks.append("No high-severity risk patterns detected in the diff surface")
+
+    suggestions: list[str] = []
+    has_tests = bool(re.search(
+        r"(?i)(test|spec|_test\.|\.test\.|\.spec\.|/tests/|__tests__)",
+        path_blob,
+    ))
+    code_changed = any(
+        p.endswith(ext)
+        for p in paths
+        for ext in (
+            ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java",
+            ".rb", ".php", ".c", ".cpp", ".cs", ".swift", ".kt",
+        )
+    )
+    if code_changed and not has_tests:
+        suggestions.append(
+            "No test files appear in the diff — add or update tests for the changed behavior."
+        )
+
+    if re.search(r"(?i)\b(TODO|FIXME|XXX|HACK)\b", added_blob):
+        suggestions.append(
+            "Unresolved TODO/FIXME markers were introduced — track or resolve before merge."
+        )
+
+    if re.search(r"(?i)(console\.(log|debug)|^\s*print\()", added_blob, re.M):
+        suggestions.append(
+            "New debug logging may be noisy in production — consider log levels or guards."
+        )
+
+    # Docs-only / dependency-only hints
+    only_docs = paths and all(
+        re.search(r"(?i)\.(md|rst|txt)$|docs/|readme", p) for p in paths
+    )
+    if only_docs:
+        suggestions.append("Docs-only change — verify examples still compile/run if code snippets changed.")
+
+    if re.search(r"(?i)(package\.json|package-lock|yarn\.lock|requirements|go\.mod|Cargo\.toml)", path_blob):
+        suggestions.append(
+            "Dependency updates present — confirm lockfile is committed and CI matrix covers new engine ranges."
+        )
+
+    if info.body and len(info.body.strip()) < 20:
+        suggestions.append("PR description is thin — expand motivation, risk, and test plan for reviewers.")
+
+    if not suggestions:
+        suggestions.append(
+            "Diff looks focused; consider a short manual smoke test of the primary user path before merge."
+        )
+
+    # Summary (2–3 sentences)
+    file_list = ", ".join(f"`{p}`" for p in paths[:8])
+    if len(paths) > 8:
+        file_list += f", and {len(paths) - 8} more"
+    if not file_list:
+        file_list = "the listed paths"
+
+    body_hint = ""
+    if info.body:
+        # First non-empty, non-fence paragraph as intent signal
+        for para in re.split(r"\n\s*\n", info.body.strip()):
+            clean = re.sub(r"```.*?```", "", para, flags=re.S).strip()
+            clean = re.sub(r"\s+", " ", clean).strip(" :;-")
+            if len(clean) >= 40:
+                if len(clean) > 220:
+                    clean = clean[:220].rsplit(" ", 1)[0].rstrip(" :;-") + "…"
+                body_hint = clean
+                break
+
+    summary = (
+        f"PR {info.owner}/{info.repo}#{info.number} "
+        f"(\"{info.title}\") by @{info.author or 'unknown'} "
+        f"touches {info.changed_files or len(paths)} file(s) "
+        f"(+{info.additions}/-{info.deletions}): {file_list}."
+    )
+    if body_hint:
+        if not body_hint.endswith((".", "!", "?", "…")):
+            body_hint += "."
+        summary += f" Author intent: {body_hint}"
+    summary += (
+        " The review scanned the unified diff for security patterns, "
+        "test-coverage signals, and change-size risk."
+    )
+
+    # Confidence
+    if not diff.strip():
+        confidence = "Low"
+    elif total_churn > 800 or (info.changed_files or len(paths)) > 30:
+        confidence = "Low"
+    elif total_churn < 80 and (info.changed_files or len(paths)) <= 5:
+        confidence = "High"
+    else:
+        confidence = "Medium"
+
+    return {
+        "summary": summary,
+        "risks": risks,
+        "suggestions": suggestions,
+        "confidence": confidence,
+        "engine": "local-heuristic",
+    }
+
+
+def analyze_anthropic(info: PRInfo) -> dict[str, Any] | None:
+    """Optional Claude review when ANTHROPIC_API_KEY is set."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+    diff_truncated = info.diff
+    if len(diff_truncated) > 120_000:
+        diff_truncated = diff_truncated[:120_000] + "\n\n... [diff truncated] ..."
+
+    system = (
+        "You are a senior code review agent. Analyze the pull request and reply "
+        "with ONLY valid JSON (no markdown fences) using keys: "
+        "summary (string, 2-3 sentences), risks (array of strings), "
+        "suggestions (array of strings), confidence (one of Low, Medium, High)."
+    )
+    user = (
+        f"PR: {info.url}\n"
+        f"Title: {info.title}\n"
+        f"Author: {info.author}\n"
+        f"Base: {info.base} → Head: {info.head}\n"
+        f"Stats: +{info.additions}/-{info.deletions}, "
+        f"{info.changed_files} files\n\n"
+        f"Description:\n{info.body or '(none)'}\n\n"
+        f"Diff:\n{diff_truncated}"
+    )
+
+    payload = {
+        "model": model,
+        "max_tokens": 1500,
+        "system": system,
+        "messages": [{"role": "user", "content": user}],
+    }
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=json.dumps(payload).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "User-Agent": "claude-review",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:  # noqa: BLE001 — fall back to local
+        print(f"warning: Anthropic API failed ({e}); using local analysis", file=sys.stderr)
+        return None
+
+    text = ""
+    for block in data.get("content") or []:
+        if block.get("type") == "text":
+            text += block.get("text") or ""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        print("warning: could not parse model JSON; using local analysis", file=sys.stderr)
+        return None
+
+    conf = str(parsed.get("confidence") or "Medium").strip().title()
+    if conf not in {"Low", "Medium", "High"}:
+        conf = "Medium"
+    return {
+        "summary": str(parsed.get("summary") or "").strip() or "No summary provided.",
+        "risks": [str(x) for x in (parsed.get("risks") or [])] or ["None identified."],
+        "suggestions": [str(x) for x in (parsed.get("suggestions") or [])]
+        or ["No further suggestions."],
+        "confidence": conf,
+        "engine": f"anthropic:{model}",
+    }
+
+
+def format_markdown(info: PRInfo, review: dict[str, Any]) -> str:
+    risks = "\n".join(f"- {r}" for r in review["risks"])
+    suggestions = "\n".join(f"- {s}" for s in review["suggestions"])
+    return f"""# PR Review: {info.owner}/{info.repo}#{info.number}
+
+**Title:** {info.title}  
+**Author:** @{info.author or "unknown"}  
+**URL:** {info.url}  
+**Diff:** +{info.additions} / -{info.deletions} · {info.changed_files or len(info.files)} files  
+**Engine:** {review.get("engine", "unknown")}
+
+## Summary of changes
+
+{review["summary"]}
+
+## Identified risks
+
+{risks}
+
+## Improvement suggestions
+
+{suggestions}
+
+## Confidence score
+
+**{review["confidence"]}**
+"""
+
+
+def post_comment(info: PRInfo, body: str) -> None:
+    if not _have_gh():
+        raise SystemExit("--post requires the gh CLI")
+    run_gh([
+        "pr", "comment", str(info.number),
+        "--repo", f"{info.owner}/{info.repo}",
+        "--body", body,
+    ])
+    print(f"Posted review comment on {info.url}", file=sys.stderr)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="claude-review",
+        description=(
+            "Review a GitHub PR and emit structured Markdown "
+            "(summary, risks, suggestions, confidence)."
+        ),
+    )
+    p.add_argument(
+        "--pr",
+        required=True,
+        help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123",
+    )
+    p.add_argument(
+        "--output", "-o",
+        help="Write Markdown to this file (default: stdout)",
+    )
+    p.add_argument(
+        "--post",
+        action="store_true",
+        help="Post the review as a PR comment via gh",
+    )
+    p.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Skip Anthropic API even if ANTHROPIC_API_KEY is set",
+    )
+    p.add_argument(
+        "--diff-file",
+        help="Optional path to a unified diff to use instead of fetching",
+    )
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    owner, repo, number = parse_pr_url(args.pr)
+    info = fetch_pr(owner, repo, number)
+
+    if args.diff_file:
+        with open(args.diff_file, encoding="utf-8", errors="replace") as f:
+            info.diff = f.read()
+
+    review = None if args.local_only else analyze_anthropic(info)
+    if review is None:
+        review = analyze_local(info)
+
+    md = format_markdown(info, review)
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(md)
+            if not md.endswith("\n"):
+                f.write("\n")
+        print(f"Wrote {args.output}", file=sys.stderr)
+    else:
+        sys.stdout.write(md if md.endswith("\n") else md + "\n")
+
+    if args.post:
+        post_comment(info, md)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
