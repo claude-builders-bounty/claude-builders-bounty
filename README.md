@@ -1,53 +1,41 @@
-# Claude Builders Bounty 🤖
+# Pre-Tool-Use Hook: Block Destructive Commands
 
-> A community bounty board for Claude Code builders.
+Claude Code hook that intercepts and blocks dangerous bash commands before execution.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Installation (2 commands)
 
----
+```bash
+# Option 1: Bash version
+mkdir -p ~/.claude/hooks && cp pre-tool-use.sh ~/.claude/hooks/pre-tool-use.sh && chmod +x ~/.claude/hooks/pre-tool-use.sh
 
-## How it works
+# Option 2: Python version
+mkdir -p ~/.claude/hooks && cp pre-tool-use.py ~/.claude/hooks/pre-tool-use.py
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Blocked Commands
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+- `rm -rf` — Recursive force delete
+- `DROP TABLE` — SQL table destruction
+- `TRUNCATE` — Table truncation
+- `git push --force` / `git push -f` — Forced overwrite
+- `DELETE FROM` without WHERE — Mass data deletion
 
----
+## Logging
 
-## Active Bounties
+Every blocked attempt is logged to `~/.claude/hooks/blocked.log` with:
+- Timestamp (UTC)
+- Attempted command
+- Current project path
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## How It Works
 
----
+The hook runs as a pre-tool-use interceptor in Claude Code. When a command matches a dangerous pattern, it:
 
-## Rules
+1. Logs the attempt to `blocked.log`
+2. Displays a clear safety message explaining why it was blocked
+3. Suggests safer alternatives
+4. Prevents the command from executing
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Bounty
 
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+Addresses the [$100 HOOK] Pre-tool-use hook that blocks destructive bash commands (Issue #3)
