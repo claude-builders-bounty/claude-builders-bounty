@@ -1,0 +1,315 @@
+{
+  "name": "Weekly Dev Summary - GitHub + Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "Weekly Cron (Friday 5pm)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_REPO",
+              "value": "={{$json.GITHUB_REPO || 'owner/repo'}}"
+            },
+            {
+              "name": "GITHUB_TOKEN",
+              "value": "={{$json.GITHUB_TOKEN || ''}}"
+            },
+            {
+              "name": "CLAUDE_API_KEY",
+              "value": "={{$json.CLAUDE_API_KEY || ''}}"
+            },
+            {
+              "name": "DELIVERY_METHOD",
+              "value": "={{$json.DELIVERY_METHOD || 'discord'}}"
+            },
+            {
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "={{$json.DISCORD_WEBHOOK_URL || ''}}"
+            },
+            {
+              "name": "EMAIL_TO",
+              "value": "={{$json.EMAIL_TO || ''}}"
+            },
+            {
+              "name": "LANGUAGE",
+              "value": "={{$json.LANGUAGE || 'EN'}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Set Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const repo = $input.first().json.GITHUB_REPO;\nconst token = $input.first().json.GITHUB_TOKEN;\n\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst since = weekAgo.toISOString();\nconst until = now.toISOString();\n\nconst headers = token ? { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' } : { 'Accept': 'application/vnd.github.v3+json' };\n\n// Fetch commits\nconst commitsResp = await fetch(`https://api.github.com/repos/${repo}/commits?since=${since}&until=${until}&per_page=100`, { headers });\nconst commits = commitsResp.ok ? await commitsResp.json() : [];\n\n// Fetch closed issues\nconst issuesResp = await fetch(`https://api.github.com/repos/${repo}/issues?state=closed&since=${since}&per_page=100`, { headers });\nconst issues = issuesResp.ok ? await issuesResp.json() : [];\n\n// Fetch merged PRs\nconst prsResp = await fetch(`https://api.github.com/repos/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`, { headers });\nconst allPrs = prsResp.ok ? await prsResp.json() : [];\nconst mergedPrs = allPrs.filter(pr => pr.merged_at && new Date(pr.merged_at) >= new Date(since));\n\nreturn [{\n  json: {\n    repo,\n    period: `${weekAgo.toISOString().split('T')[0]} to ${now.toISOString().split('T')[0]}`,\n    commits: commits.map(c => ({\n      sha: c.sha?.substring(0, 7),\n      message: c.commit?.message?.split('\\n')[0],\n      author: c.commit?.author?.name,\n      date: c.commit?.author?.date\n    })),\n    issues: issues.map(i => ({\n      number: i.number,\n      title: i.title,\n      user: i.user?.login,\n      labels: i.labels?.map(l => l.name) || []\n    })),\n    mergedPrs: mergedPrs.map(pr => ({\n      number: pr.number,\n      title: pr.title,\n      user: pr.user?.login,\n      merged_at: pr.merged_at,\n      additions: pr.additions,\n      deletions: pr.deletions\n    }))\n  }\n}];"
+      },
+      "id": "fetch-github",
+      "name": "Fetch GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = $input.first().json;\nconst lang = $input.first().json.LANGUAGE || 'EN';\n\nconst isFrench = lang.toUpperCase() === 'FR';\n\nconst commitsSummary = data.commits.length > 0\n  ? data.commits.map(c => `- ${c.sha} by ${c.author}: ${c.message}`).join('\\n')\n  : (isFrench ? 'Aucun commit cette semaine.' : 'No commits this week.');\n\nconst issuesSummary = data.issues.length > 0\n  ? data.issues.map(i => `- #${i.number}: ${i.title} (by @${i.user})`).join('\\n')\n  : (isFrench ? 'Aucune issue fermée cette semaine.' : 'No issues closed this week.');\n\nconst prsSummary = data.mergedPrs.length > 0\n  ? data.mergedPrs.map(pr => `- PR #${pr.number}: ${pr.title} by @${pr.user} (+${pr.additions}/-${pr.deletions})`).join('\\n')\n  : (isFrench ? 'Aucune PR fusionnée cette semaine.' : 'No PRs merged this week.');\n\nconst systemPrompt = isFrench\n  ? `Tu es un assistant de rédaction technique. Génère un résumé narratif hebdomadaire du développement du dépôt ${data.repo} pour la période ${data.period}. Sois concis, professionnel et utile. Structure ta réponse avec des sections claires. Utilise un ton engageant mais factuel. maximum 500 mots.`\n  : `You are a technical writing assistant. Generate a narrative weekly summary of development activity for repository ${data.repo} for the period ${data.period}. Be concise, professional, and useful. Structure your response with clear sections. Use an engaging but factual tone. maximum 500 words.`;\n\nconst userPrompt = isFrench\n  ? `Voici les données de la semaine :\n\nCommits (${data.commits.length}):\n${commitsSummary}\n\nIssues fermées (${data.issues.length}):\n${issuesSummary}\n\nPRs fusionnées (${data.mergedPrs.length}):\n${prsSummary}\n\nGénère un résumé narratif hebdomadaire structuré.`\n  : `Here is this week's data:\n\nCommits (${data.commits.length}):\n${commitsSummary}\n\nClosed Issues (${data.issues.length}):\n${issuesSummary}\n\nMerged PRs (${data.mergedPrs.length}):\n${prsSummary}\n\nGenerate a structured weekly narrative summary.`;\n\nreturn [{\n  json: {\n    ...data,\n    systemPrompt,\n    userPrompt\n  }\n}];"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$json.CLAUDE_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "1024"
+            },
+            {
+              "name": "system",
+              "value": "={{$json.systemPrompt}}"
+            },
+            {
+              "name": "messages",
+              "value": "={{JSON.stringify([{role: 'user', content: $json.userPrompt}])}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "const claudeResp = $input.first().json;\nconst config = $('Set Configuration').first().json;\nconst githubData = $('Fetch GitHub Data').first().json;\n\nlet summary = '';\nif (claudeResp.content && claudeResp.content[0] && claudeResp.content[0].text) {\n  summary = claudeResp.content[0].text;\n} else if (claudeResp.error) {\n  summary = `Claude API Error: ${claudeResp.error.message || JSON.stringify(claudeResp.error)}\\n\\nFallback raw summary:\\nRepository: ${githubData.repo}\\nPeriod: ${githubData.period}\\nCommits: ${githubData.commits.length}\\nIssues closed: ${githubData.issues.length}\\nPRs merged: ${githubData.mergedPrs.length}`;\n} else {\n  summary = 'Error: Unexpected Claude API response format';\n}\n\nconst title = `Weekly Dev Summary - ${githubData.repo} (${githubData.period})`;\n\nreturn [{\n  json: {\n    title,\n    summary,\n    repo: githubData.repo,\n    period: githubData.period,\n    stats: {\n      commits: githubData.commits.length,\n      issuesClosed: githubData.issues.length,\n      prsMerged: githubData.mergedPrs.length\n    },\n    deliveryMethod: config.DELIVERY_METHOD,\n    discordWebhook: config.DISCORD_WEBHOOK_URL,\n    emailTo: config.EMAIL_TO\n  }\n}];"
+      },
+      "id": "parse-response",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.deliveryMethod}}",
+              "operation": "equals",
+              "value2": "discord"
+            }
+          ]
+        }
+      },
+      "id": "check-discord",
+      "name": "Is Discord?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.discordWebhook}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: `## 📊 ${{ $json.title }}\\n\\n${{ $json.summary }}\\n\\n---\\n*Generated by n8n + Claude API*` }) }}",
+        "options": {}
+      },
+      "id": "send-discord",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{$json.emailTo}}",
+        "subject": "={{$json.title}}",
+        "message": "={{$json.summary}}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = $input.first().json;\nreturn [{ json: { success: true, message: `Weekly summary sent via ${data.deliveryMethod}`, repo: data.repo, period: data.period } }];"
+      },
+      "id": "log-success",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Friday 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Set Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Data": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Is Discord?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Discord?": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Discord": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1
+}
