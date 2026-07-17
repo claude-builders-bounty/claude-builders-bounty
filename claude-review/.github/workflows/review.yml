@@ -1,0 +1,69 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # Run on PR events, or on issue comments containing "/review"
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/review'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install claude-review
+        run: pip install ./claude-review
+
+      - name: Determine PR URL
+        id: pr
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "url=${{ github.event.pull_request.html_url }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=${{ github.event.issue.html_url }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run claude-review
+        id: review
+        run: |
+          review=$(claude-review "${{ steps.pr.outputs.url }}" --json)
+          echo "review<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$review" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reviewData = JSON.parse(`${{ steps.review.outputs.review }}`);
+            const body = `## 🤖 Claude Code Review
+
+            ${reviewData.review}
+
+            ---
+            *Reviewed by [claude-review](https://github.com/gtmdev-br/claude-builders-bounty/tree/main/claude-review) using Claude*`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
