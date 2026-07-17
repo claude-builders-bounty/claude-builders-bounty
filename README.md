@@ -34,6 +34,66 @@ You're in the right place.
 
 ---
 
+## Claude Review Agent
+
+This repository includes `claude-review`, a small Claude Code-style pull request reviewer that turns a PR diff into a structured Markdown review comment.
+
+### Install
+
+```bash
+npm install
+npm link
+```
+
+### CLI Usage
+
+```bash
+claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+You can also review a saved diff:
+
+```bash
+claude-review --diff-file path/to/pr.diff
+```
+
+Or pipe a diff from another command:
+
+```bash
+git diff origin/main...HEAD | claude-review --stdin
+```
+
+The output is a Markdown comment with:
+
+- Summary of changes
+- Identified risks
+- Improvement suggestions
+- Confidence score: Low, Medium, or High
+
+Use `--json` when another tool needs the structured review object.
+
+### GitHub Action
+
+The workflow in `.github/workflows/claude-review.yml` runs on pull requests, generates a structured review with `node bin/claude-review.js --pr "$PR_URL"`, and posts it back as a PR comment.
+
+### Sample Outputs
+
+Two example review comments are included:
+
+- `examples/sample-pr-1.md`
+- `examples/sample-pr-2.md`
+
+### Development
+
+```bash
+npm run type-check
+npm test
+npm run lint
+npm run build
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
