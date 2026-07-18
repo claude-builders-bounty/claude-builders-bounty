@@ -1,0 +1,268 @@
+# Changelog
+
+Repository: **Redteaming harnass**
+
+## [57f2ac1] - 2026-07-18
+
+_Generated full history (no tags found)_
+
+### Added
+- feat(tui): slash-command autocomplete, session/resume picker, sidebar fix
+- feat(report/sweeps): richer metrics + truncation-aware multi_fire/system_sweep
+- Add unified agent profiles and role resolution
+- Add 5 attack tools: cipherchat, skeleton_key, persuasion_attack, drattack, ica (review-fixed re-land of #13) (#15)
+- Add caesar5 and caesar13 cipher transforms.Extend the Caesar cipher family from the improvement roadmap using the existing _caesar helper, with round-trip tests and agent doctrine updates. (#14)
+- feat(presets): load user-defined jailbreak templates from presets/ directory (#12)
+- Add repository cloning instructions to README (#11)
+- Add provider and role management dashboard
+- Add provider specification research agent
+- Add managed provider registry and role APIs
+- feat(skills): add jailbroken-mcp skill for working Jailbroken challenges
+- feat(mcp): wire jailbroken.gg remote MCP server into the harness config
+- feat(seed_sweep): fold ZetaLib + UltraBr3aks seeds into the batch sweep
+- feat(library): wire ZetaLib + UltraBr3aks jailbreak corpora into the harness
+- feat: wire CLAUDE_ENI into ENI catalog and forge seed routing
+- feat(tui): JEFF K h4x0r reskin — hazard-tape caution aesthetic
+- feat: persona_forge compiles and surgically evolves ENI genomes
+- feat: PersonaSpec parse/render/patch for ENI genomes
+- Add provider-aware model choosers
+- Add provider model catalog API
+- Add collapsible dashboard sidebar
+- feat(benchmark5): isolated 5-attacker campaign runner vs Opus 4.8
+- Add advanced dashboard settings presets
+- Add reusable agent run configuration
+- Add historical findings explorer
+- feat(profile_target): richer target profiler - ladder, permissiveness, self-consistency
+- feat(swarm): siege auto-runs profile_target first when no fingerprint
+- feat(logging): save every tool call + chain-of-thought to the run log
+- feat(swarm): make the siege observable - live frames, learnings, on-disk transcript
+- Add max tokens control to attack console
+- feat(swarm): siege persists until broken (rounds default 20/max 60 + stall guard)
+- feat(swarm): collaborative multi-round SIEGE mode (Pliny-style)
+- feat(swarm): configurable default roster via [swarm] roster in config
+- feat(tui): add /swarm command to fire the attacker swarm directly
+- feat(swarm): per-model jailbreak system prompts from library/jailbreaks/
+- feat(swarm): vote/best-of attacker swarm across multiple profiles
+- feat(vault): auto-file every break into a curated, model-foldered prompt vault
+- Add persistent dashboard attack logging
+- Add artprompt transform for ASCII-art word masking.
+- feat(tools): add narrative_persona_splinter attack tool
+- feat(tui): show pasted multi-line prompt in a visible compose preview
+- feat(providers): add native xAI (api.x.ai) support
+- feat(brain): layer operator system_prompt_file over harness instructions for API brains
+- feat(anthropic): bearer-auth option for third-party proxies (tokies.cc)
+- feat(brain): add Claude Code (local CLI) as a selectable red-teamer brain
+- feat(author_persona): domain inference + anchor register (from live run)
+- feat(sysprompts): system-prompt corpus tool + native-format mimicry
+- feat(persona): codify the ENI authoring method + author_persona tool
+- feat(transforms): add Tier-3 T2I framing transforms (Etch/PGJ/OptJail/dilution)
+- feat(image): add image-edit channel + Chain-of-Jailbreak driver for Nano Banana
+- feat(parsel): wire the full P4RS3LT0NGV3 engine in natively
+- feat(tools): add chat_session — phased conversational red-team
+- feat(skills): add x-breach-post skill for X/Twitter announcement posts
+- feat(session_card): render via local headless Chrome first, pixel-perfect
+- feat(finish): auto-generate a branded session-card PNG per engagement
+- feat(cot_forge): harvest CoT from a benign neighbor when the harmful ask leaks none
+- feat(presets): cot_channel_split + cot_gradient — CoT-breaking techniques
+- feat(dashboard): Settings panel — swap target/attacker/judge model live
+- feat(dashboard): autonomous Agent view (TUI attack loop, streamed to the browser)
+- feat(dashboard): FastAPI + React/Vite web dashboard
+- feat(tui): Wallbreaker visual restyle (theme, banner, chrome)
+- feat(pliny): contract-scaffold + refusal-inversion presets, SPECIAL_TOKENS activation, corpus hygiene
+- feat(E): the learning layer (3-tier memory + distill-from-failure)
+- feat(bandit): add ContextualBandit Thompson sampler with per-context Beta arms
+- feat(D): persona + authority-framing tools (brain-invoked)
+- feat(C): CoT weaponization (brain-driven, off the leaked trace)
+- feat(B): brain-driven recon tools (advisory, never auto-attack)
+- feat(A): protocol-aware prefill router (fix inert prefill on OpenAI/xAI)
+- feat: roadmap phase 5 — new attack surfaces
+- feat: roadmap phase 4b — reporting + campaign engine
+- feat: roadmap phase 4a — lifelong memory
+- feat: AutoDAN-Turbo lifelong strategy library + strategy_attack tool
+- feat: roadmap phase 3 — adaptive multi-turn core
+- feat: roadmap phase 2 — greedy to search
+- feat: roadmap phase 0+1 — transforms, presets, StrongREJECT judge, datasets
+- feat(config): Claude attacker-brain profiles (wire the brain to Claude)
+- feat: safe-completions counter + v10-minimal (GPT-5.5 correction)
+- feat(tui): accept multi-line prompts and text pasting
+- feat: add 2026 frontier-reasoning arsenal + Volkov v9
+- feat: steer mid-round - operator feedback lands on the next model turn
+- feat: handle system-hardened + input/output-classifier targets
+- Add image-model jailbreaking on OpenRouter
+- Add system_transforms: obfuscate the target system slot for invisible-instruction smuggling
+- Add P4RS3LT0NGV3 as an MCP server the harness drives
+- Add /sysprompt load <file|seed> + parse samples= in /sysprompt test
+- Add /regrade: re-judge a run log with the fixed judge
+- Add fire_file: send a prompt from a file to the target VERBATIM (no distilling)
+- Add adapt_seed: tailor ENI/L1B3RT4S personas instead of firing them verbatim
+- Add /fire and /push: a hands-on multi-turn console in the TUI
+- Add pair_sweep: batched PAIR across a whole battery
+- Add narrate: automate the fiction-frame + in-story prefill attack
+- Add seed_sweep: find which jailbreak seed cracks the target
+- Add 'rth check' config doctor + /help [topic] filter
+- Add judge_selftest + /judge test: calibrate the grader before trusting ASR
+- Add session autosave + rth --resume
+- Add leak_scan tool + /leakscan: structured output-side leak detection
+- Add 'did you mean' command suggestions + /transforms /tools filters
+- Add headless report/export CLI subcommands + fix exit-code propagation
+- Add /leaderboard + /export surfaces, CHANGELOG
+- Add leaderboard robustness benchmark + Ctrl+T/Ctrl+R shortcuts
+- Add /campaign, /find, /repro TUI commands
+- Add campaign auto-escalation tool + /diff TUI surface
+- Add recommend_transforms, HTML report export, /replay
+- Add prefill + diff_fire tools, enrich status bar
+- Add many_shot jailbreak tool + /encode and /stats TUI commands
+- Add 2025/2026 attack tools: PAIR/TAP, best-of-N, scan, indirect injection
+- Add /template workspace for in-TUI hand iteration
+- Add Parseltongue's remaining features: mutate, barcode, split modes, bijection sets
+- Add Parseltongue font styles + noise/gibberish/neutralize/greek (41 transforms)
+- Add optimize_universal: converge on ONE universal prompt, not many
+
+### Fixed
+- fix provider connection controls
+- Fix max token input editing
+- fix(sweeps): grade the full reply, not the truncated fragment (ASR undercount)
+- fix(eni): restore cross-vendor wording in eni_get description
+- fix(benchmark5): Sonnet anthropic wire + idle refusal diagnostics
+- fix(benchmark5): force tool_choice=required for autonomous attackers
+- fix(benchmark5): harden against empty tool rounds
+- fix(swarm): siege leads light + diversifies frames instead of stacking override
+- Fix ImportError in one-shot mode
+- fix(tui): stop force-scrolling the log on every new message
+- fix(transforms): expand perceptual_sub injury dictionary from live gap
+- fix(session_card): drop the "authorized red-team research" footer text
+- fix(cli): register dashboard in the manual SUBCOMMANDS router
+- fix(state): stop launch crash from target_profile key collision (unhashable dict)
+- fix(tui): stop double-paste — prevent_default skips base Input._on_paste
+- Fix recommend_transforms hanging on a slow/hung target
+- Fix: runtime target override left image models stuck at modality=text
+- Fix system_sweep/validate always returning 0 (complete() missing temperature)
+- Fix judge scoring obfuscated bypasses as REFUSED
+- Fix seed_sweep truncating ENI personas (12000 -> 40000 cap)
+- Fix slash-command paths with spaces/quotes (shlex tokenizer)
+- Fix /session load on run logs (.jsonl)
+- Fix crash: convert httpx stream errors (ReadTimeout) to ProviderError
+- Resolve "one system prompt" failure: system_sweep + anti-variant discipline
+- Fix two bugs from session review: reasoning-model empty replies + file crashes
+- Fix #3: l1b3rt4s_search uses token/OR matching + ranking
+- Fix #2: optimize_universal no longer hangs as a black box
+
+### Changed
+- Polish agent controls and arsenal templates
+- Expand judge_selftest calibration fixtures to 20 cases. Add XSS, phishing, path traversal, toy, deflection, off-topic, and garbled fixtures; extend tests for coverage and dynamic agreement counts.
+- chore: remove the jailbroken.gg MCP server integration
+- Make inference runs reliable and readable
+- improve provider setup and capture complete run logs
+- chore(gitignore): ignore tool-reference dumps and loose jailbreak drafts
+- unify provider configuration
+- chore: drop the legacy limerence persona-genome family and all references
+- Wire artprompt into agent doctrine and taxonomy. List artprompt in the agent transform doctrine, add OWASP/ATLAS (#6)
+- improve provider model and credential editing
+- Share provider and model chooser caches
+- Persist provider model catalogs
+- docs(lessons): config.toml shadows config.example.toml at load time
+- perf(providers): pooled keep-alive client + HTTP/2 + tunable concurrency
+- perf(providers): OpenRouter cache breakpoints + 1h TTL option
+- perf(providers): Anthropic prompt caching to kill O(n^2) round cost
+- docs: lock PersonaSpec design for ENI genome compile
+- chore(benchmark5): drop DeepSeek R1; harden Sonnet attacker path
+- docs(lessons): safe-completion wall — output-centric defense, static-prompt ceiling
+- docs(claude): log siege backfire-spiral + frame-ladder lesson
+- Load .env at CLI startup
+- docs(claude): log function-local import shadowing gotcha (UnboundLocalError)
+- docs(claude): log function-local import shadowing gotcha (UnboundLocalError)
+- Update README.md
+- Update README.md
+- docs(readme): remove em dashes, correct native transform count (43 -> 59)
+- license: relicense from Apache-2.0 to AGPL-3.0-or-later
+- docs: document image-edit channel, persona author, sysprompt mimicry & new brains
+- chore(release): pre-open-source cleanup
+- docs(prompts): teach the driving agent when to reach for chat_session
+- docs: record the session-card glyph-rendering lesson in CLAUDE.md
+- chore: remove jailbreak artifact files from the repo
+- docs(dashboard): add UI screenshots + hash-routed tabs
+- chore(oss): Apache-2.0 license, responsible-use docs, gitignore hardening
+- refactor: rebrand rth/rtharness/Claude Red -> Wallbreaker
+- docs: recon-first driving doctrine + new-tool catalog + changelog
+- docs: teach brain the new arsenal + changelog + workflow lesson
+- refactor(doctrine): de-brand GPT-5.5-specific guidance to vendor-neutral
+- Revert "feat(config): Claude attacker-brain profiles (wire the brain to Claude)"
+- docs: log TUI MRO double-dispatch + #prompt Input-subclass lessons
+- ux: live self-updating "attack run" panel for multi-step flows
+- brand: center claudie head over body in banner
+- brand: rebrand to "Claude Red" (red-snake / venom theme)
+- tools: add ST3GG image steganography (st3gg_encode/decode/analyze/...)
+- run_shell: fail-fast timeout + kill the whole process tree
+- providers: recover truncated/loose tool-call args instead of "path is required"
+- files: add patch_file (atomic multi-hunk diff) + edit_file replace_all
+- system_sweep: load the candidate (and task battery) from a file
+- attacker: add INVENT-DONT-RECITE novelty doctrine to <prompt_architecture>
+- attacker: teach RTH-1 to compose hybrid (semantic+mechanical) jailbreak prompts
+- harness: recover CoT token-exhaustion, verify leaks, persist finish artifacts
+- Steer multi-turn attacks off the target's exposed reasoning
+- Capture and grade the target's reasoning/CoT (text + image)
+- image-gen: surface the model's refusal text when no image is returned
+- tui: add UI tests + record TUI test-contract lessons
+- tui: themed panels, timestamps, prominent verdicts, steering panel
+- tui: scannable header with spinner + live stats sidebar
+- tui: add rth theme + external stylesheet, switch app to CSS_PATH
+- Live steering: type feedback while the agent works; it adapts next round
+- system_sweep records per-task verdicts so the universal-prompt sweep is captured
+- Realign judge_selftest fixtures with the harm-substance judge
+- Rebalance doctrine to hands-on; add continue_target for live multi-turn
+- Make the agent actually FIRE fetched ENI/L1B3RT4S seeds
+- Audit fixes: confine file writes to cwd; clean target-timeout result
+- Speed up sweeps: cap concurrency + steer the agent to batch
+- optimize_universal: optional prefill in the eval loop
+- narrate: rotate framings + variants sweep (a fixed frame decays)
+- system_sweep: optional prefill so the universal-prompt eval uses the strongest combo
+- Treat jailbreak collections as cross-provider; add model='all'
+- Wire the ENI persona-jailbreak collection (eni_list/search/get, /eni, rth eni)
+- pair_attack records its winning verdict; refresh CHANGELOG
+- Record verdicts from crescendo, diff_fire, and campaign
+- Record tool-graded verdicts so autonomous runs produce reports
+- Thread technique attribution into export, repro pack, and HTML report
+- Tag verdicts with technique; ASR-by-technique in /stats and report
+- Deepen leak_scan (Luhn cards, SSN, phone, secret assigns) + thread evidence into scan
+- Default headless report/export to the latest run log + CI workflow example
+- Refresh README to the current harness + add /tools arsenal command
+- scan adds HarmBench category probes; finish requires a validated rate
+- Smaller timeouts + concurrent multi_fire so slow backends don't stall
+- /validate and /provider TUI commands for reliability + reproducibility
+- Reliability: validate tool + multi-sample sweep + OpenRouter provider pinning
+- Use HarmBench as the standardized prompt source (remove selection bias)
+- optimize_universal: add slot='system' to hill-climb one system prompt
+- Persist working template in sessions + /template test scoreboard
+- Prefer hand iteration over optimize_universal for universal-prompt tasks
+- Harden Anthropic provider for extended-thinking models (symmetric fix)
+- query_target encodes+fires atomically; force encoding as a real lever
+- Ignore .DS_Store
+- /findings: surface the bypasses (COMPLIED/PARTIAL) from a run log
+- Swap the judge model live (/judge model <id>) + record session lessons
+- Curated jailbreak preset templates (preset tool + /preset)
+- Live progress + per-call latency in target/multi_fire/crescendo
+- Use the LLM judge for verdicts instead of the substring classifier
+- RTH-1: hard rules of engagement (no raw fires, use seeds, escalate)
+- Remember settings across launches (.rth_state.json)
+- Batch 5: session save/resume + full README refresh
+- Pick the target model directly: /target <model-id> and --target/--target-model
+- Batch 3: crescendo tool, /objective, UX keybindings + busy indicator
+- Batch 2: LLM-judge grader, multi_fire campaign tool, /report
+- finish() stops the harness; add run-log, auto-verdict, ASR, markdown UI
+- Autonomous loop: agent grinds until finish() or ask_operator()
+- Rewrite default system prompt as RTH-1 authorized red-team operator
+- Ignore local config.toml so endpoint keys never get committed
+- Phase 5: tests, README, agentic one-shot, project notes
+- Phase 4: Textual TUI with streaming, tool panels, slash commands
+- Phase 3: red-team tools (Parseltongue, L1B3RT4S, target, http)
+- Phase 2: tool registry + agentic loop + shell/file tools
+- Phase 1: scaffold, config loader, dual-protocol provider layer
+- Initial commit
+
+### Removed
+- Remove report.md
+- Remove dead/duplicate/unused code + fix undefined model_id (#1)
+- Remove dead/duplicate/unused code + fix undefined model_id (#1)
+- Delete wallbreaker_sonnet5_breach.png
+- Delete wallbreaker_sonnet5_breach.png
+
