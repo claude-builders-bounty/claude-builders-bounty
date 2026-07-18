@@ -1,0 +1,84 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cron", "expression": "0 17 * * 5" }]
+        }
+      }
+    },
+    {
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.gitHub",
+      "parameters": {
+        "repository": "={{ $json.repository }}",
+        "filters": {
+          "since": "={{ (new Date(Date.now() - 7*24*60*60*1000)).toISOString() }}"
+        },
+        "resource": "commit",
+        "operation": "list"
+      }
+    },
+    {
+      "name": "GitHub Issues",
+      "type": "n8n-nodes-base.gitHub",
+      "parameters": {
+        "repository": "={{ $json.repository }}",
+        "filters": {
+          "state": "closed",
+          "since": "={{ (new Date(Date.now() - 7*24*60*60*1000)).toISOString() }}"
+        },
+        "resource": "issue",
+        "operation": "list"
+      }
+    },
+    {
+      "name": "Merge GitHub Data",
+      "type": "n8n-nodes-base.merge",
+      "parameters": {
+        "mode": "combine"
+      }
+    },
+    {
+      "name": "Claude API Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "headers": {
+          "x-api-key": "={{ $env.CLAUDE_API_KEY }}",
+          "anthropic-version": "2023-06-01"
+        },
+        "sendBody": true,
+        "body": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 4000,
+          "messages": [{
+            "role": "user",
+            "content": "=Generate a weekly development summary from this data:\n\nCommits: {{ $json.commits }}\nClosed Issues: {{ $json.issues }}\n\nFormat as a narrative with sections: Highlights, Commits, Issues Closed, Contributors"
+          }]
+        }
+      }
+    },
+    {
+      "name": "Send Summary",
+      "type": "n8n-nodes-base.emailSend",
+      "parameters": {
+        "fromEmail": "dev-summary@example.com",
+        "toEmail": "={{ $json.recipient }}",
+        "subject": "Weekly Dev Summary",
+        "text": "={{ $json.content }}"
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": { "main": [[{ "node": "GitHub Commits" }, { "node": "GitHub Issues" }]] },
+    "GitHub Commits": { "main": [[{ "node": "Merge GitHub Data" }]] },
+    "GitHub Issues": { "main": [[{ "node": "Merge GitHub Data" }]] },
+    "Merge GitHub Data": { "main": [[{ "node": "Claude API Summary" }]] },
+    "Claude API Summary": { "main": [[{ "node": "Send Summary" }]] }
+  }
+}
