@@ -1,0 +1,344 @@
+{
+  "name": "Weekly GitHub Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-friday-5pm",
+      "name": "Cron: Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "GITHUB_REPO",
+              "value": "={{ $env.GITHUB_REPO }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "ANTHROPIC_API_KEY",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "={{ $env.DISCORD_WEBHOOK_URL }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "SUMMARY_LANGUAGE",
+              "value": "=EN",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-vars",
+      "name": "Set variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_REPO }}/commits?since={{ DateTime.now().minus({days:7}).toISO() }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "gh-commits",
+      "name": "GitHub: commits (7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/search/issues?q=repo:{{ $json.GITHUB_REPO }}+is:merged+merged:>={{ DateTime.now().minus({days:7}).toISODate() }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "gh-prs",
+      "name": "GitHub: merged PRs (7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        680,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/search/issues?q=repo:{{ $json.GITHUB_REPO }}+is:issue+is:closed+closed:>={{ DateTime.now().minus({days:7}).toISODate() }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "gh-issues",
+      "name": "GitHub: closed issues (7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        680,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst merged = items.map(i => i.json);\nconst compact = merged.flatMap(group => (group.items || group).slice(0, 30).map(it => ({\n  type: it.pull_request ? 'pr' : (it.state === 'closed' ? 'issue' : 'commit'),\n  title: it.commit?.message?.split('\\n')[0] || it.title || it.message || '',\n  author: it.user?.login || it.author?.login || it.commit?.author?.name || 'unknown',\n  url: it.html_url || it.url || '',\n  when: it.merged_at || it.closed_at || it.commit?.author?.date || ''\n})));\nreturn compact.map(c => ({ json: c }));"
+      },
+      "id": "merge-flatten",
+      "name": "Code: flatten + tag",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $('set-vars').item.json.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"You are a developer-advocate narrator. Repo: {{ $('set-vars').item.json.GITHUB_REPO }}. Output language: {{ $('set-vars').item.json.SUMMARY_LANGUAGE }}.\\n\\nThis week's events ({{ (await import('crypto')).length }} items, capped at 30):\\n{{ JSON.stringify($input.all().map(i => i.json), null, 2) }}\\n\\nWrite a 3-section Markdown summary: Highlights (3-5 bullets), Themes (1-2 sentences), Notable PRs (up to 5 with `url`). Plain Markdown, no preamble.\"\n  }]\n}",
+        "options": {}
+      },
+      "id": "claude-call",
+      "name": "Claude: write summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const summary = $input.first().json?.content?.[0]?.text || '(empty summary)';\nreturn [{ json: { markdown: summary } }];"
+      },
+      "id": "extract-text",
+      "name": "Extract assistant text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('set-vars').item.json.DISCORD_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"username\": \"Weekly Summary\",\n  \"content\": \"📊 **Weekly summary for {{ $('set-vars').item.json.GITHUB_REPO }}**\\n\\n{{ $json.markdown }}\"\n}",
+        "options": {}
+      },
+      "id": "discord-post",
+      "name": "Discord webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1560,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Cron: Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Set variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set variables": {
+      "main": [
+        [
+          {
+            "node": "GitHub: commits (7d)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub: merged PRs (7d)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub: closed issues (7d)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub: commits (7d)": {
+      "main": [
+        [
+          {
+            "node": "Code: flatten + tag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub: merged PRs (7d)": {
+      "main": [
+        [
+          {
+            "node": "Code: flatten + tag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub: closed issues (7d)": {
+      "main": [
+        [
+          {
+            "node": "Code: flatten + tag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: flatten + tag": {
+      "main": [
+        [
+          {
+            "node": "Claude: write summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude: write summary": {
+      "main": [
+        [
+          {
+            "node": "Extract assistant text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract assistant text": {
+      "main": [
+        [
+          {
+            "node": "Discord webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": 1,
+  "meta": {
+    "instanceId": "weekly-github-summary-template"
+  },
+  "id": "weekly-github-summary-template",
+  "tags": [
+    {
+      "name": "weekly",
+      "id": "tag-weekly"
+    },
+    {
+      "name": "github",
+      "id": "tag-github"
+    }
+  ]
+}
