@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""pre-tool-use hook: blocks destructive bash commands."""
+
+import os
+import re
+import json
+import sys
+from datetime import datetime
+
+BLOCKED_PATTERNS = [
+    (r'\brm\s+-rf\b', 'rm -rf: recursive forced deletion is blocked'),
+    (r'\bDROP\s+TABLE\b', 'DROP TABLE: destructive database operation is blocked'),
+    (r'\bgit\s+push\s+--force\b', 'git push --force: force push is blocked'),
+    (r'\bTRUNCATE\b', 'TRUNCATE: destructive database operation is blocked'),
+    (r'\bDELETE\s+FROM\b(?!.*\bWHERE\b)', 'DELETE FROM without WHERE clause is blocked'),
+]
+
+LOG_FILE = os.path.expanduser('~/.claude/hooks/blocked.log')
+
+def main():
+    try:
+        payload = json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, IndexError):
+        print(json.dumps({"allow": True}))
+        return
+
+    tool_use = payload.get("tool_use", {})
+    command = ""
+    if tool_use.get("name") == "Bash":
+        command = tool_use.get("input", {}).get("command", "")
+    elif tool_use.get("name") == "bash":
+        command = tool_use.get("input", {}).get("command", "")
+
+    if not command:
+        print(json.dumps({"allow": True}))
+        return
+
+    for pattern, message in BLOCKED_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            project_path = os.getcwd()
+            log_entry = f"[{datetime.now().isoformat()}] BLOCKED | project={project_path} | cmd={command}\n"
+            os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+            with open(LOG_FILE, 'a') as f:
+                f.write(log_entry)
+            print(json.dumps({
+                "allow": False,
+                "message": f"⛔ {message}\n\nCommand was blocked for safety. Logged to {LOG_FILE}"
+            }))
+            return
+
+    print(json.dumps({"allow": True}))
+
+if __name__ == "__main__":
+    main()
