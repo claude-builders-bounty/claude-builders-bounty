@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Claude Code PR Review Agent
+# Usage: claude-review --pr <pr-url>
+# Example: claude-review --pr https://github.com/owner/repo/pull/123
+
+PR_URL=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --pr) PR_URL="$2"; shift 2 ;;
+    *) echo "Usage: claude-review --pr <pr-url>"; exit 1 ;;
+  esac
+done
+
+if [ -z "$PR_URL" ]; then
+  echo "Usage: claude-review --pr <pr-url>"
+  exit 1
+fi
+
+# Parse owner/repo/number from URL
+OWNER=$(echo "$PR_URL" | sed -n 's|https://github.com/\([^/]*\)/\([^/]*\)/pull/\([0-9]*\).*|\1|p')
+REPO=$(echo "$PR_URL" | sed -n 's|https://github.com/\([^/]*\)/\([^/]*\)/pull/\([0-9]*\).*|\2|p')
+PR_NUM=$(echo "$PR_URL" | sed -n 's|https://github.com/\([^/]*\)/\([^/]*\)/pull/\([0-9]*\).*|\3|p')
+
+if [ -z "$OWNER" ] || [ -z "$REPO" ] || [ -z "$PR_NUM" ]; then
+  echo "Error: Could not parse PR URL. Expected format: https://github.com/owner/repo/pull/123"
+  exit 1
+fi
+
+# Fetch PR diff
+DIFF=$(curl -sL -H "Accept: application/vnd.github.v3.diff" "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${PR_NUM}" 2>/dev/null)
+
+if [ -z "$DIFF" ]; then
+  echo "Error: Could not fetch PR diff. Check the URL and try again."
+  exit 1
+fi
+
+# Fetch PR title and description for context
+PR_DATA=$(curl -sL "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${PR_NUM}")
+PR_TITLE=$(echo "$PR_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))" 2>/dev/null || echo "")
+PR_BODY=$(echo "$PR_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('body','')[:2000])" 2>/dev/null || echo "")
+
+# Truncate diff if too large (Claude has limits)
+MAX_DIFF_LINES=500
+DIFF_LINES=$(echo "$DIFF" | wc -l)
+if [ "$DIFF_LINES" -gt "$MAX_DIFF_LINES" ]; then
+  DIFF=$(echo "$DIFF" | head -n $MAX_DIFF_LINES)
+  DIFF_TRUNCATED=true
+else
+  DIFF_TRUNCATED=false
+fi
+
+# Build the prompt for Claude
+PROMPT="You are a senior code reviewer. Review the following PR and provide structured feedback.
+
+PR Title: ${PR_TITLE}
+PR Description: ${PR_BODY}
+${DIFF_TRUNCATED:+Note: The diff was truncated to $MAX_DIFF_LINES lines. Review the visible portion only.}
+
+## Diff:
+\`\`\`diff
+${DIFF}
+\`\`\`
+
+## Required Output Format:
+### Summary
+(2-3 sentences describing what the PR does)
+
+### Identified Risks
+- Risk 1
+- Risk 2
+
+### Improvement Suggestions
+1. **Suggestion title** — brief explanation
+2. **Suggestion title** — brief explanation
+
+### Confidence Score
+**Low / Medium / High**
+(Explain why in 1 sentence)"
+
+# Try Claude API first, fallback to Anthropic
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  API_KEY="$ANTHROPIC_API_KEY"
+  API_URL="https://api.anthropic.com/v1/messages"
+  MODEL="claude-sonnet-4-20250514"
+  PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({
+  'model': '$MODEL',
+  'max_tokens': 4096,
+  'messages': [{'role': 'user', 'content': '''$PROMPT'''}]
+}))
+" 2>/dev/null)
+
+  RESPONSE=$(curl -s "$API_URL" \
+    -H "Content-Type: application/json" \
+    -H "x-api-key: $API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    -d "$PAYLOAD" 2>/dev/null)
+
+  echo "$RESPONSE" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('content', [{}])[0].get('text', 'Error: No response'))
+except Exception as e:
+    print(f'Error parsing response: {e}')
+" 2>/dev/null
+elif [ -n "${OPENAI_API_KEY:-}" ]; then
+  echo "OpenAI fallback not implemented. Set ANTHROPIC_API_KEY."
+  exit 1
+else
+  # Fallback: output the structured prompt for manual use
+  echo "# Claude PR Review"
+  echo ""
+  echo "Set ANTHROPIC_API_KEY and run again, or paste this into Claude:"
+  echo ""
+  echo "---"
+  echo "$PROMPT"
+  echo "---"
+fi
