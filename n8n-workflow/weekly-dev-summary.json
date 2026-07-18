@@ -1,0 +1,207 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyWeek",
+              "hour": 17,
+              "minute": 0,
+              "weekday": 5
+            }
+          ]
+        }
+      },
+      "id": "trigger-cron",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/pulls?state=closed&sort=updated&direction=desc&per_page=30",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues?state=closed&sort=updated&direction=desc&per_page=30&labels=bug",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits?per_page=30",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();\n\nconst commits = $input.all().filter(c =>\n  c.json.commit && c.json.commit.author && c.json.commit.author.date >= weekAgo\n).map(c => ({\n  sha: c.json.sha.slice(0, 7),\n  author: c.json.commit.author.name,\n  message: c.json.commit.message.split('\\n')[0],\n  date: c.json.commit.author.date\n}));\n\n// Separate input streams come as independent executions\n// This runs per-stream, so we accumulate via $node\nreturn [\n  {\n    commits: commits,\n    timestamp: new Date().toISOString(),\n    repo: $json.repo || 'owner/repo'\n  }\n];"
+      },
+      "id": "filter-code",
+      "name": "Filter Last Week",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all data from previous nodes\nconst repo = $json.repo || 'owner/repo';\nconst prs = $node['Fetch Merged PRs'].all().filter(p =>\n  p.json.merged_at && new Date(p.json.merged_at) > new Date(Date.now() - 7*24*60*60*1000)\n).map(p => ({\n  number: p.json.number,\n  title: p.json.title,\n  author: p.json.user?.login || 'unknown',\n  url: p.json.html_url\n}));\n\nconst issues = $node['Fetch Closed Issues'].all().filter(i =>\n  i.json.closed_at && new Date(i.json.closed_at) > new Date(Date.now() - 7*24*60*60*1000)\n).map(i => ({\n  number: i.json.number,\n  title: i.json.title,\n  url: i.json.html_url\n}));\n\nreturn [{\n  repo,\n  week_ending: new Date().toISOString().split('T')[0],\n  merged_prs: prs,\n  closed_issues: issues,\n  pr_count: prs.length,\n  issue_count: issues.length\n}];"
+      },
+      "id": "merge-code",
+      "name": "Merge & Aggregate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "4096"
+            },
+            {
+              "name": "messages",
+              "value": "=[\n  {\n    \"role\": \"user\",\n    \"content\": \"Generate a friendly weekly dev summary for the repo {{ $json.repo }}.\\n\\nWeek ending: {{ $json.week_ending }}\\n\\nMerged PRs ({{ $json.pr_count }}):\\n{{#each $json.merged_prs}}\\n  - #{{this.number}} {{this.title}} by {{this.author}}\\n{{/each}}\\n\\nClosed issues ({{ $json.issue_count }}):\\n{{#each $json.closed_issues}}\\n  - #{{this.number}} {{this.title}}\\n{{/each}}\\n\\nWrite in {{ $json.language || 'English' }}.\\nFormat: 2-3 paragraph narrative with emoji headers.\"\n            }\n          ]
+        },
+        "options": {
+          "headers": {
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+          }
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json.content[0].text;\nlet summary = response;\n\n// If the response is wrapped in JSON, extract it\nif (typeof response === 'string' && response.startsWith('{')) {\n  try { summary = JSON.parse(response).summary || response; } catch(e) {}\n}\n\nreturn [{\n  repo: $json.repo,\n  week_ending: $json.week_ending,\n  summary: summary,\n  pr_count: $json.pr_count,\n  issue_count: $json.issue_count,\n  generated_at: new Date().toISOString()\n}];"
+      },
+      "id": "parse-code",
+      "name": "Parse Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook_url || $env.WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.summary }}"
+            },
+            {
+              "name": "username",
+              "value": "Weekly Dev Summary"
+            }
+          ]
+        },
+        "options": {
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        }
+      },
+      "id": "delivery-webhook",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [[{ "node": "Fetch Commits", "type": "main", "index": 0 }]]
+    },
+    "Fetch Commits": {
+      "main": [[{ "node": "Filter Last Week", "type": "main", "index": 0 }]]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{ "node": "Merge & Aggregate", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{ "node": "Merge & Aggregate", "type": "main", "index": 1 }]]
+    },
+    "Filter Last Week": {
+      "main": [[{ "node": "Merge & Aggregate", "type": "main", "index": 2 }]]
+    },
+    "Merge & Aggregate": {
+      "main": [[{ "node": "Claude API", "type": "main", "index": 0 }]]
+    },
+    "Claude API": {
+      "main": [[{ "node": "Parse Summary", "type": "main", "index": 0 }]]
+    },
+    "Parse Summary": {
+      "main": [[{ "node": "Send to Discord/Slack", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "versionId": "weekly-dev-summary-v1",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["weekly", "dev-summary", "claude"]
+}
