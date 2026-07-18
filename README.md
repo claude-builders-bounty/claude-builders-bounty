@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Skills
+
+This repo includes reusable Claude Code skills for your own projects.
+
+| Skill | Description | Usage |
+|-------|-------------|-------|
+| [Changelog Generator](skills/changelog-generator/README.md) | Auto-generate `CHANGELOG.md` from git history | `/generate-changelog` |
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
