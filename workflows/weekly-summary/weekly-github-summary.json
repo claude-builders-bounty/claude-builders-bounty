@@ -1,0 +1,207 @@
+{
+  "name": "Weekly GitHub Summary",
+  "nodes": [
+    {
+      "id": "cron-trigger",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "github-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 2,
+      "position": [450, 200],
+      "parameters": {
+        "resource": "repository",
+        "operation": "listCommits",
+        "owner": "={{ $json.owner || $env.GITHUB_OWNER }}",
+        "repository": "={{ $json.repo || $env.GITHUB_REPO }}",
+        "since": "={{ $now.minus(7, 'days').toISO() }}",
+        "until": "={{ $now.toISO() }}",
+        "options": {}
+      },
+      "credentials": {
+        "githubApi": "githubApi"
+      }
+    },
+    {
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 2,
+      "position": [450, 400],
+      "parameters": {
+        "resource": "issue",
+        "operation": "list",
+        "owner": "={{ $json.owner || $env.GITHUB_OWNER }}",
+        "repository": "={{ $json.repo || $env.GITHUB_REPO }}",
+        "state": "closed",
+        "since": "={{ $now.minus(7, 'days').toISO() }}",
+        "sort": "updated",
+        "direction": "desc"
+      },
+      "credentials": {
+        "githubApi": "githubApi"
+      }
+    },
+    {
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 2,
+      "position": [450, 600],
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "list",
+        "owner": "={{ $json.owner || $env.GITHUB_OWNER }}",
+        "repository": "={{ $json.repo || $env.GITHUB_REPO }}",
+        "state": "closed",
+        "options": {
+          "sort": "updated",
+          "direction": "desc"
+        }
+      },
+      "credentials": {
+        "githubApi": "githubApi"
+      }
+    },
+    {
+      "id": "merge-data",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [650, 400],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "format-prompt",
+      "name": "Format Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [850, 400],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "prompt",
+              "value": "Generate a friendly weekly narrative summary of GitHub activity for repo {{ $env.GITHUB_OWNER }}/{{ $env.GITHUB_REPO }}. Include key commits, closed issues, and merged PRs from the past week. Write in {{ $env.LANGUAGE || 'EN' }}. Language code: EN or FR."
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "claude-api",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.CLAUDE_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "claude-sonnet-4-20250514" },
+            { "name": "max_tokens", "value": 4096 },
+            { "name": "messages", "value": "[{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "extract-summary",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1250, 400],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "summary",
+              "value": "={{ $json.content[0].text }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "webhook-output",
+      "name": "Send Summary",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [1450, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "text", "value": "={{ $json.summary }}" }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [[{ "node": "Get Commits", "type": "main", "index": 0 }]]
+    },
+    "Get Commits": {
+      "main": [[{ "node": "Merge Data", "type": "main", "index": 0 }]]
+    },
+    "Get Closed Issues": {
+      "main": [[{ "node": "Merge Data", "type": "main", "index": 1 }]]
+    },
+    "Get Merged PRs": {
+      "main": [[{ "node": "Merge Data", "type": "main", "index": 2 }]]
+    },
+    "Merge Data": {
+      "main": [[{ "node": "Format Prompt", "type": "main", "index": 0 }]]
+    },
+    "Format Prompt": {
+      "main": [[{ "node": "Call Claude API", "type": "main", "index": 0 }]]
+    },
+    "Call Claude API": {
+      "main": [[{ "node": "Extract Summary", "type": "main", "index": 0 }]]
+    },
+    "Extract Summary": {
+      "main": [[{ "node": "Send Summary", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "staticData": null,
+  "tags": ["github", "weekly", "summary", "claude"]
+}
