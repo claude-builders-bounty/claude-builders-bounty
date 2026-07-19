@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# claude-review — structured PR review via Claude API or heuristic fallback
+set -euo pipefail
+PR_URL=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="$2"; shift 2 ;;
+    -h|--help) echo "Usage: claude-review --pr https://github.com/owner/repo/pull/N"; exit 0 ;;
+    *) echo "Usage: claude-review --pr https://github.com/owner/repo/pull/N" >&2; exit 1 ;;
+  esac
+done
+[[ -z "${PR_URL}" ]] && { echo "Missing --pr" >&2; exit 1; }
+
+if ! [[ "${PR_URL}" =~ github.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+  echo "Invalid PR URL" >&2; exit 1
+fi
+OWNER="${BASH_REMATCH[1]}"; REPO="${BASH_REMATCH[2]}"; NUM="${BASH_REMATCH[3]}"
+
+DIFF=$(gh pr diff "${NUM}" --repo "${OWNER}/${REPO}" 2>/dev/null || true)
+TITLE=$(gh pr view "${NUM}" --repo "${OWNER}/${REPO}" --json title -q .title 2>/dev/null || echo "PR #${NUM}")
+FILES=$(gh pr view "${NUM}" --repo "${OWNER}/${REPO}" --json files -q '.files[].path' 2>/dev/null || true)
+ADD=$(printf '%s\n' "${DIFF}" | grep -c '^+[^+]' || true)
+DEL=$(printf '%s\n' "${DIFF}" | grep -c '^-[^-]' || true)
+NFILES=$(printf '%s\n' "${FILES}" | grep -c . || true)
+
+RISKS=()
+printf '%s\n' "${DIFF}" | grep -qiE 'password|api[_-]?key|secret|private[_-]?key' && RISKS+=("Possible secrets or credentials in the diff")
+printf '%s\n' "${DIFF}" | grep -qiE 'rm -rf|DROP TABLE|force.push|--no-verify' && RISKS+=("Destructive or unsafe operations referenced")
+printf '%s\n' "${DIFF}" | grep -qiE '\bany\b|@ts-ignore|eslint-disable' && RISKS+=("Type-safety escapes (any / ignore directives)")
+printf '%s\n' "${DIFF}" | grep -qiE 'eval\(|innerHTML|dangerouslySetInnerHTML' && RISKS+=("Potential injection / XSS surface")
+(( ADD + DEL > 800 )) && RISKS+=("Large diff (${ADD}+/${DEL}-) — harder to review thoroughly")
+((${#RISKS[@]}==0)) && RISKS+=("No automated high-severity patterns detected — still do human review")
+
+SUGGESTIONS=()
+FILE_HINT=$(printf '%s' "${FILES}" | tr '\n' ' ' | cut -c1-120)
+SUGGESTIONS+=("Confirm tests cover the changed paths in: ${FILE_HINT}")
+SUGGESTIONS+=("Verify error handling on new network/DB boundaries")
+SUGGESTIONS+=("Check backward compatibility for any public API / schema changes")
+[[ "${NFILES}" -gt 1 ]] && SUGGESTIONS+=("Consider splitting multi-concern changes across smaller PRs")
+
+CONF="Medium"
+(( ADD + DEL < 80 && ${#RISKS[@]}<=1 )) && CONF="High"
+(( ADD + DEL > 500 || ${#RISKS[@]}>=3 )) && CONF="Low"
+
+SUMMARY="PR \`${TITLE}\` touches ${NFILES} file(s) with roughly +${ADD}/-${DEL} lines. Review generated with local heuristics (set ANTHROPIC_API_KEY for Claude-powered narrative)."
+
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]] && command -v jq >/dev/null; then
+  BODY=$(jq -n \
+    --arg title "$TITLE" --arg files "$FILES" --arg diff "$(printf '%s' "$DIFF" | head -c 12000)" \
+    --argjson add "$ADD" --argjson del "$DEL" --argjson nf "$NFILES" \
+    --arg risks "$(printf '%s; ' "${RISKS[@]}")" \
+    ' "Summarize this PR for a review comment.\nTitle: \($title)\nFiles (\($nf)): \($files)\nStats: +\($add) / -\($del)\nKnown heuristic risks: \($risks)\nReturn ONLY JSON: {\"summary\":\"...\",\"risks\":[\"...\"],\"suggestions\":[\"...\"],\"confidence\":\"Low|Medium|High\"}\nDiff (truncated):\n\($diff)" ')
+  RESP=$(curl -sS https://api.anthropic.com/v1/messages \
+    -H "x-api-key: ${ANTHROPIC_API_KEY}" -H "anthropic-version: 2023-06-01" -H "content-type: application/json" \
+    -d "$(jq -n --arg b "$BODY" '{model:"claude-sonnet-4-20250514",max_tokens:800,messages:[{role:"user",content:$b}]}')" || true)
+  JSON=$(printf '%s' "${RESP}" | jq -r '.content[0].text // empty' 2>/dev/null || true)
+  # strip markdown fences if present
+  JSON=$(printf '%s' "${JSON}" | sed -e 's/^```json//' -e 's/^```//' -e 's/```$//')
+  if printf '%s' "${JSON}" | jq -e . >/dev/null 2>&1; then
+    SUMMARY=$(printf '%s' "${JSON}" | jq -r .summary)
+    mapfile -t RISKS < <(printf '%s' "${JSON}" | jq -r '.risks[]')
+    mapfile -t SUGGESTIONS < <(printf '%s' "${JSON}" | jq -r '.suggestions[]')
+    CONF=$(printf '%s' "${JSON}" | jq -r .confidence)
+  fi
+fi
+
+echo "## PR Review: ${TITLE}"
+echo
+echo "### Summary"
+echo "${SUMMARY}"
+echo
+echo "### Identified risks"
+for r in "${RISKS[@]}"; do echo "- ${r}"; done
+echo
+echo "### Improvement suggestions"
+for s in "${SUGGESTIONS[@]}"; do echo "- ${s}"; done
+echo
+echo "### Confidence"
+echo "**${CONF}**"
+echo
+echo "_Source: ${PR_URL}_"
