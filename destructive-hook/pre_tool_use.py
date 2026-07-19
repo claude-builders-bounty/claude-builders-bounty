@@ -35,7 +35,7 @@ LOG_FILE = Path.home() / ".claude" / "hooks" / "blocked.log"
 DANGEROUS_PATTERNS = [
     # === Filesystem destruction ===
     (r"rm\s+-rf\s+/(\s|$)", "rm -rf on root directory — irreversible system destruction"),
-    (r"rm\s+-rf\s+~/(\s|$)", "rm -rf on home directory — irreversible data loss"),
+    (r"rm\s+-rf\s+~(\s|/|$)", "rm -rf on home directory — irreversible data loss"),
     (r"rm\s+-rf\s+\*(\s|$)", "rm -rf * — mass deletion of current directory"),
     (r"rm\s+-rf\s+\.\.?(\s|/|$)", "rm -rf on parent/current directory — mass deletion"),
     (r"rm\s+-rf\s+/(etc|usr|var|opt|bin|sbin|lib|boot|dev|proc|sys|run)(\s|/|$)",
@@ -46,12 +46,12 @@ DANGEROUS_PATTERNS = [
     (r"\bDROP\s+TABLE\b", "DROP TABLE — irreversible schema + data loss"),
     (r"\bDROP\s+DATABASE\b", "DROP DATABASE — destroys entire database"),
     (r"\bTRUNCATE\s+(TABLE\s+)?\w+", "TRUNCATE — removes all rows without WHERE"),
-    (r"\bDELETE\s+FROM\s+\w+\s*(?!WHERE\b)", "DELETE FROM without WHERE — mass data deletion"),
-    (r"\bDELETE\s+FROM\s+\w+\s*;", "DELETE FROM without WHERE clause — mass data deletion"),
+    (r"\bDELETE\s+FROM\s+\w+(?:\s+(?!WHERE\b).*)?\s*(?:;|$)",
+     "DELETE FROM without WHERE — mass data deletion"),
 
     # === Dangerous git operations ===
-    (r"git\s+push\s+--force\b(?!.*--lease)", "git push --force without --lease — overwrites remote history"),
-    (r"git\s+push\s+-f\b(?!.*--lease)", "git push -f without --lease — overwrites remote history"),
+    (r"git\s+push\s+--force(?!-with-lease)\b(?!\s+--lease)", "git push --force without --lease — overwrites remote history"),
+    (r"git\s+push\s+-f\b", "git push -f — overwrites remote history"),
     (r"git\s+reset\s+--hard\b", "git reset --hard — discards uncommitted changes"),
     (r"git\s+clean\s+-[fidx]+", "git clean — removes untracked files permanently"),
 
