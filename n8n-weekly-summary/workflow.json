@@ -1,0 +1,295 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * FRI"
+            }
+          ]
+        }
+      },
+      "name": "Weekly Cron (Fri 5pm)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{$env.GITHUB_REPO}}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "since",
+                "value": "={{$now.minus({days: 7}).toISO()}}"
+              },
+              {
+                "name": "per_page",
+                "value": "100"
+              }
+            ]
+          }
+        },
+        "headers": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        }
+      },
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [220, 100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "githubToken",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{$env.GITHUB_REPO}}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "since",
+                "value": "={{$now.minus({days: 7}).toISO()}}"
+              },
+              {
+                "name": "state",
+                "value": "closed"
+              },
+              {
+                "name": "per_page",
+                "value": "100"
+              }
+            ]
+          }
+        },
+        "headers": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        }
+      },
+      "name": "GitHub Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [220, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "githubToken",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{$env.GITHUB_REPO}}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "state",
+                "value": "closed"
+              },
+              {
+                "name": "per_page",
+                "value": "100"
+              },
+              {
+                "name": "sort",
+                "value": "updated"
+              },
+              {
+                "name": "direction",
+                "value": "desc"
+              }
+            ]
+          }
+        },
+        "headers": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        }
+      },
+      "name": "GitHub PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [220, 500],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "githubToken",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const commits = $input.all()[0].json;\nconst issues = $input.all()[1].json;\nconst pulls = $input.all()[2].json;\n\nconst merged = pulls.filter(p => p.merged_at && new Date(p.merged_at) > new Date($now.minus({days:7})));\nconst closedIssues = issues.filter(i => !i.pull_request && i.closed_at && new Date(i.closed_at) > new Date($now.minus({days:7})));\n\nconst commitLines = commits.slice(0,15).map(c => `- ${c.commit.message.split('\\n')[0]} (@${c.author?.login || 'unknown'})`);\nconst prLines = merged.slice(0,15).map(p => `- #${p.number} ${p.title} (@${p.user.login})`);\nconst issueLines = closedIssues.slice(0,15).map(i => `- #${i.number} ${i.title}`);\n\nreturn [{ json: {\n  commitCount: commits.length,\n  mergedCount: merged.length,\n  issueCount: closedIssues.length,\n  commitsText: commitLines.join('\\n'),\n  prsText: prLines.join('\\n'),\n  issuesText: issueLines.join('\\n')\n}}];"
+      },
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "queryParameters": {}
+        },
+        "headers": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 800,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Write a weekly dev summary for the repo {{$env.GITHUB_REPO}} in {{$env.LANGUAGE}}.\\n\\nCommits ({{$json.commitCount}}):\\n{{$json.commitsText}}\\n\\nMerged PRs ({{$json.mergedCount}}):\\n{{$json.prsText}}\\n\\nClosed issues ({{$json.issueCount}}):\\n{{$json.issuesText}}\\n\\nWrite a friendly narrative (2-4 paragraphs) highlighting key changes, contributors, and themes. Use markdown.\"\n    }\n  ]\n}"
+      },
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropicKey",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{$env.DISCORD_WEBHOOK}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"📊 Weekly Dev Summary — {{$env.GITHUB_REPO}}\",\n  \"embeds\": [\n    {\n      \"title\": \"Week of {{$now.minus({days:7}).toFormat('yyyy-MM-dd')}} to {{$now.toFormat('yyyy-MM-dd')}}\",\n      \"description\": \"{{$json.content[0].text}}\",\n      \"color\": 15158332\n    }\n  ]\n}"
+      },
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [880, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Fri 5pm)": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "GitHub PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": 1,
+  "meta": {
+    "instanceId": "weekly-dev-summary"
+  }
+}
