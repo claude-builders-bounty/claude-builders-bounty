@@ -1,0 +1,227 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude + Discord)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-weekly",
+      "name": "Weekly Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "a1", "name": "GITHUB_OWNER", "value": "claude-builders-bounty", "type": "string" },
+            { "id": "a2", "name": "GITHUB_REPO", "value": "claude-builders-bounty", "type": "string" },
+            { "id": "a3", "name": "LANGUAGE", "value": "EN", "type": "string" },
+            { "id": "a4", "name": "DISCORD_WEBHOOK_URL", "value": "https://discord.com/api/webhooks/REPLACE", "type": "string" },
+            { "id": "a5", "name": "CLAUDE_MODEL", "value": "claude-sonnet-4-20250514", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const owner = $json.GITHUB_OWNER;\nconst repo = $json.GITHUB_REPO;\nconst since = new Date(Date.now() - 7*24*3600*1000).toISOString();\nreturn [{ json: { ...$json, since, owner, repo } }];"
+      },
+      "id": "compute-since",
+      "name": "Compute since",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.owner}}/{{$json.repo}}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{$json.since}}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-commits",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, -120],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GITHUB_TOKEN_HEADER",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.owner}}/{{$json.repo}}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "since", "value": "={{$json.since}}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-issues",
+      "name": "GitHub Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GITHUB_TOKEN_HEADER",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.owner}}/{{$json.repo}}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "sort", "value": "updated" },
+            { "name": "direction", "value": "desc" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-prs",
+      "name": "GitHub PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 120],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GITHUB_TOKEN_HEADER",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge-activity",
+      "name": "Merge Activity",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [900, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nconst flat = items.flatMap(x => Array.isArray(x) ? x : [x]);\nconst commits = flat.filter(x => x.sha && x.commit).slice(0, 50);\nconst issues = flat.filter(x => x.number && x.pull_request === undefined && x.state === 'closed').slice(0, 50);\nconst prs = flat.filter(x => x.number && (x.merged_at || x.pull_request || x.head)).filter(x => x.merged_at).slice(0, 50);\nconst cfg = $('Config').first().json;\nconst blob = {\n  repo: `${cfg.GITHUB_OWNER}/${cfg.GITHUB_REPO}`,\n  language: cfg.LANGUAGE || 'EN',\n  window: 'last_7_days',\n  commits: commits.map(c => ({ sha: c.sha.slice(0,7), msg: c.commit.message.split('\\n')[0], author: c.commit.author?.name })),\n  closed_issues: issues.map(i => ({ number: i.number, title: i.title })),\n  merged_prs: prs.map(p => ({ number: p.number, title: p.title, user: p.user?.login })),\n};\nconst lang = (cfg.LANGUAGE || 'EN').toUpperCase() === 'FR' ? 'French' : 'English';\nconst prompt = `You are a tech writer. Write a concise weekly engineering narrative in ${lang} for repo ${blob.repo}.\\nUse the JSON activity. Sections: Highlights, Shipping, Fixes & Issues, Risks/Follow-ups. Max 350 words.\\nACTIVITY:\\n${JSON.stringify(blob, null, 2)}`;\nreturn [{ json: { prompt, blob, model: cfg.CLAUDE_MODEL, webhook: cfg.DISCORD_WEBHOOK_URL } }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{$json.model}}\",\n  \"max_tokens\": 800,\n  \"messages\": [{\"role\": \"user\", \"content\": {{JSON.stringify($json.prompt)}} }]\n}",
+        "options": {}
+      },
+      "id": "claude-call",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ANTHROPIC_KEY_HEADER",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $json;\nconst text = (resp.content || []).map(c => c.text || '').join('\\n') || JSON.stringify(resp).slice(0,1500);\nconst webhook = $('Build Prompt').first().json.webhook;\nconst repo = $('Build Prompt').first().json.blob.repo;\nreturn [{ json: { content: `**Weekly summary — ${repo}**\\n\\n${text}`, webhook } }];"
+      },
+      "id": "format-discord",
+      "name": "Format Discord",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.webhook}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content\": {{JSON.stringify($json.content)}} }",
+        "options": {}
+      },
+      "id": "discord-post",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 0]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 5pm": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "Compute since", "type": "main", "index": 0 }]] },
+    "Compute since": { "main": [[
+      { "node": "GitHub Commits", "type": "main", "index": 0 },
+      { "node": "GitHub Closed Issues", "type": "main", "index": 0 },
+      { "node": "GitHub PRs", "type": "main", "index": 0 }
+    ]] },
+    "GitHub Commits": { "main": [[{ "node": "Merge Activity", "type": "main", "index": 0 }]] },
+    "GitHub Closed Issues": { "main": [[{ "node": "Merge Activity", "type": "main", "index": 0 }]] },
+    "GitHub PRs": { "main": [[{ "node": "Merge Activity", "type": "main", "index": 0 }]] },
+    "Merge Activity": { "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]] },
+    "Build Prompt": { "main": [[{ "node": "Claude API", "type": "main", "index": 0 }]] },
+    "Claude API": { "main": [[{ "node": "Format Discord", "type": "main", "index": 0 }]] },
+    "Format Discord": { "main": [[{ "node": "Discord Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}
