@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# claude-review — structured PR review from a GitHub PR URL or local diff.
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --diff path/to.diff
+set -euo pipefail
+
+PR_URL=""
+DIFF_FILE=""
+OUT_FILE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="${2:-}"; shift 2 ;;
+    --diff) DIFF_FILE="${2:-}"; shift 2 ;;
+    --out) OUT_FILE="${2:-}"; shift 2 ;;
+    -h|--help)
+      echo "Usage: claude-review --pr <url> | --diff <file> [--out review.md]"
+      exit 0
+      ;;
+    *) echo "Unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+if [[ -z "$PR_URL" && -z "$DIFF_FILE" ]]; then
+  echo "error: provide --pr or --diff" >&2
+  exit 1
+fi
+
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
+DIFF_PATH="$WORKDIR/pr.diff"
+META_PATH="$WORKDIR/meta.txt"
+REVIEW_PATH="$WORKDIR/review.md"
+
+if [[ -n "$PR_URL" ]]; then
+  if ! command -v gh >/dev/null; then
+    echo "error: gh CLI required for --pr" >&2
+    exit 1
+  fi
+  if [[ "$PR_URL" =~ github.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    OWNER="${BASH_REMATCH[1]}"
+    REPO="${BASH_REMATCH[2]}"
+    NUM="${BASH_REMATCH[3]}"
+  else
+    echo "error: could not parse PR URL: $PR_URL" >&2
+    exit 1
+  fi
+  gh pr view "$NUM" --repo "$OWNER/$REPO" --json title,body,author,baseRefName,headRefName,additions,deletions,files >"$WORKDIR/pr.json"
+  gh pr diff "$NUM" --repo "$OWNER/$REPO" >"$DIFF_PATH" || true
+  {
+    echo "PR: $OWNER/$REPO#$NUM"
+    echo "URL: $PR_URL"
+    python3 - "$WORKDIR/pr.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+print("Title:", d.get("title"))
+print("Author:", (d.get("author") or {}).get("login"))
+print("Base:", d.get("baseRefName"), "<-", d.get("headRefName"))
+print("Delta: +%s -%s" % (d.get("additions"), d.get("deletions")))
+print("Files:")
+for f in d.get("files") or []:
+    print(" -", f.get("path"), f.get("changeType"))
+print("Body:")
+print((d.get("body") or "")[:2000])
+PY
+  } >"$META_PATH"
+else
+  cp "$DIFF_FILE" "$DIFF_PATH"
+  echo "Local diff: $DIFF_FILE" >"$META_PATH"
+fi
+
+python3 - "$META_PATH" "$DIFF_PATH" "$REVIEW_PATH" <<'PY'
+import re, sys, pathlib
+meta = pathlib.Path(sys.argv[1]).read_text(errors="replace")
+diff = pathlib.Path(sys.argv[2]).read_text(errors="replace")
+out_path = pathlib.Path(sys.argv[3])
+
+lines = diff.splitlines()
+file_headers = [l[6:] for l in lines if l.startswith("+++ b/")]
+adds = sum(1 for l in lines if l.startswith("+") and not l.startswith("+++"))
+dels = sum(1 for l in lines if l.startswith("-") and not l.startswith("---"))
+
+risks = []
+suggestions = []
+
+dangerous = [
+    (r"rm\s+-rf", "Destructive rm -rf in diff"),
+    (r"eval\s*\(", "Use of eval()"),
+    (r"innerHTML\s*=", "innerHTML assignment (XSS risk)"),
+    (r"subprocess\.(call|run|Popen).*shell\s*=\s*True", "shell=True subprocess"),
+    (r"pickle\.loads", "pickle.loads (RCE risk)"),
+    (r"API_KEY|SECRET|PASSWORD\s*=\s*['\"]", "Hardcoded secret pattern"),
+    (r"DISABLE.*AUTH|skip.*auth", "Auth bypass signal"),
+    (r"TODO|FIXME|XXX", "Leftover TODO/FIXME markers"),
+]
+for pat, label in dangerous:
+    if re.search(pat, diff, re.I):
+        risks.append(label)
+
+if adds + dels > 800:
+    risks.append(f"Large diff (+{adds}/-{dels}) — higher review burden")
+if any(p.endswith((".env", "id_rsa", ".pem")) for p in file_headers):
+    risks.append("Sensitive filename paths touched")
+
+if not risks:
+    risks.append("No automated high-severity patterns detected (still needs human review)")
+
+if any("test" in f.lower() for f in file_headers):
+    suggestions.append("Tests present in diff — confirm they fail before the fix and pass after")
+else:
+    suggestions.append("No test files in diff — consider adding regression coverage")
+
+if any(f.endswith((".ts", ".tsx", ".js", ".jsx")) for f in file_headers):
+    suggestions.append("Run typecheck/lint on changed TS/JS paths before merge")
+if any(f.endswith(".py") for f in file_headers):
+    suggestions.append("Run unit tests / ruff on changed Python modules")
+
+suggestions.append("Verify CI green and acceptance criteria from the linked issue")
+suggestions.append("Check for breaking API/schema changes and migration notes")
+
+conf = "Medium"
+if adds + dels < 50 and len(risks) == 1 and "No automated" in risks[0]:
+    conf = "High"
+elif adds + dels > 800 or len([r for r in risks if "No automated" not in r]) >= 2:
+    conf = "Low"
+
+nfiles = len(file_headers) or len(set(re.findall(r"^diff --git a/.*? b/(.*)$", diff, re.M)))
+summary = (
+    f"This change touches ~{nfiles} file(s) with roughly +{adds}/-{dels} lines. "
+    f"Automated scan flagged {len([r for r in risks if 'No automated' not in r])} risk signal(s). "
+    f"Treat this as a structured first-pass review, not a substitute for maintainer judgment."
+)
+
+parts = [
+    "# PR Review",
+    "",
+    "## Summary of changes",
+    summary,
+    "",
+    "## Context",
+    "```",
+    meta.strip()[:2500],
+    "```",
+    "",
+    "## Identified risks",
+]
+for r in risks:
+    parts.append(f"- {r}")
+parts += ["", "## Improvement suggestions"]
+for s in suggestions:
+    parts.append(f"- {s}")
+parts += [
+    "",
+    f"## Confidence score: {conf}",
+    "",
+    "_Generated by claude-review (heuristic pass). For LLM narrative, pipe into Claude Code or Anthropic API._",
+    "",
+]
+out_path.write_text("\n".join(parts))
+print(out_path.read_text())
+PY
+
+if [[ -n "$OUT_FILE" ]]; then
+  cp "$REVIEW_PATH" "$OUT_FILE"
+fi
