@@ -1,0 +1,367 @@
+{
+  "name": "Weekly Dev Summary (Claude + GitHub \u2192 Discord)",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "GITHUB_REPO",
+              "value": "Ai-Rook/dance-scoring",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "LANGUAGE",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "ANTHROPIC_API_KEY",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "GITHUB_TOKEN",
+              "value": "={{ $env.GITHUB_TOKEN }}",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "={{ $env.DISCORD_WEBHOOK_URL }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDays": [
+                5
+              ],
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "name": "Every Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.GITHUB_REPO + '/commits?since=' + $now.minus({days: 7}).toISO() + '&per_page=30' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $('Config').item.json.GITHUB_REPO + '/issues?state=closed&since=' + $now.minus({days: 7}).toISO() + '&per_page=20' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Config').item.json.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "GitHub Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $('Config').item.json.GITHUB_REPO + '/pulls?state=closed&sort=updated&direction=desc&per_page=20' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Config').item.json.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "GitHub Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const GITHUB_REPO = $('Config').first().json.GITHUB_REPO;\nconst LANGUAGE = $('Config').first().json.LANGUAGE || 'EN';\n\nconst allItems = $input.all();\n\nconst commits = allItems.filter(i => i.json && i.json.sha !== undefined);\nconst issues = allItems.filter(i => i.json && i.json.state === 'closed' && !i.json.pull_request && i.json.sha === undefined);\nconst prs = allItems.filter(i => i.json && i.json.pull_request !== undefined);\n\nconst weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\nconst mergedPRs = prs.filter(pr => pr.json.merged_at && new Date(pr.json.merged_at) >= weekAgo);\n\nconst formatDate = (d) => new Date(d).toISOString().split('T')[0];\n\nconst FR = LANGUAGE === 'FR';\nlet report = FR\n  ? `R\u00c9SUM\u00c9 HEBDOMADAIRE DE D\u00c9VELOPPEMENT\\nD\u00e9p\u00f4t: ${GITHUB_REPO}\\nP\u00e9riode: 7 derniers jours\\n\\n`\n  : `WEEKLY DEV SUMMARY\\nRepository: ${GITHUB_REPO}\\nPeriod: Last 7 days\\n\\n`;\n\nreport += `## ${FR ? 'COMMITS' : 'COMMITS'} (${commits.length})\\n`;\nif (commits.length === 0) report += FR ? 'Aucun commit cette semaine.\\n' : 'No commits this week.\\n';\nelse commits.slice(0, 30).forEach(c => {\n  const j = c.json;\n  const sha = (j.sha || '').substring(0, 7);\n  const msg = (j.commit && j.commit.message || '').split('\\n')[0];\n  const author = j.commit && j.commit.author ? j.commit.author.name : 'unknown';\n  const date = j.commit && j.commit.author ? formatDate(j.commit.author.date) : '';\n  report += `- [${sha}] ${msg} (${author}, ${date})\\n`;\n});\n\nreport += `\\n## ${FR ? 'TICKETS FERM\u00c9S' : 'CLOSED ISSUES'} (${issues.length})\\n`;\nif (issues.length === 0) report += FR ? 'Aucun ticket ferm\u00e9 cette semaine.\\n' : 'No closed issues this week.\\n';\nelse issues.slice(0, 20).forEach(i => {\n  const j = i.json;\n  const labels = j.labels ? j.labels.map(l => l.name).join(', ') : '';\n  report += `- #${j.number}: ${j.title}${labels ? ' [' + labels + ']' : ''}\\n`;\n});\n\nreport += `\\n## ${FR ? 'PULL REQUESTS MERG\u00c9ES' : 'MERGED PULL REQUESTS'} (${mergedPRs.length})\\n`;\nif (mergedPRs.length === 0) report += FR ? 'Aucune PR merg\u00e9e cette semaine.\\n' : 'No merged PRs this week.\\n';\nelse mergedPRs.slice(0, 20).forEach(p => {\n  const j = p.json;\n  report += `- #${j.number}: ${j.title} (by ${j.user ? j.user.login : 'unknown'})\\n`;\n});\n\nreturn [{ json: { report } }];"
+      },
+      "name": "Merge & Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $('Config').item.json.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1024, system: 'You are a developer relations assistant. Write a clear, engaging weekly development summary based on the provided raw data. Highlight key achievements, top contributors, and notable changes. Use headers and bullet points. Keep it concise but informative. Language: ' + $('Config').item.json.LANGUAGE, messages: [{ role: 'user', content: $('Merge & Format Data').item.json.report }] }) }}",
+        "options": {}
+      },
+      "name": "Claude Sonnet 4",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1",
+              "name": "summary",
+              "value": "={{ $json.content[0].text }}",
+              "type": "string"
+            },
+            {
+              "id": "b2",
+              "name": "repo",
+              "value": "={{ $('Config').item.json.GITHUB_REPO }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ content: '**\ud83d\udccb Weekly Dev Summary \u2014 ' + $json.repo + '**\\n\\n' + $json.summary, username: 'Dev Summary Bot' }) }}",
+        "options": {}
+      },
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "numberOfInputs": 3,
+        "options": {}
+      },
+      "name": "Wait for All GitHub Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        900,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge & Format Data": {
+      "main": [
+        [
+          {
+            "node": "Claude Sonnet 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Sonnet 4": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Wait for All GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Wait for All GitHub Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "GitHub Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Wait for All GitHub Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Wait for All GitHub Data": {
+      "main": [
+        [
+          {
+            "node": "Merge & Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
