@@ -1,0 +1,43 @@
+#!/bin/bash
+# Claude Code pre-tool-use hook — blocks destructive commands
+# Install: cp pre-tool-use ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use
+
+set -o pipefail
+INPUT=$(cat)
+
+COMMAND=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)"/\1/p' 2>/dev/null || echo "$INPUT")
+COMMAND_LOWER=$(echo "$COMMAND" | tr '[:upper:]' '[:lower:]')
+
+LOG_FILE="${HOME}/.claude/hooks/blocked.log"
+PROJECT_PATH="${PWD}"
+
+block() {
+  local reason="$1"
+  local pattern="$2"
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  mkdir -p "$(dirname "$LOG_FILE")"
+  echo "[$timestamp] BLOCKED | pattern: $pattern | command: $COMMAND | project: $PROJECT_PATH" >> "$LOG_FILE"
+  cat <<-BLOCKMSG
+	{
+	  "status": "error",
+	  "message": "BLOCKED: $reason (matched pattern: $pattern).\\nLogged to $LOG_FILE"
+	}
+BLOCKMSG
+  exit 1
+}
+
+SAFE=true
+
+echo "$COMMAND" | grep -qE '\brm[[:space:]]+-rf\b' && SAFE=false && block "Recursive force delete is not allowed" "rm -rf"
+echo "$COMMAND_LOWER" | grep -q 'drop[[:space:]]\+table' && SAFE=false && block "DROP TABLE is not allowed" "DROP TABLE"
+echo "$COMMAND" | grep -qE '\bgit[[:space:]]+push[[:space:]]+--force\b' && SAFE=false && block "Force push is not allowed" "git push --force"
+echo "$COMMAND_LOWER" | grep -q '\btruncate\b' && SAFE=false && block "TRUNCATE is not allowed" "TRUNCATE"
+echo "$COMMAND_LOWER" | grep -q 'delete[[:space:]]\+from' && ! echo "$COMMAND_LOWER" | grep -q '\bwhere\b' && SAFE=false && block "DELETE without WHERE clause is not allowed" "DELETE FROM without WHERE"
+echo "$COMMAND_LOWER" | grep -qE '\bdrop[[:space:]]+database\b' && SAFE=false && block "DROP DATABASE is not allowed" "DROP DATABASE"
+echo "$COMMAND_LOWER" | grep -qE '\bdrop[[:space:]]+schema\b' && SAFE=false && block "DROP SCHEMA is not allowed" "DROP SCHEMA"
+echo "$COMMAND_LOWER" | grep -qE 'format[[:space:]]+[a-z]:' && SAFE=false && block "Drive format command is not allowed" "FORMAT drive"
+echo "$COMMAND" | grep -qE '\bshutdown[[:space:]]+(-h|-r|-now)\b' && SAFE=false && block "Shutdown/reboot is not allowed" "SHUTDOWN"
+
+echo "$INPUT"
+exit 0
