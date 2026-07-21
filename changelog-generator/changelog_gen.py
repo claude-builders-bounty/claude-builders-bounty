@@ -76,9 +76,13 @@ def get_latest_tag() -> str | None:
 
 
 def get_commits(since: str | None = None) -> list[dict]:
-    """Get commits since a ref. Returns list of {hash, subject, body, author, date}."""
+    """Get commits since a ref. Falls back to full history if no tag exists."""
     fmt = "%H%n%s%n%b%n%an%n%aI%n---END---"
-    range_spec = f"{since}..HEAD" if since else "HEAD"
+    if since:
+        range_spec = f"{since}..HEAD"
+    else:
+        # No tag found — get all commits (fallback)
+        range_spec = "HEAD~100..HEAD"  # Last 100 commits as fallback
 
     try:
         raw = run_git("log", range_spec, f"--pretty=format:{fmt}", "--no-merges")
