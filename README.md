@@ -34,6 +34,20 @@ You're in the right place.
 
 ---
 
+## Generate a Changelog
+
+This repository includes a small changelog generator for bounty #1.
+
+1. Run `bash changelog.sh` from the root of any git repository.
+2. Review the generated `CHANGELOG.md`.
+3. Commit the changelog when the sections look right.
+
+The script finds the latest git tag, reads commits since that tag, and writes a structured changelog with `Added`, `Fixed`, `Changed`, and `Removed` sections. If the repository has no tags, it uses the full commit history.
+
+See [examples/sample-output.md](examples/sample-output.md) for a sample generated changelog.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
