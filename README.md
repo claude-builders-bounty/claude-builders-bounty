@@ -51,3 +51,22 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Usage
+
+Run the changelog generator script to create or update `CHANGELOG.md`:
+
+```bash
+bash changelog.sh
+```
+
+The script fetches commits since the last git tag and categorizes them into:
+
+- Added
+- Fixed
+- Changed
+- Removed
+
+The output is a structured Markdown changelog under the "Unreleased" section.
