@@ -1,53 +1,46 @@
-# Claude Builders Bounty 🤖
+# Changelog Generator — Claude Code Bounty ($50)
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from any git repository's history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Usage (3 steps)
 
----
+1. **Download** `changelog.py`
+2. **Run** in your repo: `python changelog.py`
+3. **Done** — `CHANGELOG.md` appears
 
-## How it works
+### Options
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--repo <path>` | `.` | Target git repository |
+| `--output <file>` | `CHANGELOG.md` | Output path |
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Example
 
----
+```bash
+python changelog.py --repo ../my-project --output CHANGELOG.md
+```
 
-## Active Bounties
+### Sample output
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```markdown
+# Changelog
 
----
+## [v14.2.6] - 2026-03-03
 
-## Rules
+### Changed
+- chore: add changeset (#854)
+- Switch package manager to pnpm 10 (#853)
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+### Fixed
+- replace clipboardy with tinyclip (#848)
+```
 
----
+## Requirements
 
-## Community
+- Python 3.8+
+- `git` on PATH
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Implementation
 
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+`changelog.py` runs `git describe --tags` to find the last release, then categorizes commits by their first word (`add/feat` → Added, `fix/bug` → Fixed, `remove/delete` → Removed, everything else → Changed).
