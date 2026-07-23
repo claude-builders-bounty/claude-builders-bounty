@@ -1,53 +1,47 @@
-# Claude Builders Bounty 🤖
+# Claude PR Review Agent ($150)
 
-> A community bounty board for Claude Code builders.
+A Claude Code sub-agent that analyzes PR diffs and returns structured Markdown reviews.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Usage
 
----
+```bash
+# Via PR URL
+python claude-review.py --pr https://github.com/owner/repo/pull/123
 
-## How it works
+# Via local diff file
+python claude-review.py --diff pr.diff
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+# Via gh CLI pipe
+gh pr view 123 --json body,title,files | python claude-review.py
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Output
 
----
+```
+# Review: fix: register-user-id (#2845)
 
-## Active Bounties
+## Summary of Changes
+Reviews 2 file(s) across 1 type(s) (js). +32 / -4 lines.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Identified Risks
+### Medium Severity
+- 🟡 `apps/api/src/services/authService.js`: Unresolved TODO
 
----
+## Improvement Suggestions
+*No specific suggestions — PR looks clean.*
 
-## Rules
+## Confidence Score: **🟢 High**
+Changes are well-scoped, tested, and clean.
+```
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Features
 
----
+- **Static analysis without an API key** — rule-based security checks (eval, XSS, SQLi, secrets, debuggers)
+- **Dependency / config change detection** — flags package changes, config file modifications
+- **Test coverage awareness** — flags missing test changes for non-trivial PRs
+- **No external dependencies** — pure Python stdlib
 
-## Community
+## Requirements
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+- Python 3.8+
+- `GITHUB_TOKEN` env var (optional, for higher API rate limits)
