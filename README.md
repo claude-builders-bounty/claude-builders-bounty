@@ -51,3 +51,8 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+## Bonus draft: PR Review Agent
+
+See `README_PR_REVIEW.md` for the PR Review Agent submission addressing Opire #4.
