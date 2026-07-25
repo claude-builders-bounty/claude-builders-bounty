@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import subprocess
+import sys
+try:
+    from anthropic import Anthropic
+except ImportError:
+    print("Error: 'anthropic' package is required. Please install it using: pip install anthropic")
+    sys.exit(1)
+
+def get_pr_diff(pr_url):
+    try:
+        # We use the GitHub CLI to get the diff.
+        result = subprocess.run(
+            ["gh", "pr", "diff", pr_url],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        print(f"Error fetching PR diff using 'gh'. Make sure GitHub CLI is installed and authenticated.\n{e.stderr}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError:
+        print("Error: GitHub CLI ('gh') is not installed or not in PATH.", file=sys.stderr)
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code PR Reviewer Agent")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)")
+    args = parser.parse_args()
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY environment variable is not set.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Fetching diff for PR: {args.pr}...", file=sys.stderr)
+    diff = get_pr_diff(args.pr)
+    
+    if not diff.strip():
+        print("Error: PR diff is empty.", file=sys.stderr)
+        sys.exit(1)
+
+    print("Analyzing diff with Claude...", file=sys.stderr)
+    
+    prompt = f"""You are an expert software engineer reviewing a pull request.
+I will provide you with the diff of a PR.
+Please analyze it and provide a structured review comment in Markdown.
+
+Your response MUST follow this exact structure:
+
+### Summary of Changes
+(Provide a 2-3 sentence summary of what this PR does)
+
+### Identified Risks
+- (List any potential risks, bugs, or side effects introduced by these changes. If none, state "None identified.")
+- ...
+
+### Improvement Suggestions
+- (List any actionable suggestions to improve the code quality, readability, or performance. If none, state "Code looks good as is.")
+- ...
+
+### Confidence Score
+(State either Low, Medium, or High)
+
+Here is the diff:
+```diff
+{diff}
+```
+"""
+
+    client = Anthropic(api_key=api_key)
+    
+    try:
+        response = client.messages.create(
+            model="claude-3-7-sonnet-20250219",
+            max_tokens=2048,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        print("\n" + response.content[0].text)
+    except Exception as e:
+        print(f"Error calling Anthropic API: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
