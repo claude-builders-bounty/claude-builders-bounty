@@ -1,0 +1,226 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repoUrl = $vars.repoUrl || 'https://api.github.com/repos/owner/repo';\nconst githubToken = $vars.githubToken || '';\nconst claudeApiKey = $vars.claudeApiKey || '';\nconst webhookUrl = $vars.webhookUrl || '';\nconst language = ($vars.language || 'EN').toUpperCase();\nconst since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];\n\nreturn [{ repoUrl, githubToken, claudeApiKey, webhookUrl, language, since }];"
+      },
+      "id": "config-node",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repoUrl }}/commits?since={{ $json.since }}T00:00:00Z&per_page=50",
+        "sendQuery": true,
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "Bearer {{ $json.githubToken }}"
+          }
+        }
+      },
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repoUrl }}/issues?state=closed&since={{ $json.since }}T00:00:00Z&per_page=50&sort=updated",
+        "sendQuery": true,
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "Bearer {{ $json.githubToken }}"
+          }
+        }
+      },
+      "id": "github-issues",
+      "name": "Fetch Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 350]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.repoUrl }}/pulls?state=closed&sort=updated&direction=desc&per_page=50",
+        "sendQuery": true,
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": "Bearer {{ $json.githubToken }}"
+          }
+        }
+      },
+      "id": "github-prs",
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "mode": "combine"
+      },
+      "id": "merge-node",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [850, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst config = items[0].json;\n\nconst commits = (items[1]?.json || []);\nconst commitList = Array.isArray(commits) ? commits : (commits._node === 'Fetch Commits' ? items.slice(1).map(i => i.json) : []);\nconst issues = items[2]?.json || [];\nconst prs = items[3]?.json || [];\n\nconst commitMsgs = (Array.isArray(commits) ? commits : [])\n  .slice(0, 30)\n  .map(c => `- ${(c.commit?.message || '').split('\\n')[0]} (${c.commit?.author?.name || 'unknown'})`)\n  .join('\\n');\n\nconst issueList = (Array.isArray(issues) ? issues : [])\n  .filter(i => !i.pull_request)\n  .slice(0, 20)\n  .map(i => `- #${i.number} ${i.title}`)\n  .join('\\n');\n\nconst prList = (Array.isArray(prs) ? prs : [])\n  .filter(p => p.merged_at && new Date(p.merged_at) > new Date(Date.now() - 8*24*60*60*1000))\n  .slice(0, 20)\n  .map(p => `- #${p.number} ${p.title} (${p.user?.login || 'unknown'})`)\n  .join('\\n');\n\nconst lang = config.language === 'FR' ? 'French' : 'English';\n\nconst prompt = `Write a weekly development summary in ${lang} for the repository ${config.repoUrl}.\n\n## Activity This Week\n\n### Commits (${Array.isArray(commits) ? commits.length : 0})\n${commitMsgs || 'None'}\n\n### Closed Issues (${Array.isArray(issues) ? issues.filter(i => !i.pull_request).length : 0})\n${issueList || 'None'}\n\n### Merged PRs (${Array.isArray(prs) ? prs.filter(p => p.merged_at).length : 0})\n${prList || 'None'}\n\nWrite a concise narrative (under 300 words) covering:\n1. Key highlights and major changes\n2. Bug fixes and improvements\n3. Notable patterns or trends\n4. Overall project health\n\nUse a professional but friendly tone.`;\n\nreturn [{\n  repoUrl: config.repoUrl,\n  claudeApiKey: config.claudeApiKey,\n  webhookUrl: config.webhookUrl,\n  prompt\n}];"
+      },
+      "id": "format-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 350]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendBody": true,
+        "options": {
+          "headers": {
+            "Content-Type": "application/json",
+            "x-api-key": "={{ $json.claudeApiKey }}",
+            "anthropic-version": "2023-06-01"
+          }
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "1024"
+            },
+            {
+              "name": "messages",
+              "value": "=[{{\n  const prompt = $input.first().json.prompt;\n  return [{ role: 'user', content: prompt }];\n}}]"
+            }
+          ]
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\nconst summary = body.content?.[0]?.text || JSON.stringify(body);\nconst repoUrl = $input.first().json._repoUrl || '';\n\nreturn [{ summary, repoUrl }];"
+      },
+      "id": "parse-response",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 350]
+    },
+    {
+      "parameters": {
+        "sendBody": true,
+        "options": {
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "text",
+                "value": "={{ \"*Weekly Dev Summary*\\n\" + $json.repoUrl + \"\\n\\n\" + $json.summary }}"
+              }
+            ]
+          }
+        },
+        "url": "={{ $json.webhookUrl }}"
+      },
+      "id": "slack-webhook",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 350]
+    }
+  ],
+  "connections": {
+    "Cron Trigger": {
+      "main": [
+        [{ "node": "Config", "type": "main", "index": 0 }]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          { "node": "Fetch Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Issues", "type": "main", "index": 0 },
+          { "node": "Fetch PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [{ "node": "Merge Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Issues": {
+      "main": [
+        [{ "node": "Merge Data", "type": "main", "index": 1 }]
+      ]
+    },
+    "Fetch PRs": {
+      "main": [
+        [{ "node": "Merge Data", "type": "main", "index": 2 }]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [{ "node": "Build Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [{ "node": "Claude API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [{ "node": "Parse Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Response": {
+      "main": [
+        [{ "node": "Send to Slack", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowFromSameOwner"
+  },
+  "staticData": null,
+  "tags": []
+}
