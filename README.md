@@ -34,6 +34,22 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+The generator reads non-merge commits after the latest reachable Git tag (or
+the complete history when no tag exists), categorizes them by subject, and
+writes `CHANGELOG.md`. Conventional commit subjects such as `feat:`, `fix:`,
+and `remove:` produce the best results; other commits are listed as Changed.
+
+1. Copy `changelog.sh` into the root of a Git repository.
+2. Run `bash changelog.sh`.
+3. Review the generated `CHANGELOG.md` (see [sample output](examples/SAMPLE_CHANGELOG.md)).
+
+Running the command again replaces the generated file with the current
+unreleased history.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
