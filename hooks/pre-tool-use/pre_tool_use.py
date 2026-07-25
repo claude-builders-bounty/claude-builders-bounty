@@ -26,16 +26,13 @@ BLOCKED_PATTERNS = [
     "git reset --hard HEAD~",
     "git clean -fd",
     "git filter-branch",
-    # Database destruction
+    # Database destruction (use WHERE_REQUIRED_COMMANDS to allow safe queries)
     "drop table",
     "DROP TABLE",
     "drop database",
     "DROP DATABASE",
     "truncate table",
     "TRUNCATE TABLE",
-    "delete from ",
-    "DELETE FROM ",
-    "delete from",
     # System destruction
     "chmod -R 0",
     "chown -R ",
