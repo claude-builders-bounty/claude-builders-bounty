@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""PR Review Agent — analyze GitHub PR diffs for security, logic, style issues."""
+import subprocess, sys, re, json, argparse, os
+from urllib.parse import urlparse
+from datetime import datetime
+
+def run(cmd):
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True).stdout.strip()
+
+def parse_pr_url(url):
+    """Extract owner/repo/number from PR URL."""
+    m = re.match(r'https?://github\.com/([\w.-]+)/([\w.-]+)/pull/(\d+)', url)
+    if not m:
+        raise ValueError(f"Invalid PR URL: {url}")
+    return m.group(1), m.group(2), m.group(3)
+
+def gh(token, endpoint):
+    """Call GitHub API."""
+    cmd = f'curl -s -m 10 -H "Authorization: Bearer {token}" -H "Accept: application/vnd.github+json" {endpoint}'
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {"error": result.stdout[:200]}
+
+# Security patterns to detect
+PATTERNS = {
+    "secrets": [
+        (r'(?i)(api[_-]?key|secret|password|token|auth)\s*[:=]\s*["\']\S{8,}', "Hardcoded secret"),
+        (r'ghp_[A-Za-z0-9]{36}', "GitHub token exposure"),
+        (r'sk-[A-Za-z0-9]{32,}', "OpenAI/LLM API key"),
+        (r'(?i)private[_-]?key.*-----BEGIN', "Private key exposure"),
+    ],
+    "injection": [
+        (r'(?i)execute\s*\(\s*[\"\']?\s*[\+\f]', "Dynamic SQL/command execution"),
+        (r'(?i)eval\s*\(', "Unsafe eval() call"),
+        (r'(?i)innerHTML\s*=', "Potential XSS via innerHTML"),
+        (r'(?i)os\.system\s*\(', "Unsafe os.system()"),
+        (r'(?i)subprocess\.(call|run|Popen)\s*\(\s*.*shell\s*=\s*True', "shell=True without sanitization"),
+    ],
+    "logic": [
+        (r'(?i)TODO|FIXME|HACK|XXX', "Unresolved TODO/FIXME"),
+        (r'(?i)catch\s*\(\s*\w+\s*\)\s*\{?\s*\}', "Empty catch block"),
+        (r'(?i)\.then\s*\(.*?\)\s*\.catch\s*\(\s*\)\s*=>\s*\{?\s*\}', "Unhandled promise rejection"),
+        (r'(?i)assert\s+.*\s*==\s*True', "Soft assert (prefer assertEqual)"),
+    ],
+    "paths": [
+        (r'(?i)(\.\./|\.\.\\)', "Path traversal vector"),
+        (r'(?i)/(etc/passwd|etc/shadow|proc/self)', "System file access attempt"),
+    ]
+}
+
+def analyze_diff(diff_text):
+    """Scan diff for patterns."""
+    findings = []
+    lines = diff_text.split('\n')
+    
+    # File-level scanning
+    for i, line in enumerate(lines, 1):
+        if not line.startswith('+'):
+            continue
+        
+        for cat, pats in PATTERNS.items():
+            for pattern, desc in pats:
+                if re.search(pattern, line):
+                    # Determine severity
+                    sev = "HIGH" if cat in ("secrets", "injection") else "MEDIUM" if cat == "paths" else "LOW"
+                    findings.append({
+                        "file": "unknown",  # Will be updated from context
+                        "line": i,
+                        "severity": sev,
+                        "category": cat,
+                        "description": desc,
+                        "snippet": line.strip()[:100]
+                    })
+    
+    return findings
+
+def review_pr(pr_url, token, post=False):
+    owner, repo, num = parse_pr_url(pr_url)
+    
+    # Fetch PR metadata
+    pr = gh(token, f'"https://api.github.com/repos/{owner}/{repo}/pulls/{num}"')
+    if "error" in pr:
+        print(f"Error fetching PR: {pr['error']}")
+        return
+    
+    title = pr.get("title", "Unknown")
+    desc = pr.get("body", "")[:200] if pr.get("body") else ""
+    files_changed = pr.get("changed_files", "?")
+    additions = pr.get("additions", "?")
+    deletions = pr.get("deletions", "?")
+    author = pr.get("user", {}).get("login", "unknown")
+    
+    # Fetch diff
+    diff = run(f'curl -s -m 10 -H "Authorization: Bearer {token}" -H "Accept: application/vnd.github.v3.diff" "https://api.github.com/repos/{owner}/{repo}/pulls/{num}"')
+    
+    # Analyze
+    findings = analyze_diff(diff)
+    high = [f for f in findings if f["severity"] == "HIGH"]
+    med = [f for f in findings if f["severity"] == "MEDIUM"]
+    low = [f for f in findings if f["severity"] == "LOW"]
+    
+    # Generate review
+    review = f"""## PR Review: #{num}
+
+**Title**: {title}
+**Author**: @{author}
+**Changes**: +{additions}/-{deletions} ({files_changed} files)
+
+### Summary
+Auto-generated review of {files_changed} changed files with {additions} additions.
+
+### Risks Found: {len(findings)}
+"""
+    
+    for sev, items, emoji in [("HIGH", high, "🔴"), ("MEDIUM", med, "🟡"), ("LOW", low, "🟢")]:
+        if items:
+            review += f"\n#### {emoji} {sev} ({len(items)})\n"
+            for f in items[:5]:  # Limit to 5 per category
+                review += f"- [{f['severity']}] {f['description']}: `{f['snippet']}`\n"
+    
+    if not findings:
+        review += "\n✅ No automated risks detected.\n"
+    
+    review += f"\n---\n*Generated by claude-review at {datetime.now().strftime('%Y-%m-%d %H:%M')}*"
+    
+    print(review)
+    
+    if post:
+        payload = json.dumps({"body": review})
+        result = gh(token, f'"https://api.github.com/repos/{owner}/{repo}/issues/{num}/comments" -X POST -d \'{payload}\'')
+        print(f"\nPosted: {result.get('html_url', result.get('message', 'FAIL'))}")
+    
+    return review
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Claude Code PR Review Agent')
+    parser.add_argument('--pr', required=True, help='GitHub PR URL')
+    parser.add_argument('--post', action='store_true', help='Post review as comment')
+    parser.add_argument('--token', default=os.environ.get('GITHUB_TOKEN', ''), help='GitHub token (required)')
+    args = parser.parse_args()
+    
+    if not args.token:
+        print("Error: GITHUB_TOKEN not set. Use --token or export GITHUB_TOKEN.")
+        sys.exit(1)
+    
+    review_pr(args.pr, args.token, args.post)
