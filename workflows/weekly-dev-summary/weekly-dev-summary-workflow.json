@@ -1,0 +1,273 @@
+{
+  "name": "Weekly Dev Summary (Bounty #5)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cron",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Weekly Schedule (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repoOwner",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "repoName",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "deliveryEmail",
+              "value": "team@example.com"
+            },
+            {
+              "name": "deliveryWebhook",
+              "value": ""
+            },
+            {
+              "name": "language",
+              "value": "en"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config",
+      "name": "Set Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==============================\n// n8n Weekly Dev Summary — Bounty #5\n// Fetch GitHub Data (commits, issues, PRs)\n// ==============================\n\nconst repoOwner = $json.repoOwner;\nconst repoName  = $json.repoName;\nconst language  = $json.language || 'en';\n\n// --- Calculate week boundaries ---\n// Trigger fires Friday 5pm — week is Mon→Fri\nconst now = new Date();\nconst dayOfWeek = now.getDay(); // 0=Sun, 5=Fri\nconst daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;\nconst monday = new Date(now);\nmonday.setDate(now.getDate() - daysSinceMonday);\nmonday.setHours(0, 0, 0, 0);\n\nconst friday = new Date(now);\nfriday.setHours(23, 59, 59, 0);\n\nconst weekStart = monday.toISOString();\nconst weekEnd   = friday.toISOString();\n\n// --- GitHub API token ---\n// Priority: 1) n8n credential 'GitHub PAT'  2) env var GITHUB_TOKEN\nlet githubToken;\ntry {\n  githubToken = $credentials?.githubPersonalAccessToken?.accessToken;\n} catch (e) {\n  // credential not configured — fall through\n}\ngithubToken = githubToken || process.env.GITHUB_TOKEN;\n\nif (!githubToken) {\n  throw new Error(\n    'GitHub token not found. Set it up:\\n' +\n    '  1) n8n credential: create a \"GitHub Personal Access Token\" named \"GitHub PAT\", OR\\n' +\n    '  2) Environment variable: add GITHUB_TOKEN to your n8n env (docker-compose.yml / .env)'\n  );\n}\n\n// --- Helper: fetch with pagination support ---\nasync function fetchGitHub(url, page = 1, accumulated = []) {\n  const pageUrl = `${url}&page=${page}&per_page=100`;\n  const response = await fetch(pageUrl, {\n    headers: {\n      'Authorization': `Bearer ${githubToken}`,\n      'Accept': 'application/vnd.github.v3+json',\n      'User-Agent': 'n8n-weekly-dev-summary'\n    }\n  });\n  if (!response.ok) {\n    const body = await response.text();\n    throw new Error(`GitHub API error ${response.status}: ${body}`);\n  }\n  const data = await response.json();\n  const all = accumulated.concat(data);\n  // Check Link header for next page\n  const linkHeader = response.headers.get('Link');\n  if (linkHeader && linkHeader.includes('rel=\"next\"')) {\n    return fetchGitHub(url, page + 1, all);\n  }\n  return all;\n}\n\n// --- Fetch commits (since/until) ---\nconst commits = await fetchGitHub(\n  `https://api.github.com/repos/${repoOwner}/${repoName}/commits?since=${weekStart}&until=${weekEnd}`\n);\n\n// --- Fetch closed issues ---\nconst allIssues = await fetchGitHub(\n  `https://api.github.com/repos/${repoOwner}/${repoName}/issues?state=closed&since=${weekStart}&filter=all`\n);\nconst actualIssues = allIssues.filter(i => !i.pull_request);\n\n// --- Fetch PRs, then filter by merged_at within the week ---\nconst allPrs = await fetchGitHub(\n  `https://api.github.com/repos/${repoOwner}/${repoName}/pulls?state=all&sort=updated&direction=desc`\n);\nconst mondayMs = monday.getTime();\nconst fridayMs = friday.getTime();\nconst mergedPrs = allPrs.filter(pr => {\n  if (!pr.merged_at) return false;\n  const mergedMs = new Date(pr.merged_at).getTime();\n  return mergedMs >= mondayMs && mergedMs <= fridayMs;\n});\n\n// --- Return structured output ---\nreturn {\n  commits: commits.map(c => ({\n    author: c.commit.author.name,\n    message: c.commit.message.split('\\\\n')[0],\n    url: c.html_url,\n    date: c.commit.author.date,\n    sha: c.sha ? c.sha.substring(0, 7) : null\n  })),\n  issues: actualIssues.map(i => ({\n    number: i.number,\n    title: i.title,\n    state: i.state,\n    url: i.html_url,\n    closedAt: i.closed_at\n  })),\n  pullRequests: mergedPrs.map(pr => ({\n    number: pr.number,\n    title: pr.title,\n    author: pr.user.login,\n    url: pr.html_url,\n    mergedAt: pr.merged_at\n  })),\n  weekStart: weekStart.substring(0, 10),\n  weekEnd: weekEnd.substring(0, 10),\n  repoOwner,\n  repoName,\n  language,\n  deliveryEmail: $json.deliveryEmail,\n  deliveryWebhook: $json.deliveryWebhook\n};"
+      },
+      "id": "node-fetch",
+      "name": "Fetch GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==============================\n// Build Claude prompt from fetched data\n// ==============================\n\nconst { commits, issues, pullRequests, weekStart, weekEnd, repoOwner, repoName, language } = $json;\n\nconst totalCommits = commits.length;\nconst totalIssues  = issues.length;\nconst totalPRs     = pullRequests.length;\n\n// Format data for the prompt\nconst commitLines = commits.map(c => `  - \\`${c.sha || '------'}\\` ${c.message} (${c.author})`).join('\\\\n');\nconst issueLines  = issues.map(i => `  - [#${i.number}](${i.url}): ${i.title}`).join('\\\\n');\nconst prLines     = pullRequests.map(pr => `  - [#${pr.number}](${pr.url}): ${pr.title} by @${pr.author}`).join('\\\\n');\n\n// System prompt (i18n)\nconst systemPrompt = language === 'ar'\n  ? 'أنت مساعد متخصص في كتابة ملخصات أسبوعية لتطوير المشاريع البرمجية. اكتب الملخص باللغة العربية الفصحى الواضحة. كن موجزاً ومفيداً.'\n  : 'You are an expert engineering assistant that writes concise weekly development summaries for software projects. Write in clear, professional English. Be concise and highlight meaningful changes.';\n\n// User prompt (i18n)\nconst userPrompt = language === 'ar'\n  ? `## ملخص التطوير الأسبوعي\n\\n` +\n    `**الأسبوع:** ${weekStart} → ${weekEnd}\\n` +\n    `**المشروع:** ${repoOwner}/${repoName}\\n\\n` +\n    `### الإحصائيات\\n` +\n    `- إجمالي Commits: ${totalCommits}\\n` +\n    `- Issues مغلقة: ${totalIssues}\\n` +\n    `- Pull Requests مدمجة: ${totalPRs}\\n\\n` +\n    `### سجل Commits\\n${commitLines || '  (لا توجد commits هذا الأسبوع)'}\\n\\n` +\n    `### Issues المغلقة\\n${issueLines || '  (لا توجد issues مغلقة هذا الأسبوع)'}\\n\\n` +\n    `### Pull Requests المدمجة\\n${prLines || '  (لا توجد PRs مدمجة هذا الأسبوع)'}\\n\\n` +\n    `الرجاء كتابة ملخص سردي (2-3 فقرات) يصف أهم التغييرات والإنجازات هذا الأسبوع. اذكر الإحصائيات الرئيسية وأبرز المساهمات.`\n  : `## Weekly Development Summary\\n\\n` +\n    `**Week:** ${weekStart} → ${weekEnd}\\n` +\n    `**Repository:** ${repoOwner}/${repoName}\\n\\n` +\n    `### Stats\\n` +\n    `- Total Commits: ${totalCommits}\\n` +\n    `- Closed Issues: ${totalIssues}\\n` +\n    `- Merged PRs: ${totalPRs}\\n\\n` +\n    `### Commit Log\\n${commitLines || '  (no commits this week)'}\\n\\n` +\n    `### Closed Issues\\n${issueLines || '  (no issues closed this week)'}\\n\\n` +\n    `### Merged Pull Requests\\n${prLines || '  (no PRs merged this week)'}\\n\\n` +\n    `Please write a narrative summary (2-3 paragraphs) describing the key changes and accomplishments this week. Mention the key stats and highlight notable contributions.`;\n\nreturn {\n  systemPrompt,\n  userPrompt,\n  model: 'claude-sonnet-4-20250514',\n  maxTokens: 1500,\n  repoOwner,\n  repoName,\n  weekStart,\n  weekEnd,\n  deliveryEmail: $json.deliveryEmail,\n  deliveryWebhook: $json.deliveryWebhook,\n  language,\n  stats: {\n    totalCommits,\n    totalIssues,\n    totalPRs\n  }\n};"
+      },
+      "id": "node-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "={{ $json.model }}"
+            },
+            {
+              "name": "max_tokens",
+              "value": "={{ $json.maxTokens }}"
+            },
+            {
+              "name": "system",
+              "value": "={{ $json.systemPrompt }}"
+            },
+            {
+              "name": "messages[0][role]",
+              "value": "user"
+            },
+            {
+              "name": "messages[0][content]",
+              "value": "={{ $json.userPrompt }}"
+            }
+          ]
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-claude",
+      "name": "Call Claude API (claude-sonnet-4)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==============================\n// Extract & format Claude's response\n// ==============================\n\nconst response = $json;\n\n// Handle different response shapes\nlet summary = '';\nif (response.content && Array.isArray(response.content)) {\n  summary = response.content\n    .filter(block => block.type === 'text')\n    .map(block => block.text)\n    .join('\\\\n\\\\n');\n} else if (typeof response.content === 'string') {\n  summary = response.content;\n} else if (typeof response === 'string') {\n  summary = response;\n} else {\n  summary = JSON.stringify(response, null, 2);\n}\n\nreturn {\n  summary,\n  repoOwner: $json.repoOwner,\n  repoName: $json.repoName,\n  weekStart: $json.weekStart,\n  weekEnd: $json.weekEnd,\n  deliveryEmail: $json.deliveryEmail,\n  deliveryWebhook: $json.deliveryWebhook,\n  language: $json.language,\n  stats: $json.stats\n};"
+      },
+      "id": "node-format",
+      "name": "Format Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "n8n-weekly-summary@example.com",
+        "toEmail": "={{ $json.deliveryEmail }}",
+        "subject": "=Weekly Dev Summary — {{ $json.repoOwner }}/{{ $json.repoName }} ({{ $json.weekStart }} to {{ $json.weekEnd }})",
+        "text": "={{ $json.summary }}",
+        "options": {}
+      },
+      "id": "node-email",
+      "name": "Send Email Summary",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.deliveryWebhook }}",
+        "authentication": "none",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.summary }}"
+            }
+          ]
+        },
+        "headerParameters": {},
+        "options": {
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "id": "node-webhook",
+      "name": "Send Webhook (Discord / Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 450]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Fri 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Set Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Data": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API (claude-sonnet-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API (claude-sonnet-4)": {
+      "main": [
+        [
+          {
+            "node": "Format Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Send Email Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Webhook (Discord / Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "America/New_York",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "bounty-5"
+    },
+    {
+      "name": "dev-summary"
+    },
+    {
+      "name": "weekly"
+    },
+    {
+      "name": "claude"
+    }
+  ],
+  "pinData": {},
+  "versionId": "bounty-5-initial",
+  "active": false
+}
