@@ -1,0 +1,77 @@
+name: PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Determine PR number
+        id: pr-info
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "number=${{ inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run PR review
+        id: review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          PR_NUM="${{ steps.pr-info.outputs.number }}"
+          echo "🔍 Reviewing $REPO PR #$PR_NUM"
+          python agents/pr-review-agent/claude_review.py \
+            --pr "$PR_NUM" \
+            --repo "$REPO" \
+            --output /tmp/pr-review.md
+
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('/tmp/pr-review.md', 'utf8');
+            const prNumber = '${{ steps.pr-info.outputs.number }}';
+            
+            // Truncate if over GitHub's comment limit (65,536 chars)
+            const body = review.length > 65000
+              ? review.substring(0, 64000) + '\n\n*...review truncated due to length*'
+              : review;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: body
+            });
+
+      - name: Upload review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-review-${{ steps.pr-info.outputs.number }}
+          path: /tmp/pr-review.md
