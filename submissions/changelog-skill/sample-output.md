@@ -1,0 +1,113 @@
+# Changelog
+
+## [4.0.0] - 2026-07-25
+
+### Added
+- ede0450 feat: prefer uv over pipx/pip for Python installs in install_tools.sh (#92)
+- 8c5c0b1 feat(brain): add OpenRouter LLM provider for standalone bughunter (#94)
+- 32131c1 feat: add Lead Board — persistent recon→skill lead ledger (#85)
+- 10e0804 feat: add GraphQL audit skill + tool — introspection, batching DoS, IDOR, injection (#78)
+- 29b1e3f feat(brain): add 6 new LLM providers — Gemini, Kimi, Mistral, Together, Cerebras, Perplexity (#77)
+- 0a739fd feat(web2-vuln-classes): add Insecure Deserialization as class 24 (PHP/Java/Python/Node) (#76)
+- d137155 feat(web2-vuln-classes): add MCP & RAG-specific attacks to LLM/AI class (#70)
+- 261b278 feat(web2-vuln-classes): add LFI / file inclusion -> RCE class (#65)
+- 91c3fe8 feat(skills): add framework 1-day quick-wins to security-arsenal (#68)
+- 67d33c5 feat(waf-bypass): systematic WAF bypass pipeline — encoder, analyzer, soft-block detection (#40)
+- 2eae56d feat(skills): add mobile-pentest skill (Android/iOS runtime-first workflow) (#64)
+- c3e9d66 feat: add friendlier CLI help and aliases
+- 2755dd4 feat(arsenal): add kimchi and freebuff compatibility
+- cea91f9 feat: add standalone engine — run bughunter without any AI subscription
+- a3abd02 feat: add AI-assisted hunt playbook
+- 59a3c32 feat(vuln-classes): add CSS injection coverage
+- 64954c0 feat: false positive reduction — scanner confidence + validation gate hardening
+- 4fb736c feat: harden cli and bump v4.3.1
+- 7248fa2 feat(vuln-classes): add CSS injection coverage
+- 8dcf40b feat: credential attack pipeline — wordlist-gen / osint / breach-check / spray (5 new slash commands) (#58)
+- 0346b8a feat: 3 small recon/brain/dork-runner improvements from VAPT engagement (#33)
+- 70bdf36 feat(vuln-classes): add postMessage testing subsection to XSS (#48)
+- 5a625c7 feat(vuln-classes): add error disclosure & framework debug endpoints (#47)
+- a7d0cb8 feat(opencode): add uninstall scripts, fix MCP format, replace plugin with AGENTS.md (#42)
+- bfc5bab feat: add bughunter.fun landing page (site/index.html)
+- 5f3a052 feat: 7 new commands, auth-session, methodology cheatsheet, recon nuclei phase (#36)
+- 5413144 feat: domain-list mode, Caido MCP, authorization preamble, README clarity
+- 16e4a88 feat: v4.2.3 — Stop hook for memory-gc auto-rotation
+- 623edef feat: v4.2.0 — memory rotation + README polish
+- 0db9640 feat: CVSS 4.0 scoring, recon adapter, TODO fixes (#10)
+- 9be3dd7 feat: auto-memory at session end — log_session_summary() wired into hunt + autopilot
+- 53d2e13 feat: add MFA bypass and SAML/SSO checks to vuln_scanner.sh
+- 7df6ecb feat: Burp Suite-style self-contained HTML report generator
+- 955ffc0 feat: add IP and CIDR target support (hunt.py + recon_engine.sh)
+- 8c98102 feat: CVSS 4.0 scoring, recon adapter, TODO fixes
+
+### Fixed
+- 2a64de3 fix: use OpenCode tool mappings for agents (#75)
+- 10eb8b8 fix(uninstall): remove installed agents on uninstall (#72)
+- 01cec83 fix: stop promoting weak scanner signals into findings (4-layer FP reduction)
+- a3237a7 fix(vuln_scanner): repair orphaned if-block in XSS check (#46)
+- 7d8f2eb fix(vuln_scanner): remove mkdir referencing $FINDINGS_DIR before assignment (#45)
+- e5c7737 fix: 2 false-positive correctness bugs from VAPT engagement (#31)
+- 2a826ad fix: cap katana crawl at 5 min; wire it into recon_engine.sh (#20)
+- e4c1395 fix: brain auto-detect prioritizes cloud providers with API keys (#19)
+- 65af97c fix: restore tools/__init__.py so test_credential_store / test_token_scanner collect (#21)
+- a63a522 fix: v4.2.2 — restore missing ReconAdapter class
+- 7e8acc4 fix: v4.2.1 — PatternDB.save() O(n²) perf bug
+- 9524134 fix: rename /resume → /pickup, add session isolation, multi-target, Chrome MCP, source code mode
+- e079af8 fix: orphan process leak, macOS compat, dalfox timeout, severity classification (#16)
+- 476bbed fix: autoplan review — README v4.1.0, hunt-memory gitignore, Quick Start fix, new TODOs
+- 53c1b9d fix: mark TODO-4 resolved — hunt.py BASE_DIR already correct via tools/ relocation
+- dc27eb2 fix: orphan process leak, macOS compat, dalfox timeout, severity classification
+- 3d3bd6c fix: restore manual report workflow in HTML generator
+- bf40aa5 fix: expand CIDR targets when nmap is unavailable
+- 1117b90 fix: gate MFA POST probes behind safe method policy
+- eddaf76 fix: gate destructive SAML probe in scanner
+- d62cc22 fix: preserve report template coverage in HTML generator
+- 6742076 fix: cap CIDR expansion in hunt target support
+
+### Changed
+- b1e0dd1 Update README.md
+- cf436bb Update README.md
+- 8891812 Update README.md
+- ac274cc Update README.md
+- b2e9eb7 perf: speed up nuclei, httpx, subfinder, katana, dalfox, gau, arjun across all tools (#83)
+- 91304a0 docs: move Star History chart to top of README
+- f30834f macOS: fix unclosed if in vuln_scanner.sh XSS section (#57)
+- 22ea70b Merge pull request #73 from nurazhardotcom/feature/kimchi-freebuff-compat
+- bc374b5 Fix recon wordlist lookup
+- 0d5c801 docs: add Star History chart to top of README
+- 85671ac Merge pull request #71 from shuvonsec/update/claude-model-opus-4-7
+- eee8f86 docs: update README with standalone engine and free provider support
+- 7407a58 Merge pull request #62 from shuvonsec/update/claude-model-opus-4-7
+- 64afda8 chore: bump claude-opus-4-6 → claude-opus-4-7 in report-writer agent and brain.py
+- c7b8553 docs: record calibration handoff updates
+- 4e4d5f3 Merge pull request #61 from shuvonsec/landing-page
+- 62c7bf2 chore: remove TODOS.md and TUTORIAL.md from root (moved to docs/)
+- 5eb306c chore: add GitHub community health files + organize root structure
+- bc0a313 docs: add project structure section + folder READMEs for every major directory
+- f6d308a docs: clean README redesign — simpler, cleaner, top-class
+- 83acc6d Merge pull request #60 from shuvonsec/landing-page
+- 81333a0 docs: add Star History chart to README
+- 6e6855a merge: resolve conflicts from origin/main merge
+- ef5f349 chore: commit local changes before merge with main
+- 8551799 I'm back with some update. (#59)
+- f14662c Merge origin/main into landing-page
+- e6a78ea Update sensitive-files.txt (#53)
+- 99cb2c2 Update api-endpoints.txt (#52)
+- 7da94e1 bugfix: improve Go PATH hangling and version detection in install_tools.sh (#39)
+- 12c1164 Landing page (#55)
+- 319fd18 Merge remote-tracking branch 'origin/main' into landing-page
+- 3649346 docs: add "ask Claude to install" path + paste-ready usage prompts
+- fb6281a Feat/banner and command fixes (#43)
+- f9e7d42 Feat/commands and auth session (#37)
+- 642c65d README: drop crypto badges, add v4.3 notes + recon toolkit table
+- c2df293 Merge pull request #23 from TRIKKSS/main
+- 1346138 fix installation_tools.sh verification
+- 2c63070 Add: MFA bypass and SAML/SSO checks to vuln_scanner.sh
+- 414a66e Improve: Burp Suite-style HTML report generator
+- 955d893 Add: IP and CIDR target support (hunt.py + recon_engine.sh)
+- f066b2c docs: add FAQ.md and TERMS.md — plain language for everyone
+- 819ad0a docs: rewrite README for clarity — plain language, everyone can understand
+- 6d54deb add: CHANGELOG v4.0.0 + v4.1.0 entries — meme coin module + patch fixes
+- 41a3d7c add: logo SVG assets (banner + icon variants)
+
+### Removed
+- 97d4efb remove: cve_hunter.py, report_generator.py, hunt_journal.py — replaced by Claude Code slash commands
