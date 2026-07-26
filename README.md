@@ -43,6 +43,11 @@ You're in the right place.
 
 ---
 
+## Destructive command hook
+
+The [destructive command hook](hooks/README.md) blocks dangerous Bash and SQL commands before Claude Code executes them.
+
+---
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
