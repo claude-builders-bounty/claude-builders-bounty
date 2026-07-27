@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+import requests
+from anthropic import Anthropic
+
+def get_pr_diff(pr_url):
+    # GitHub PR diffs can be fetched by appending .diff to the PR URL
+    # Handle api.github urls or html urls
+    if 'api.github.com' not in pr_url:
+        diff_url = pr_url.rstrip('/') + '.diff'
+        headers = {}
+    else:
+        diff_url = pr_url
+        headers = {'Accept': 'application/vnd.github.v3.diff'}
+
+    response = requests.get(diff_url, headers=headers)
+    if response.status_code != 200:
+        print(f"Error fetching PR diff from {diff_url}: {response.status_code} {response.reason}")
+        sys.exit(1)
+    return response.text
+
+def analyze_diff(diff_content):
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("Error: ANTHROPIC_API_KEY environment variable is not set.")
+        sys.exit(1)
+        
+    client = Anthropic(api_key=api_key)
+    
+    prompt = f"""You are an expert code reviewer. Please analyze the following PR diff and provide a structured Markdown review comment.
+
+The review must include exactly these sections with the exact headers:
+### Summary of changes
+(2–3 sentences describing the changes)
+
+### Identified risks
+- (list of risks)
+
+### Improvement suggestions
+- (list of suggestions)
+
+### Confidence score: Low / Medium / High
+
+PR Diff:
+```diff
+{diff_content}
+```
+"""
+
+    response = client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=2048,
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
+    )
+    
+    return response.content[0].text
+
+def main():
+    parser = argparse.ArgumentParser(description="Claude Code sub-agent that reviews a PR and posts a structured comment.")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL")
+    args = parser.parse_args()
+    
+    diff_content = get_pr_diff(args.pr)
+    
+    if not diff_content.strip():
+        print("PR diff is empty or there are no changes.")
+        sys.exit(0)
+        
+    review = analyze_diff(diff_content)
+    print(review)
+
+if __name__ == "__main__":
+    main()
