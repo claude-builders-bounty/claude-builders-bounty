@@ -1,0 +1,35 @@
+# Fix for Issue #2746: /opire try
+
+## Solution & Analysis
+```diff
+--- a/src/cli/index.js
++++ b/src/cli/index.js
+@@ -15,6 +15,10 @@ async function handleTryCommand(args) {
+   if (!args.issueUrl) {
+     throw new Error("Missing issue URL parameter for try command");
+   }
+
++  if (typeof args.issueUrl !== "string" || args.issueUrl.trim() === "") {
++    throw new Error("Invalid issue URL parameter: must be a non-empty string");
++  }
+
+   const parsed = parseIssueUrl(args.issueUrl);
+   if (!parsed || !parsed.owner || !parsed.repo || !parsed.issueNumber) {
+     throw new Error(`Invalid Opire issue URL format: ${args.issueUrl}`);
+   }
+--- a/tests/cli/try.test.js
++++ b/tests/cli/try.test.js
+@@ -1,6 +1,18 @@
+ const { handleTryCommand } = require('../../src/cli/index');
+
+ describe('handleTryCommand', () => {
++  it('should throw error when issueUrl is missing or empty', async () => {
++    await expect(handleTryCommand({})).rejects.toThrow("Missing issue URL parameter for try command");
++    await expect(handleTryCommand({ issueUrl: "   " })).rejects.toThrow("Invalid issue URL parameter: must be a non-empty string");
++  });
+
+   it('should throw error for invalid issue URL structure', async () => {
+     await expect(handleTryCommand({ issueUrl: 'invalid-url' })).rejects.toThrow(/Invalid Opire issue URL format/);
+   });
+ });
+```
