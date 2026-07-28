@@ -4,8 +4,9 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 try:
-    from anthropic import Anthropic
+    from anthropic import Anthropic, APIError, APIConnectionError, RateLimitError
 except ImportError:
     print("Error: 'anthropic' package is required. Please install it using: pip install anthropic")
     sys.exit(1)
@@ -27,9 +28,30 @@ def get_pr_diff(pr_url):
         print("Error: GitHub CLI ('gh') is not installed or not in PATH.", file=sys.stderr)
         sys.exit(1)
 
+def call_anthropic(client, model, prompt, max_tokens):
+    last_error = None
+    for attempt in range(3):
+        try:
+            return client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}]
+            )
+        except (APIError, APIConnectionError, RateLimitError) as e:
+            last_error = e
+            if attempt < 2:
+                wait = 2 ** attempt
+                print(f"API error (attempt {attempt+1}/3): retrying in {wait}s...", file=sys.stderr)
+                time.sleep(wait)
+    raise last_error
+
 def main():
     parser = argparse.ArgumentParser(description="Claude Code PR Reviewer Agent")
     parser.add_argument("--pr", required=True, help="GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--model", default="claude-sonnet-5-20250728",
+                        help="Claude model to use for review (default: claude-sonnet-5-20250728)")
+    parser.add_argument("--max-tokens", type=int, default=4096,
+                        help="Maximum tokens in the response (default: 4096)")
     args = parser.parse_args()
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -39,13 +61,13 @@ def main():
 
     print(f"Fetching diff for PR: {args.pr}...", file=sys.stderr)
     diff = get_pr_diff(args.pr)
-    
+
     if not diff.strip():
         print("Error: PR diff is empty.", file=sys.stderr)
         sys.exit(1)
 
-    print("Analyzing diff with Claude...", file=sys.stderr)
-    
+    print(f"Analyzing diff with Claude ({args.model})...", file=sys.stderr)
+
     prompt = f"""You are an expert software engineer reviewing a pull request.
 I will provide you with the diff of a PR.
 Please analyze it and provide a structured review comment in Markdown.
@@ -73,15 +95,9 @@ Here is the diff:
 """
 
     client = Anthropic(api_key=api_key)
-    
+
     try:
-        response = client.messages.create(
-            model="claude-3-7-sonnet-20250219",
-            max_tokens=2048,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
+        response = call_anthropic(client, args.model, prompt, args.max_tokens)
         print("\n" + response.content[0].text)
     except Exception as e:
         print(f"Error calling Anthropic API: {e}", file=sys.stderr)

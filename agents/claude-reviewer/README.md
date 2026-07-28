@@ -4,7 +4,7 @@ A Python-based CLI agent that leverages the Anthropic API (Claude) to automatica
 
 ## Prerequisites
 
-- Python 3.6+
+- Python 3.8+
 - GitHub CLI (`gh`) installed and authenticated
 - An Anthropic API key
 
@@ -31,6 +31,12 @@ Run the agent via CLI by passing the GitHub PR URL:
 
 ```bash
 ./claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+You can also specify a different model or token limit:
+
+```bash
+./claude-review --pr https://github.com/owner/repo/pull/123 --model claude-sonnet-5-20250728 --max-tokens 4096
 ```
 
 ### Sample Output
