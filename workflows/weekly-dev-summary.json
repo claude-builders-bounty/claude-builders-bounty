@@ -1,0 +1,256 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": 1,
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Monday 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));\nconst start = new Date(end);\nstart.setUTCDate(start.getUTCDate() - 7);\nconst toIso = (d) => d.toISOString().replace(/\\.\\d{3}Z$/, 'Z');\nconst owner = ($env.GITHUB_OWNER || 'mamenesia').trim();\nconst repo = ($env.GITHUB_REPO || 'claude-builders-bounty').trim();\nconst model = ($env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514').trim();\nreturn [{\n  json: {\n    owner,\n    repo,\n    model,\n    since: toIso(start),\n    until: toIso(end),\n    weekLabel: `${toIso(start).slice(0, 10)} → ${toIso(end).slice(0, 10)}`\n  }\n}];"
+      },
+      "id": "set-window",
+      "name": "Compute Week Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.owner}}/{{$json.repo}}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{$json.since}}" },
+            { "name": "until", "value": "={{$json.until}}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GITHUB_HEADER_AUTH",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$('Compute Week Window').item.json.owner}}/{{$('Compute Week Window').item.json.repo}}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "sort", "value": "updated" },
+            { "name": "direction", "value": "desc" },
+            { "name": "per_page", "value": "50" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "fetch-prs",
+      "name": "GitHub Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GITHUB_HEADER_AUTH",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge-gh",
+      "name": "Merge GH Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [720, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $('Compute Week Window').first().json;\nconst commitsRaw = $('GitHub Commits').all().map(i => i.json).flat();\nconst prsRaw = $('GitHub Pull Requests').all().map(i => i.json).flat();\nconst commits = (Array.isArray(commitsRaw) ? commitsRaw : [commitsRaw]).filter(c => c && c.sha);\nconst prs = (Array.isArray(prsRaw) ? prsRaw : [prsRaw]).filter(p => p && p.number);\nconst sinceMs = Date.parse(meta.since);\nconst untilMs = Date.parse(meta.until);\nconst merged = prs.filter(p => p.merged_at && Date.parse(p.merged_at) >= sinceMs && Date.parse(p.merged_at) < untilMs);\nconst authors = {};\nfor (const c of commits) {\n  const a = c.author?.login || c.commit?.author?.name || 'unknown';\n  authors[a] = (authors[a] || 0) + 1;\n}\nconst topAuthors = Object.entries(authors).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([login, count]) => ({ login, count }));\nconst commitLines = commits.slice(0, 40).map(c => `- ${c.sha.slice(0,7)} ${c.commit?.message?.split('\\n')[0] || ''} (@${c.author?.login || 'unknown'})`);\nconst prLines = merged.slice(0, 20).map(p => `- #${p.number} ${p.title} (@${p.user?.login || 'unknown'})`);\nconst digest = [\n  `Repository: ${meta.owner}/${meta.repo}`,\n  `Window: ${meta.weekLabel}`,\n  `Commits: ${commits.length}`,\n  `Merged PRs: ${merged.length}`,\n  '',\n  'Top authors:',\n  ...topAuthors.map(a => `- ${a.login}: ${a.count}`),\n  '',\n  'Recent commits:',\n  ...(commitLines.length ? commitLines : ['- (none)']),\n  '',\n  'Merged PRs:',\n  ...(prLines.length ? prLines : ['- (none)'])\n].join('\\n');\nreturn [{\n  json: {\n    ...meta,\n    commitCount: commits.length,\n    mergedPrCount: merged.length,\n    topAuthors,\n    digest,\n    prompt: `You are an engineering manager writing a crisp weekly development summary.\\n\\nUsing ONLY the data below, produce Markdown with these sections:\\n1. Executive summary (3-5 sentences)\\n2. Highlights (bullets)\\n3. Key merged PRs\\n4. Risks / follow-ups\\n5. Suggested focus for next week\\n\\nBe specific. Do not invent commits or PRs.\\n\\nDATA:\\n${digest}`\n  }\n}];"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{$json.model}}\",\n  \"max_tokens\": 1200,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{JSON.stringify($json.prompt)}}\n    }\n  ]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "claude",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ANTHROPIC_HEADER_AUTH",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $('Build Claude Prompt').first().json;\nconst claude = $input.first().json;\nconst text = Array.isArray(claude.content)\n  ? claude.content.filter(p => p.type === 'text').map(p => p.text).join('\\n')\n  : (claude.error?.message ? `Claude error: ${claude.error.message}` : JSON.stringify(claude).slice(0, 2000));\nconst md = [`# Weekly Dev Summary — ${meta.owner}/${meta.repo}`, '', `**Window:** ${meta.weekLabel}`, `**Commits:** ${meta.commitCount} · **Merged PRs:** ${meta.mergedPrCount}`, '', text].join('\\n');\nreturn [{\n  json: {\n    ...meta,\n    summaryMarkdown: md,\n    slackText: md.slice(0, 3500),\n    emailSubject: `Weekly Dev Summary: ${meta.owner}/${meta.repo} (${meta.weekLabel})`\n  }\n}];"
+      },
+      "id": "format-out",
+      "name": "Format Outputs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 100]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{$env.SLACK_CHANNEL_ID}}"
+        },
+        "text": "={{$json.slackText}}",
+        "otherOptions": {}
+      },
+      "id": "slack",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [1680, 0],
+      "credentials": {
+        "slackApi": {
+          "id": "SLACK_API",
+          "name": "Slack Bot"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.EMAIL_FROM}}",
+        "toEmail": "={{$env.EMAIL_TO}}",
+        "subject": "={{$json.emailSubject}}",
+        "emailType": "text",
+        "text": "={{$json.summaryMarkdown}}",
+        "options": {}
+      },
+      "id": "email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1680, 200],
+      "credentials": {
+        "smtp": {
+          "id": "SMTP",
+          "name": "SMTP"
+        }
+      },
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Every Monday 09:00": {
+      "main": [[{ "node": "Compute Week Window", "type": "main", "index": 0 }]]
+    },
+    "Compute Week Window": {
+      "main": [[
+        { "node": "GitHub Commits", "type": "main", "index": 0 },
+        { "node": "GitHub Pull Requests", "type": "main", "index": 0 }
+      ]]
+    },
+    "GitHub Commits": {
+      "main": [[{ "node": "Merge GH Data", "type": "main", "index": 0 }]]
+    },
+    "GitHub Pull Requests": {
+      "main": [[{ "node": "Merge GH Data", "type": "main", "index": 1 }]]
+    },
+    "Merge GH Data": {
+      "main": [[{ "node": "Build Claude Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Claude Prompt": {
+      "main": [[{ "node": "Claude Summary", "type": "main", "index": 0 }]]
+    },
+    "Claude Summary": {
+      "main": [[{ "node": "Format Outputs", "type": "main", "index": 0 }]]
+    },
+    "Format Outputs": {
+      "main": [[
+        { "node": "Post to Slack", "type": "main", "index": 0 },
+        { "node": "Send Email", "type": "main", "index": 0 }
+      ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "bounty": "claude-builders-bounty#5",
+    "description": "Weekly GitHub activity → Claude summary → Slack + email"
+  }
+}
