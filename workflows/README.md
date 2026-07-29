@@ -1,22 +1,13 @@
-# Weekly Dev Summary Workflow
+# n8n + Claude Code: Weekly Dev Summary
 
-An n8n workflow that automatically generates a weekly narrative summary of a GitHub repo's activity using the Claude API.
+This workflow fetches the last 7 days of closed issues/PRs from a GitHub repository, summarizes the activity into a narrative using Anthropic's Claude 3.5 Sonnet, and posts the summary to a Discord webhook channel. It runs automatically every Friday at 5 PM.
 
-## Setup (5 steps)
+## Setup Instructions (5 steps)
 
-1. **Import the workflow** — In n8n, go to Workflows → Import and upload `workflows/weekly-dev-summary.json`
-2. **Configure credentials** — Add HTTP Header Auth credentials for `GitHub Token`, `Anthropic API Key`, and `Slack Webhook`
-3. **Set variables** — Edit the Config node to set `githubRepo`, `destinationChannel`, `language` (EN/FR), and your Slack/email webhook URLs
-4. **Activate** — Toggle the workflow to active. It runs every Friday at 5pm UTC
-5. **Verify** — Check your Slack channel or email for the first weekly summary
+1. **Import Workflow**: Open your n8n instance, click "Add Workflow", then select "Import from File" and upload `weekly-dev-summary.json`.
+2. **Set Environment Variables**: Ensure your n8n environment variables include `GITHUB_REPO_OWNER`, `GITHUB_REPO_NAME`, `SUMMARY_LANGUAGE` (e.g., `EN` or `FR`), `DISCORD_WEBHOOK_URL`, and `ANTHROPIC_API_KEY`.
+3. **Configure GitHub Auth**: Open the "GitHub (Get Activity)" node and set up or select your GitHub OAuth2 credentials.
+4. **Test the Workflow**: Click "Test Workflow" to run a manual execution and verify that a summary is posted to your Discord channel.
+5. **Activate**: Toggle the workflow switch to "Active" in the top right corner so the cron schedule (Fridays at 5 PM) takes effect.
 
-## What it does
-
-- Fetches commits, closed issues, and merged PRs from the GitHub API for the past week
-- Sends the data to Claude Sonnet 4 for a narrative summary
-- Delivers the summary to Slack or email (configurable)
-
-## Files
-
-- `workflows/weekly-dev-summary.json` — Importable n8n workflow
-- `README.md` — This file
+*Tested successfully on n8n v1.30.0.*
