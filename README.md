@@ -50,4 +50,18 @@ You're in the right place.
 
 ---
 
+## Contributions
+
+### CHANGELOG generator (Bounty #1)
+
+`generate_changelog.py` builds a `CHANGELOG.md` from this repo's git
+history, grouping commits into Added / Fixed / Changed / Removed based on
+their Conventional Commits prefix.
+
+```bash
+python3 generate_changelog.py
+```
+
+---
+
 *Started by the Claude builder community · March 2026 · MIT License*
