@@ -1,0 +1,317 @@
+{
+  "name": "Weekly GitHub Digest (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 17,
+              "triggerAtDay": 5
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// grab repo name from env and split it for the API calls\nconst parts = ($env.GITHUB_REPO || 'owner/repo').split('/');\nreturn [{ json: { owner: parts[0], name: parts[1] || 'repo' } }];\n"
+      },
+      "id": "set-config",
+      "name": "Read Repo Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.name }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus(7, 'days').toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "GET commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 140],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.name }}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $now.minus(7, 'days').toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-issues",
+      "name": "GET closed issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.name }}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "GET pull requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 460],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// combine the 3 responses and strip down to what claude actually needs\n\nconst commits = $input.all()[0].json.body || $input.all()[0].json;\nconst issues  = $input.all()[1].json.body || $input.all()[1].json;\nconst prs     = $input.all()[2].json.body || $input.all()[2].json;\n\nconst cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000);\n\n// github returns ALL closed PRs, we only want the merged ones from this week\nconst merged = (Array.isArray(prs) ? prs : []).filter(p => {\n  return p.merged_at && new Date(p.merged_at) >= cutoff;\n});\n\nconst c = (Array.isArray(commits) ? commits : []).map(x => ({\n  sha: x.sha?.slice(0, 7),\n  msg: x.commit?.message?.split('\\n')[0],\n  who: x.commit?.author?.name,\n  when: x.commit?.author?.date\n}));\n\n// filter out PRs that show up as issues (github quirk)\nconst iss = (Array.isArray(issues) ? issues : [])\n  .filter(x => !x.pull_request)\n  .map(x => ({\n    num: x.number,\n    title: x.title,\n    tags: (x.labels || []).map(l => l.name),\n    closed: x.closed_at\n  }));\n\nconst pr = merged.map(x => ({\n  num: x.number,\n  title: x.title,\n  by: x.user?.login,\n  merged: x.merged_at\n}));\n\nreturn [{\n  json: {\n    commits: c,\n    issues: iss,\n    pulls: pr,\n    counts: {\n      commits: c.length,\n      issues: iss.length,\n      pulls: pr.length\n    }\n  }\n}];\n"
+      },
+      "id": "merge-data",
+      "name": "Combine + trim",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Write a short weekly dev update for a github repo. Language: {{ $env.SUMMARY_LANGUAGE || 'EN' }}.\\n\\nData from the past 7 days:\\n\\nCommits ({{ $json.counts.commits }} total):\\n{{ JSON.stringify($json.commits.slice(0, 30)) }}\\n\\nClosed issues ({{ $json.counts.issues }}):\\n{{ JSON.stringify($json.issues.slice(0, 20)) }}\\n\\nMerged PRs ({{ $json.counts.pulls }}):\\n{{ JSON.stringify($json.pulls.slice(0, 20)) }}\\n\\nKeep it casual but informative. Start with the biggest thing that happened. Group stuff into categories like fixes, features, infra, etc. Mention people who contributed. Use markdown. Under 400 words. Wrap up with what might be coming next week if you can tell from the data.\"\n    }\n  ]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "claude-api",
+      "name": "Ask Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// pull the text out of claude's response and wrap it for discord\n\nconst resp = $input.first().json;\nconst blocks = resp.content || [];\nconst text = (blocks.find(b => b.type === 'text') || {}).text || '(empty response from claude)';\n\nconst repo = $env.GITHUB_REPO || 'your/repo';\nconst lang = ($env.SUMMARY_LANGUAGE || 'EN').toUpperCase();\n\nlet header = `📋 **Weekly Dev Summary** — \\`${repo}\\``;\nif (lang === 'FR') {\n  header = `📋 **Résumé de la semaine** — \\`${repo}\\``;\n}\n\nreturn [{ json: { content: header + '\\n\\n' + text } }];\n"
+      },
+      "id": "format-msg",
+      "name": "Build discord msg",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.content.substring(0, 2000) }) }}",
+        "options": {}
+      },
+      "id": "send-webhook",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 300]
+    }
+  ],
+  "connections": {
+    "Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Read Repo Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Repo Config": {
+      "main": [
+        [
+          {
+            "node": "GET commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GET closed issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GET pull requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET commits": {
+      "main": [
+        [
+          {
+            "node": "Combine + trim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET closed issues": {
+      "main": [
+        [
+          {
+            "node": "Combine + trim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET pull requests": {
+      "main": [
+        [
+          {
+            "node": "Combine + trim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine + trim": {
+      "main": [
+        [
+          {
+            "node": "Ask Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Claude": {
+      "main": [
+        [
+          {
+            "node": "Build discord msg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build discord msg": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1
+}
