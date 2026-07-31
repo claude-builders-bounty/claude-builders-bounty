@@ -1,53 +1,68 @@
-# Claude Builders Bounty 🤖
+# ApexFlow - Autonomous AI Agent for B2B Workflows
 
-> A community bounty board for Claude Code builders.
+## Overview
+ApexFlow uses Evorozen Neural Pulse API as a virtual database to maintain state across platforms. Users provide a prompt and the agent executes all steps autonomously.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup Instructions
+1. Install dependencies: `npm install`
+2. Run the development server: `npm run dev`
+3. Open: http://localhost:3000
 
----
+## Tech Stack
+- Frontend: Next.js 14, React, TypeScript, Tailwind CSS
+- Backend: n8n (workflow automation)
+- APIs: GitHub API, Claude API
+- Deployment: Vercel (pending)
 
-## How it works
+## Project Structure
+```
+apexflow/
+├── backend/
+│   └── n8n/
+│       └── workflow.json
+├── frontend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   └── summary/
+│   │   │       └── route.ts
+│   │   ├── components/
+│   │   └── page.tsx
+│   └── public/
+└── README.md
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## API Response Format
+```json
+{
+  "status": "success",
+  "summary": {
+    "title": "Weekly Repository Summary",
+    "repository": "ApexFlow",
+    "period": "Last 7 days",
+    "overview": "...",
+    "completed_tasks": [],
+    "pending_tasks": [],
+    "metrics": {
+      "commits": 0,
+      "pull_requests": 0,
+      "issues_closed": 0
+    },
+    "recommendations": []
+  }
+}
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Hackathon
+- Event: Evorozen Apex: NextGen AI Buildathon
+- Track: Agentic OS & Workflow Automation
+- Team: Jhon + Chris (BigDan)
+- Deadline: September 21, 2026
 
----
+## Links
+- Repository: https://github.com/JHON12091986/apexflow
 
-## Active Bounties
+## Contact
+- Jhon: https://github.com/JHON12091986
+- Chris: BigDan
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+- docs: update README with professional format
