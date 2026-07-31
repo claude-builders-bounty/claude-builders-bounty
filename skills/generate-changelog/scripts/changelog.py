@@ -131,7 +131,7 @@ def build_section(repo: Path, range_: Optional[str], title: str) -> str:
 
 
 def render(repo: Path, since: Optional[str]) -> str:
-    tags = list_tags(repo)
+    tags = [t for t in list_tags(repo) if not t.startswith("-")]
     body = [HEADER]
 
     if not tags:
@@ -148,12 +148,27 @@ def render(repo: Path, since: Optional[str]) -> str:
     return "".join(body)
 
 
+def _is_valid_refish(value: str) -> bool:
+    """Reject values that git could interpret as command-line options."""
+    if not value:
+        return False
+    if value.startswith("-"):
+        return False
+    if " " in value or "\t" in value:
+        return False
+    return True
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="Generate CHANGELOG.md from git history.")
     p.add_argument("--repo", default=".", help="Path to a git repository.")
     p.add_argument("--since", default=None, help="Override: emit commits since this tag.")
     p.add_argument("--output", default="CHANGELOG.md", help="Output file path.")
     args = p.parse_args()
+
+    if args.since and not _is_valid_refish(args.since):
+        sys.stderr.write("ERROR: --since must be a valid tag/ref and cannot start with '-' or contain spaces\n")
+        return 1
 
     repo = Path(args.repo).resolve()
     if not (repo / ".git").exists():

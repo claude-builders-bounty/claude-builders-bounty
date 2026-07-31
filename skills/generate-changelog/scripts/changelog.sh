@@ -116,7 +116,16 @@ cd "$REPO" || { echo "ERROR: cannot cd to $REPO" >&2; exit 1; }
 
 OUTPUT="${OUTPUT:-CHANGELOG.md}"
 
-LATEST_TAG=$(git tag --sort=-v:refname 2>/dev/null | head -1 || true)
+if [[ -n "$SINCE" && "$SINCE" == -* ]]; then
+    echo "ERROR: --since cannot start with '-'" >&2
+    exit 1
+fi
+if [[ -n "$SINCE" && "$SINCE" =~ [[:space:]] ]]; then
+    echo "ERROR: --since cannot contain whitespace" >&2
+    exit 1
+fi
+
+LATEST_TAG=$(git tag --sort=-v:refname 2>/dev/null | grep -v '^-' | head -1 || true)
 
 if [[ -z "$SINCE" ]]; then
     SINCE="$LATEST_TAG"
@@ -133,7 +142,7 @@ fi
     echo ""
 } > "$OUTPUT"
 
-TAGS=$(git tag --sort=-v:refname 2>/dev/null || true)
+TAGS=$(git tag --sort=-v:refname 2>/dev/null | grep -v '^-' || true)
 if [[ -n "$TAGS" ]]; then
     PREV=""
     TAG_ARR=($TAGS)
@@ -142,6 +151,7 @@ if [[ -n "$TAGS" ]]; then
     # Walk tags newest → oldest
     for ((i=0; i<N; i++)); do
         tag="${TAG_ARR[$i]}"
+        [[ "$tag" == -* ]] && continue
         if [[ $i -eq 0 ]]; then
             section_title="Unreleased"
             range="$tag..HEAD"
@@ -155,7 +165,7 @@ if [[ -n "$TAGS" ]]; then
 
     # initial range: oldest tag → all commits before it
     last="${TAG_ARR[$((N-1))]}"
-    emit_section "$last" "${TAG_ARR[$((N-1))]} — initial and prior" >> "$OUTPUT"
+    [[ "$last" != -* ]] && emit_section "$last" "${TAG_ARR[$((N-1))]} — initial and prior" >> "$OUTPUT"
 else
     emit_section "" "Unreleased" >> "$OUTPUT"
 fi
