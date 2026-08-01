@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""
+claude-review — structured PR review from a GitHub PR URL or local diff.
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --diff path/to.diff
+  claude-review --pr <url> --out review.md
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+def run(cmd, **kwargs):
+    return subprocess.run(cmd, shell=True, text=True, capture_output=True, **kwargs)
+
+
+def fetch_pr(pr_url):
+    if not re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)", pr_url):
+        print(f"error: invalid PR URL: {pr_url}", file=sys.stderr)
+        sys.exit(1)
+
+    workdir = tempfile.mkdtemp(prefix="claude-review-")
+    diff_path = Path(workdir) / "pr.diff"
+    meta_path = Path(workdir) / "meta.txt"
+    review_path = Path(workdir) / "review.md"
+
+    m = re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)", pr_url)
+    owner, repo, num = m.group(1), m.group(2), m.group(3)
+
+    r = run(f"gh pr view {num} --repo {owner}/{repo} --json title,body,author,baseRefName,headRefName,additions,deletions,files")
+    if r.returncode != 0:
+        print(f"error: gh pr view failed: {r.stderr}", file=sys.stderr)
+        sys.exit(1)
+
+    pr = json.loads(r.stdout)
+    run(f"gh pr diff {num} --repo {owner}/{repo} > {diff_path}")
+
+    with open(meta_path, "w") as f:
+        f.write(f"PR: {owner}/{repo}#{num}\n")
+        f.write(f"URL: {pr_url}\n")
+        f.write(f"Title: {pr.get('title', '')}\n")
+        f.write(f"Author: {(pr.get('author') or {}).get('login', 'unknown')}\n")
+        f.write(f"Base: {pr.get('baseRefName', '')} <- {pr.get('headRefName', '')}\n")
+        f.write(f"Delta: +{pr.get('additions', 0)} -{pr.get('deletions', 0)}\n")
+        f.write("Files:\n")
+        for file in (pr.get("files") or []):
+            f.write(f" - {file.get('path')} ({file.get('changeType', '')})\n")
+        body = pr.get("body") or ""
+        f.write(f"Body:\n{body[:2000]}\n")
+
+    return meta_path, diff_path, review_path
+
+
+def analyze(meta_path, diff_path):
+    meta = meta_path.read_text(errors="replace")
+    diff = diff_path.read_text(errors="replace")
+
+    lines = diff.splitlines()
+    file_headers = [l[6:] for l in lines if l.startswith("+++ b/")]
+    adds = sum(1 for l in lines if l.startswith("+") and not l.startswith("+++"))
+    dels = sum(1 for l in lines if l.startswith("-") and not l.startswith("---"))
+
+    risks = []
+    suggestions = []
+
+    dangerous = [
+        (r"rm\s+-rf", "Destructive rm -rf in diff"),
+        (r"eval\s*\(", "Use of eval()"),
+        (r"innerHTML\s*=", "innerHTML assignment (XSS risk)"),
+        (r"subprocess\.(call|run|Popen).*shell\s*=\s*True", "shell=True subprocess"),
+        (r"pickle\.loads", "pickle.loads (RCE risk)"),
+        (r"API_KEY|SECRET|PASSWORD\s*=\s*['\"]", "Hardcoded secret pattern"),
+        (r"DISABLE.*AUTH|skip.*auth", "Auth bypass signal"),
+        (r"TODO|FIXME|XXX", "Leftover TODO/FIXME markers"),
+    ]
+    for pat, label in dangerous:
+        if re.search(pat, diff, re.I):
+            risks.append(label)
+
+    if not file_headers:
+        suggestions.append("Diff appears empty or could not be parsed; verify PR has changes.")
+    if adds + dels > 2000:
+        suggestions.append("Large diff (>2000 lines). Consider splitting into smaller PRs.")
+    if adds > 0 and dels == 0:
+        suggestions.append("Pure additive PR — verify tests and docs are included.")
+
+    summary_parts = []
+    if file_headers:
+        summary_parts.append(f"touches {len(file_headers)} file(s)")
+    summary_parts.append(f"{adds} additions and {dels} deletions")
+    summary = "This PR " + ", ".join(summary_parts) + "."
+
+    if risks:
+        confidence = "Low" if len(risks) >= 3 else "Medium"
+    elif not file_headers:
+        confidence = "Low"
+    else:
+        confidence = "High"
+
+    return {
+        "summary": summary,
+        "risks": risks,
+        "suggestions": suggestions,
+        "confidence": confidence,
+        "meta": meta,
+    }
+
+
+def render_markdown(result):
+    lines = []
+    lines.append("## Claude Code Review\n")
+    lines.append(f"> **Confidence:** {result['confidence']}\n")
+    lines.append("")
+    lines.append("### Summary\n")
+    lines.append(result["summary"])
+    lines.append("")
+    lines.append("### Identified Risks\n")
+    if result["risks"]:
+        for r in result["risks"]:
+            lines.append(f"- {r}")
+    else:
+        lines.append("- None detected")
+    lines.append("")
+    lines.append("### Improvement Suggestions\n")
+    if result["suggestions"]:
+        for s in result["suggestions"]:
+            lines.append(f"- {s}")
+    else:
+        lines.append("- None")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Structured PR review generator")
+    parser.add_argument("--pr", help="GitHub PR URL")
+    parser.add_argument("--diff", help="Path to local diff file")
+    parser.add_argument("--out", help="Output file path")
+    args = parser.parse_args()
+
+    if not args.pr and not args.diff:
+        parser.print_help()
+        sys.exit(1)
+
+    if args.pr:
+        meta_path, diff_path, review_path = fetch_pr(args.pr)
+    else:
+        diff_path = Path(args.diff)
+        if not diff_path.exists():
+            print(f"error: diff file not found: {args.diff}", file=sys.stderr)
+            sys.exit(1)
+        meta_path = Path("/dev/null")
+        review_path = Path("/dev/null")
+
+    result = analyze(meta_path, diff_path)
+    md = render_markdown(result)
+
+    out = Path(args.out) if args.out else Path("/dev/stdout")
+    out.write_text(md)
+
+
+if __name__ == "__main__":
+    main()
