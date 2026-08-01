@@ -34,6 +34,39 @@ You're in the right place.
 
 ---
 
+## n8n Weekly Dev Summary Workflow
+
+This PR includes an importable n8n workflow for bounty [#5](../../issues/5).
+
+Import `workflows/n8n-weekly-dev-summary.json` into n8n, then configure:
+
+- `GITHUB_REPO`
+- `GITHUB_TOKEN`
+- `ANTHROPIC_API_KEY`
+- `SUMMARY_EMAIL_TO`
+- `SUMMARY_LANGUAGE`
+
+The workflow runs every Friday at 5pm, fetches the last seven days of commits,
+closed issues, and merged pull requests, asks `claude-sonnet-4-20250514` for a
+weekly development summary, then sends it by email.
+
+Validate the workflow shape and Code node syntax:
+
+```bash
+python3 scripts/validate_n8n_workflow.py
+```
+
+Run a live GitHub API dry run without calling Claude or sending email:
+
+```bash
+python3 scripts/validate_n8n_workflow.py --live-repo n8n-io/n8n
+```
+
+Detailed setup notes live in `workflows/README.md`; sample generated output is
+included at `samples/weekly-dev-summary-output.md`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
