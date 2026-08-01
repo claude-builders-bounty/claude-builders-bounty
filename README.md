@@ -1,53 +1,76 @@
-# Claude Builders Bounty 🤖
+# generate-changelog
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from your git history, grouped into
+**Added / Fixed / Changed / Removed** (Keep a Changelog 1.1.0 format).
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+Works with conventional commits and falls back to heuristics for repos that
+don't follow the convention. No external dependencies — just `bash`, `git`,
+and `awk`.
 
----
+## Setup (3 steps)
 
-## How it works
+1. Copy `changelog.sh` into your repo (e.g. `./scripts/changelog.sh`).
+2. Add `SKILL.md` to your Claude Code skills directory (`~/.claude/skills/generate-changelog/SKILL.md`).
+3. Run `bash scripts/changelog.sh` from your repo root. A `CHANGELOG.md` will be created (or prepended) automatically.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Usage
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+# Default: changelog since the most recent git tag
+bash changelog.sh
 
----
+# Explicit range
+bash changelog.sh --since v1.0.0
 
-## Active Bounties
+# Explicit version
+bash changelog.sh --version 2.0.0
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+# Preserve an existing [Unreleased] block
+bash changelog.sh --keep-unreleased
 
----
+# Bypass clean-tree check
+bash changelog.sh --allow-dirty
+```
 
-## Rules
+In Claude Code, just type:
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+```
+/generate-changelog
+```
 
----
+…and the skill will detect the range and write the file.
 
-## Community
+## What it does
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+1. Detects the range: `--since <ref>` → most recent tag → all non-merge commits.
+2. Collects commits (`git log` with `%H %an %ae %aI %s`).
+3. Categorizes each subject by conventional-commit prefix:
+   - `feat`/`feature`/`add`/`new` → **Added**
+   - `fix`/`bug`/`patch`/`hotfix` → **Fixed**
+   - `refactor`/`perf`/`docs`/`chore`/`build`/`ci` → **Changed**
+   - `remove`/`drop`/`deprecate` → **Removed**
+4. Falls back to a first-verb heuristic when no conventional prefix is found.
+5. Marks `BREAKING CHANGE` / `!` commits into a top **⚠️ BREAKING CHANGES** section.
+6. Writes a Keep-a-Changelog 1.1.0 section; preserves prior content.
 
----
+## Output
 
-*Started by the Claude builder community · March 2026 · MIT License*
+```markdown
+## [1.2.1] - 2026-08-01
+
+### Added
+- feat(api): add /healthz endpoint (a1b2c3d)
+- feat: support --since date ranges (e9f8g7h)
+
+### Fixed
+- fix(cli): handle missing tag gracefully (1a2b3c4)
+
+### Changed
+- refactor: extract categorization to awk (5d6e7f8)
+```
+
+See [`SAMPLE_OUTPUT.md`](./SAMPLE_OUTPUT.md) for a real run against a public repo.
+
+## License
+
+MIT — matches the parent `claude-builders-bounty` repository.
