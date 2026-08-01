@@ -34,6 +34,37 @@ You're in the right place.
 
 ---
 
+## Destructive Bash Guard Hook
+
+This PR includes a Claude Code `PreToolUse` hook for bounty [#3](../../issues/3).
+
+Install it from the repository root:
+
+```bash
+python3 hooks/destructive-bash-guard/destructive_bash_guard.py --install
+```
+
+Run the bundled smoke samples:
+
+```bash
+python3 hooks/destructive-bash-guard/destructive_bash_guard.py < hooks/destructive-bash-guard/samples/safe-input.json
+python3 hooks/destructive-bash-guard/destructive_bash_guard.py < hooks/destructive-bash-guard/samples/dangerous-input.json
+```
+
+The safe sample exits cleanly; the dangerous sample returns a structured
+`PreToolUse` deny decision, explains the block, and writes to
+`~/.claude/hooks/blocked.log`.
+Non-empty malformed hook payloads also fail closed and are logged as
+`<invalid hook payload>`.
+The audit log path is kept user-only and symlinked log paths are refused.
+The guard also blocks common reverse-shell launch patterns, including
+`/dev/tcp` interactive shells, netcat exec shells, socat exec shells, and
+Python socket/`dup2` shells. It also blocks partition table mutation tools
+such as `fdisk`, `parted`, `sfdisk`, and `sgdisk` while allowing read-only
+inspection commands.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
