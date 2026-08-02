@@ -51,3 +51,37 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Claude Review agent
+
+This repository now includes `claude-review`, a dependency-free CLI for the
+`[BOUNTY $150]` PR-review task in issue
+[#4](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/4).
+
+### Install and use
+
+```bash
+python -m pip install .
+claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+The command fetches only the public PR metadata and unified diff, then asks the
+local `claude` executable to return four strict Markdown sections: Summary,
+Risks, Suggestions, and Confidence. It never asks for a wallet, token, or
+repository write access. Use `--claude-command` to point at a Claude Code
+binary with a different name.
+
+For deterministic CI or environments without Claude Code, `--offline` runs a
+small local heuristic reviewer. It is intentionally explicit and does not
+pretend that the offline result is a model review:
+
+```bash
+claude-review --diff change.patch --offline
+```
+
+The CLI validates the section contract before writing output. Tests run with
+the Python standard library only:
+
+```bash
+python -m unittest discover -s tests -v
+```
