@@ -51,3 +51,33 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Destructive-command hook
+
+This repository includes a dependency-free Python `PreToolUse` hook for issue
+[#3](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/3).
+It denies `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and
+`DELETE FROM` statements that do not contain a `WHERE` clause. Every denial is
+written as one JSON line to `~/.claude/hooks/blocked.log` with its UTC
+timestamp, command, project path, and reason.
+
+From the repository root, install the files into a target project with two
+commands:
+
+```bash
+mkdir -p /path/to/project/.claude/hooks
+cp -R .claude/. /path/to/project/.claude/
+```
+
+The checked-in `.claude/settings.json` registers the hook for Bash tools. On a
+machine where the Python executable is named `python3`, change `python` in the
+command to `python3`. The hook prints Claude Code's structured
+`permissionDecision: "deny"` response and stays silent for safe commands, so
+normal permission handling is preserved. The response format follows the
+[Claude Code hooks reference](https://code.claude.com/docs/en/hooks).
+
+Run the standard-library tests with:
+
+```bash
+python -m unittest discover -s tests -v
+```
