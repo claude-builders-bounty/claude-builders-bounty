@@ -51,3 +51,42 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Bounty #3: destructive-command guard
+
+This repository includes a small, dependency-free `PreToolUse` hook for Claude
+Code. It denies recursive-force removal (`rm -rf`, `rm -fr` and long-option
+variants), `DROP TABLE`, `TRUNCATE`, `git push --force` (including
+`--force-with-lease`), and `DELETE FROM` statements that do not contain a
+`WHERE` clause. Other commands produce no hook output and continue through
+Claude Code's normal permission flow.
+
+Every denied attempt is appended as one JSON object per line to
+`~/.claude/hooks/blocked.log`, including an ISO-8601 UTC timestamp, the exact
+command, the project path, and the matching rule. The hook returns Claude
+Code's documented `PreToolUse` `permissionDecision: "deny"` response with a
+human-readable reason.
+
+### Install (one command after cloning)
+
+```bash
+python3 hooks/install.py
+```
+
+The installer copies the handler to `~/.claude/hooks/block_destructive.py` and
+merges a `Bash` matcher into `~/.claude/settings.json` without removing
+existing settings. On Windows, use `python hooks/install.py` if the launcher
+is named `python` rather than `python3`.
+
+### Test
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+### Manual input example
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf ./build"},"cwd":"/work/app"}' \
+  | python3 hooks/block_destructive.py
+```
