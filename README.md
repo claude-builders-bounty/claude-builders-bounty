@@ -51,3 +51,15 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Changelog Generator Skill
+
+Automatically generate a `CHANGELOG.md` from your git history.
+
+### Setup (3 Steps)
+
+1. Make sure you have Python installed.
+2. (Optional) Create an alias or skill shortcut for `/generate-changelog`.
+3. Run the script: `python changelog.py` to generate `CHANGELOG.md` in the current directory.
