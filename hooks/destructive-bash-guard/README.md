@@ -75,3 +75,8 @@ DELETE FROM sessions;
 ```bash
 python -m unittest hooks/destructive-bash-guard/test_destructive_bash_guard.py
 ```
+## Navigation
+
+- [Back to `claude-builders-bounty`](../../README.md)
+- [Back to `REPOS`](../../../README.md)
+- [Back to `AI_REVENUE_SPRINT_100_24H`](../../../../README.md)
