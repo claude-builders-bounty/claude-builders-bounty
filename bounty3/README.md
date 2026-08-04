@@ -1,7 +1,8 @@
 # Destructive command PreToolUse hook (Claude Code)
 
 **Bounty:** [claude-builders-bounty#3](https://github.com/claude-builders-bounty/claude-builders-bounty/issues/3) — $100 via Opire  
-**Status:** local artifact ready; GitHub PAT lacks `repo` create/fork/gist — cannot open PR until token scopes expanded.
+**PR:** https://github.com/claude-builders-bounty/claude-builders-bounty/pull/3672  
+**Status:** OPEN / MERGEABLE — tests 8/8
 
 ## Install (2 commands)
 
@@ -30,7 +31,7 @@ PY
 | Criterion | Implementation |
 |-----------|----------------|
 | Claude Code hooks format | `PreToolUse` command hook |
-| Blocks recursive force remove, DROP TABLE, force push, TRUNCATE, DELETE w/o WHERE | `RULES` regexes in hook |
+| Blocks recursive force remove, destructive SQL, force push | `RULES` regexes in hook |
 | Logs blocked attempts | `~/.claude/hooks/blocked.log` |
 | Clear message to Claude | stderr + JSON `decision:block` |
 | Safe commands pass | unit tests |
@@ -42,8 +43,8 @@ PY
 python3 tests/test_hook.py
 ```
 
-## Claim path (blocked by token)
+## Claim path
 
 1. `/opire try` on issue #3  
-2. Fork + PR with this tree  
+2. PR with this tree (this PR)  
 3. Payment on merge via Opire/Stripe  
