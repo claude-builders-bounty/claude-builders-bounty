@@ -43,6 +43,35 @@ You're in the right place.
 
 ---
 
+## Destructive-command hook (#3)
+
+The included `hooks/block-destructive.py` is a Claude Code `PreToolUse` hook
+for Bash and PowerShell. It denies `rm -rf`, `DROP TABLE`, forced Git pushes,
+`TRUNCATE`, and `DELETE FROM` statements that do not contain a `WHERE` clause.
+Each denied command is recorded as a JSON line in
+`~/.claude/hooks/blocked.log`, including its timestamp, command, and project
+path. Safe commands pass through without output.
+
+## Installation
+
+Install the hook at the Claude Code user hook location and wire it into the
+user settings with these two commands from this repository:
+
+```bash
+mkdir -p "$HOME/.claude/hooks"
+cp hooks/block-destructive.py "$HOME/.claude/hooks/block-destructive.py" && cp .claude/settings.json "$HOME/.claude/settings.json"
+```
+
+The settings file invokes the installed hook from `~/.claude/hooks/` and
+matches both Bash and PowerShell tool calls. To run the test suite locally:
+
+```bash
+python -m unittest discover -s tests
+```
+
+The test suite covers every required pattern, safe `DELETE ... WHERE`
+statements, normal commands, logging, and malformed input.
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
