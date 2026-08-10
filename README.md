@@ -1,53 +1,21 @@
-# Claude Builders Bounty 🤖
+# Claude Code Destructive Command Guard
 
-> A community bounty board for Claude Code builders.
+This is a robust, pure Python standard-library `pre-tool-use` hook for Claude Code that prevents destructive `Bash` commands from executing. 
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+It intercepts the JSON payload from Claude Code and intelligently blocks commands like `rm -rf`, `DROP TABLE`, `TRUNCATE`, `git push --force`, and `DELETE FROM` (without a `WHERE` clause).
 
----
+## Installation (2 Commands)
 
-## How it works
+Run the following commands in the directory where you downloaded `destructive_guard.py`:
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+```bash
+mkdir -p ~/.claude/hooks
+cp destructive_guard.py ~/.claude/hooks/pre_tool_use.py && chmod +x ~/.claude/hooks/pre_tool_use.py
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Features
 
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+- **No Dependencies**: Uses only Python 3 standard library (`sys`, `json`, `re`, `os`, `datetime`).
+- **Edge-Case Resistant**: Parses quotes and flags correctly to avoid false positives (e.g., `echo "rm -rf"` is allowed) while catching sneaky destructive attempts (e.g., `rm -f -r /`).
+- **Audit Logging**: Logs every blocked attempt automatically to `~/.claude/hooks/blocked.log` with a UTC timestamp, current working directory, and the exact blocked command.
+- **Claude Feedback**: Returns a properly formatted JSON `deny` response to Claude, giving the AI context on why its command failed so it can correct its behavior.
