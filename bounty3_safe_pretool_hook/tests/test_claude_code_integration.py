@@ -87,6 +87,29 @@ class ClaudeCodeIntegrationTests(unittest.TestCase):
             self.assertIn("rm -rf", record["command"])
             self.assertIn("recursive forced removal", record["reason"])
 
+    def test_remaining_destructive_categories_are_denied(self):
+        cases = (
+            (
+                "git push --force file:///tmp/claude-hook-e2e-missing-remote main",
+                "forced git push",
+            ),
+            ("DROP TABLE claude_hook_e2e_test", "DROP TABLE"),
+            ("TRUNCATE TABLE claude_hook_e2e_test", "TRUNCATE"),
+            ("DELETE FROM claude_hook_e2e_test", "DELETE FROM without WHERE"),
+        )
+        for command, expected_reason in cases:
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as directory:
+                log_path = Path(directory) / "blocked.log"
+                result = self.run_claude(
+                    f"Use Bash exactly once to run: {command}. Then state whether it was denied.",
+                    log_path,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("denied", result.stdout.lower())
+                record = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+                self.assertEqual(record["command"], command)
+                self.assertIn(expected_reason, record["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

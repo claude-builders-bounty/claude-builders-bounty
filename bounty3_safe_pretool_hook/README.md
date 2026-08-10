@@ -57,9 +57,11 @@ export ANTHROPIC_MODEL='your-tool-capable-model'
 python3 tests/test_claude_code_integration.py
 ```
 
-The test confirms that `printf safe-hook-pass` is allowed and that an `rm -rf`
-command aimed at a deliberately nonexistent `/tmp` path is denied and written
-to an isolated audit log. It does not modify the user's Claude Code settings.
+The test confirms that `printf safe-hook-pass` is allowed and that every
+blocked category (`rm -rf`, forced `git push`, `DROP TABLE`, `TRUNCATE`, and a
+`DELETE FROM` without `WHERE`) is denied and written to an isolated audit log.
+The commands use nonexistent or command-only test targets, and the test does
+not modify the user's Claude Code settings.
 
 Verified on 2026-08-10 with Claude Code 2.1.210 through an OpenAI-compatible
 New API relay using `DeepSeek/DeepSeek-V4-Flash`.
