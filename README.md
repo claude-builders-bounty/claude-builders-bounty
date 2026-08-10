@@ -1,53 +1,70 @@
-# Claude Builders Bounty 🤖
+# Safety Hook — blocks destructive bash commands
 
-> A community bounty board for Claude Code builders.
+A Claude Code `PreToolUse` hook that intercepts dangerous bash commands
+**before** they are executed.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Install (2 commands)
 
----
+```bash
+mkdir -p ~/.claude/hooks && cp pre-tool-use.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use.py
+```
 
-## How it works
+Add to `~/.claude/settings.json`:
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/pre-tool-use.py" }
+        ]
+      }
+    ]
+  }
+}
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Done. Restart Claude Code.
 
----
+## What it blocks
 
-## Active Bounties
+| Pattern | Example |
+|---|---|
+| `rm -rf` | `rm -rf /`, `rm -rf node_modules` |
+| Force pushes | `git push --force` |
+| Destructive SQL | `DROP TABLE users`, `TRUNCATE logs` |
+| Unsafe DELETE | `DELETE FROM users` (no `WHERE`/`LIMIT`) |
+| Nuclear FS ops | `mkfs /dev/sda`, `chmod -R 777 /` |
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+Normal bash commands (`ls`, `npm test`, `git commit`, `SELECT * FROM users WHERE id = 1`) are **never** affected.
 
----
+## What happens when blocked
 
-## Rules
+1. Claude receives a clear message explaining why the command was blocked.
+2. Every blocked attempt is logged to `~/.claude/hooks/blocked.log`:
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+```
+2026-08-10T14:03:22+07:00 | project=/home/dev/app | blocked=rm -rf node_modules
+```
 
----
+Timestamp, attempted command, and project path — ready for audit.
 
-## Community
+## Test it yourself
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+```bash
+# Should BLOCK (exit 2 + JSON with decision=block):
+echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"},"cwd":"/tmp"}' | python3 pre-tool-use.py
 
----
+# Should ALLOW (exit 0):
+echo '{"tool_name":"Bash","tool_input":{"command":"ls -la"},"cwd":"/tmp"}' | python3 pre-tool-use.py
 
-*Started by the Claude builder community · March 2026 · MIT License*
+# SQL safety: DELETE with WHERE is allowed, without WHERE is blocked:
+echo '{"tool_name":"Bash","tool_input":{"command":"DELETE FROM users WHERE id = 1"},"cwd":"/tmp"}' | python3 pre-tool-use.py
+```
+
+## Requirements
+
+- Python 3.8+
+- Claude Code CLI
