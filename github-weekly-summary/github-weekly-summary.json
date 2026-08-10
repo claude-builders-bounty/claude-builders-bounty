@@ -1,0 +1,163 @@
+{
+  "name": "GitHub Weekly Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "a1-trigger",
+      "name": "每周五 17:00 触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const since = new Date(Date.now() - 7*24*60*60*1000).toISOString();\nreturn [{ json: { since: since, repo: $env.GITHUB_REPO || 'owner/repo', webhook: $env.DELIVERY_WEBHOOK || '', lang: ($env.SUMMARY_LANG || 'EN').toUpperCase() } }];"
+      },
+      "id": "a2-config",
+      "name": "配置（仓库/语言/周起始）",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits?since={{ $json.since }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}" },
+            { "name": "Accept", "value": "application/vnd.github+json" }
+          ]
+        }
+      },
+      "id": "a3-commits",
+      "name": "GitHub 本周 commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, -220]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues?state=closed&since={{ $json.since }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}" },
+            { "name": "Accept", "value": "application/vnd.github+json" }
+          ]
+        }
+      },
+      "id": "a4-issues",
+      "name": "GitHub 本周已关闭 issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/pulls?state=closed&sort=updated&since={{ $json.since }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}" },
+            { "name": "Accept", "value": "application/vnd.github+json" }
+          ]
+        }
+      },
+      "id": "a5-pulls",
+      "name": "GitHub 本周 merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nlet repo='', since='', webhook='', lang='EN', commits=[], issues=[], pulls=[];\nfor (const it of items) {\n  const j = it.json;\n  if (j.repo) { repo=j.repo; since=j.since; webhook=j.webhook; lang=j.lang; continue; }\n  if (Array.isArray(j)) {\n    j.forEach(x => {\n      if (x.sha) commits.push({ msg: (x.commit?.message||'').split('\\n')[0], author: x.commit?.author?.name || x.author?.login || '' });\n      else if (x.pull_request && x.closed_at) pulls.push({ title: x.title, merged: !!x.pull_request.merged_at, by: x.user?.login || '' });\n      else if (x.title) issues.push({ title: x.title, by: x.user?.login || '' });\n    });\n  }\n}\nconst context = JSON.stringify({ repo, since, commits: commits.slice(0,80), issues: issues.slice(0,50), pulls: pulls.filter(p=>p.merged).slice(0,50), lang }, null, 2);\nreturn [{ json: { repo, since, webhook, lang, context } }];"
+      },
+      "id": "a6-assemble",
+      "name": "汇总本周数据",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1500, system: 'You are a tech lead writing a concise weekly dev summary. Language: EN or FR per request.', messages: [{ role: 'user', content: 'Write a weekly narrative summary of this repo activity in ' + $json.lang + '. Structure: Highlights, Commits, Closed Issues, Merged PRs, Risks/Attention. Keep it under 300 words. Data: ' + $json.context }] }) }}"
+      },
+      "id": "a7-claude",
+      "name": "Claude 生成周报",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json.content;\nconst text = Array.isArray(data) ? data.map(b => b.text || '').join('') : '';\nreturn [{ json: { text: text, webhook: $('汇总本周数据').first().json.webhook, repo: $('汇总本周数据').first().json.repo } }];"
+      },
+      "id": "a8-extract",
+      "name": "提取摘要文本",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '*Weekly Dev Summary — ' + $json.repo + '*\\n\\n' + $json.text }) }}"
+      },
+      "id": "a9-deliver",
+      "name": "推送到 Slack/Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 0]
+    }
+  ],
+  "connections": {
+    "每周五 17:00 触发": { "main": [[{ "node": "配置（仓库/语言/周起始）", "type": "main", "index": 0 }]] },
+    "配置（仓库/语言/周起始）": {
+      "main": [
+        [
+          { "node": "GitHub 本周 commits", "type": "main", "index": 0 },
+          { "node": "GitHub 本周已关闭 issues", "type": "main", "index": 0 },
+          { "node": "GitHub 本周 merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "GitHub 本周 commits": { "main": [[{ "node": "汇总本周数据", "type": "main", "index": 0 }]] },
+    "GitHub 本周已关闭 issues": { "main": [[{ "node": "汇总本周数据", "type": "main", "index": 0 }]] },
+    "GitHub 本周 merged PRs": { "main": [[{ "node": "汇总本周数据", "type": "main", "index": 0 }]] },
+    "汇总本周数据": { "main": [[{ "node": "Claude 生成周报", "type": "main", "index": 0 }]] },
+    "Claude 生成周报": { "main": [[{ "node": "提取摘要文本", "type": "main", "index": 0 }]] },
+    "提取摘要文本": { "main": [[{ "node": "推送到 Slack/Discord Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
