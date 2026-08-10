@@ -12,11 +12,12 @@ from pathlib import Path
 
 
 LOG_PATH = Path(os.environ.get("CLAUDE_HOOK_LOG", "~/.claude/hooks/blocked.log")).expanduser()
+COMMAND_BOUNDARY = r"(?:^|(?:&&|\|\||[;&|])\s*)"
 
 
 def _has_rm_recursive_force(command: str) -> bool:
     """Recognise rm with both recursive and force flags, in either order."""
-    for match in re.finditer(r"(?:^|[;&|]\s*)(?:sudo\s+)?rm\s+([^;&|\n]*)", command, re.IGNORECASE):
+    for match in re.finditer(COMMAND_BOUNDARY + r"(?:sudo\s+)?rm\s+([^;&|\n]*)", command, re.IGNORECASE):
         args = match.group(1).split()
         flags = {arg[1:].lower() for arg in args if arg.startswith("-") and arg != "--"}
         long_flags = {arg.lower() for arg in args if arg.startswith("--")}
@@ -33,11 +34,15 @@ def reason_for(command: str) -> str | None:
     """Return a human-readable denial reason, or None when the command is safe."""
     if _has_rm_recursive_force(command):
         return "blocked recursive forced removal (rm -r/-R with -f/--force)"
-    if re.search(r"(?:^|[;&|]\s*)(?:sudo\s+)?git\s+push\b[^;&|\n]*(?:--force\b|-f(?:\s|$))", command, re.IGNORECASE):
+    if re.search(
+        COMMAND_BOUNDARY + r"(?:sudo\s+)?git\s+push\b[^;&|\n]*(?:--force(?:-with-lease)?\b|-f(?:\s|$))",
+        command,
+        re.IGNORECASE,
+    ):
         return "blocked forced git push"
-    if re.search(r"(?:^|[;&|]\s*)drop\s+table\b", command, re.IGNORECASE):
+    if re.search(COMMAND_BOUNDARY + r"drop\s+table\b", command, re.IGNORECASE):
         return "blocked DROP TABLE"
-    if re.search(r"(?:^|[;&|]\s*)truncate(?:\s+table)?\b", command, re.IGNORECASE):
+    if re.search(COMMAND_BOUNDARY + r"truncate(?:\s+table)?\b", command, re.IGNORECASE):
         return "blocked TRUNCATE"
 
     # Inspect each SQL statement separately so a later WHERE does not make an

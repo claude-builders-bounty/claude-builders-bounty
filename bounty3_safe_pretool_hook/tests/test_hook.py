@@ -31,17 +31,36 @@ def run_hook(command=None, tool_name="Bash", payload=None, log_path=None):
 
 class HookTests(unittest.TestCase):
     def test_blocks_rm_variants(self):
-        for command in ("rm -rf build", "rm -fr build", "rm -r -f build", "rm --recursive --force build"):
+        for command in (
+            "rm -rf build",
+            "rm -fr build",
+            "rm -r -f build",
+            "rm --recursive --force build",
+            "sudo rm -Rf build",
+            "echo preparing && rm -rf build",
+        ):
             with self.subTest(command=command):
                 self.assertIn('"permissionDecision": "deny"', run_hook(command).stdout)
 
     def test_blocks_forced_push_variants(self):
-        for command in ("git push --force origin main", "git push -f origin main"):
+        for command in (
+            "git push --force origin main",
+            "git push -f origin main",
+            "git push --force-with-lease origin main",
+            "sudo git push --force origin main",
+            "echo preparing && git push -f origin main",
+        ):
             with self.subTest(command=command):
                 self.assertIn('"permissionDecision": "deny"', run_hook(command).stdout)
 
     def test_blocks_sql_destructive_commands(self):
-        for command in ("DROP TABLE users", "truncate table users", "DELETE FROM users"):
+        for command in (
+            "DROP TABLE users",
+            "truncate table users",
+            "DELETE FROM users",
+            "echo preparing && DROP TABLE users",
+            "SELECT 1; DELETE FROM users",
+        ):
             with self.subTest(command=command):
                 self.assertIn('"permissionDecision": "deny"', run_hook(command).stdout)
 
@@ -50,6 +69,7 @@ class HookTests(unittest.TestCase):
             "rm file.txt",
             "rm -f file.txt",
             "git push origin main",
+            "git push --forceful origin main",
             "DELETE FROM users WHERE id = 1",
             "SELECT * FROM users",
             "echo 'DROP TABLE users'",
