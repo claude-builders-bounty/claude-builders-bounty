@@ -53,9 +53,12 @@ def git(*args: str) -> str:
 
 
 def last_tag() -> str | None:
-    """Return the most recent tag reachable from HEAD, or None."""
-    tag = git("describe", "--tags", "--abbrev=0", "--always")
-    return None if tag == "HEAD" else tag
+    """Return the most recent tag reachable from HEAD, or None if the
+    repository has no tags (in which case all history is included)."""
+    tags = git("tag", "--sort=-creatordate")
+    if not tags.strip():
+        return None
+    return tags.splitlines()[0]
 
 
 def categorize(subject: str, body: str) -> str:
@@ -83,16 +86,25 @@ def main() -> int:
         source = "from the beginning of history"
 
     # Subject/body per commit, in reverse chronological order.
-    fmt = "%H%x00%s%x00%b%x00%an%x00%aI"
-    log = git("log", range_spec, "--no-merges", f"--pretty=format:{fmt}")
+    # -z: records are NUL-terminated; \x1f separates fields (bodies may contain newlines).
+    fmt = "%x1f%H%x1f%s%x1f%b%x1f%an%x1f%aI"
+    log = git("log", range_spec, "--no-merges", "-z", f"--pretty=format:{fmt}")
+    # Try to resolve the repo homepage for commit links (falls back to a placeholder).
+    try:
+        remote = git("remote", "get-url", "origin")
+    except SystemExit:
+        remote = ""
+    repo_base = re.sub(r"\.git$", "", remote).replace("git@github.com:", "https://github.com/").replace("git@", "https://")
+    if "github.com/" not in repo_base:
+        repo_base = "https://github.com/REPLACE_ME/REPLACE_ME"
     entries: dict[str, list[tuple[str, str, str]]] = {"Added": [], "Fixed": [], "Changed": [], "Removed": []}
 
     if log:
-        for chunk in log.split("\x00\x00"):
-            chunk = chunk.strip("\x00").strip()
+        for chunk in log.split("\x00"):
+            chunk = chunk.strip("\x1f").strip()
             if not chunk:
                 continue
-            parts = chunk.split("\x00")
+            parts = chunk.split("\x1f")
             if len(parts) < 5:
                 continue
             sha, subject, body, author, iso_date = parts[0], parts[1], parts[2], parts[3], parts[4]
@@ -102,7 +114,7 @@ def main() -> int:
                 date = iso_date[:10]
             category = categorize(subject, body)
             short_sha = sha[:7]
-            line = f"- {subject.strip()} ([`{short_sha}`](https://github.com/REPLACE_ME/REPLACE_ME/commit/{sha})) — {author}"
+            line = f"- {subject.strip()} ([`{short_sha}`]({repo_base}/commit/{sha})) — {author}"
             entries[category].append((date, line))
 
     lines = [
