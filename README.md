@@ -1,53 +1,43 @@
-# Claude Builders Bounty 🤖
+# CLAUDE.md Template — Next.js 15 + SQLite SaaS
 
-> A community bounty board for Claude Code builders.
+An opinionated, production-ready `CLAUDE.md` for a SaaS project built with
+Next.js 15 App Router and SQLite (`better-sqlite3`).
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## What's inside
 
----
+- **Stack & versions** — pinned choices with a "why" for each
+- **Folder structure** — feature-owned folders, explicit anti-patterns
+  (no barrels, no `utils.ts` graveyard)
+- **SQL / migration conventions** — append-only migrations, named
+  parameters, FKs with `ON DELETE CASCADE`, transaction rules
+- **Component patterns** — Server Components by default, thin `"use client"`
+  leaves, Server Actions + `useActionState` for forms
+- **What we don't do (and why)** — 7 explicit anti-patterns with reasons
+- **Dev commands** — the full command reference plus the completion gate
+- **Working agreement** — migration-first, one-feature-one-PR
 
-## How it works
+## Install (3 steps)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+1. `npx create-next-app@latest my-saas --typescript --tailwind --app`
+2. Copy `CLAUDE.md` to the project root.
+3. Run `npm run dev` once so Claude Code picks up the project context.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+The template is written to be usable **without modification** on a greenfield
+Next.js + SQLite project: it assumes only what the scaffold ships plus
+`better-sqlite3` and `zod`.
 
----
+## Why opinionated?
 
-## Active Bounties
+Every rule in this file exists because a real project burned the team once:
+editing old migrations corrupted staging data, a `useEffect` fetch waterfall
+added 400ms of TTFB, and `any` crept into a payment path. Each rule carries
+its reason so Claude Code (and new teammates) follow it instead of
+negotiating with it.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Compatibility
 
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+- Next.js **15.x** App Router (Server Components, Server Actions)
+- `better-sqlite3` 11.x (file-backed SQLite; works on macOS/Linux CI,
+  needs `npm install better-sqlite3` on Windows for local dev)
+- Auth.js v5 with database sessions
+- Tailwind CSS 4.x, zod for validation, vitest for tests
