@@ -41,3 +41,25 @@ settings:
 ```bash
 python3 tests/test_hook.py
 ```
+
+## Optional live Claude Code test
+
+The unit tests above do not invoke a model. To verify the full Claude Code
+`PreToolUse` path, run the opt-in integration test against a configured
+Anthropic-compatible provider. It is skipped by default because it consumes
+provider quota and runs a real Claude Code session.
+
+```bash
+export CLAUDE_HOOK_E2E=1
+export ANTHROPIC_API_KEY='your-provider-key'
+export ANTHROPIC_BASE_URL='https://your-provider.example'
+export ANTHROPIC_MODEL='your-tool-capable-model'
+python3 tests/test_claude_code_integration.py
+```
+
+The test confirms that `printf safe-hook-pass` is allowed and that an `rm -rf`
+command aimed at a deliberately nonexistent `/tmp` path is denied and written
+to an isolated audit log. It does not modify the user's Claude Code settings.
+
+Verified on 2026-08-10 with Claude Code 2.1.210 through an OpenAI-compatible
+New API relay using `DeepSeek/DeepSeek-V4-Flash`.
