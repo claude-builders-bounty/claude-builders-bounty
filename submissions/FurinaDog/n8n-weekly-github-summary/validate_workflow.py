@@ -20,6 +20,18 @@ required = {
 missing = required - names
 assert not missing, f'missing nodes: {sorted(missing)}'
 
+trigger = next(node for node in nodes if node['name'] == 'Weekly trigger')
+interval = trigger['parameters']['rule']['interval'][0]
+assert interval['field'] == 'weeks'
+assert interval['triggerAtDay'] == ['5'], 'trigger must run on Friday'
+assert interval['triggerAtHour'] == 17 and interval['triggerAtMinute'] == 0
+
+for node_name in ('Fetch GitHub activity', 'Generate narrative with Claude', 'Deliver to Discord'):
+    node = next(node for node in nodes if node['name'] == node_name)
+    assert node['type'] == 'n8n-nodes-base.httpRequest'
+
+assert workflow['connections']['Format Discord message']['main'][0][0]['node'] == 'Deliver to Discord'
+
 serialized = json.dumps(workflow)
 assert 'claude-sonnet-4-20250514' in serialized
 assert 'api.github.com/graphql' in serialized
