@@ -1,10 +1,10 @@
-# Claude Builders Bounty 🤖
+# Claude Builders Bounty 
 
 > **A community-driven bounty board for Claude Code and AI tooling.**
 
 Claude Builders Bounty connects developers with real-world tasks that need to be built, improved, or automated. Project maintainers can post funded bounties, while developers can discover tasks, contribute solutions, and earn rewards for accepted work.
 
-## 🚀 How It Works
+##  How It Works
 
 ### For Bounty Creators
 
@@ -19,7 +19,7 @@ Claude Builders Bounty connects developers with real-world tasks that need to be
 3. **Build and submit a pull request.**
 4. **Get paid automatically** when your contribution is accepted and merged.
 
-## 💰 Active Bounties
+##  Active Bounties
 
 | #                    | Task                                                  | Reward |  Status |
 | -------------------- | ----------------------------------------------------- | -----: | :-----: |
@@ -31,7 +31,7 @@ Claude Builders Bounty connects developers with real-world tasks that need to be
 
 > Bounty availability and status are determined by the corresponding GitHub issue.
 
-## 📋 Bounty Guidelines
+##  Bounty Guidelines
 
 To keep the platform fair and useful for everyone:
 
@@ -41,7 +41,7 @@ To keep the platform fair and useful for everyone:
 * Contributions are evaluated based on **quality, correctness, and maintainability**.
 * A well-tested, maintainable solution is more valuable than a rushed submission.
 
-## 🛠️ What Can Be Submitted?
+##  What Can Be Submitted?
 
 Bounties can cover a wide range of developer tooling, including:
 
@@ -57,7 +57,7 @@ Bounties can cover a wide range of developer tooling, including:
 
 If it improves the developer experience around Claude Code or AI-assisted development, it may be a good candidate for a bounty.
 
-## 🤝 Contributing
+##  Contributing
 
 There are two ways to participate:
 
@@ -69,12 +69,12 @@ Choose an open issue, claim it, implement the requested functionality, and submi
 
 The goal is simple: **turn useful ideas into working software while rewarding the people who build it.**
 
-## 🌐 Community
+##  Community
 
 * **X:** [@ClaudeBounty](https://x.com/ClaudeBounty)
 * **Email:** [claudebounty@gmail.com](mailto:claudebounty@gmail.com)
 
-## 📄 License
+##  License
 
 This project is licensed under the **MIT License**.
 
