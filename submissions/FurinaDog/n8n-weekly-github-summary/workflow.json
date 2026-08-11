@@ -1,0 +1,125 @@
+{
+  "name": "GitHub weekly narrative summary (Claude + Discord)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": ["5"],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "weekly-trigger",
+      "name": "Weekly trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-900, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repo = ($env.GITHUB_REPO || '').trim();\nconst [owner, name] = repo.split('/');\nif (!owner || !name || repo.split('/').length !== 2) {\n  throw new Error('GITHUB_REPO must be owner/repository');\n}\nfor (const key of ['GITHUB_TOKEN', 'ANTHROPIC_API_KEY', 'DISCORD_WEBHOOK_URL']) {\n  if (!$env[key]) throw new Error(`${key} is not configured`);\n}\nconst until = new Date();\nconst since = new Date(until.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn [{ json: { owner, name, repo, since: since.toISOString(), until: until.toISOString(), language: ($env.SUMMARY_LANG || 'EN').toUpperCase() } }];"
+      },
+      "id": "prepare-config",
+      "name": "Prepare configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-680, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/graphql",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$env.GITHUB_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "User-Agent", "value": "n8n-github-weekly-summary" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: `query($owner:String!, $name:String!, $since:DateTime!, $until:DateTime!) { repository(owner:$owner, name:$name) { commits: object(expression:\"HEAD\") { ... on Commit { history(first:100, since:$since, until:$until) { nodes { oid messageHeadline committedDate author { name user { login } } } } } } issues: issues(first:100, states:CLOSED, orderBy:{field:UPDATED_AT, direction:DESC}, filterBy:{since:$since}) { nodes { number title closedAt url } } pullRequests: pullRequests(first:100, states:MERGED, orderBy:{field:UPDATED_AT, direction:DESC}, filterBy:{since:$since}) { nodes { number title mergedAt url author { login } } } } }`, variables: { owner:$json.owner, name:$json.name, since:$json.since, until:$json.until } }) }}"
+      },
+      "id": "fetch-github",
+      "name": "Fetch GitHub activity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $json.data?.repository;\nif (!$json.data || $json.errors?.length || !result) {\n  throw new Error(`GitHub API failed: ${JSON.stringify($json.errors || $json)}`);\n}\nconst commits = result.commits?.history?.nodes || [];\nconst issues = result.issues?.nodes || [];\nconst pullRequests = result.pullRequests?.nodes || [];\nconst input = $('Prepare configuration').first().json;\nconst prompt = `Write a weekly engineering summary for ${input.repo}. Use ${input.language === 'FR' ? 'French' : 'English'}.\n\nPeriod: ${input.since} through ${input.until}\n\nCommits (${commits.length}):\n${JSON.stringify(commits)}\n\nClosed issues (${issues.length}):\n${JSON.stringify(issues)}\n\nMerged pull requests (${pullRequests.length}):\n${JSON.stringify(pullRequests)}\n\nReturn Markdown with: a 2-3 sentence overview, shipped changes, fixes, notable risks or follow-ups, and a short activity count. Do not invent details not present in the data.`;\nreturn [{ json: { ...input, prompt, counts: { commits: commits.length, issues: issues.length, pullRequests: pullRequests.length } } }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-200, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{$env.ANTHROPIC_API_KEY}}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:1400, messages:[{ role:'user', content:$json.prompt }] }) }}"
+      },
+      "id": "generate-summary",
+      "name": "Generate narrative with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const summary = $json.content?.find(part => part.type === 'text')?.text;\nif (!summary) throw new Error(`Claude API returned no text: ${JSON.stringify($json)}`);\nreturn [{ json: { content: `**${$('Prepare configuration').first().json.repo} weekly summary**\\n\\n${summary}` } }];"
+      },
+      "id": "format-discord",
+      "name": "Format Discord message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.DISCORD_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.content }) }}"
+      },
+      "id": "deliver-discord",
+      "name": "Deliver to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 0]
+    }
+  ],
+  "connections": {
+    "Weekly trigger": { "main": [[{ "node": "Prepare configuration", "type": "main", "index": 0 }]] },
+    "Prepare configuration": { "main": [[{ "node": "Fetch GitHub activity", "type": "main", "index": 0 }]] },
+    "Fetch GitHub activity": { "main": [[{ "node": "Build Claude prompt", "type": "main", "index": 0 }]] },
+    "Build Claude prompt": { "main": [[{ "node": "Generate narrative with Claude", "type": "main", "index": 0 }]] },
+    "Generate narrative with Claude": { "main": [[{ "node": "Format Discord message", "type": "main", "index": 0 }]] },
+    "Format Discord message": { "main": [[{ "node": "Deliver to Discord", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "f6d6f9c8-5a9a-4e8a-bounty-5",
+  "meta": { "templateCredsSetupCompleted": true },
+  "tags": []
+}
