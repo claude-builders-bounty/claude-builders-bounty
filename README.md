@@ -51,3 +51,22 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## PR Review Agent
+
+This repository also contains a small Claude Code agent for reviewing pull-request diffs.
+It uses the authenticated gh CLI to fetch a patch and Claude Code print mode to produce:
+summary, risks, improvement suggestions, and a confidence score.
+
+### Setup
+
+1. Install Python 3, GitHub CLI, and Claude Code; authenticate gh and Claude Code.
+2. Run python3 bin/claude-review --pr https://github.com/owner/repo/pull/123.
+3. Paste the generated Markdown into the pull-request review.
+
+Run tests with python3 -m unittest discover -s tests.
+
+Real-PR evidence is in examples/mergeos-224.md and examples/validationboof-7.md.
+
+The agent never asks Claude Code to edit files or run commands; it sends only the fetched
+patch and treats missing structured sections as low-confidence output.

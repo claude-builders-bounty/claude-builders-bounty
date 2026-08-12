@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Review a GitHub pull request with Claude Code and emit structured Markdown."""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
+
+
+MAX_DIFF_CHARS = 120_000
+
+
+def command_output(command: list[str], stdin: str | None = None) -> str:
+    try:
+        result = subprocess.run(
+            command,
+            input=stdin,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=180,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"Required command not found: {command[0]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"Command timed out: {' '.join(command)}") from exc
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeError(f"{' '.join(command)} failed: {detail}")
+    return result.stdout
+
+
+def fetch_diff(pr_url: str) -> str:
+    diff = command_output(["gh", "pr", "diff", pr_url, "--patch"])
+    if not diff.strip():
+        raise RuntimeError("The PR has an empty diff.")
+    return diff
+
+
+def build_prompt(pr_url: str, diff: str) -> str:
+    truncated = len(diff) > MAX_DIFF_CHARS
+    if truncated:
+        diff = diff[:MAX_DIFF_CHARS]
+    note = (
+        "The patch was truncated at 120000 characters; lower confidence if context is hidden."
+        if truncated
+        else "The complete patch is included."
+    )
+    return textwrap.dedent(
+        f"""
+        Review this GitHub pull request as a strict, evidence-based maintainer.
+        Review only the supplied patch. Do not invent files, runtime behavior, or
+        test results that are not visible in the patch.
+
+        Pull request: {pr_url}
+        {note}
+
+        Return exactly these Markdown headings, in this order:
+
+        ## Summary
+        Write 2-3 sentences describing the change.
+
+        ## Identified Risks
+        List concrete correctness, security, compatibility, or maintainability risks.
+        If none are visible from the patch, write "- None found from supplied patch."
+
+        ## Improvement Suggestions
+        List actionable improvements. If none are justified, write
+        "- None required from supplied patch."
+
+        ## Confidence
+        Write exactly one of: Low, Medium, High.
+
+        Do not add a preamble or headings outside this format.
+
+        --- PATCH START ---
+        {diff}
+        --- PATCH END ---
+        """
+    )
+
+
+def structured_or_fallback(review: str) -> str:
+    review = review.strip()
+    required = (
+        "## Summary",
+        "## Identified Risks",
+        "## Improvement Suggestions",
+        "## Confidence",
+    )
+    if all(section in review for section in required):
+        return review
+    return (
+        "## Summary\n"
+        f"{review or 'Claude Code returned no review text.'}\n\n"
+        "## Identified Risks\n"
+        "- Review output did not contain the required section structure.\n\n"
+        "## Improvement Suggestions\n"
+        "- Re-run with a Claude Code version that supports structured print output.\n\n"
+        "## Confidence\n"
+        "Low"
+    )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Review a GitHub pull request with Claude Code."
+    )
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--pr", help="GitHub pull request URL or owner/repo#number.")
+    source.add_argument(
+        "--diff-file",
+        type=Path,
+        help="Read a patch from a file instead of fetching it with gh.",
+    )
+    parser.add_argument("--model", help="Claude model alias, for example sonnet or opus.")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        if args.pr:
+            pr_url = args.pr
+            diff = fetch_diff(args.pr)
+        else:
+            pr_url = "local patch"
+            diff = args.diff_file.read_text(encoding="utf-8")
+            if not diff.strip():
+                raise RuntimeError("The patch file is empty.")
+        command = ["claude", "--print", "--output-format", "text", "--tools", ""]
+        if args.model:
+            command.extend(["--model", args.model])
+        review = command_output(command, stdin=build_prompt(pr_url, diff))
+    except (OSError, RuntimeError) as exc:
+        print(f"claude-review: {exc}", file=sys.stderr)
+        return 1
+    print(structured_or_fallback(review))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
