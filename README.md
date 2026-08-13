@@ -51,3 +51,65 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## `claude-review` CLI
+
+`claude-review` is a lightweight, deterministic reviewer for public GitHub pull
+requests. It fetches the PR metadata and unified diff from GitHub's public API,
+analyzes file and line changes with transparent rules, and prints Markdown with
+Summary, Risks, Suggestions, and Confidence sections. It uses only the Python
+standard library and requires no API key, model access, or secrets.
+
+### Requirements and setup
+
+- Python 3.10 or newer
+- Network access to `api.github.com`
+
+Clone the repository and either run the script in place or put it on your
+`PATH`:
+
+```bash
+git clone https://github.com/claude-builders-bounty/claude-builders-bounty.git
+cd claude-builders-bounty
+./claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+Optional user-wide installation:
+
+```bash
+install -Dm755 claude-review "$HOME/.local/bin/claude-review"
+claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+The URL must be a public GitHub pull request in the exact
+`https://github.com/owner/repo/pull/number` form. Output goes to stdout, so it
+can be saved or piped into another tool:
+
+```bash
+claude-review --pr https://github.com/pallets/flask/pull/6133 > review.md
+```
+
+GitHub applies unauthenticated API rate limits. The reviewer intentionally does
+not read tokens from the environment; rate-limit and network failures are
+reported on stderr with a non-zero exit status. Diffs larger than 2 MB are
+truncated safely and receive Low confidence.
+
+### Review rules
+
+The output is stable for the same PR metadata and diff. Confidence is High for
+small patches that include tests, Medium for complete patches without that
+signal, and Low when a diff is empty or truncated. Risks flag missing tests,
+large changes, dependency lockfiles, migrations, and security- or
+payment-sensitive paths. These are review aids, not a substitute for repository
+tests or domain-specific review.
+
+Two outputs generated from real GitHub PRs are included:
+
+- [`psf/requests#7603`](samples/requests-7603.md)
+- [`pallets/flask#6133`](samples/flask-6133.md)
+
+### Tests
+
+```bash
+python3 -m pytest -q tests/test_claude_review.py
+```

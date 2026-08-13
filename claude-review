@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Deterministic, dependency-free GitHub pull request reviewer."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+
+
+PR_URL = re.compile(
+    r"^https://github\.com/(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)/pull/(?P<number>[1-9][0-9]*)/?$"
+)
+MAX_DIFF_BYTES = 2_000_000
+
+
+@dataclass
+class DiffStats:
+    files: list[str] = field(default_factory=list)
+    additions: int = 0
+    deletions: int = 0
+    tests_changed: bool = False
+    docs_changed: bool = False
+    truncated: bool = False
+
+
+def request(url: str, accept: str) -> bytes:
+    req = urllib.request.Request(
+        url,
+        headers={"Accept": accept, "User-Agent": "claude-review/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return response.read(MAX_DIFF_BYTES + 1)
+
+
+def fetch_pr(owner: str, repo: str, number: str) -> tuple[dict, str, bool]:
+    api = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    metadata = json.loads(request(api, "application/vnd.github+json"))
+    raw = request(api, "application/vnd.github.v3.diff")
+    truncated = len(raw) > MAX_DIFF_BYTES
+    return metadata, raw[:MAX_DIFF_BYTES].decode("utf-8", "replace"), truncated
+
+
+def parse_diff(diff: str, truncated: bool = False) -> DiffStats:
+    stats = DiffStats(truncated=truncated)
+    for line in diff.splitlines():
+        if line.startswith("diff --git a/"):
+            match = re.match(r"diff --git a/(.*?) b/(.*)$", line)
+            if match:
+                stats.files.append(match.group(2))
+        elif line.startswith("+") and not line.startswith("+++"):
+            stats.additions += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            stats.deletions += 1
+    lowered = [path.lower() for path in stats.files]
+    stats.tests_changed = any(
+        re.search(r"(^|/)(test(s)?|spec)(/|_|\.)", path) for path in lowered
+    )
+    stats.docs_changed = any(
+        path.startswith("docs/") or path.endswith((".md", ".rst")) for path in lowered
+    )
+    return stats
+
+
+def unique(items: list[str]) -> list[str]:
+    return list(dict.fromkeys(items))
+
+
+def review(metadata: dict, stats: DiffStats) -> str:
+    title = str(metadata.get("title") or "Untitled pull request").strip()
+    count = len(stats.files)
+    noun = "file" if count == 1 else "files"
+    addition_noun = "addition" if stats.additions == 1 else "additions"
+    deletion_noun = "deletion" if stats.deletions == 1 else "deletions"
+    summary = (
+        f'This PR, “{title},” changes {count} {noun} with '
+        f"{stats.additions} {addition_noun} and {stats.deletions} {deletion_noun}. "
+        + (
+            "The patch includes corresponding test changes."
+            if stats.tests_changed
+            else "No test files are changed in the patch."
+        )
+    )
+
+    risks: list[str] = []
+    paths = [path.lower() for path in stats.files]
+    if stats.truncated:
+        risks.append("The diff exceeded 2 MB and was truncated, so some changes were not reviewed.")
+    if not stats.tests_changed:
+        risks.append("No test changes are present, increasing the chance of an undetected regression.")
+    if stats.additions + stats.deletions > 500:
+        risks.append("The large patch size makes behavioral regressions and review gaps more likely.")
+    if any(re.search(r"(^|/)(auth|security|crypto|payment|billing)(/|\.|_|-)", p) for p in paths):
+        risks.append("Security- or payment-sensitive files changed and warrant focused manual review.")
+    if any(p.endswith(("package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock")) for p in paths):
+        risks.append("Dependency lockfiles changed; verify the resolved dependency updates are intentional.")
+    if any(re.search(r"(^|/)(migration|migrations|schema)(/|\.|_)", p) for p in paths):
+        risks.append("Schema or migration changes may require rollout and rollback planning.")
+    if not risks:
+        risks.append("No high-signal risks were detected from the diff structure; behavioral issues may still require domain review.")
+
+    suggestions: list[str] = []
+    if not stats.tests_changed:
+        suggestions.append("Add or update tests that exercise the changed behavior and its failure paths.")
+    if stats.additions + stats.deletions > 500:
+        suggestions.append("Consider splitting the patch into smaller, independently reviewable changes.")
+    if stats.docs_changed:
+        suggestions.append("Confirm the documentation matches the final behavior and public interface.")
+    suggestions.append("Run the repository’s formatter, static checks, and full test suite before merging.")
+    suggestions = unique(suggestions)
+
+    confidence = "Low" if stats.truncated or count == 0 else ("High" if stats.tests_changed and count <= 20 else "Medium")
+    risk_lines = "\n".join(f"- {item}" for item in unique(risks))
+    suggestion_lines = "\n".join(f"- {item}" for item in suggestions)
+    return (
+        f"## Summary\n\n{summary}\n\n"
+        f"## Risks\n\n{risk_lines}\n\n"
+        f"## Suggestions\n\n{suggestion_lines}\n\n"
+        f"## Confidence\n\n**{confidence}**\n"
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Review a public GitHub pull request")
+    parser.add_argument("--pr", required=True, help="GitHub pull request URL")
+    args = parser.parse_args()
+    match = PR_URL.fullmatch(args.pr)
+    if not match:
+        parser.error("--pr must look like https://github.com/owner/repo/pull/123")
+    try:
+        metadata, diff, truncated = fetch_pr(**match.groupdict())
+        print(review(metadata, parse_diff(diff, truncated)), end="")
+    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as error:
+        print(f"claude-review: could not fetch PR: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
