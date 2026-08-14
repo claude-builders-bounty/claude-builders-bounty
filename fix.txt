@@ -1,0 +1,181 @@
+```python
+import requests
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+import json
+
+class WeeklySummaryEngine:
+    """
+    N8N Python Node Logic: Generates a weekly narrative summary for GitHub repos.
+    Designed to run within an n8n 'Code' node or 'Python' node, handling data
+    aggregation and Claude API orchestration.
+    """
+    
+    def __init__(self, node_name: str = "WeeklySummary"):
+        self.node_name = node_name
+        self.github_url = "https://api.github.com"
+        self.claude_endpoint = "https://api.anthropic.com/v1/messages"
+        self.claude_model = "claude-sonnet-4-20250514" # As per spec
+        self.api_token = "" # In n8n, often injected via expression
+        self.weekly_days = 7
+        self.trigger_weekday = 4 # Thursday (n8n cron logic might differ, but data is weekly)
+
+    def _normalize_date_range(self, week_start: str = None) -> tuple:
+        """Calculates start and end dates for the specific week."""
+        if not week_start:
+            now = datetime.now()
+            # Determine start of current 7-day rolling window
+            week_start = now - timedelta(days=now.weekday() + 1) # Normalize to start of week logic
+        else:
+            week_start = datetime.fromisoformat(week_start.replace('Z', '+00:00'))
+            
+        start_dt = week_start
+        end_dt = start_dt + timedelta(days=self.weekly_days)
+        return start_dt, end_dt
+
+    def _fetch_github_stats(self, repo: str, start: datetime, end: datetime) -> Dict[str, Any]:
+        """Fetches commits, issues, and PRs for the specific timeframe."""
+        headers = {"Accept": "application/vnd.github+json"}
+        
+        # Base stats object
+        stats = {
+            "repo": repo,
+            "period": f"{start.strftime('%Y-%m-%d')} - {end.strftime('%Y-%m-%d')}",
+            "commits": [],
+            "pr_merged": [],
+            "issues_closed": [],
+            "total_activity": 0
+        }
+
+        # Helper to fetch and append
+        def fetch_endpoint(endpoint: str):
+            url = f"{self.github_url}/{repo}/{endpoint}"
+            try:
+                data = requests.get(url, headers=headers, params={"since": start.isoformat(), "until": end.isoformat()})
+                if data.status_code == 200:
+                    return data.json()
+                elif data.status_code == 304: # Not modified
+                    return []
+            except requests.exceptions.RequestException:
+                return []
+
+        # 1. Commits
+        commits = fetch_endpoint("commits")
+        stats["commits"] = [{"date": c.get("date"), "author": c.get("author", {}).get("name"), "message": c.get("message")} for c in commits]
+
+        # 2. PRs (Merged)
+        prs = fetch_endpoint("pulls")
+        stats["pr_merged"] = [{"number": p.get("number"), "title": p.get("title"), "author": p.get("user", {}).get("name")} for p in prs]
+
+        # 3. Issues (Closed)
+        issues = fetch_endpoint("issues")
+        stats["issues_closed"] = [{"number": i.get("number"), "title": i.get("title"), "author": i.get("user", {}).get("name")} for i in issues]
+
+        stats["total_activity"] = len(commits) + len(prs) + len(issues)
+        return stats
+
+    def _construct_prompt(self, stats: Dict[str, Any], language: str = "EN") -> str:
+        """Formats raw JSON data into a readable narrative prompt for Claude."""
+        
+        # Construct the narrative structure
+        body = f"You are a senior developer summarizing a weekly repository activity report for {stats['repo']}. \n"
+        body += f"Period: {stats['period']}\n"
+        body += f"Language: {language}\n"
+        body += "\n--- Data ---\n"
+        
+        # Commits Narrative
+        commits = stats.get('commits', [])
+        if commits:
+            c_last = commits[-1]
+            c_first = commits[0]
+            body += f"📅 *Timeframe:* {c_first.get('date', '')} to {c_last.get('date', '')}\n\n"
+            body += f"💻 *Commits:* {len(commits)}\n"
+            body += f"  - {c_first.get('message', '')}\n"
+            
+            prs = stats.get('pr_merged', [])
+            body += f"\n🔗 *Pull Requests Merged:* {len(prs)}\n"
+            for p in prs[:3]: # Limit for token efficiency
+                body += f"  - #{p['number']}: {p['title']}\n"
+            
+            issues = stats.get('issues_closed', [])
+            body += f"\n🐛 *Issues Closed:* {len(issues)}\n"
+            for i in issues[:3]:
+                body += f"  - #{i['number']}: {i['title']}\n"
+        else:
+            body += "\n🧹 *Note:* A quiet week with minimal code changes.\n"
+            
+        body += "\n--- Goal ---\n"
+        body += "Summarize this into one punchy, 3-5 sentence paragraph followed by the specific stats."
+        
+        return body
+
+    def _call_claude(self, prompt: str, language: str = "EN") -> str:
+        """Calls the Claude API with the constructed prompt."""
+        if not self.api_token:
+            # If running locally or cached, pass the token
+            self.api_token = requests.get("https://api.anthropic.com/v1/messages?test") # Fallback
+            
+        payload = {
+            "model": self.claude_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 500,
+            "metadata": {
+                "source": "n8n_workflow",
+                "language": language
+            }
+        }
+
+        try:
+            response = requests.post(self.claude_endpoint, headers={"Content-Type": "application/json"}, json=payload)
+            if response.status_code == 200:
+                return response.json()["content"][0]["text"]
+            else:
+                return f"[Claude API Error] {response.text}"
+        except requests.exceptions.RequestException as e:
+            return f"[Network Error] {str(e)}"
+
+    def execute(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        The core n8n execute function.
+        Takes input item, processes data, returns modified item.
+        """
+        
+        # 1. Extract Config from N8N Item
+        item_json = item.get('json', {})
+        
+        repo_name = item_json.get('repo', item_json.get('value', 'unknown-repo'))
+        # Handle Date Expression from n8n cron trigger
+        current_date = item_json.get('date', datetime.now().isoformat())
+        
+        # 2. Process Logic
+        start_date, end_date = self._normalize_date_range(current_date)
+        
+        # Fetch raw stats (Simulated if external, Real if internal)
+        # In n8n, we might already have data in 'json', or fetch it fresh.
+        # Let's fetch fresh from API based on the variables passed.
+        
+        raw_stats = self._fetch_github_stats(repo_name, start_date, end_date)
+        
+        # 3. Construct Narrative
+        # Determine language from item or default
+        language = item_json.get('language', 'EN')
+        prompt = self._construct_prompt(raw_stats, language)
+        
+        # 4. Call AI
+        # Note: If running strictly within n8n, you might want to cache the token.
+        # For a pure Python solution, we assume the API Token is passed or passed via expression
+        summary = self._call_claude(prompt, language)
+        
+        # 5. Format Output for N8N
+        output_item = {
+            "json": {
+                "headline": "Weekly Dev Sync",
+                "content": summary,
+                "repo": repo_name,
+                "timestamp": datetime.now().isoformat(),
+                "raw_stats": raw_stats # Keep for debugging
+            }
+        }
+        
+        return output_item
+```
