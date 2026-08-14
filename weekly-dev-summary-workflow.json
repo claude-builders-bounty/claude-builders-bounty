@@ -1,0 +1,134 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "name": "Weekly Cron (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.githubRepo }}",
+        "options": {
+          "headers": {
+            "Authorization": "=Bearer {{ $json.githubToken }}",
+            "Accept": "application/vnd.github+json"
+          }
+        }
+      },
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.githubRepo }}/issues?state=closed&since={{ $now.minus({days: 7}).toISODate() }}",
+        "options": {
+          "headers": {
+            "Authorization": "=Bearer {{ $json.githubToken }}",
+            "Accept": "application/vnd.github+json"
+          }
+        }
+      },
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 350]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.githubRepo }}/pulls?state=closed&merged=true&since={{ $now.minus({days: 7}).toISODate() }}",
+        "options": {
+          "headers": {
+            "Authorization": "=Bearer {{ $json.githubToken }}",
+            "Accept": "application/vnd.github+json"
+          }
+        }
+      },
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Fetch Commits').all()[0].json;\nconst issues = $('Fetch Closed Issues').all()[0].json;\nconst prs = $('Fetch Merged PRs').all()[0].json;\n\nconst prompt = 'Generate a weekly narrative dev summary for the GitHub repo.\\n\\nCommits (last 7 days):\\n' + JSON.stringify(commits.slice(0, 20), null, 2) + '\\n\\nClosed Issues (last 7 days):\\n' + JSON.stringify(issues.slice(0, 20), null, 2) + '\\n\\nMerged PRs (last 7 days):\\n' + JSON.stringify(prs.slice(0, 20), null, 2) + '\\n\\nWrite a concise narrative summary in ' + $json.language + ' (EN or FR). Include: highlights, themes, notable contributions.';\n\nreturn [{ json: { prompt } }];"
+      },
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 350]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "url": "https://api.anthropic.com/v1/messages",
+        "options": {
+          "headers": {
+            "anthropic-version": "2023-06-01",
+            "x-api-key": "={{ $env.ANTHROPIC_API_KEY }}"
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1500,\n  \"messages\": [{\"role\": \"user\", \"content\": \"{{ $json.prompt }}\"}]\n}"
+      },
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 350]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.discordWebhook }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"Weekly Dev Summary\\n\\n{{ $json.content[0].text }}\"\n}"
+      },
+      "name": "Deliver (Discord)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 350]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Fri 5pm)": {
+      "main": [
+        [
+          { "node": "Fetch Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Prompt": {
+      "main": [[{ "node": "Call Claude API", "type": "main", "index": 0 }]]
+    },
+    "Call Claude API": {
+      "main": [[{ "node": "Deliver (Discord)", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {},
+  "version": 1
+}
