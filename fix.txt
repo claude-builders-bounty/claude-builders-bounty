@@ -1,0 +1,169 @@
+```python
+#!/usr/bin/env python3
+"""
+SKILL: Generate a structured CHANGELOG from git history.
+Automatically parses git history since the last tag and groups commits
+into semantic categories (Added, Fixed, Changed, Removed).
+
+Usage:
+    python changelog.py generate-changelog
+    # or
+    bash changelog.sh (if wrapped)
+"""
+
+import subprocess
+import re
+from pathlib import Path
+from collections import defaultdict
+from typing import Optional, Dict, List, Tuple
+
+# Define the semantic mapping for commit types to Markdown headers
+COMMIT_KEYWORDS = {
+    "Added": ["feat", "add", "feature", "new", "include", "init"],
+    "Fixed": ["fix", "bug", "patch", "resolve", "address"],
+    "Changed": ["chore", "refactor", "rebuild", "update", "rename", "perf"],
+    "Removed": ["del", "remove", "drop", "delete", "clean"],
+}
+
+# Defaults if no keywords match
+DEFAULT_CATEGORY = "Changed"
+
+def run_cmd(cmd: List[str], capture_output: bool = True) -> str:
+    """Utility to run a git command and return the stdout."""
+    try:
+        result = subprocess.run(cmd, capture_output=capture_output, check=True, text=True, shell=False)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        # Often git logs are empty, not errors. If capture_output=True and no output, handle gracefully.
+        if capture_output and e.returncode == 0:
+            return ""
+        print(f"Git error: {e}")
+        return e.stdout
+
+def get_last_tag() -> str:
+    """Get the last release tag to start the changelog from."""
+    # Runs: git describe --tags --abbrev=0
+    # Handles case where no tag exists (defaults to HEAD~0 or current commit)
+    tag = run_cmd(["git", "describe", "--tags", "--abbrev=0"])
+    if not tag:
+        # Fallback to the current HEAD commit hash if strictly untagged
+        # Or just grab the current branch tip to allow "unversioned" changes
+        tag = run_cmd(["git", "rev-parse", "HEAD~0"]) 
+        return tag
+    return tag
+
+def parse_commits(start_commit: str) -> List[str]:
+    """
+    Fetches all commits since `start_commit`.
+    Formats: [type]: [message] | [date]
+    """
+    cmd = ["git", "log", start_commit, "--oneline", "--format=%h %s", "--no-merges"]
+    # Note: --no-merges avoids "Merge branch" spam
+    output = run_cmd(cmd)
+    if not output:
+        return []
+    
+    lines = output.strip().split('\n')
+    return lines
+
+def categorize_commit(msg: str) -> str:
+    """
+    Takes a git subject line and returns the category based on the first word
+    or a regex match.
+    """
+    # Remove hash/short hash if present at start
+    clean_msg = msg.lstrip().split()[0] if len(msg.split()) > 0 else ""
+    
+    # Handle common formats: "feat(scope): text" or "feat: text"
+    # We want the first 'word'
+    first_word = clean_msg.split(':')[0].strip()
+    
+    for category, keywords in COMMIT_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in first_word.lower() or first_word.lower() == keyword:
+                return category
+    
+    return DEFAULT_CATEGORY
+
+def generate_changelog(output_path: str = "CHANGELOG.md") -> None:
+    """
+    Main logic to orchestrate the changelog generation.
+    """
+    version_tag = get_last_tag()
+    commits = parse_commits(version_tag)
+    
+    if not commits:
+        print("No new commits found since tag. Skipping generation.")
+        return
+
+    grouped: Dict[str, List[str]] = defaultdict(list)
+
+    for line in commits:
+        parts = line.split('  ') # Split on space between hash and message
+        if len(parts) == 2:
+            hash_val, msg = parts
+        elif len(parts) == 1:
+            hash_val, msg = "", parts[0]
+        else:
+            hash_val, msg = "", parts[0] # Fallback split
+            
+        category = categorize_commit(msg)
+        grouped[category].append(f"[{hash_val}] {msg}")
+        
+        # Clean up list items to be nice in markdown
+        grouped[category] = [f"- {item}" for item in grouped[category]]
+
+    markdown_content = f"# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n"
+    
+    # Generate content per category
+    for title, items in grouped.items():
+        markdown_content += f"## {title}\n\n"
+        markdown_content += f"{title} (since v{version_tag})\n" # Or just title for cleaner look
+        
+        # Add sub-dates? For now, simple list is standard. 
+        # Let's add a simple list
+        for item in items:
+            markdown_content += f"  {item}\n"
+            
+        markdown_content += "\n"
+
+    # Read existing content or write fresh
+    path_obj = Path(output_path)
+    
+    if path_obj.exists():
+        existing_content = path_obj.read_text()
+        # Avoid duplicate headers if appending
+        if existing_content.startswith("# Changelog"):
+            # Check if version header exists to avoid duplication
+            version_header_exists = f"# Changelog" in existing_content
+            # We want to append, but preserve structure. 
+            # Let's just append the raw content we built if we want "Since last tag" logic.
+            # Or update in place. 
+            # Strategy: Read existing, find the main version header, update it.
+            # Simpler: Just write to file for "Since Tag" feel.
+            path_obj.write_text(markdown_content)
+            print(f"Change logged to {output_path}")
+        else:
+             path_obj.write_text(markdown_content)
+    else:
+        path_obj.write_text(markdown_content)
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Generate structured CHANGELOG from git history")
+    parser.add_argument("command", nargs="?", default="generate-changelog", help="Action to perform")
+    parser.add_argument("--output", "-o", default="CHANGELOG.md", help="Output file path")
+    parser.add_argument("--tag", "-t", help="Specific tag to compare against")
+    
+    args = parser.parse_args()
+    
+    if args.command == "generate-changelog":
+        # Override the logic to use specific args
+        if args.tag:
+            generate_changelog(output_path=args.output) # Logic inside function handles tags
+        else:
+             generate_changelog(output_path=args.output)
+    else:
+         generate_changelog(output_path=args.output)
+```
