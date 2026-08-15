@@ -51,3 +51,18 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Changelog generator
+
+This repository includes `changelog.sh`, a dependency-free Bash utility that
+turns commits since the latest git tag into a structured `CHANGELOG.md`. It
+groups conventional commit prefixes into Added, Fixed, Changed, and Removed.
+
+### Setup
+
+1. Copy `changelog.sh` into a Git repository.
+2. Run `bash changelog.sh` (or `bash changelog.sh docs/CHANGELOG.md path/to/repo`).
+3. Review the generated `CHANGELOG.md` and commit it.
+
+The sample in [`sample/CHANGELOG.md`](sample/CHANGELOG.md) was generated from
+this real GitHub repository's history before the bounty implementation commit.
