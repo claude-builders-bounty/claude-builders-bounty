@@ -34,6 +34,27 @@ You're in the right place.
 
 ---
 
+## Skills & Utilities
+
+### 📝 Changelog Generator (`/generate-changelog`)
+Automatically generates a structured, Keep a Changelog compliant `CHANGELOG.md` from git commits since the last release tag.
+
+#### Setup & Usage in 3 Steps:
+1. **Copy the script & skill**:
+   ```bash
+   chmod +x changelog.sh
+   ```
+2. **Run the generator**:
+   ```bash
+   bash changelog.sh
+   # Or with a custom version:
+   bash changelog.sh --version "v1.0.0"
+   ```
+3. **In Claude Code**:
+   Trigger `/generate-changelog` to run automatically during releases.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
