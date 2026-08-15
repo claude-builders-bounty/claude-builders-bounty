@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""
+claude-review — Claude Code PR review agent.
+
+Fetches a GitHub pull request diff and returns a structured Markdown review
+using Claude (Anthropic API): summary, identified risks, improvement
+suggestions, and a confidence score.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+    claude-review --pr https://github.com/owner/repo/pull/123 --model claude-sonnet-5
+
+Requires:
+    ANTHROPIC_API_KEY   env var with a valid Anthropic API key.
+    GITHUB_TOKEN        optional env var, raises the GitHub API rate limit
+                         and lets the tool read diffs on private repos.
+"""
+
+import argparse
+import os
+import re
+import sys
+
+import requests
+
+_DEFAULT_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
+_MAX_DIFF_CHARS = 60_000  # keep the prompt within a sane token budget
+
+_SYSTEM_PROMPT = """\
+Eres un revisor de código experto. Vas a recibir el diff completo de un Pull \
+Request de GitHub. Analízalo y devuelve EXCLUSIVAMENTE un review en Markdown \
+con estas cuatro secciones, en este orden exacto, sin texto antes ni después:
+
+## Summary of changes
+(2-3 frases explicando qué cambia el PR y por qué, en base al diff.)
+
+## Identified risks
+- Lista de riesgos concretos que ves en el diff (seguridad, regresiones, \
+  breaking changes, falta de tests, etc.). Si no ves ninguno real, escribe \
+  "- None identified."
+
+## Improvement suggestions
+- Lista de sugerencias concretas de mejora. Si el PR ya está bien tal cual, \
+  escribe "- None."
+
+## Confidence score
+Low / Medium / High — seguido de una frase justificando el nivel elegido.
+
+No inventes contexto que no esté en el diff. Si el diff es demasiado \
+pequeño o trivial (ej. un bump de versión de dependencia) dilo \
+explícitamente en el summary en vez de rellenar con generalidades.
+"""
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    """Extract (owner, repo, pr_number) from a GitHub PR URL."""
+    m = re.match(r"^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)/?", url.strip())
+    if not m:
+        raise ValueError(
+            f"URL de PR no reconocida: {url!r} "
+            "(formato esperado: https://github.com/owner/repo/pull/123)"
+        )
+    owner, repo, number = m.groups()
+    return owner, repo, int(number)
+
+
+def fetch_pr_meta(owner: str, repo: str, number: int, token: str | None) -> dict:
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+    r = requests.get(url, headers=headers, timeout=20)
+    r.raise_for_status()
+    return r.json()
+
+
+def fetch_pr_diff(owner: str, repo: str, number: int, token: str | None) -> str:
+    headers = {"Accept": "application/vnd.github.v3.diff"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    url = f"https://github.com/{owner}/{repo}/pull/{number}.diff"
+    r = requests.get(url, headers=headers, timeout=30)
+    r.raise_for_status()
+    diff = r.text
+    if len(diff) > _MAX_DIFF_CHARS:
+        diff = diff[:_MAX_DIFF_CHARS] + "\n\n[... diff truncado, superaba el límite de tamaño ...]"
+    return diff
+
+
+def review_diff(diff: str, meta: dict, model: str) -> str:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    contexto = (
+        f"Título del PR: {meta.get('title', '')}\n"
+        f"Descripción: {(meta.get('body') or '')[:1000]}\n\n"
+        f"Diff:\n{diff}"
+    )
+    resp = client.messages.create(
+        model=model,
+        max_tokens=1200,
+        system=_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": contexto}],
+    )
+    return "".join(block.text for block in resp.content if getattr(block, "type", None) == "text").strip()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="claude-review", description=__doc__.splitlines()[1])
+    parser.add_argument("--pr", required=True, help="URL del PR de GitHub, ej. https://github.com/owner/repo/pull/123")
+    parser.add_argument("--output", help="Fichero donde guardar el review en Markdown (opcional, por defecto stdout)")
+    parser.add_argument("--model", default=_DEFAULT_MODEL, help=f"Modelo de Claude a usar (por defecto: {_DEFAULT_MODEL})")
+    args = parser.parse_args()
+
+    if "ANTHROPIC_API_KEY" not in os.environ:
+        print("ERROR: falta la variable de entorno ANTHROPIC_API_KEY", file=sys.stderr)
+        return 1
+
+    try:
+        owner, repo, number = parse_pr_url(args.pr)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+    token = os.getenv("GITHUB_TOKEN")
+
+    try:
+        meta = fetch_pr_meta(owner, repo, number, token)
+        diff = fetch_pr_diff(owner, repo, number, token)
+    except requests.RequestException as e:
+        print(f"ERROR obteniendo el PR de GitHub: {e}", file=sys.stderr)
+        return 1
+
+    if not diff.strip():
+        print("ERROR: el diff está vacío (¿PR sin cambios o repo privado sin GITHUB_TOKEN?)", file=sys.stderr)
+        return 1
+
+    review = review_diff(diff, meta, args.model)
+
+    header = f"# Claude Review — {owner}/{repo} #{number}\n\n"
+    output = header + review + "\n"
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(output)
+        print(f"Review guardado en {args.output}")
+    else:
+        print(output)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
