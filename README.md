@@ -1,53 +1,36 @@
-# Claude Builders Bounty 🤖
+# claude-code-safety-hook
 
-> A community bounty board for Claude Code builders.
+A `PreToolUse` hook for Claude Code that **blocks destructive bash commands** before they run.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (2 commands)
 
----
+```bash
+cp pre_tool_use.py ~/.claude/hooks/pre_tool_use.py
+cat >> ~/.claude/settings.json <<'EOF'
+{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "python ~/.claude/hooks/pre_tool_use.py"}]}]}}
+EOF
+```
 
-## How it works
+Restart Claude Code — done.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## What it blocks
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+| Pattern | Example |
+|---|---|
+| `rm -r` / `rm -rf` | `rm -rf /tmp/build` |
+| `DROP TABLE` | `DROP TABLE users;` |
+| `TRUNCATE` | `TRUNCATE logs;` |
+| `DELETE FROM` **without** `WHERE` | `DELETE FROM users;` |
+| `git push --force` / `-f` | `git push --force origin main` |
+| `mysql ... -e "DROP ..."` | `mysql -e "DROP DATABASE app"` |
+| `dd` to raw device | `dd if=x of=/dev/sda` |
 
----
+Safe commands (e.g. `DELETE FROM users WHERE id=1`) pass through untouched.
 
-## Active Bounties
+Every blocked attempt is logged to `~/.claude/hooks/blocked.log` with timestamp, the attempted command, and the project path. Claude receives a clear explanation of why the command was blocked.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Test
 
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+```bash
+python test_hook.py   # 8/8 cases pass
+```
