@@ -8,6 +8,14 @@ You're in the right place.
 
 ---
 
+## Setup Changelog Generator
+
+1. Make the script executable: `chmod +x changelog.sh`
+2. Run it in your repo: `./changelog.sh`
+3. View your generated `CHANGELOG.md` file!
+
+---
+
 ## How it works
 
 **To post a bounty**
