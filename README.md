@@ -1,53 +1,48 @@
-# Claude Builders Bounty 🤖
+# changelog-gen
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from your project's git history in one command.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (3 steps)
 
----
+1. **Copy** `changelog_gen.py` into your project root.
+2. **Install** Python 3.10+ and [git](https://git-scm.com) (both already present in most dev environments).
+3. **Run** from anywhere inside the repo:
 
-## How it works
+```bash
+python changelog_gen.py
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## What it does
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+- Fetches commits since the **last git tag** (`git describe --tags`); falls back to `--from-tag <tag>` or full history.
+- Auto-categorizes every commit into **Added / Fixed / Changed / Removed** using smart keyword rules.
+- Writes a clean, link-ready `CHANGELOG.md` with commit SHAs and authors.
 
----
+## Options
 
-## Active Bounties
+| Flag | Description |
+|---|---|
+| `--out FILE` | Output file (default `CHANGELOG.md`) |
+| `--from-tag TAG` | Generate entries since a specific tag |
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Example output
 
----
+```markdown
+# Changelog
 
-## Rules
+All notable changes to this project, since tag `v1.2.0`.
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Added
 
----
+- feat: add dark mode support ([`a1b2c3d`](...)) — Alice
 
-## Community
+## Fixed
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+- fix: handle empty input in parser ([`d4e5f6g`](...)) — Bob
 
----
+## Changed
 
-*Started by the Claude builder community · March 2026 · MIT License*
+- refactor: simplify config loading ([`h7i8j9k`](...)) — Carol
+```
+
+> Tip: add `changelog_gen.py` to your CI (e.g. a `pre-release` job) so every release ships an up-to-date changelog.
