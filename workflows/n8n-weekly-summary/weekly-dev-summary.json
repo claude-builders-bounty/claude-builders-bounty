@@ -1,0 +1,165 @@
+{
+  "name": "Weekly Dev Summary (Claude API + GitHub)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-weekly",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "webhookId": "weekly-dev-summary"
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/={{ $json.repo || 'owner/repo' }}/commits?since={{ $now.subtract(7, 'days').toISO() }}&per_page=100",
+        "options": {
+          "headers": {
+            "Authorization": "=Bearer {{ $env.GITHUB_TOKEN }}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28"
+          }
+        }
+      },
+      "id": "gh-commits",
+      "name": "GitHub: Fetch Commits (7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/={{ $json.repo || 'owner/repo' }}/issues?state=closed&since={{ $now.subtract(7, 'days').toISO() }}&per_page=50",
+        "options": {
+          "headers": {
+            "Authorization": "=Bearer {{ $env.GITHUB_TOKEN }}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28"
+          }
+        }
+      },
+      "id": "gh-issues",
+      "name": "GitHub: Fetch Closed Issues (7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/={{ $json.repo || 'owner/repo' }}/pulls?state=closed&since={{ $now.subtract(7, 'days').toISO() }}&per_page=50",
+        "options": {
+          "headers": {
+            "Authorization": "=Bearer {{ $env.GITHUB_TOKEN }}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28"
+          }
+        }
+      },
+      "id": "gh-pulls",
+      "name": "GitHub: Fetch Merged PRs (7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine GitHub data into one payload for the Claude prompt\nconst repo = $('GitHub: Fetch Commits (7d)').first().json.repo || 'owner/repo';\nconst commits = $('GitHub: Fetch Commits (7d)').all().map(i => i.json);\nconst issues = $('GitHub: Fetch Closed Issues (7d)').all().map(i => i.json);\nconst pulls = $('GitHub: Fetch Merged PRs (7d)').all().map(i => i.json);\n\nconst commitSummary = commits.slice(0, 30).map(c => `- ${c.commit.message.split('\\n')[0]}`).join('\\n');\nconst issueSummary = issues.slice(0, 20).map(i => `- #${i.number} ${i.title}`).join('\\n');\nconst prSummary = pulls.slice(0, 20).map(p => `- #${p.number} ${p.title} (merged: ${!!p.merged_at})`).join('\\n');\n\nreturn [{\n  json: {\n    repo,\n    commitCount: commits.length,\n    issueCount: issues.length,\n    prCount: pulls.length,\n    commitSummary: commitSummary || '- none',\n    issueSummary: issueSummary || '- none',\n    prSummary: prSummary || '- none',\n    language: $env.SUMMARY_LANGUAGE || 'EN'\n  }\n}];"
+      },
+      "id": "combine",
+      "name": "Combine GitHub Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "create",
+        "modelId": "={{ $env.CLAUDE_MODEL || 'claude-sonnet-4-20250514' }}",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a senior engineering manager writing a concise weekly narrative summary. Write in {{ $json.language === 'FR' ? 'French' : 'English' }}. Use short paragraphs, no fluff."
+            },
+            {
+              "role": "user",
+              "content": "Write a weekly development summary for repo {{ $json.repo }} covering the last 7 days.\n\nCommits ({{ $json.commitCount }}):\n{{ $json.commitSummary }}\n\nClosed issues ({{ $json.issueCount }}):\n{{ $json.issueSummary }}\n\nMerged PRs ({{ $json.prCount }}):\n{{ $json.prSummary }}\n\nFormat: 1) Overview (2-3 sentences) 2) Key changes 3) Notable fixes 4) Themes / next steps."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 600
+        }
+      },
+      "id": "claude-api",
+      "name": "Claude API: Generate Summary",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
+      "position": [920, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "options": {
+          "body": "{\"text\": \"*Weekly Dev Summary* — {{ $json.repo }}\\n\\n{{ $json.output }}\"}",
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        }
+      },
+      "id": "slack-delivery",
+      "name": "Deliver: Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SUMMARY_FROM_EMAIL }}",
+        "toEmail": "={{ $env.SUMMARY_TO_EMAIL }}",
+        "subject": "Weekly Dev Summary — {{ $json.repo }}",
+        "text": "{{ $json.output }}"
+      },
+      "id": "email-delivery",
+      "name": "Deliver: Email (SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1160, 200]
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [
+        [
+          { "node": "GitHub: Fetch Commits (7d)", "type": "main", "index": 0 },
+          { "node": "GitHub: Fetch Closed Issues (7d)", "type": "main", "index": 0 },
+          { "node": "GitHub: Fetch Merged PRs (7d)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "GitHub: Fetch Commits (7d)": {
+      "main": [[{ "node": "Combine GitHub Data", "type": "main", "index": 0 }]]
+    },
+    "GitHub: Fetch Closed Issues (7d)": {
+      "main": [[{ "node": "Combine GitHub Data", "type": "main", "index": 0 }]]
+    },
+    "GitHub: Fetch Merged PRs (7d)": {
+      "main": [[{ "node": "Combine GitHub Data", "type": "main", "index": 0 }]]
+    },
+    "Combine GitHub Data": {
+      "main": [[{ "node": "Claude API: Generate Summary", "type": "main", "index": 0 }]]
+    },
+    "Claude API: Generate Summary": {
+      "main": [
+        [
+          { "node": "Deliver: Slack Webhook", "type": "main", "index": 0 },
+          { "node": "Deliver: Email (SMTP)", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
