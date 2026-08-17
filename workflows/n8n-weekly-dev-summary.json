@@ -1,0 +1,312 @@
+{
+  "name": "Weekly Dev Summary - GitHub + Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "1a0b4d82-6f29-4b2a-89b5-74892c90c101",
+      "name": "Weekly Cron Trigger (Mondays 9AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate timestamps for the past 7 days (ISO 8601)\nconst now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));\n\nreturn [{\n  json: {\n    since: sevenDaysAgo.toISOString(),\n    until: now.toISOString(),\n    repo_owner: $env.GITHUB_REPO_OWNER || 'owner',\n    repo_name: $env.GITHUB_REPO_NAME || 'repo',\n    target_branch: $env.GITHUB_BRANCH || 'main'\n  }\n}];"
+      },
+      "id": "2b1c5e93-703a-4c3b-9ac6-859a3d01d202",
+      "name": "Calculate Date Window (7 Days)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.repo_owner}}/{{$json.repo_name}}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{$json.since}}"
+            },
+            {
+              "name": "until",
+              "value": "={{$json.until}}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "3c2d6f04-814b-4d4c-abd7-96ab4e12e303",
+      "name": "Fetch Recent Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        700,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github_auth",
+          "name": "GitHub Token Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$('Calculate Date Window (7 Days)').first().json.repo_owner}}/{{$('Calculate Date Window (7 Days)').first().json.repo_name}}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d3e7015-925c-4e5d-bce8-a7bc5f23f404",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        700,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github_auth",
+          "name": "GitHub Token Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const windowData = $('Calculate Date Window (7 Days)').first().json;\nconst sinceDate = new Date(windowData.since);\n\n// Aggregate Commits\nconst rawCommits = $('Fetch Recent Commits').all().map(item => item.json);\nconst commits = rawCommits.map(c => ({\n  sha: (c.sha || '').substring(0, 7),\n  author: c.commit?.author?.name || c.author?.login || 'Unknown',\n  message: (c.commit?.message || '').split('\\n')[0],\n  date: c.commit?.author?.date || c.commit?.committer?.date\n})).filter(c => c.message.length > 0);\n\n// Aggregate Merged PRs (filter only those merged within the 7-day window)\nconst rawPRs = $('Fetch Merged PRs').all().map(item => item.json);\nconst mergedPRs = rawPRs.filter(pr => {\n  if (!pr.merged_at) return false;\n  const mergedAt = new Date(pr.merged_at);\n  return mergedAt >= sinceDate;\n}).map(pr => ({\n  number: pr.number,\n  title: pr.title,\n  author: pr.user?.login || 'Unknown',\n  merged_at: pr.merged_at,\n  html_url: pr.html_url,\n  body: (pr.body || '').substring(0, 300)\n}));\n\nconst metadataPayload = {\n  repository: `${windowData.repo_owner}/${windowData.repo_name}`,\n  timeframe: `${windowData.since.split('T')[0]} to ${windowData.until.split('T')[0]}`,\n  total_commits: commits.length,\n  total_merged_prs: mergedPRs.length,\n  commits: commits,\n  merged_prs: mergedPRs\n};\n\nconst prompt = `You are an executive technical lead and engineering scribe preparing a high-level weekly development summary for stakeholders and engineering team members.\n\nRepository: ${metadataPayload.repository}\nPeriod: ${metadataPayload.timeframe}\nTotal Commits: ${metadataPayload.total_commits}\nTotal Merged Pull Requests: ${metadataPayload.total_merged_prs}\n\n### Merged Pull Requests:\n${mergedPRs.length > 0 ? mergedPRs.map(p => `- [#${p.number}] ${p.title} (@${p.author}) - ${p.html_url}`).join('\\n') : 'None in this period.'}\n\n### Commit History:\n${commits.length > 0 ? commits.map(c => `- [${c.sha}] ${c.message} (@${c.author})`).join('\\n') : 'No commits in this period.'}\n\nInstructions:\nGenerate a structured, polished Markdown weekly development summary with the following sections:\n1. 🚀 **Executive Summary**: 2-3 sentence overview highlighting key accomplishments and engineering velocity.\n2. 🌟 **Key Features & Enhancements**: Grouped highlights of notable additions or architectural improvements.\n3. 🐛 **Bug Fixes & Maintenance**: Significant stability, refactoring, or bug fix items.\n4. 📊 **Metrics & Activity**: High-level velocity stats (# of PRs merged, commit count, top contributors).\n5. 🔮 **Upcoming Focus / Notes**: Any strategic observations based on merged work.\n\nFormat cleanly in GitHub-flavored Markdown. Do not include markdown code fence wrappers around the whole document.`;\n\nreturn [{\n  json: {\n    metadata: metadataPayload,\n    prompt: prompt\n  }\n}];"
+      },
+      "id": "5e4f8126-a36d-4f6e-cdf9-b8cd60340505",
+      "name": "Format Git Metadata & Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$env.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-3-7-sonnet-20250219\",\n  \"max_tokens\": 2500,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{JSON.stringify($json.prompt)}}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "6f509237-b47e-407f-def0-c9de71451606",
+      "name": "Claude API (Messages API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $json;\nconst summaryText = claudeResponse.content?.[0]?.text || 'No summary generated.';\nconst metadata = $('Format Git Metadata & Prompt').first().json.metadata;\n\n// Format payload suitable for Slack/Discord/generic incoming webhook\nreturn [{\n  json: {\n    summary_markdown: summaryText,\n    repository: metadata.repository,\n    timeframe: metadata.timeframe,\n    slack_payload: {\n      text: `*Weekly Dev Summary: ${metadata.repository} (${metadata.timeframe})*\\n\\n${summaryText}`,\n      mrkdwn: true\n    },\n    discord_payload: {\n      content: `**Weekly Dev Summary: ${metadata.repository} (${metadata.timeframe})**\\n\\n${summaryText.substring(0, 1900)}`\n    }\n  }\n}];"
+      },
+      "id": "7061a348-c58f-4180-eff1-daef82562707",
+      "name": "Prepare Webhook Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.NOTIFICATION_WEBHOOK_URL}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify($json.slack_payload)}}",
+        "options": {}
+      },
+      "id": "8172b459-d690-4291-f002-ebf093673808",
+      "name": "Dispatch Summary to Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1680,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger (Mondays 9AM)": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Window (7 Days)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Window (7 Days)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Recent Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recent Commits": {
+      "main": [
+        [
+          {
+            "node": "Format Git Metadata & Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Format Git Metadata & Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Git Metadata & Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API (Messages API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API (Messages API)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Webhook Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Webhook Payload": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Summary to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "Weekly Summary"
+    },
+    {
+      "name": "Claude AI"
+    },
+    {
+      "name": "GitHub Automation"
+    }
+  ]
+}
