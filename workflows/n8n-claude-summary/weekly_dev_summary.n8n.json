@@ -1,0 +1,139 @@
+{
+  "name": "Weekly Dev Summary with Claude Code & GitHub",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "triggerAtDay": 5
+            }
+          ]
+        }
+      },
+      "name": "Cron Trigger (Friday 5PM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "id": "node_cron_trigger"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "GITHUB_REPO_OWNER", "value": "claude-builders-bounty" },
+            { "name": "GITHUB_REPO_NAME", "value": "claude-builders-bounty" },
+            { "name": "SUMMARY_LANGUAGE", "value": "EN" },
+            { "name": "NOTIFICATION_CHANNEL", "value": "discord" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Workflow Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "id": "node_config"
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "=https://api.github.com/repos/{{$json.GITHUB_REPO_OWNER}}/{{$json.GITHUB_REPO_NAME}}/commits?since={{new Date(Date.now() - 7*24*60*60*1000).toISOString()}}",
+        "options": {}
+      },
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 200],
+      "id": "node_github_commits"
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "=https://api.github.com/repos/{{$json.GITHUB_REPO_OWNER}}/{{$json.GITHUB_REPO_NAME}}/pulls?state=closed&sort=updated&direction=desc",
+        "options": {}
+      },
+      "name": "Fetch Closed PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 400],
+      "id": "node_github_prs"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const commits = $items('Fetch Weekly Commits').map(i => i.json.commit?.message || i.json.message);\nconst prs = $items('Fetch Closed PRs').map(i => i.json.title || '');\nconst config = $items('Workflow Config')[0].json;\n\nreturn {\n  json: {\n    prompt: `You are an expert engineering lead. Summarize the following weekly activity for ${config.GITHUB_REPO_OWNER}/${config.GITHUB_REPO_NAME} in language ${config.SUMMARY_LANGUAGE}:\\n\\nCommits:\\n${commits.slice(0, 30).join('\\n')}\\n\\nMerged PRs:\\n${prs.slice(0, 15).join('\\n')}\\n\\nFormat with:\\n- 🚀 Highlights & Milestones\\n- 🐛 Major Bug Fixes\\n- 🔄 Key Refactors\\n- 🎯 Focus for Next Week`,\n    destination: config.NOTIFICATION_CHANNEL\n  }\n};"
+      },
+      "name": "Synthesize GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300],
+      "id": "node_synthesize"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\"role\": \"user\", \"content\": $json.prompt}\n  ]\n}"
+      },
+      "name": "Claude API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1150, 300],
+      "id": "node_claude_api"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WEBHOOK_URL || 'https://discord.com/api/webhooks/your-channel'}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": $json.content[0].text\n}"
+      },
+      "name": "Send Discord / Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1380, 300],
+      "id": "node_webhook_dispatch"
+    }
+  ],
+  "connections": {
+    "Cron Trigger (Friday 5PM)": {
+      "main": [[{ "node": "Workflow Config", "type": "main", "index": 0 }]]
+    },
+    "Workflow Config": {
+      "main": [
+        [{ "node": "Fetch Weekly Commits", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Closed PRs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [[{ "node": "Synthesize GitHub Activity", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed PRs": {
+      "main": [[{ "node": "Synthesize GitHub Activity", "type": "main", "index": 0 }]]
+    },
+    "Synthesize GitHub Activity": {
+      "main": [[{ "node": "Claude API Call", "type": "main", "index": 0 }]]
+    },
+    "Claude API Call": {
+      "main": [[{ "node": "Send Discord / Slack Webhook", "type": "main", "index": 0 }]]
+    }
+  }
+}
