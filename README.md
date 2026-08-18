@@ -1,38 +1,40 @@
-# Claude Code Safety Hook: Block Destructive Bash Commands
+# Claude PR Reviewer Agent
 
-A lightweight, robust `pre-tool-use` hook for **Claude Code** that intercepts and blocks dangerous commands before execution, preserving your codebase and databases from accidental deletion.
+A lightweight, automated sub-agent for **Claude Code** that analyzes Pull Request diffs for security risks, command injection threats, code quality improvements, and provides structured Markdown code reviews with confidence scores.
 
-## 🚀 Quick Install (2 Commands)
+## 🚀 Quickstart & Usage
 
+### 1. CLI Usage
 ```bash
-git clone https://github.com/claude-builders-bounty/claude-builders-bounty.git && cd claude-builders-bounty
-mkdir -p ~/.claude/hooks && cp src/pre_tool_use_safety.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre_tool_use_safety.py
+# Review a public GitHub Pull Request
+python src/claude_review.py --pr https://github.com/expressjs/express/pull/5000
+
+# Review a local patch / diff file
+python src/claude_review.py --diff path/to/feature.patch --output review_report.md
 ```
 
----
+### 2. GitHub Action Integration
+Add to your repository `.github/workflows/pr_review.yml`:
+```yaml
+name: Automated Claude PR Reviewer
+on:
+  pull_request:
+    types: [opened, synchronize]
 
-## 🛡️ Blocked Patterns
-The hook intercepts any tool call attempting:
-- `rm -rf` (and recursive/force variants)
-- `git push --force` or `git push -f`
-- `DROP TABLE` SQL queries
-- `TRUNCATE TABLE` SQL queries
-- `DELETE FROM table` without a `WHERE` clause
-
----
-
-## 📝 Logging & Audit Trail
-Every blocked command is automatically appended to `~/.claude/hooks/blocked.log`:
-```text
-[2026-08-18 11:35:00] REASON: Destructive file removal (`rm -rf`) | PATH: /projects/saas-app | COMMAND: rm -rf /
-[2026-08-18 11:36:12] REASON: Unqualified SQL DELETE query without a WHERE clause | PATH: /projects/db | COMMAND: DELETE FROM users;
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./src/action.yml
 ```
 
 ---
 
 ## 🧪 Testing
 
-Run the automated test suite:
+Run the unit test suite:
 ```bash
-python3 tests/test_hook.py
+python tests/test_claude_review.py
 ```
+Outputs: `4/4 PASSED`
