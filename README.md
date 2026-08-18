@@ -1,40 +1,21 @@
-# Claude PR Reviewer Agent
+# Structured CHANGELOG Generator Skill
 
-A lightweight, automated sub-agent for **Claude Code** that analyzes Pull Request diffs for security risks, command injection threats, code quality improvements, and provides structured Markdown code reviews with confidence scores.
+A Claude Code skill and standalone Python script that automatically generates a Keep-A-Changelog formatted `CHANGELOG.md` from git commit history.
 
-## 🚀 Quickstart & Usage
+## 🚀 Quick Setup (3 Steps)
 
-### 1. CLI Usage
+### Step 1: Copy script to project
 ```bash
-# Review a public GitHub Pull Request
-python src/claude_review.py --pr https://github.com/expressjs/express/pull/5000
-
-# Review a local patch / diff file
-python src/claude_review.py --diff path/to/feature.patch --output review_report.md
+cp src/changelog.py ./
 ```
 
-### 2. GitHub Action Integration
-Add to your repository `.github/workflows/pr_review.yml`:
-```yaml
-name: Automated Claude PR Reviewer
-on:
-  pull_request:
-    types: [opened, synchronize]
-
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: ./src/action.yml
-```
-
----
-
-## 🧪 Testing
-
-Run the unit test suite:
+### Step 2: Generate CHANGELOG.md
 ```bash
-python tests/test_claude_review.py
+python changelog.py CHANGELOG.md
 ```
-Outputs: `4/4 PASSED`
+
+### Step 3: Run unit tests
+```bash
+python tests/test_changelog.py
+```
+Outputs: `2/2 PASSED`
