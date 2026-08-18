@@ -1,0 +1,200 @@
+{
+  "name": "Automated Weekly Dev Summary via Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "seconds": 604800,
+              "triggerAtDay": [5],
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "name": "Weekly Schedule Trigger (Fridays 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "id": "trigger-cron-1"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_OWNER",
+              "value": "expressjs"
+            },
+            {
+              "name": "GITHUB_REPO",
+              "value": "express"
+            },
+            {
+              "name": "SUMMARY_LANGUAGE",
+              "value": "EN"
+            },
+            {
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+            }
+          ]
+        }
+      },
+      "name": "Set Workflow Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "id": "set-vars-2"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.GITHUB_OWNER}}/{{$json.GITHUB_REPO}}/commits",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "name": "Fetch Recent GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 200],
+      "id": "github-commits-3"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.GITHUB_OWNER}}/{{$json.GITHUB_REPO}}/pulls?state=closed",
+        "options": {}
+      },
+      "name": "Fetch Closed GitHub PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 400],
+      "id": "github-prs-4"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$env.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-3-7-sonnet-20250219"
+            },
+            {
+              "name": "max_tokens",
+              "value": "1024"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"Analyze the following GitHub repository activity for the past week and provide a concise narrative summary in {{$json.SUMMARY_LANGUAGE}} covering key features, bug fixes, and contributor highlights.\\n\\nCommits: {{$json.commits_summary}}\\nPRs: {{$json.prs_summary}}\"}]"
+            }
+          ]
+        }
+      },
+      "name": "Claude API Dev Summary Synthesizer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "id": "claude-api-5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node[\"Set Workflow Variables\"].json[\"DISCORD_WEBHOOK_URL\"]}}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=🚀 **Weekly Dev Summary - {{$node[\"Set Workflow Variables\"].json[\"GITHUB_REPO\"]}}**\\n\\n{{$json.content[0].text}}"
+            }
+          ]
+        }
+      },
+      "name": "Deliver via Webhook (Discord / Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300],
+      "id": "webhook-deliver-6"
+    }
+  ],
+  "connections": {
+    "Weekly Schedule Trigger (Fridays 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Set Workflow Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Workflow Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Recent GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed GitHub PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recent GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Claude API Dev Summary Synthesizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API Dev Summary Synthesizer": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Webhook (Discord / Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
