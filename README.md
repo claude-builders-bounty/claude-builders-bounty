@@ -51,3 +51,15 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Generate a changelog
+
+This repository includes `changelog.sh`, a dependency-free Bash utility that reads commits after the latest Git tag and creates a structured `CHANGELOG.md`. Conventional commit prefixes are grouped into `Added`, `Fixed`, `Changed`, and `Removed` sections; other commit subjects are placed under `Changed`.
+
+### Usage
+
+1. Run `bash changelog.sh` from any Git repository.
+2. Optionally provide an output path: `bash changelog.sh docs/CHANGELOG.md`.
+3. Review the generated `[Unreleased]` section before committing it.
+
+The behavior is covered by `bash tests/test_changelog.sh`. See [`examples/CHANGELOG.sample.md`](examples/CHANGELOG.sample.md) for output generated from this repository's history.
