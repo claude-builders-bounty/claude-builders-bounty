@@ -1,0 +1,61 @@
+name: PR Review Agent
+
+on:
+  pull_request:
+    types: [opened]
+  workflow_dispatch:
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r pr-review-agent/requirements.txt
+          pip install -e pr-review-agent/
+
+      - name: Run PR Review Agent
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+        run: |
+          claude-review --pr "${{ github.event.pull_request.html_url }}" --output review.md
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-review
+          path: review.md
+
+      - name: Post review as comment
+        if: steps.review.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('review.md', 'utf8');
+            
+            // Don't post if review contains error
+            if (!review.includes('Error analyzing PR') && !review.includes('Failed to fetch PR')) {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: review
+              });
+            } else {
+              console.log('Review contained errors, skipping comment');
+            }
