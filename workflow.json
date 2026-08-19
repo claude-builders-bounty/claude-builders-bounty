@@ -1,0 +1,49 @@
+{
+  "name": "Weekly GitHub Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": 5,
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repo = $env.GITHUB_REPO || 'owner/repo';\nconst token = $env.GITHUB_TOKEN;\nconst lang = $env.LANGUAGE || 'EN';\nconst webhook = $env.DISCORD_WEBHOOK_URL;\nconst apiKey = $env.ANTHROPIC_API_KEY;\n\nconst since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();\nconst headers = { 'Authorization': `token ${token}`, 'User-Agent': 'n8n' };\n\nconst commits = await this.helpers.httpRequest({ method: 'GET', url: `https://api.github.com/repos/${repo}/commits?since=${since}`, headers });\nconst issues = await this.helpers.httpRequest({ method: 'GET', url: `https://api.github.com/repos/${repo}/issues?state=closed&since=${since}`, headers });\nconst prs = await this.helpers.httpRequest({ method: 'GET', url: `https://api.github.com/repos/${repo}/pulls?state=closed&sort=updated&direction=desc`, headers });\n\nconst prompt = `Generate a ${lang} narrative summary of this week's development for repo ${repo}.\\n\\nCommits: ${JSON.stringify((commits.data || commits).slice(0, 15))}\\nClosed Issues: ${JSON.stringify((issues.data || issues).slice(0, 15))}\\nMerged PRs: ${JSON.stringify((prs.data || prs).filter(p => p.merged_at).slice(0, 15))}`;\n\nconst claudeRes = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.anthropic.com/v1/messages',\n  headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },\n  body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, messages: [{ role: 'user', content: prompt }] })\n});\n\nconst summary = claudeRes.content[0].text;\n\nawait this.helpers.httpRequest({\n  method: 'POST',\n  url: webhook,\n  headers: { 'content-type': 'application/json' },\n  body: JSON.stringify({ content: `**Weekly Dev Summary for ${repo}**\\n\\n${summary}` })\n});\n\nreturn [{ json: { success: true, repo, summary } }];"
+      },
+      "id": "2",
+      "name": "Fetch & Synthesize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [
+        [
+          {
+            "node": "Fetch & Synthesize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
