@@ -1,53 +1,28 @@
-# Claude Builders Bounty 🤖
+# 📦 Opinionated CLAUDE.md for Next.js 15 + SQLite SaaS
 
-> A community bounty board for Claude Code builders.
-
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+> Production-ready, comprehensive `CLAUDE.md` tailored specifically for SaaS applications built with **Next.js 15 (App Router)** and **SQLite** (`better-sqlite3` / Turso / Drizzle ORM).
 
 ---
 
-## How it works
+## 📋 What this template covers:
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+- 🏛️ **Modular App Router Structure:** Clean separation between RSCs, Client Components, Server Actions, and `@/db`.
+- ⚡ **SQLite Performance & Safety:** WAL mode configuration, singleton connection management, parameterized queries, and migration safety.
+- 🔒 **Security & Validation:** Zod schema validation, server action authentication, middleware route guards, and CSRF protection.
+- 💳 **SaaS Architecture:** Structured patterns for user auth, Stripe subscription webhooks, and multi-tenant scoping.
+- 🚀 **CLI Workflows:** Standardized scripts for linting, testing, and migration execution.
 
 ---
 
-## Active Bounties
+## ⚡ How to Use
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+Drop `CLAUDE.md` into the root directory of your Next.js 15 + SQLite repository:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/samuel1bostanica-arch/nextjs-sqlite-claude-template/main/CLAUDE.md -o CLAUDE.md
+```
 
 ---
 
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## 📄 License
+MIT © 2026 Samuel Bostanica (@samuel1bostanica-arch)
