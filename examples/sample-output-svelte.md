@@ -37,4 +37,4 @@
 - O(n²)→O(n) Map lookups for legacy reactive statements (#18602)
 - Update mobile FAQ (#18665)
 
-[Сравнение с svelte@5.56.10](https://github.com/sveltejs/svelte/compare/svelte@5.56.10...HEAD)
+[Compare svelte@5.56.10](https://github.com/sveltejs/svelte/compare/svelte@5.56.10...HEAD)
