@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# changelog.sh — генерирует структурированный CHANGELOG.md из git-истории.
-# Берёт коммиты с последнего тега (или с начала истории, если тегов нет),
-# категоризирует по Conventional Commits и собирает CHANGELOG.md в формате Keep a Changelog.
+# changelog.sh — generate a structured CHANGELOG.md from git history.
+# Collects commits from the last git tag (or from the start of history if there
+# are no tags), categorizes them by Conventional Commits, and writes a
+# Keep a Changelog format file.
 #
-# Использование:
-#   bash changelog.sh                # записать в CHANGELOG.md
-#   bash changelog.sh --stdout       # вывести в stdout, не писать файл
-#   bash changelog.sh --since v1.2.3 # считать с конкретного тега
+# Usage:
+#   bash changelog.sh                # write CHANGELOG.md
+#   bash changelog.sh --stdout       # print to stdout (don't write a file)
+#   bash changelog.sh --since v1.2.3 # only commits after a specific tag
 #   bash changelog.sh --help
 
 set -euo pipefail
 
-# ---------- Конфигурация ----------
-# Категории: ключевое слово коммита -> заголовок секции
+# ---------- Configuration ----------
+# Commit keyword -> section heading
 declare -A CATEGORY_TITLES=(
   [Added]="Added"
   [Fixed]="Fixed"
@@ -21,7 +22,7 @@ declare -A CATEGORY_TITLES=(
   [Security]="Security"
   [Deprecated]="Deprecated"
 )
-# Маппинг типов Conventional Commits на категории (ключи без скобок)
+# Conventional Commit type -> category (keys are the lowercase type prefix)
 declare -A TYPE_MAP=(
   [feat]=Added
   [feature]=Added
@@ -46,35 +47,40 @@ declare -A TYPE_MAP=(
   [deprecated]=Deprecated
 )
 
-# ---------- Вспомогательные функции ----------
+# ---------- Helpers ----------
 print_help() {
   cat <<'EOF'
-changelog.sh — генератор CHANGELOG.md из git-истории
+changelog.sh — generate a structured CHANGELOG.md from git history
 
-Использование:
-  bash changelog.sh                 Сгенерировать CHANGELOG.md в текущей директории
-  bash changelog.sh --stdout        Вывести результат в stdout (файл не трогаем)
-  bash changelog.sh --since <тег>   Считать коммиты только после указанного тега
-  bash changelog.sh --help          Эта справка
+Setup (3 steps):
+  1. Copy changelog.sh (and SKILL.md if you use Claude Code) into your project root.
+  2. chmod +x changelog.sh
+  3. bash changelog.sh   # CHANGELOG.md is created in the current directory
 
-Как это работает:
-  1. Находит последний git-тег (git describe --tags --abbrev=0).
-     Если тегов нет — берёт всю историю.
-  2. Собирает коммиты с этого тега до HEAD.
-  3. Категоризирует по Conventional Commits
+Usage:
+  bash changelog.sh                 Generate CHANGELOG.md in the current directory
+  bash changelog.sh --stdout        Print the result to stdout (don't touch the file)
+  bash changelog.sh --since <tag>   Only commits after the given tag
+  bash changelog.sh --help          Show this help
+
+How it works:
+  1. Finds the last git tag (git describe --tags --abbrev=0).
+     If there are no tags, it uses the whole history.
+  2. Collects commits from that tag to HEAD.
+  3. Categorizes by Conventional Commits
      (feat:, fix:, refactor:, docs:, test:, chore:, perf:, style:, build:, ci:, security:, revert:).
-     Коммиты без префикса попадают в "Changed".
-  4. Собирает CHANGELOG.md в формате Keep a Changelog:
-     - секции Added / Fixed / Changed / Removed / Security / Deprecated
-     - ссылка на сравнение тегов (если тег найден)
+     Commits without a type prefix go to "Changed".
+  4. Builds a Keep a Changelog format CHANGELOG.md:
+     - Added / Fixed / Changed / Removed / Security / Deprecated sections
+     - a tag-comparison link (if a tag was found)
 
-Примеры:
+Examples:
   bash changelog.sh
   bash changelog.sh --stdout --since v1.0.0
 EOF
 }
 
-# Парсим аргументы
+# ---------- Parse arguments ----------
 OUTPUT_FILE="CHANGELOG.md"
 TO_STDOUT=0
 SINCE_ARG=""
@@ -91,14 +97,14 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     *)
-      echo "Неизвестный аргумент: $1 (см. bash changelog.sh --help)" >&2
+      echo "Unknown argument: $1 (see: bash changelog.sh --help)" >&2
       exit 1
       ;;
   esac
   shift
 done
 
-# ---------- Определяем диапазон коммитов ----------
+# ---------- Determine the commit range ----------
 LAST_TAG=""
 RANGE=""
 
@@ -109,12 +115,12 @@ elif git describe --tags --abbrev=0 >/dev/null 2>&1; then
   LAST_TAG="$(git describe --tags --abbrev=0)"
   RANGE="${LAST_TAG}..HEAD"
 else
-  # Тегов нет — берём всю историю
+  # No tags — use the whole history
   RANGE="HEAD"
 fi
 
-# ---------- Собираем коммиты ----------
-# Формат строки: <тип>|<заголовок>
+# ---------- Collect commits ----------
+# Each line: <type>|<subject>
 COMMITS=""
 if [[ "$RANGE" == "HEAD" ]]; then
   COMMITS="$(git log --pretty=format:'%s' HEAD)"
@@ -123,43 +129,43 @@ else
 fi
 
 if [[ -z "$COMMITS" ]]; then
-  echo "Нет коммитов в диапазоне${RANGE:+ ($RANGE)}. Нечего записывать." >&2
+  echo "No commits in range${RANGE:+ ($RANGE)}. Nothing to write." >&2
   exit 0
 fi
 
-# ---------- Категоризируем ----------
-# Массив вида "Added|заголовок", "Fixed|заголовок", ...
+# ---------- Categorize ----------
+# Array of "Category|subject"
 declare -a ENTRIES=()
 
 while IFS= read -r line; do
   [[ -z "$line" ]] && continue
-  # Убираем merge-коммиты и squash-заголовки
+  # Skip merge-commits and squash headers
   if [[ "$line" =~ ^(Merge|Revert) ]]; then
     continue
   fi
-  # Парсим Conventional Commit: "feat(scope): message"
-  # Разбиваем вручную — без регулярок (совместимость с разными bash)
+  # Parse Conventional Commit: "feat(scope): message"
+  # Split manually — no regex (compatibility across bash versions)
   prefix="${line%%:*}"
   if [[ "$prefix" != "$line" ]]; then
-    # есть двоеточие — это conventional commit
+    # has a colon — it is a conventional commit
     type="${prefix,,}"
     subject="${line#*:}"
-    subject="${subject#"${subject%%[![:space:]]*}"}"  # срезаем ведущие пробелы
-    # достаём scope: "feat(api)" -> type=feat, scope=api
+    subject="${subject#"${subject%%[![:space:]]*}"}"  # trim leading whitespace
+    # extract scope: "feat(api)" -> type=feat, scope=api
     scope=""
     if [[ "$type" == *"("* ]]; then
       scope="${type#*(}"
       scope="${scope%)*}"
       type="${type%%(*}"
     fi
-    # Capitalize первую букву subject
+    # Capitalize the first letter of the subject
     subject="$(echo "${subject:0:1}" | tr '[:lower:]' '[:upper:]')${subject:1}"
     cat_key="${TYPE_MAP[$type]:-Changed}"
     if [[ -n "$scope" ]]; then
       subject="${subject} (${scope})"
     fi
   else
-    # Обычный коммит без типа — пробуем угадать по глаголу
+    # Plain commit without a type prefix — try to guess from the verb
     subject="${line}"
     subject="$(echo "${subject:0:1}" | tr '[:lower:]' '[:upper:]')${subject:1}"
     lower_line="${line,,}"
@@ -176,11 +182,11 @@ while IFS= read -r line; do
   ENTRIES+=("${cat_key}|${subject}")
 done <<< "$COMMITS"
 
-# ---------- Собираем Markdown ----------
+# ---------- Build the Markdown ----------
 DATE="$(date +%Y-%m-%d)"
 VERSION_HEADER="Unreleased"
 if [[ -n "$LAST_TAG" ]]; then
-  # Пробуем угадать следующую версию: tag вида v1.2.3 -> v1.2.4
+  # Try to guess the next version: tag like v1.2.3 -> v1.2.4
   if [[ "$LAST_TAG" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
     VERSION_HEADER="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
   else
@@ -188,7 +194,7 @@ if [[ -n "$LAST_TAG" ]]; then
   fi
 fi
 
-# Собираем секции в фиксированном порядке
+# Build sections in a fixed order
 ORDER=(Added Fixed Changed Removed Security Deprecated)
 OUT=""
 OUT+="# Changelog\n\n"
@@ -196,7 +202,7 @@ OUT+="## [${VERSION_HEADER}] - ${DATE}\n\n"
 
 SECTION_OPENED=0
 for cat in "${ORDER[@]}"; do
-  # Собираем записи этой категории в порядке появления
+  # Collect entries of this category in order of appearance
   items=()
   for entry in "${ENTRIES[@]}"; do
     if [[ "${entry%%|*}" == "$cat" ]]; then
@@ -214,23 +220,23 @@ for cat in "${ORDER[@]}"; do
 done
 
 if [[ $SECTION_OPENED -eq 0 ]]; then
-  OUT+="_Нет изменений в этом диапазоне._\n"
+  OUT+="_No changes in this range._\n"
 fi
 
-# Ссылка на сравнение тегов (если есть предыдущий тег)
+# Tag comparison link (if there is a previous tag)
 if [[ -n "$LAST_TAG" && "$LAST_TAG" != "$SINCE_ARG" ]]; then
   REMOTE_URL="$(git config --get remote.origin.url 2>/dev/null || true)"
   if [[ -n "$REMOTE_URL" && "$REMOTE_URL" =~ github\.com[:/]([^/]+)/([^/]+)(\.git)?$ ]]; then
     REPO_OWNER="${BASH_REMATCH[1]}"
     REPO_NAME="${BASH_REMATCH[2]%.git}"
-    OUT+="[Сравнение с ${LAST_TAG}](https://github.com/${REPO_OWNER}/${REPO_NAME}/compare/${LAST_TAG}...HEAD)\n"
+    OUT+="[Compare ${LAST_TAG}](https://github.com/${REPO_OWNER}/${REPO_NAME}/compare/${LAST_TAG}...HEAD)\n"
   fi
 fi
 
-# ---------- Вывод ----------
+# ---------- Output ----------
 if [[ $TO_STDOUT -eq 1 ]]; then
   printf "%b" "$OUT"
 else
   printf "%b" "$OUT" > "$OUTPUT_FILE"
-  echo "Готово: ${OUTPUT_FILE} (${#ENTRIES[@]} коммитов, диапазон: ${RANGE})"
+  echo "Done: ${OUTPUT_FILE} (${#ENTRIES[@]} commits, range: ${RANGE})"
 fi
