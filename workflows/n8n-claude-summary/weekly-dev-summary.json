@@ -1,0 +1,250 @@
+﻿{
+  "name": "Automated Weekly Dev Summary with Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "1c7a8b9c-0d1e-4f2a-b3c4-d5e6f7a8b9c0",
+      "name": "Weekly Schedule (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nreturn [{\n  json: {\n    owner: $env.GITHUB_OWNER || 'owner',\n    repo: $env.GITHUB_REPO || 'repo',\n    sinceDate: oneWeekAgo.toISOString(),\n    language: $env.SUMMARY_LANGUAGE || 'EN',\n    webhookUrl: $env.DISCORD_SLACK_WEBHOOK_URL || 'https://discord.com/api/webhooks/your-webhook'\n  }\n}];"
+      },
+      "id": "2b8c9d0e-1f2a-4b3c-c4d5-e6f7a8b9c0d1",
+      "name": "Configure Workflow Variables",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits?since={{ $json.sinceDate }}&per_page=50",
+        "authentication": "none",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-claude-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "3c9d0e1f-2a3b-4c4d-d5e6-f7a8b9c0d1e2",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 180]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Configure Workflow Variables').item.json.owner }}/{{ $('Configure Workflow Variables').item.json.repo }}/pulls?state=closed&per_page=30",
+        "authentication": "none",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-claude-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "4d0e1f2a-3b4c-4d5e-e6f7-a8b9c0d1e2f3",
+      "name": "Fetch Closed Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Configure Workflow Variables').item.json.owner }}/{{ $('Configure Workflow Variables').item.json.repo }}/issues?state=closed&since={{ $('Configure Workflow Variables').item.json.sinceDate }}&per_page=30",
+        "authentication": "none",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-claude-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "5e1f2a3b-4c4d-4e5f-f7a8-b9c0d1e2f3a4",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Configure Workflow Variables').first().json;\n\n// Aggregate Commits\nconst rawCommits = $('Fetch Commits').all();\nconst commits = rawCommits.map(item => {\n  const c = item.json;\n  return `- ${c.commit?.message?.split('\\n')[0]} (by ${c.commit?.author?.name})`;\n}).slice(0, 30);\n\n// Aggregate Merged PRs\nconst rawPulls = $('Fetch Closed Pull Requests').all();\nconst prs = rawPulls\n  .map(item => item.json)\n  .filter(p => p.merged_at && new Date(p.merged_at) >= new Date(config.sinceDate))\n  .map(p => `- #${p.number}: ${p.title} (@${p.user?.login})`);\n\n// Aggregate Closed Issues\nconst rawIssues = $('Fetch Closed Issues').all();\nconst issues = rawIssues\n  .map(item => item.json)\n  .filter(i => !i.pull_request)\n  .map(i => `- #${i.number}: ${i.title}`);\n\nconst prompt = `You are an executive engineering lead. Write a clean, engaging weekly developer narrative summary for repository '${config.owner}/${config.repo}'.\nLanguage requirement: ${config.language === 'FR' ? 'French' : 'English'}.\n\nActivity Data from Past 7 Days:\n\n### Merged Pull Requests (${prs.length}):\n${prs.join('\\n') || 'None'}\n\n### Closed Issues (${issues.length}):\n${issues.join('\\n') || 'None'}\n\n### Recent Commits (${commits.length}):\n${commits.join('\\n') || 'None'}\n\nFormat with:\n1. 🚀 Executive Overview (2 sentences highlight)\n2. 🌟 Key Highlights & Features Landed\n3. 🐛 Bug Fixes & Stability Improvements\n4. 📊 Quick Metric Summary (PRs merged, issues closed, commits)`;\n\nreturn [{\n  json: {\n    prompt,\n    webhookUrl: config.webhookUrl,\n    repo: `${config.owner}/${config.repo}`\n  }\n}];"
+      },
+      "id": "6f2a3b4c-4d5e-4f6a-a8b9-c0d1e2f3a4b5",
+      "name": "Aggregate Activity & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "none",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 1500,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}"
+      },
+      "id": "7a3b4c5d-4e5f-4a6b-b9c0-d1e2f3a4b5c6",
+      "name": "Claude API - Generate Narrative",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Aggregate Activity & Build Prompt').item.json.webhookUrl }}",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": {{ JSON.stringify($json.content[0].text) }}\n}"
+      },
+      "id": "8b4c5d6e-4f6a-4b7c-c0d1-e2f3a4b5c6d7",
+      "name": "Deliver Summary to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Configure Workflow Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure Workflow Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Pull Requests",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Activity & Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API - Generate Narrative",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API - Generate Narrative": {
+      "main": [
+        [
+          {
+            "node": "Deliver Summary to Discord/Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
