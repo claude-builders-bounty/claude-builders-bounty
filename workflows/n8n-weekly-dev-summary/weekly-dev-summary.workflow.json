@@ -1,0 +1,370 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        },
+        "options": {
+          "timezone": "UTC"
+        }
+      },
+      "id": "schedule-friday-5pm",
+      "name": "Friday 5pm UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-repo",
+              "name": "github_repo",
+              "value": "claude-builders-bounty/claude-builders-bounty",
+              "type": "string"
+            },
+            {
+              "id": "cfg-lang",
+              "name": "language",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "cfg-webhook",
+              "name": "slack_webhook_url",
+              "value": "={{ $env.SLACK_WEBHOOK_URL }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-gh-token",
+              "name": "github_token",
+              "value": "={{ $env.GITHUB_TOKEN }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-vars",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst since = weekAgo.toISOString();\nconst [owner, repo] = $json.github_repo.split('/');\nreturn [{ json: { ...$json, owner, repo, since, until: now.toISOString() } }];"
+      },
+      "id": "compute-window",
+      "name": "Week Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, -120],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GITHUB_HEADER",
+          "name": "GitHub Token Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Week Window').item.json.owner }}/{{ $('Week Window').item.json.repo }}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $('Week Window').item.json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-issues",
+      "name": "GitHub Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GITHUB_HEADER",
+          "name": "GitHub Token Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Week Window').item.json.owner }}/{{ $('Week Window').item.json.repo }}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "GitHub Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 120],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GITHUB_HEADER",
+          "name": "GitHub Token Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Week Window').first().json;\nconst since = new Date(cfg.since);\n\nconst commits = $('GitHub Commits').all().flatMap(i => Array.isArray(i.json) ? i.json : [i.json]).filter(c => c && c.sha);\nconst issues = $('GitHub Closed Issues').all().flatMap(i => Array.isArray(i.json) ? i.json : [i.json]).filter(x => x && x.number && !x.pull_request);\nconst prs = $('GitHub Merged PRs').all().flatMap(i => Array.isArray(i.json) ? i.json : [i.json]).filter(p => p && p.merged_at && new Date(p.merged_at) >= since);\n\nconst lang = (cfg.language || 'EN').toUpperCase();\nconst langInstruction = lang === 'FR' ? 'Write the summary in French.' : 'Write the summary in English.';\n\nconst commitLines = commits.slice(0, 40).map(c => `- ${c.sha.slice(0,7)} ${c.commit?.message?.split('\\n')[0] || ''} (${c.author?.login || 'unknown'})`);\nconst issueLines = issues.slice(0, 40).map(i => `- #${i.number} ${i.title} (closed ${i.closed_at})`);\nconst prLines = prs.slice(0, 40).map(p => `- #${p.number} ${p.title} (merged ${p.merged_at})`);\n\nconst prompt = `You are a developer advocate writing a weekly narrative summary for repo ${cfg.github_repo}.\nPeriod: ${cfg.since} to ${cfg.until}.\n${langInstruction}\n\nCommits (${commits.length}):\n${commitLines.join('\\n') || '(none)'}\n\nClosed issues (${issues.length}):\n${issueLines.join('\\n') || '(none)'}\n\nMerged PRs (${prs.length}):\n${prLines.join('\\n') || '(none)'}\n\nProduce:\n1) A short headline\n2) 3-6 narrative paragraphs highlighting themes, risks, and wins\n3) Bullet list of follow-ups for next week\nKeep it under 500 words.`;\n\nreturn [{ json: { ...cfg, prompt, stats: { commits: commits.length, issues: issues.length, prs: prs.length } } }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1200,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude-api",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ANTHROPIC_HEADER",
+          "name": "Anthropic API Key Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Build Prompt').first().json;\nconst claude = $input.first().json;\nconst text = claude.content?.map(c => c.text || '').join('\\n') || JSON.stringify(claude);\nconst header = `Weekly dev summary — ${cfg.github_repo} (${cfg.since.slice(0,10)} → ${cfg.until.slice(0,10)})`;\nreturn [{ json: { slack_webhook_url: cfg.slack_webhook_url, text: `${header}\\n\\n${text}` } }];"
+      },
+      "id": "format-delivery",
+      "name": "Format Slack Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.slack_webhook_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"text\": {{ JSON.stringify($json.text) }} }",
+        "options": {}
+      },
+      "id": "slack-webhook",
+      "name": "Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 0]
+    }
+  ],
+  "connections": {
+    "Friday 5pm UTC": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Week Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Week Window": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Slack Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slack Message": {
+      "main": [
+        [
+          {
+            "node": "Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC"
+  },
+  "versionId": "weekly-dev-summary-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "claude-builders-bounty-neo"
+  },
+  "tags": []
+}
