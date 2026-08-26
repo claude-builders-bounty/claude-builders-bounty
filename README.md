@@ -1,43 +1,73 @@
-# Destructive Bash Command Block Hook
+# Claude Builders Bounty 🤖
 
-A Claude Code `PreToolUse` hook for the `Bash` tool. It reads Claude Code's JSON hook input from stdin and blocks destructive commands before execution.
+> A community bounty board for Claude Code builders.
 
-## Install (1 command)
+Building with Claude Code? Have tasks to delegate?
+Want to get paid for contributing to AI projects?
+You're in the right place.
+
+---
+
+## How it works
+
+**To post a bounty**
+1. Open a GitHub issue with a clear description and acceptance criteria
+2. Comment `/opire create $XXX` in the issue to set the reward
+3. Share the link — contributors will find it
+
+**To claim a bounty**
+1. Browse the open issues below
+2. Comment `/opire try` in the issue you want to work on
+3. Submit a PR — payment is automatic on merge ✅
+
+---
+
+## Active Bounties
+
+| # | Task | Amount | Status |
+|---|------|--------|--------|
+| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
+| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
+| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
+| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+
+---
+
+## Destructive command PreToolUse hook
+
+Install in one command:
 
 ```bash
-bash hook/install.sh
+bash install.sh
 ```
 
-The installer copies the hook to `~/.claude/hooks/block_hook.py` and safely adds a `Bash` `PreToolUse` entry to `~/.claude/settings.json` without replacing existing settings.
+The installer copies `block_hook.py` to `~/.claude/hooks/`, configures a `Bash` `PreToolUse` hook without replacing existing settings, and logs blocked attempts to `~/.claude/hooks/blocked.log`.
 
-## Blocked operations
-
-- `rm -rf` and equivalent recursive + force flag combinations
-- `DROP TABLE`
-- `git push --force` / `-f` (including force-with-lease variants)
-- `TRUNCATE`
-- `DELETE FROM ...` when that SQL statement has no `WHERE` clause
-
-Normal commands exit successfully and are not modified.
-
-## Audit log
-
-Every blocked attempt is appended as JSON Lines to:
-
-```text
-~/.claude/hooks/blocked.log
-```
-
-Each record contains the timestamp, attempted command, project path, and block reason.
-
-## What Claude sees
-
-A blocked command exits with status `2`, which Claude Code treats as a blocking `PreToolUse` result. The hook also returns the structured `permissionDecision: deny` payload and a clear message explaining the block.
-
-## Test
+Run the test suite with:
 
 ```bash
-python3 hook/test_block_hook.py
+python3 test_block_hook.py
 ```
 
-The tests cover all five required destructive patterns, safe commands, `DELETE ... WHERE`, non-Bash tools, and the required audit-log fields.
+The hook blocks `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` statements without a `WHERE` clause while allowing normal Bash commands.
+
+---
+
+## Rules
+
+- Tasks must be related to Claude Code or AI tooling
+- Every issue must have clear acceptance criteria before a bounty is activated
+- Payment is handled by [Opire](https://opire.dev) (Stripe)
+- Quality over speed — a solid PR beats a fast one
+
+---
+
+## Community
+
+- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
+- 📧 Contact: claudebounty@gmail.com
+
+---
+
+*Started by the Claude builder community · March 2026 · MIT License*
