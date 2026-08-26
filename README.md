@@ -34,6 +34,26 @@ You're in the right place.
 
 ---
 
+## Destructive command PreToolUse hook
+
+Install in one command:
+
+```bash
+bash install.sh
+```
+
+The installer copies `block_hook.py` to `~/.claude/hooks/`, configures a `Bash` `PreToolUse` hook without replacing existing settings, and logs blocked attempts to `~/.claude/hooks/blocked.log`.
+
+Run the test suite with:
+
+```bash
+python3 test_block_hook.py
+```
+
+The hook blocks `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` statements without a `WHERE` clause while allowing normal Bash commands.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
