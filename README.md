@@ -34,6 +34,14 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+1. Copy `changelog.sh` into any Git repository and make it executable: `chmod +x changelog.sh`.
+2. Run `bash changelog.sh` (optionally pass an output path, e.g. `bash changelog.sh docs/CHANGELOG.md`).
+3. Review the generated changelog; commits since the latest Git tag are grouped into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
