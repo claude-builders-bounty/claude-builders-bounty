@@ -1,0 +1,1 @@
+Delete unused config file
