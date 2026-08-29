@@ -1,4 +1,4 @@
-﻿import { spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -12,10 +12,19 @@ function runProcess({ prompt, stdinText, model, timeoutMs = 240_000 }) {
       '--output-format', 'text',
       '--max-turns', '1',
     ];
-    if (model) args.push('--model', model);
+    if (model) {
+      if (!/^[A-Za-z0-9._:/-]{1,128}$/.test(model)) {
+        return reject(new Error('Invalid Claude model identifier.'));
+      }
+      args.push('--model', model);
+    }
 
-    const child = spawn(process.platform === 'win32' ? 'claude.cmd' : 'claude', args, {
-      shell: process.platform === 'win32',
+    const isWindows = process.platform === 'win32';
+    const command = isWindows ? (process.env.ComSpec || 'cmd.exe') : 'claude';
+    const commandArgs = isWindows ? ['/d', '/s', '/c', 'claude.cmd', ...args] : args;
+
+    const child = spawn(command, commandArgs, {
+      shell: false,
       cwd: PACKAGE_ROOT,
       env: process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
