@@ -1,0 +1,47 @@
+name: Claude PR Review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # SECURITY: pull_request_target has access to secrets. Never check out the PR head here.
+      # This checks out only the trusted default branch. The contributor PR is consumed only
+      # as GitHub API metadata/diff text by bin/claude-review.mjs and is never executed.
+      - name: Checkout trusted base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Claude Code
+        run: npm install --global @anthropic-ai/claude-code@2
+
+      - name: Review pull request
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node ./bin/claude-review.mjs
+          --pr "${{ github.event.pull_request.html_url }}"
+          --post
