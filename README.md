@@ -51,3 +51,9 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Claude PR Reviewer
+
+This repository includes a Claude Code agent for structured pull-request reviews.
+
+See [README-pr-reviewer.md](README-pr-reviewer.md) for installation, CLI usage, GitHub Action setup, security details, and real PR examples.
