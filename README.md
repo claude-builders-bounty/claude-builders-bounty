@@ -50,4 +50,80 @@ You're in the right place.
 
 ---
 
+---
+
+## Generate Changelog Skill
+
+A Claude Code skill to generate structured CHANGELOG.md from git history.
+
+### Setup (3 steps)
+
+1. **Copy the skill to your project**
+   ```bash
+   mkdir -p .claude/skills/generate-changelog
+   cp /path/to/generate-changelog/SKILL.md .claude/skills/generate-changelog/
+   cp /path/to/generate-changelog/changelog.sh .claude/skills/generate-changelog/
+   ```
+
+2. **Make the script executable**
+   ```bash
+   chmod +x .claude/skills/generate-changelog/changelog.sh
+   ```
+
+3. **Run the skill**
+   ```bash
+   # Via slash command
+   /generate-changelog
+
+   # Or directly via bash
+   bash .claude/skills/generate-changelog/changelog.sh
+   ```
+
+### What it does
+
+- Detects the latest git tag (annotated or lightweight)
+- Fetches all commits since that tag
+- Categorizes commits into: **Added**, **Fixed**, **Changed**, **Removed**
+- Generates a professional `CHANGELOG.md` file
+- Preserves existing CHANGELOG content by updating the `[Unreleased]` section
+- Creates a backup at `CHANGELOG.md.backup` before modifying
+
+### Classification Strategy
+
+Uses a hybrid approach:
+- **Conventional Commits** (`feat:`, `fix:`, `refactor:`, `remove:`) — primary classification
+- **Keyword-based fallback** for non-conventional messages
+- **Body analysis** for additional context when subject is ambiguous
+
+### Example Output
+
+```markdown
+# Changelog
+
+## [Unreleased] - 2026-08-28
+
+### Added
+- feat: add user authentication (867a79f)
+
+### Fixed
+- fix: resolve token expiration (047b960)
+
+### Changed
+- refactor: reorganize authentication service (4fafc24)
+- Update authentication flow (8d1d825)
+
+### Removed
+- remove deprecated endpoint (3e294e5)
+- Delete legacy endpoint (78ce55e)
+```
+
+### Edge Cases
+
+| Scenario | Behavior |
+|----------|----------|
+| No git tags | Uses all commits from repository history |
+| No commits since tag | Creates empty sections with `(none)` placeholder |
+| Not a git repo | Clear error message with exit code 1 |
+| Existing CHANGELOG.md | Updates `[Unreleased]` section, preserves history |
+
 *Started by the Claude builder community · March 2026 · MIT License*
