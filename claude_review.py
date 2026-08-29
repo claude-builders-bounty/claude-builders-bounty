@@ -4,7 +4,10 @@ import re
 import argparse
 import urllib.request
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 RISK_PATTERNS = [
     (r'(?i)(api_key|secret|password|token)\s*=\s*["\'][A-Za-z0-9_\-]{8,}["\']', "Potential hardcoded secret or API credential detected in diff."),
@@ -68,7 +71,6 @@ def analyze_diff(diff_text):
     if not suggestions:
         suggestions.append("Code style and structure are clean. Ready for maintainer sign-off.")
 
-    # Confidence calculation
     if any("secret" in r.lower() or "vulnerability" in r.lower() for r in found_risks):
         confidence = "Low"
     elif len(found_risks) > 1 or (add_count > 500 and not any("test" in f[0].lower() for f in files_changed)):
@@ -92,7 +94,8 @@ def format_markdown_review(analysis, pr_url=None):
     md = []
     md.append("## 🤖 Claude Code Automated PR Review\n")
     if pr_url:
-        md.append(f"> **Target PR:** {pr_url}  \n> **Generated:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+        now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+        md.append(f"> **Target PR:** {pr_url}  \n> **Generated:** {now_str}\n")
     
     md.append("### 📝 Summary of Changes")
     md.append(analysis["summary"] + "\n")
