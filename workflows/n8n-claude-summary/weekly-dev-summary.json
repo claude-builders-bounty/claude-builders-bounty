@@ -1,0 +1,199 @@
+{
+  "name": "Weekly GitHub Dev Summary (Opire Bounty #5)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": 5,
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "id": "cron-weekly",
+      "name": "Weekly Cron (Fri 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repo = $env.GITHUB_REPO || 'owner/repo';\nconst parts = repo.split('/');\nif (parts.length !== 2 || !parts[0] || !parts[1]) {\n  throw new Error('GITHUB_REPO must be in owner/repo format');\n}\nconst lang = ($env.SUMMARY_LANGUAGE || 'EN').toUpperCase() === 'FR' ? 'FR' : 'EN';\nconst now = new Date();\nconst end = new Date(now);\nend.setHours(23, 59, 59, 999);\nconst start = new Date(end);\nstart.setDate(start.getDate() - 6);\nstart.setHours(0, 0, 0, 0);\nreturn [{ json: {\n  owner: parts[0],\n  repo: parts[1],\n  repoFull: repo,\n  language: lang,\n  since: start.toISOString(),\n  until: end.toISOString(),\n  discordWebhook: $env.DISCORD_WEBHOOK_URL || '',\n  slackWebhook: $env.SLACK_WEBHOOK_URL || '',\n  emailTo: $env.EMAIL_RECIPIENT || '',\n  githubToken: $env.GITHUB_TOKEN || '',\n  anthropicKey: $env.ANTHROPIC_API_KEY || ''\n}}];"
+      },
+      "id": "build-inputs",
+      "name": "Build Inputs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.owner}}/{{$json.repo}}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "since", "value": "={{$json.since}}" },
+            { "name": "until", "value": "={{$json.until}}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 180],
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/search/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "q", "value": "=repo:{{$json.owner}}/{{$json.repo}} is:issue is:closed closed:{{$json.since}}..{{$json.until}}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 300],
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/search/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "q", "value": "=repo:{{$json.owner}}/{{$json.repo}} is:pr is:merged merged:{{$json.since}}..{{$json.until}}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 420],
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Fetch Commits').all().map(i => i.json).flat();\nconst issues = $('Fetch Closed Issues').first().json.items || [];\nconst prs = $('Fetch Merged PRs').first().json.items || [];\nconst meta = $input.first().json;\n\nconst summarize = (items, keys) => items.slice(0, 50).map(i => {\n  const out = {};\n  keys.forEach(k => { if (i[k] !== undefined) out[k] = i[k]; });\n  return out;\n});\n\nconst payload = {\n  repo: meta.repoFull,\n  language: meta.language,\n  window: { since: meta.since, until: meta.until },\n  stats: { commits: commits.length, closed_issues: issues.length, merged_prs: prs.length },\n  commits: summarize(commits, ['sha', 'message', 'author']),\n  closed_issues: summarize(issues, ['number', 'title', 'state', 'closed_at']),\n  merged_prs: summarize(prs, ['number', 'title', 'merged_at', 'user'])\n};\n\nreturn [{ json: { ...meta, activity: payload } }];"
+      },
+      "id": "aggregate",
+      "name": "Aggregate Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{$json.anthropicKey}}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"claude-sonnet-4-20250514\",\"max_tokens\":1500,\"messages\":[{\"role\":\"user\",\"content\":\"Generate a concise weekly narrative summary in {{$json.activity.language}} for repository {{$json.activity.repo}} covering {{$json.activity.window.since}} to {{$json.activity.window.until}}. Stats: {{$json.activity.stats.commits}} commits, {{$json.activity.stats.closed_issues}} closed issues, {{$json.activity.stats.merged_prs}} merged PRs. Data:\\n\" + JSON.stringify($json.activity, null, 2) + \"\\nReturn Markdown only.\"}]}",
+        "options": {}
+      },
+      "id": "claude-summarize",
+      "name": "Claude Narrative",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300],
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $input.first().json;\nconst claudeResp = $input.first().json;\nconst text = (claudeResp.content || []).find(c => c.type === 'text')?.text || 'Summary generation failed.';\nreturn [{ json: {\n  repo: meta.activity.repo,\n  language: meta.activity.language,\n  summary: text,\n  discordWebhook: meta.discordWebhook,\n  slackWebhook: meta.slackWebhook,\n  emailTo: meta.emailTo\n}}];"
+      },
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.discordWebhook}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content\":\"# Weekly Dev Summary: {{$json.repo}}\\n\\n{{$json.summary}}\"}",
+        "options": {}
+      },
+      "id": "deliver-discord",
+      "name": "Deliver Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1680, 200],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.slackWebhook}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\":\"*Weekly Dev Summary: {{$json.repo}}*\\n\\n{{$json.summary}}\"}",
+        "options": {}
+      },
+      "id": "deliver-slack",
+      "name": "Deliver Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1680, 300],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@opire-bounty.local",
+        "toEmail": "={{$json.emailTo}}",
+        "subject": "=Weekly Dev Summary: {{$json.repo}}",
+        "text": "={{$json.summary}}",
+        "options": {}
+      },
+      "id": "deliver-email",
+      "name": "Deliver Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1680, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Fri 17:00)": { "main": [[{ "node": "Build Inputs", "type": "main", "index": 0 }]] },
+    "Build Inputs": { "main": [[{ "node": "Fetch Commits", "type": "main", "index": 0 }, { "node": "Fetch Closed Issues", "type": "main", "index": 0 }, { "node": "Fetch Merged PRs", "type": "main", "index": 0 }]] },
+    "Fetch Commits": { "main": [[{ "node": "Aggregate Activity", "type": "main", "index": 0 }]] },
+    "Fetch Closed Issues": { "main": [[{ "node": "Aggregate Activity", "type": "main", "index": 0 }]] },
+    "Fetch Merged PRs": { "main": [[{ "node": "Aggregate Activity", "type": "main", "index": 0 }]] },
+    "Aggregate Activity": { "main": [[{ "node": "Claude Narrative", "type": "main", "index": 0 }]] },
+    "Claude Narrative": { "main": [[{ "node": "Format Output", "type": "main", "index": 0 }]] },
+    "Format Output": { "main": [[{ "node": "Deliver Discord", "type": "main", "index": 0 }, { "node": "Deliver Slack", "type": "main", "index": 0 }, { "node": "Deliver Email", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "opire-bounty-5" }]
+}
