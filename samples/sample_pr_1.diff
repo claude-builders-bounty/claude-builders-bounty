@@ -1,0 +1,141 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+new file mode 100644
+index 000000000..e352a373a
+--- /dev/null
++++ b/CLAUDE.md
+@@ -0,0 +1,125 @@
++# CLAUDE.md — Next.js 15 + SQLite SaaS
++
++## Stack and versions
++
++- Next.js 15 using the App Router and React Server Components by default.
++- TypeScript in strict mode. Do not add JavaScript application files.
++- SQLite through `better-sqlite3` for a single-node deployment or Turso/libSQL when remote/edge access is required. Pick one database adapter per deployment; application code must not import both.
++- Package manager: use the lockfile already present. Never create a second lockfile.
++- Validation: Zod at all untrusted boundaries.
++
++## Project structure
++
++```text
++app/                 routes, layouts, loading/error boundaries
++  api/               HTTP route handlers only
++components/          reusable UI components
++  ui/                primitive/presentational components
++lib/
++  db/                connection, schema, migrations, repositories
++  actions/           server actions
++  services/          business use-cases
++  validation/        shared Zod schemas
++  auth/              authentication/authorization helpers
++tests/               integration and end-to-end tests
++scripts/             operational and migration scripts
++```
++
++Keep route files thin. Routes parse input, call a service, and map the result to HTTP/UI. Business rules belong in `lib/services`; SQL belongs in `lib/db`. This separation keeps business logic testable without Next.js request objects.
++
++## Naming conventions
++
++- Files and route segments: `kebab-case`.
++- React components and exported types: `PascalCase`.
++- Functions, variables, database columns: `camelCase` in TypeScript; use `snake_case` only if an existing database already does so.
++- Boolean names begin with `is`, `has`, `can`, or `should`.
++- Server actions end in `Action`; repository functions describe the query (`findUserByEmail`).
++- Avoid generic names such as `utils.ts`, `helpers.ts`, `data.ts`, or `handleThing`. Name modules after their responsibility.
++
++## Server/client boundary
++
++Use Server Components unless browser state, effects, event handlers, or browser-only APIs are required. Put `"use client"` at the smallest possible leaf boundary. Never move database access, secrets, authorization, or privileged business logic into a Client Component merely to simplify data flow.
++
++Use Server Actions for mutations initiated by the application UI. Use Route Handlers for external HTTP consumers, webhooks, callbacks, or endpoints that need HTTP semantics. Both paths call the same service layer rather than duplicating business rules.
++
++## Database rules
++
++1. Create one database connection module and reuse it. Never open ad-hoc connections inside components.
++2. Parameterize every value. Never build SQL by concatenating user input.
++3. Repository modules own queries; services own transactions that span business operations.
++4. Use transactions for multi-write invariants. A partial business operation is a bug.
++5. Enforce invariants twice where practical: validation in TypeScript and durable constraints (`NOT NULL`, `UNIQUE`, foreign keys, `CHECK`) in SQLite.
++6. Enable foreign keys for SQLite connections.
++7. Store timestamps consistently as UTC ISO-8601 text or integer Unix time; choose one convention and do not mix formats.
++8. Money is stored as integer minor units plus an explicit currency code. Never use floating-point values for money.
++
++## Migration policy
++
++- Every schema change is a committed, ordered migration. Never edit a migration that may have run outside your local machine.
++- Migrations are forward-only in shared environments. Correct a bad migration with a new migration.
++- A migration must be deterministic and safe to rerun only when the migration runner explicitly supports idempotency.
++- Destructive changes use expand/migrate/contract: add the new shape, migrate data, deploy compatible code, then remove the old shape in a later migration.
++- Back up production data before destructive or large data migrations.
++- Schema and migration changes ship in the same PR as the code that needs them.
++
++## Validation, authentication, and authorization
++
++Treat URL params, form data, JSON, cookies, headers, webhook bodies, and database data from legacy tables as untrusted. Parse with Zod before use.
++
++Authentication answers who the caller is; authorization answers whether that caller may perform this specific operation. Check authorization inside the server-side service/action/handler on every protected mutation and sensitive read. Hiding a button is not authorization.
++
++Never log passwords, session tokens, API keys, full payment details, or sensitive personal data. Secrets stay in server-only environment variables and are never exposed through `NEXT_PUBLIC_*`.
++
++## Component patterns
++
++- Prefer composition over large configurable components.
++- Fetch data in the closest Server Component that owns the view; use `Promise.all` for independent reads to avoid waterfalls.
++- Keep forms progressively usable where practical. Return structured field errors from Server Actions.
++- Every async route with meaningful latency gets an appropriate loading state; expected failures get user-facing error handling.
++- Images use `next/image` unless there is a concrete reason not to.
++- Interactive controls must be keyboard accessible and have an accessible name.
++
++## Error handling
++
++Represent expected domain failures explicitly (for example `NotFound`, `Forbidden`, `Conflict`, `ValidationError`) and translate them at the route/action boundary. Do not catch an exception merely to return `null`. Unexpected errors should retain stack/context server-side while exposing a non-sensitive message to users.
++
++## Development commands
++
++Use the scripts defined by `package.json`; do not invent parallel tooling. A typical project exposes:
++
++```bash
++npm run dev
++npm run lint
++npm run typecheck
++npm test
++npm run build
++```
++
++Before declaring work complete, run lint, typecheck, relevant tests, and a production build. If a command is absent, add the smallest conventional script only when the underlying tool is already part of the chosen stack.
++
++## Testing rules
++
++- Unit-test pure business rules and validation edge cases.
++- Integration-test repositories against a temporary SQLite database with real migrations applied.
++- Test Server Actions/Route Handlers at their public boundary for authorization and validation failures as well as success.
++- Add an end-to-end test for revenue-critical, account-critical, or destructive user journeys.
++- A bug fix includes a regression test that fails before the fix and passes after it.
++
++Tests must not depend on execution order, production credentials, or production data.
++
++## What we do not do (and why)
++
++- **No Pages Router alongside App Router** — two routing models increase cognitive load and duplicate conventions.
++- **No database calls from Client Components** — credentials and authorization belong on the server.
++- **No SQL in route/component files** — query ownership becomes impossible to audit and test consistently.
++- **No `any` to silence TypeScript** — it moves errors from compile time to production; narrow `unknown` instead.
++- **No floating-point money** — binary floating point creates rounding errors.
++- **No mutable historical migrations** — deployed databases would no longer have a reproducible history.
++- **No secrets in source, logs, fixtures, screenshots, or client bundles** — repository history and browser assets are not secret stores.
++- **No duplicated validation/business logic between API routes and Server Actions** — both call shared schemas/services.
++- **No speculative abstraction** — introduce an abstraction after a repeated pattern has a stable responsibility, not before.
++- **No new dependency for a trivial helper** — dependencies add supply-chain, bundle, maintenance, and upgrade cost.
++
++## Change discipline
++
++Make the smallest complete change that satisfies the requirement. Preserve existing public behavior unless the task explicitly changes it. Update tests and documentation with behavior changes. Do not reformat unrelated files. Never claim a command, migration, test, or deployment succeeded unless it was actually run and its result observed.
+diff --git a/README.md b/README.md
+index 7b61dc89e..d454bc3b9 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,5 @@
++[![Powered by RustChain](https://img.shields.io/badge/Powered%20by-RustChain-orange)](https://rustchain.org)
++
+ # Claude Builders Bounty 🤖
+ 
+ > A community bounty board for Claude Code builders.
