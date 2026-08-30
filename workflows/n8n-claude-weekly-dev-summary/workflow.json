@@ -1,0 +1,233 @@
+{
+  "name": "Claude Code Automated Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "triggerAtDay": [5]
+            }
+          ]
+        }
+      },
+      "name": "Weekly Schedule (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300],
+      "id": "node-trigger"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_REPO",
+              "value": "owner/repo"
+            },
+            {
+              "name": "SUMMARY_LANGUAGE",
+              "value": "EN"
+            },
+            {
+              "name": "DELIVERY_WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/your/webhook/url"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Config & Environment Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [480, 300],
+      "id": "node-config"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_REPO }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "name": "Fetch Recent Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 200],
+      "id": "node-fetch-commits"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config & Environment Variables').first().json.GITHUB_REPO }}/pulls?state=closed&per_page=30",
+        "options": {}
+      },
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 320],
+      "id": "node-fetch-prs"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config & Environment Variables').first().json.GITHUB_REPO }}/issues?state=closed&per_page=30",
+        "options": {}
+      },
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 440],
+      "id": "node-fetch-issues"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Config & Environment Variables').first().json;\nconst commits = $('Fetch Recent Commits').all().map(i => i.json.commit?.message || '').slice(0, 20);\nconst prs = $('Fetch Merged PRs').all().filter(i => i.json.merged_at).map(i => `#${i.json.number}: ${i.json.title}`).slice(0, 15);\nconst issues = $('Fetch Closed Issues').all().filter(i => !i.json.pull_request).map(i => `#${i.json.number}: ${i.json.title}`).slice(0, 15);\n\nconst payloadText = `Repository: ${config.GITHUB_REPO}\\nLanguage: ${config.SUMMARY_LANGUAGE}\\n\\nMerged Pull Requests:\\n${prs.join('\\n') || 'None'}\\n\\nClosed Issues:\\n${issues.join('\\n') || 'None'}\\n\\nRecent Commits:\\n${commits.join('\\n') || 'None'}`;\n\nreturn [{ json: { summaryPayload: payloadText, config } }];"
+      },
+      "name": "Aggregate Activity Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300],
+      "id": "node-aggregate"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1500,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are an elite engineering lead. Write a concise, professional weekly narrative development summary for stakeholders based on this repository activity. Include: 1) Executive Highlights, 2) Features & Shipments, 3) Bug Fixes & Reliability, 4) Next Steps. Language requested: \" + $json.config.SUMMARY_LANGUAGE + \"\\n\\n\" + $json.summaryPayload\n    }\n  ]\n}"
+      },
+      "name": "Generate Narrative with Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300],
+      "id": "node-claude-api"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Environment Variables').first().json.DELIVERY_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": $json.content[0].text\n}"
+      },
+      "name": "Deliver via Webhook (Discord/Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, 300],
+      "id": "node-webhook-delivery"
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Config & Environment Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config & Environment Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Recent Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recent Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Activity Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Narrative with Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Narrative with Claude API": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Webhook (Discord/Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
