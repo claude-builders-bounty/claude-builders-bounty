@@ -1,0 +1,171 @@
+{
+  "name": "Weekly Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": 5,
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getCommits",
+        "owner": "={{ $json.githubOwner }}",
+        "repository": "={{ $json.githubRepo }}",
+        "since": "={{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}",
+        "returnAll": true
+      },
+      "id": "get-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "credentials": {
+        "githubApi": {
+          "id": "REPLACE_WITH_GITHUB_CRED_ID",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "owner": "={{ $json.githubOwner }}",
+        "repository": "={{ $json.githubRepo }}",
+        "state": "closed",
+        "returnAll": true,
+        "filters": {
+          "since": "={{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}"
+        }
+      },
+      "id": "get-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [460, 500],
+      "credentials": {
+        "githubApi": {
+          "id": "REPLACE_WITH_GITHUB_CRED_ID",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "owner": "={{ $json.githubOwner }}",
+        "repository": "={{ $json.githubRepo }}",
+        "state": "merged",
+        "returnAll": true,
+        "filters": {
+          "since": "={{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}"
+        }
+      },
+      "id": "get-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [460, 700],
+      "credentials": {
+        "githubApi": {
+          "id": "REPLACE_WITH_GITHUB_CRED_ID",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "numberInputs": 3
+      },
+      "id": "merge-data",
+      "name": "Merge Week Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [700, 500]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "values": [
+            {
+              "content": "You are a senior developer writing a concise weekly summary for stakeholders. Language: {{ $json.language || 'EN' }}.\n\nData:\n- Commits this week: {{ JSON.stringify($json.commits || []) }}\n- Closed issues: {{ JSON.stringify($json.issues || []) }}\n- Merged PRs: {{ JSON.stringify($json.prs || []) }}\n\nWrite a narrative summary (max 400 words) covering: key changes, notable fixes, and merged contributions. Use markdown.",
+              "role": "user"
+            }
+          ]
+        },
+        "jsonOutput": false
+      },
+      "id": "claude-summarize",
+      "name": "Claude Summarize",
+      "type": "@n8n/n8n-nodes-langchain.anthropicChatModel",
+      "typeVersion": 1.1,
+      "position": [920, 500],
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_WITH_ANTHROPIC_CRED_ID",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.webhookUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"content\": \"## 📅 Weekly Dev Summary\\n\\n\" + $json.summary }",
+        "options": {}
+      },
+      "id": "send-webhook",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 500]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [{ "node": "Get Commits", "type": "main", "index": 0 }],
+        [{ "node": "Get Closed Issues", "type": "main", "index": 0 }],
+        [{ "node": "Get Merged PRs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Commits": {
+      "main": [[{ "node": "Merge Week Data", "type": "main", "index": 0 }]]
+    },
+    "Get Closed Issues": {
+      "main": [[{ "node": "Merge Week Data", "type": "main", "index": 1 }]]
+    },
+    "Get Merged PRs": {
+      "main": [[{ "node": "Merge Week Data", "type": "main", "index": 2 }]]
+    },
+    "Merge Week Data": {
+      "main": [[{ "node": "Claude Summarize", "type": "main", "index": 0 }]]
+    },
+    "Claude Summarize": {
+      "main": [[{ "node": "Send to Discord/Slack", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
