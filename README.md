@@ -1,53 +1,43 @@
-# Claude Builders Bounty 🤖
+# claude-builders-bounty solutions
 
-> A community bounty board for Claude Code builders.
+This repo hosts the deliverables for the claude-builders-bounty issues.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+| Issue | Deliverable | File |
+|-------|-------------|------|
+| #1 ($50)  | Structured CHANGELOG generator | `changelog.sh` |
+| #3 ($100) | Pre-tool-use destructive-command blocker | `pre_tool_use_blocker.py` |
+| #4 ($150) | PR review agent (CLI) | `claude-review.py` |
+| #5 ($200) | n8n weekly dev-summary workflow | `weekly-dev-summary.json` |
 
----
+Each file is self-contained and documented below.
 
-## How it works
+## #1 — changelog.sh (3-step setup)
+```bash
+# 1. Make it executable
+chmod +x changelog.sh
+# 2. Run inside any git repo
+bash changelog.sh
+# 3. (optional) since a specific tag
+bash changelog.sh v1.0.0
+```
+Reads commits since the last tag, categorizes into Added/Fixed/Changed/Removed, writes `CHANGELOG.md`.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## #3 — pre_tool_use_blocker.py (install)
+1. Save as `~/.claude/hooks/pre_tool_use_blocker.py`, `chmod +x`
+2. Add to `~/.claude/settings.json`:
+```json
+{ "hooks": { "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "python3 ~/.claude/hooks/pre_tool_use_blocker.py" }] }] } }
+```
+3. Blocked attempts are logged to `~/.claude/hooks/blocked.log`.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## #4 — claude-review.py (usage)
+```bash
+export GITHUB_TOKEN=your_token
+python3 claude-review.py --pr https://github.com/owner/repo/pull/123
+```
+Emits a structured Markdown review (Summary / Risks / Suggestions / Confidence).
 
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## #5 — weekly-dev-summary.json (n8n)
+1. Import into n8n (Menu → Import from File).
+2. Set variables: `GITHUB_REPO`, `GITHUB_TOKEN`, `DELIVERY_WEBHOOK`, `LANGUAGE`.
+3. Activate — runs Fridays 5pm, fetches weekly GitHub activity, calls Claude, delivers via webhook.
