@@ -1,53 +1,26 @@
-# Claude Builders Bounty 🤖
+# Weekly GitHub Summary — n8n Workflow
 
-> A community bounty board for Claude Code builders.
+Automated weekly narrative summary of GitHub repository activity using Claude API.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (5 Steps)
 
----
+1. **Import Workflow**: In n8n, go to Workflows → Import from File → select `Weekly_GitHub_Summary.json`
+2. **Configure Credentials**: Add HTTP Header Auth credential named "GitHub Token" with your GitHub PAT (needs `repo` scope)
+3. **Add Anthropic Credential**: Add OpenAI-compatible credential named "Anthropic API" with base URL `https://api.anthropic.com/v1` and your Anthropic API key
+4. **Set Environment Variables**: In n8n Settings → Environment Variables, add:
+   - `GITHUB_REPO` = `owner/repo-name`
+   - `WEBHOOK_URL` = Discord/Slack webhook URL
+   - `SUMMARY_LANGUAGE` = `EN` or `FR`
+5. **Activate**: Toggle the workflow ON. It runs every Friday at 5pm UTC.
 
-## How it works
+## Delivery
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+Summaries are sent via Discord/Slack webhook. To use email instead, replace the "Send to Discord/Slack" node with an Email Send node and configure SMTP credentials.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Model
 
----
+Uses `claude-sonnet-4-20250514` via Anthropic's OpenAI-compatible endpoint.
 
-## Active Bounties
+## Testing
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+Click "Execute Workflow" manually in n8n to test immediately. Ensure all credentials are valid and environment variables are set.

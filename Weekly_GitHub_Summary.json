@@ -1,0 +1,214 @@
+{
+  "name": "Weekly GitHub Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": 5,
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Trigger (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-commits",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_REPO }}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 600],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [700, 400]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "values": [
+            {
+              "content": "=Generate a concise weekly narrative summary in {{ $env.SUMMARY_LANGUAGE }} for the repository {{ $env.GITHUB_REPO }} based on the following activity data from the past 7 days:\n\nCOMMITS:\n{{ JSON.stringify($json.commits) }}\n\nCLOSED ISSUES:\n{{ JSON.stringify($json.issues) }}\n\nMERGED PULL REQUESTS:\n{{ JSON.stringify($json.prs) }}\n\nFormat as a readable narrative with sections for Highlights, Key Changes, and Community Activity.",
+              "role": "user"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "claude-summarize",
+      "name": "Claude Summarize",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [920, 400],
+      "credentials": {
+        "openAiApi": {
+          "id": "anthropic-api",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.WEBHOOK_URL }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content\": \"## 📊 Weekly Dev Summary — {{ $env.GITHUB_REPO }}\\n\\n{{ $json.message.content }}\"}",
+        "options": {}
+      },
+      "id": "send-webhook",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 400]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Fri 5pm)": {
+      "main": [
+        [
+          { "node": "Get Commits", "type": "main", "index": 0 },
+          { "node": "Get Closed Issues", "type": "main", "index": 0 },
+          { "node": "Get Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [[{ "node": "Merge Data", "type": "main", "index": 0 }]]
+    },
+    "Get Closed Issues": {
+      "main": [[{ "node": "Merge Data", "type": "main", "index": 1 }]]
+    },
+    "Get Merged PRs": {
+      "main": [[{ "node": "Merge Data", "type": "main", "index": 2 }]]
+    },
+    "Merge Data": {
+      "main": [[{ "node": "Claude Summarize", "type": "main", "index": 0 }]]
+    },
+    "Claude Summarize": {
+      "main": [[{ "node": "Send to Discord/Slack", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
