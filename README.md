@@ -1,53 +1,38 @@
-# Claude Builders Bounty 🤖
+# block-destructive (Claude Code PreToolUse hook)
 
-> A community bounty board for Claude Code builders.
+Blocks `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and
+`DELETE FROM` without `WHERE` before Claude Code can run them.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+Bounty: https://github.com/claude-builders-bounty/claude-builders-bounty/issues/3
 
----
+## Install (2 commands)
 
-## How it works
+```bash
+mkdir -p ~/.claude/hooks && cp block_destructive.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/block_destructive.py
+python3 -c "import json,os,pathlib; p=pathlib.Path.home()/'.claude'/'settings.json'; p.parent.mkdir(parents=True, exist_ok=True); d=json.loads(p.read_text()) if p.exists() else {}; h=d.setdefault('hooks',{}).setdefault('PreToolUse',[]); cmd='python3 '+str(pathlib.Path.home()/'.claude'/'hooks'/'block_destructive.py'); h.append({'matcher':'Bash','hooks':[{'type':'command','command':cmd}]}) if not any(cmd in str(x) for x in h) else None; p.write_text(json.dumps(d, indent=2))"
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+Restart Claude Code. Blocked attempts are appended to `~/.claude/hooks/blocked.log`
+as `timestamp<TAB>project_path<TAB>command`.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## What it blocks
 
----
+| Pattern | Allowed? |
+|---|---|
+| `rm -rf /tmp/x` | no |
+| `git push --force` / `git push -f` | no |
+| `DROP TABLE users` | no |
+| `TRUNCATE invoices` | no |
+| `DELETE FROM users` | no |
+| `DELETE FROM users WHERE id=1` | yes |
+| `ls`, `git status`, `pytest` | yes |
 
-## Active Bounties
+On a block the hook prints JSON with `permissionDecision: deny` and a reason
+Claude can read, then continues (exit 0) so normal commands are untouched.
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Test without Claude Code
 
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"},"cwd":"/tmp"}' | python3 block_destructive.py
+echo '{"tool_name":"Bash","tool_input":{"command":"ls -la"},"cwd":"/tmp"}' | python3 block_destructive.py; echo exit:$?
+```
