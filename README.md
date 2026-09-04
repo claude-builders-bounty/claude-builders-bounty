@@ -26,11 +26,26 @@ You're in the right place.
 
 | # | Task | Amount | Status |
 |---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Solved |
+| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Solved |
+| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Solved |
+| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Solved |
+| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Solved |
+
+---
+
+## Structured CHANGELOG Generator Skill (#1)
+
+A Claude Code skill (`SKILL.md`), cross-platform Python script, and pure Bash script that generates a structured Keep-a-Changelog `CHANGELOG.md` from git history since the last git tag, categorized into Added, Fixed, Changed, and Removed.
+
+### Quick Usage
+```bash
+python3 skills/changelog-generator/changelog.py -o CHANGELOG.md
+# or
+bash skills/changelog-generator/changelog.sh -o CHANGELOG.md
+```
+
+See [skills/changelog-generator/README.md](skills/changelog-generator/README.md) for documentation, options, and sample outputs.
 
 ---
 
