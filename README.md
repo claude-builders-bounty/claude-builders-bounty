@@ -28,9 +28,30 @@ You're in the right place.
 |---|------|--------|--------|
 | [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
 | [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
+| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Solved |
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+
+---
+
+## Destructive Bash Command Interceptor Hook (#3)
+
+A hardened `PreToolUse` hook for Claude Code that prevents catastrophic bash operations (`rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and unbounded `DELETE FROM`) before execution reaches your operating system or database.
+
+### Quick Installation (<= 2 commands)
+
+Automated 1-command installer:
+```bash
+python3 install.py
+```
+
+Or manual 2-command install:
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/block-destructive/block_destructive.py ~/.claude/hooks/
+cp hooks/block-destructive/settings.json ~/.claude/settings.json
+```
+
+See [hooks/block-destructive/README.md](hooks/block-destructive/README.md) for full protection matrix, logging format, and test documentation.
 
 ---
 
