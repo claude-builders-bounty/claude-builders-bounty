@@ -28,9 +28,26 @@ You're in the right place.
 |---|------|--------|--------|
 | [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
 | [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Solved |
+| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Solved |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+
+---
+
+## Claude Code PR Reviewer Agent (#4)
+
+A cross-platform CLI tool and GitHub Action that analyzes Pull Request diffs and posts structured, actionable code reviews (Summary, Risks, Suggestions, Confidence).
+
+### Quick Start
+```bash
+# Review a pull request via CLI
+./claude-review --pr https://github.com/owner/repo/pull/123
+
+# Post review directly as a PR comment
+python3 claude_review.py --pr https://github.com/owner/repo/pull/123 --post
+```
+
+See [agents/pr-reviewer/README.md](agents/pr-reviewer/README.md) for GitHub Action setup and sample outputs.
 
 ---
 
