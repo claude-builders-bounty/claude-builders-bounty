@@ -27,10 +27,18 @@ You're in the right place.
 | # | Task | Amount | Status |
 |---|------|--------|--------|
 | [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Solved |
+| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Solved |
+| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Solved |
+| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Solved |
+
+---
+
+## n8n + Claude Automated Weekly Dev Summary (#5)
+
+An automated n8n workflow that triggers weekly on Friday at 5:00 PM, ingests GitHub activity (commits, closed issues, merged PRs), calls the Claude API (`claude-sonnet-4-20250514`), and delivers an executive narrative report to Discord, Slack, or email.
+
+See [workflows/n8n-weekly-summary/README.md](workflows/n8n-weekly-summary/README.md) for the 5-step import and credential setup guide.
 
 ---
 
