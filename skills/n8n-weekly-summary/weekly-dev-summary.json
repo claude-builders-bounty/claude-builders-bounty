@@ -1,0 +1,170 @@
+{
+  "name": "Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weekday",
+              "weekday": 5
+            },
+            {
+              "field": "hour",
+              "hour": 17
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.github_api }}/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/commits?since={{ $json.week_start }}&until={{ $json.week_end }}&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth"
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.github_api }}/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/issues?state=closed&since={{ $json.week_start }}&until={{ $json.week_end }}&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth"
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [500, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.github_api }}/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth"
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [750, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate this week's date range\nconst now = new Date();\nconst day = now.getDay();\nconst diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday\nconst monday = new Date(now.setDate(diff));\nconst friday = new Date(monday);\nfriday.setDate(friday.getDate() + 4);\nfriday.setHours(23, 59, 59, 999);\n\n// Config from environment or static values\nconst repoOwner = $env.GITHUB_REPO_OWNER || 'owner';\nconst repoName = $env.GITHUB_REPO_NAME || 'repo';\nconst githubToken = $env.GITHUB_TOKEN || '';\nconst language = $env.SUMMARY_LANGUAGE || 'EN';\nconst webhookUrl = $env.WEBHOOK_URL || '';\n\nreturn {\n  json: {\n    repo_owner: repoOwner,\n    repo_name: repoName,\n    github_api: 'https://api.github.com',\n    week_start: monday.toISOString(),\n    week_end: friday.toISOString(),\n    language: language,\n    webhook_url: webhookUrl,\n    github_token: githubToken\n  }\n};"
+      },
+      "id": "set-variables",
+      "name": "Set Week Range & Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all GitHub data into a structured prompt for Claude\nconst commits = items.find(i => i.node.name === 'Fetch Commits')?.json || [];\nconst issues = items.find(i => i.node.name === 'Fetch Closed Issues')?.json || [];\nconst prs = items.find(i => i.node.name === 'Fetch Merged PRs')?.json || [];\n\nconst config = $json; // From Set Variables node\n\n// Parse arrays if they're strings\nlet commitList = commits;\nlet issueList = issues;\nlet prList = prs;\nif (typeof commits === 'string') try { commitList = JSON.parse(commits); } catch(e) { commitList = []; }\nif (typeof issues === 'string') try { issueList = JSON.parse(issues); } catch(e) { issueList = []; }\nif (typeof prs === 'string') try { prList = JSON.parse(prs); } catch(e) { prList = []; }\n\n// Handle GitHub API wrapping\nif (Array.isArray(commitList)) {\n  // Already an array, use as-is\n} else if (commitList && typeof commitList === 'object') {\n  commitList = Array.isArray(commitList.data) ? commitList.data : [commitList];\n} else {\n  commitList = [];\n}\nif (Array.isArray(issueList)) {\n  // Already an array\n} else if (issueList && typeof issueList === 'object') {\n  issueList = Array.isArray(issueList.data) ? issueList.data : [issueList];\n} else {\n  issueList = [];\n}\nif (Array.isArray(prList)) {\n  // Already an array\n} else if (prList && typeof prList === 'object') {\n  prList = Array.isArray(prList.data) ? prList.data : [prList];\n} else {\n  prList = [];\n}\n\n// Build summary text\nconst commitMessages = commitList.map(c => \n  `- ${c.commit?.message?.split('\\n')[0] || c.message || 'no message'} (${c.sha?.substring(0,7)}) by ${c.commit?.author?.name || 'unknown'}\"\n).join('\\n');\n\nconst issueTitles = issueList.map(i => \n  `- #${i.number}: ${i.title} (closed by ${i.closed_by?.login || 'unknown'})\"\n).join('\\n');\n\nconst prTitles = prList.filter(p => p.merged_at).map(p => \n  `- #${p.number}: ${p.title} (merged by ${p.merged_by?.login || 'unknown'})\"\n).join('\\n');\n\nconst lang = config.language || 'EN';\nconst greeting = lang === 'FR' ? 'Voici le résumé' : 'Here is the summary';\nconst weekLabel = lang === 'FR' ? 'Semaine du' : 'Week of';\n\nconst userPrompt = `${greeting} ${weekLabel} ${new Date(config.week_start).toLocaleDateString(lang === 'FR' ? 'fr-FR' : 'en-US')} to ${new Date(config.week_end).toLocaleDateString(lang === 'FR' ? 'fr-FR' : 'en-US')} for **${config.repo_owner}/${config.repo_name}**.\n\n## 📊 Commits This Week (${commitList.length})\n${commitList.length > 0 ? commitMessages : '- No commits found'}\n\n## ✅ Issues Closed (${issueList.length})\n${issueList.length > 0 ? issueTitles : '- No issues closed'}\n\n## 🔀 PRs Merged (${prList.length})\n${prList.length > 0 ? prTitles : '- No PRs merged'}\n\n---\nPlease generate a concise, narrative weekly development summary in ${lang === 'FR' ? 'French' : 'English':\n- Highlight key accomplishments and patterns\n- Mention any notable collaborations\n- Keep it under 300 words\n- Use a professional but engaging tone\n- Format with markdown headers and bullet points`;\n\nreturn {\n  json: {\n    prompt: userPrompt,\n    config: config\n  }\n};"
+      },
+      "id": "build-prompt",
+      "name": "Build Prompt for Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "={{ $json.prompt }}"
+            }
+          ]
+        },
+        "options": {
+          "max_tokens": 1024
+        }
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "@anthropic-ai/anthropic.claude-code",
+      "typeVersion": 1,
+      "position": [750, 200],
+      "credentials": {
+        "anthropicApi": {
+          "id": "my-anthropic-credential",
+          "name": "Anthropic Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": {{ $json.content[0].text }},\n  \"username\": \"Weekly Dev Summary\",\n  \"icon_emoji\": \":robot_face:\"\n}"
+      },
+      "id": "send-webhook",
+      "name": "Send to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "content": "=**📋 Weekly Dev Summary Generated!**\\n\\n{{ $json.content[0].text }}"
+      },
+      "id": "respond",
+      "name": "Respond (for testing)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1250, 200]
+    }
+  ],
+  "connections": {
+    "Every Friday 5pm": {
+      "main": [[{"node": "Set Week Range & Config", "type": "main", "index": 0}]]
+    },
+    "Set Week Range & Config": {
+      "main": [[
+        {"node": "Fetch Commits", "type": "main", "index": 0},
+        {"node": "Fetch Closed Issues", "type": "main", "index": 0},
+        {"node": "Fetch Merged PRs", "type": "main", "index": 0}
+      ]]
+    },
+    "Fetch Commits": {
+      "main": [[{"node": "Build Prompt for Claude", "type": "main", "index": 0}]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{"node": "Build Prompt for Claude", "type": "main", "index": 0}]]
+    },
+    "Fetch Merged PRs": {
+      "main": [[{"node": "Build Prompt for Claude", "type": "main", "index": 0}]]
+    },
+    "Build Prompt for Claude": {
+      "main": [[{"node": "Call Claude API", "type": "main", "index": 0}]]
+    },
+    "Call Claude API": {
+      "main": [[
+        {"node": "Send to Discord/Slack", "type": "main", "index": 0},
+        {"node": "Respond (for testing)", "type": "main", "index": 0}
+      ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
