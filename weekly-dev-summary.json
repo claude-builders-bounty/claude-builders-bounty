@@ -1,0 +1,217 @@
+{
+  "name": "Weekly Dev Summary (GitHub + Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getCommits",
+        "owner": "={{ $json.githubOwner }}",
+        "repository": "={{ $json.githubRepo }}",
+        "since": "={{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}",
+        "returnAll": true
+      },
+      "id": "github-commits",
+      "name": "Get Weekly Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [480, 200],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "owner": "={{ $json.githubOwner }}",
+        "repository": "={{ $json.githubRepo }}",
+        "state": "closed",
+        "since": "={{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}",
+        "returnAll": true,
+        "filters": {}
+      },
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [480, 400],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "owner": "={{ $json.githubOwner }}",
+        "repository": "={{ $json.githubRepo }}",
+        "state": "merged",
+        "returnAll": true,
+        "filters": {
+          "sort": "updated",
+          "direction": "desc"
+        }
+      },
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [480, 600],
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge Activity Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [720, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-vars",
+              "name": "githubOwner",
+              "value": "={{ $('Weekly Cron Trigger').item.json.githubOwner || 'claude-builders-bounty' }}",
+              "type": "string"
+            },
+            {
+              "id": "set-repo",
+              "name": "githubRepo",
+              "value": "{{ $('Weekly Cron Trigger').item.json.githubRepo || 'claude-builders-bounty' }}",
+              "type": "string"
+            },
+            {
+              "id": "set-lang",
+              "name": "language",
+              "value": "{{ $('Weekly Cron Trigger').item.json.language || 'EN' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Set Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [960, 400]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "messages": {
+          "values": [
+            {
+              "content": "=You are a technical writer. Generate a concise weekly development summary in {{ $json.language }}.\n\nRepository: {{ $json.githubOwner }}/{{ $json.githubRepo }}\nPeriod: Last 7 days\n\nCOMMITS ({{ $json.commits.length }} total):\n{{ JSON.stringify($json.commits.slice(0, 20)) }}\n\nCLOSED ISSUES ({{ $json.issues.length }} total):\n{{ JSON.stringify($json.issues.slice(0, 15)) }}\n\nMERGED PULL REQUESTS ({{ $json.prs.length }} total):\n{{ JSON.stringify($json.prs.slice(0, 15)) }}\n\nWrite a narrative summary covering:\n1. Key achievements and features delivered\n2. Notable bug fixes\n3. Active areas of development\n4. Any patterns or trends worth noting\n\nKeep it under 500 words, professional tone, suitable for a team update email.",
+              "role": "user"
+            }
+          ]
+        },
+        "jsonOutput": false
+      },
+      "id": "claude-summarize",
+      "name": "Claude Generate Summary",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
+      "position": [1200, 400],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-creds",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "dev-summary@automaton.dev",
+        "toEmail": "={{ $json.destinationEmail || 'team@automaton.dev' }}",
+        "subject": "=📊 Weekly Dev Summary: {{ $json.githubOwner }}/{{ $json.githubRepo }} — {{ new Date().toLocaleDateString() }}",
+        "html": "=<h2>Weekly Development Summary</h2><p><strong>Repository:</strong> {{ $json.githubOwner }}/{{ $json.githubRepo }}</p><p><strong>Period:</strong> {{ new Date(Date.now() - 7*24*60*60*1000).toLocaleDateString() }} → {{ new Date().toLocaleDateString() }}</p><hr/>{{ $json.summary }}<hr/><p><em>Generated automatically by n8n + Claude</em></p>",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email Summary",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1440, 400],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-creds",
+          "name": "SMTP Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [
+        [{ "node": "Get Weekly Commits", "type": "main", "index": 0 },
+         { "node": "Get Closed Issues", "type": "main", "index": 0 },
+         { "node": "Get Merged PRs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Weekly Commits": {
+      "main": [[{ "node": "Merge Activity Data", "type": "main", "index": 0 }]]
+    },
+    "Get Closed Issues": {
+      "main": [[{ "node": "Merge Activity Data", "type": "main", "index": 1 }]]
+    },
+    "Get Merged PRs": {
+      "main": [[{ "node": "Merge Activity Data", "type": "main", "index": 2 }]]
+    },
+    "Merge Activity Data": {
+      "main": [[{ "node": "Set Config Variables", "type": "main", "index": 0 }]]
+    },
+    "Set Config Variables": {
+      "main": [[{ "node": "Claude Generate Summary", "type": "main", "index": 0 }]]
+    },
+    "Claude Generate Summary": {
+      "main": [[{ "node": "Send Email Summary", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [
+    { "name": "bounty" },
+    { "name": "github" },
+    { "name": "claude" },
+    { "name": "weekly-summary" }
+  ]
+}
