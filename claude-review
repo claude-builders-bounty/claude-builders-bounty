@@ -1,0 +1,427 @@
+#!/usr/bin/env python3
+"""
+claude-review — Structured PR review agent for Claude Builders Bounty #4.
+
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123
+  claude-review --pr https://github.com/owner/repo/pull/123 --output review.md
+
+Requires the GH_TOKEN environment variable (GitHub personal access token).
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def fatal(msg: str, code: int = 1):
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def parse_pr_url(url: str):
+    """Extract owner, repo, pr_number from a GitHub PR URL."""
+    m = re.match(
+        r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url
+    )
+    if not m:
+        fatal(f"Invalid PR URL: {url}\nExpected: https://github.com/owner/repo/pull/123")
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def github_api(path: str, token: str) -> dict:
+    """Call the GitHub REST API and return parsed JSON."""
+    url = f"https://api.github.com{path}"
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("User-Agent", "claude-review/1.0")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()[:500]
+        fatal(f"GitHub API {e.code} for {path}: {body}")
+    except urllib.error.URLError as e:
+        fatal(f"Network error fetching {path}: {e.reason}")
+
+
+def fetch_diff(owner: str, repo: str, pr_number: int, token: str) -> str:
+    """Fetch the PR diff as a raw string."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Accept", "application/vnd.github.v3.diff")
+    req.add_header("User-Agent", "claude-review/1.0")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return resp.read().decode()
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()[:500]
+        fatal(f"GitHub API {e.code} fetching diff: {body}")
+    except urllib.error.URLError as e:
+        fatal(f"Network error fetching diff: {e.reason}")
+
+
+# ── Diff Analysis ────────────────────────────────────────────────────────────
+
+
+def parse_diff_stats(diff: str) -> dict:
+    """Return basic stats about the diff."""
+    files_changed = set()
+    additions = 0
+    deletions = 0
+    hunks = []
+
+    for line in diff.splitlines():
+        if line.startswith("+++ b/"):
+            files_changed.add(line[6:])
+        elif line.startswith("--- a/"):
+            pass
+        elif line.startswith("@@"):
+            hunks.append(line)
+        elif line.startswith("+"):
+            additions += 1
+        elif line.startswith("-"):
+            deletions += 1
+
+    return {
+        "files_changed": sorted(files_changed),
+        "additions": additions,
+        "deletions": deletions,
+        "hunks": len(hunks),
+    }
+
+
+def classify_changes(diff: str) -> list:
+    """Classify the type of changes per file."""
+    categories = set()
+    current_file = None
+
+    for line in diff.splitlines():
+        if line.startswith("+++ b/"):
+            current_file = line[6:]
+        elif line.startswith("+++ /dev/null"):
+            categories.add("file_deletion")
+            continue
+        elif line.startswith("--- /dev/null"):
+            categories.add("file_creation")
+            continue
+        elif current_file and line.startswith("+import"):
+            categories.add("dependency_change")
+        elif current_file and line.startswith("+") and any(
+            kw in line for kw in ["print(", "console.log", "logger.", "debug("]
+        ):
+            categories.add("debug_logging")
+
+    # Check for config/template files
+    for f in stats.get("files_changed", []) if "stats" in dir() else []:
+        pass
+
+    return list(categories)
+
+
+def analyze_diff(diff: str, stats: dict, pr_data: dict) -> dict:
+    """
+    Analyze the diff and produce structured review output.
+    Uses heuristics based on diff content.
+    """
+    files_by_ext = {}
+    for f in stats["files_changed"]:
+        ext = os.path.splitext(f)[1] or "(no ext)"
+        files_by_ext.setdefault(ext, []).append(f)
+
+    lines = diff.splitlines()
+    added_lines = [l[1:] for l in lines if l.startswith("+") and len(l) > 1 and l[1] != "+"]
+    removed_lines = [l[1:] for l in lines if l.startswith("-") and len(l) > 1 and l[1] != "-"]
+
+    # ── Summary ──────────────────────────────────────────────────────────
+    pr_title = pr_data.get("title", "")
+    pr_body = pr_data.get("body", "") or ""
+
+    changed_files_desc = ", ".join(stats["files_changed"][:3])
+    if len(stats["files_changed"]) > 3:
+        changed_files_desc += f" and {len(stats['files_changed']) - 3} more"
+
+    summary = (
+        f"This PR {_pr_verb(stats, pr_data)} **{stats['additions']} additions "
+        f"and {stats['deletions']} deletions** across "
+        f"**{len(stats['files_changed'])} file{'s' if len(stats['files_changed']) != 1 else ''}** "
+        f"({changed_files_desc}). "
+    )
+
+    if pr_body:
+        # Trim the PR body to a short summary
+        short_body = pr_body.strip().split("\n")[0][:120]
+        summary += f"_{short_body}_"
+    else:
+        summary += "No description provided in the PR."
+
+    # ── Risks ────────────────────────────────────────────────────────────
+    risks = []
+
+    # Large diffs
+    if stats["additions"] + stats["deletions"] > 500:
+        risks.append(
+            "**Large diff** — The PR touches a significant amount of code. "
+            "Consider splitting into smaller, more focused PRs for easier review and lower risk."
+        )
+
+    # Debug/logging artifacts
+    debug_lines = [
+        l for l in added_lines
+        if any(kw in l for kw in ["print(", "console.log", "logger.debug", "console.debug"])
+    ]
+    if debug_lines:
+        print_debug_examples = "\n".join(f"  - `{l.strip()}`" for l in debug_lines[:3])
+        risks.append(
+            f"**Debug logging/print statements** — Found {len(debug_lines)} debug artifact(s) "
+            f"in the diff:\n{print_debug_examples}"
+
+        )
+
+    # FIXME/TODO/HACK
+    todo_lines = [
+        l for l in added_lines
+        if any(kw in l.upper() for kw in ["FIXME", "TODO", "HACK", "XXX"])
+    ]
+    if todo_lines:
+        todo_examples = "\n".join(f"  - `{l.strip()}`" for l in todo_lines[:3])
+        risks.append(
+            f"**Incomplete work markers** — Found {len(todo_lines)} FIXME/TODO/HACK "
+            f"annotation(s) in added code:\n{todo_examples}"
+        )
+
+    # Large single-file change
+    for ext, flist in files_by_ext.items():
+        if ext in (".lock", ".sum", ".mod"):
+            risks.append(
+                f"**Dependency lock update** — `{', '.join(flist)}` was modified. "
+                "Verify no unintended dependency changes were introduced."
+            )
+
+    # No tests found
+    has_tests = any("test" in f.lower() for f in stats["files_changed"])
+    src_files = [f for f in stats["files_changed"] if f.endswith((".py", ".js", ".ts", ".go", ".rs", ".java", ".rb"))]
+    if src_files and not has_tests:
+        risks.append(
+            "**No test changes** — Source files were modified but no corresponding "
+            "test files were found in this PR. Consider adding or updating tests."
+        )
+
+    # Secret/token exposure risk
+    secret_patterns = re.compile(
+        r"(?:api[_-]?key|secret|password|token|credential|auth[_-]?token)", re.IGNORECASE
+    )
+    secret_lines = [l for l in added_lines if secret_patterns.search(l) and "=" in l]
+    if secret_lines:
+        risks.append(
+            "**Potential credential exposure** — Added lines contain strings matching "
+            "credential-related keywords. Ensure no secrets are hard-coded."
+        )
+
+    # Commented-out code
+    comment_patterns = re.compile(r"^\s*(//|#|<!--|/\*|-- )")
+    commented_lines = [l for l in added_lines if comment_patterns.match(l) and len(l) > 40]
+    if len(commented_lines) > 3:
+        risks.append(
+            "**Commented-out code** — Found several commented-out blocks in additions. "
+            "Clean up dead code rather than leaving it commented."
+        )
+
+    if not risks:
+        risks.append(
+            "No significant risks identified. The changes appear well-contained."
+        )
+
+    # ── Improvements ─────────────────────────────────────────────────────
+    improvements = []
+
+    for f in stats["files_changed"]:
+        if f.endswith((".py", ".js", ".ts", ".go", ".rs", ".java")):
+            with_extensions = [l for l in added_lines if len(l) > 200]
+            if with_extensions:
+                improvements.append(
+                    f"**Long lines in `{f}`** — Found {len(with_extensions)} line(s) over 200 characters. "
+                    "Consider splitting for readability."
+                )
+
+    # Type hints (Python-specific)
+    py_files = [f for f in stats["files_changed"] if f.endswith(".py")]
+    for f in py_files:
+        has_type_hints = any(":" in l and ("->" in l or ": int" in l or ": str" in l or ": bool" in l or ": list" in l or ": dict" in l or ": Optional" in l or ": List" in l or ": Dict" in l) for l in added_lines)
+        if has_type_hints:
+            continues_missing = not all(
+                any(":" in l and ("->" in l or ": " in l) for l in lines_of_file)
+                for lines_of_file in [[l for l in added_lines if f in l]]
+            )
+
+    # Error handling
+    func_defs = [l for l in added_lines if re.match(r"^\+\s*def |^\+\s*async def |^\s*function |^\s*const .* = \(", l)]
+    try_blocks = [l for l in added_lines if re.match(r"^\+\s*try:|^\+\s*try {", l)]
+    if func_defs and not try_blocks:
+        num_funcs = len(func_defs)
+        improvements.append(
+            f"**Error handling** — {num_funcs} new function(s) defined but no try/except (or try/catch) "
+            "blocks were added. Consider wrapping external calls and I/O in proper error handling."
+        )
+
+    # Documentation
+    docstring_lines = [
+        l for l in added_lines
+        if re.match(r'^\+\s*"""', l) or re.match(r"^\+\s*'''", l) or re.match(r"^\+\s*\/\*\*", l) or re.match(r"^\+\s*\/\/ ", l)
+    ]
+    if func_defs and not docstring_lines:
+        improvements.append(
+            "**Documentation** — New functions/methods appear to lack docstrings or inline comments. "
+            "Adding brief descriptions helps maintainability."
+        )
+
+    # Magic numbers
+    magic_numbers = [
+        l.strip() for l in added_lines
+        if re.search(r"\b\d{4,}\b", l) and not re.search(r"(?:port|version|timeout|max|min|limit|count|size|len)", l.lower())
+    ]
+    if magic_numbers:
+        improvements.append(
+            "**Magic numbers/constants** — Consider extracting numeric literals into named "
+            "constants or environment variables for clarity."
+        )
+
+    if not improvements:
+        improvements.append(
+            "The code looks clean. No immediate improvement suggestions."
+        )
+
+    # ── Confidence ───────────────────────────────────────────────────────
+    total_changes = stats["additions"] + stats["deletions"]
+    if total_changes > 1000 or len(risks) > 4:
+        confidence = "Low"
+    elif total_changes <= 100 and len(risks) <= 2 and len(stats["files_changed"]) <= 3:
+        confidence = "High"
+    else:
+        confidence = "Medium"
+
+    return {
+        "summary": summary,
+        "risks": risks,
+        "improvements": improvements,
+        "confidence": confidence,
+        "stats": stats,
+    }
+
+
+def _pr_verb(stats: dict, pr_data: dict) -> str:
+    """Determine a descriptive verb for what the PR does."""
+    title = (pr_data.get("title") or "").lower()
+    if any(w in title for w in ("fix", "bug", "patch", "hotfix", "correct")):
+        return "fixes issues with"
+    if any(w in title for w in ("add", "feature", "new", "implement", "introduce")):
+        return "introduces"
+    if any(w in title for w in ("refactor", "clean", "improve", "simplify")):
+        return "refactors"
+    if any(w in title for w in ("deprecat", "remove", "drop")):
+        return "removes"
+    if any(w in title for w in ("doc", "readme", "comment")):
+        return "updates documentation for"
+    if stats["deletions"] > stats["additions"] * 2:
+        return "reduces code in"
+    if stats["additions"] > stats["deletions"] * 2:
+        return "adds code to"
+    return "changes"
+
+
+def render_markdown(result: dict, pr_url: str) -> str:
+    """Render the review as structured Markdown."""
+    lines = []
+    lines.append(f"# PR Review: {pr_url}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("## 📋 Summary")
+    lines.append("")
+    lines.append(result["summary"])
+    lines.append("")
+    lines.append(f"- **Files changed:** {len(result['stats']['files_changed'])}")
+    lines.append(f"- **Additions:** {result['stats']['additions']}")
+    lines.append(f"- **Deletions:** {result['stats']['deletions']}")
+    lines.append(f"- **Hunks:** {result['stats']['hunks']}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("## ⚠️ Identified Risks")
+    lines.append("")
+    for risk in result["risks"]:
+        lines.append(f"- {risk}")
+        lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("## 💡 Improvement Suggestions")
+    lines.append("")
+    for imp in result["improvements"]:
+        lines.append(f"- {imp}")
+        lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append(f"## ✅ Confidence Score: **{result['confidence']}**")
+    lines.append("")
+    return "\n".join(lines)
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="claude-review — structured PR review agent"
+    )
+    parser.add_argument(
+        "--pr", required=True,
+        help="GitHub pull request URL, e.g. https://github.com/owner/repo/pull/123"
+    )
+    parser.add_argument(
+        "--output", "-o",
+        help="Write review to file instead of stdout"
+    )
+    args = parser.parse_args()
+
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        fatal(
+            "GH_TOKEN environment variable is required.\n"
+            "Set it with: export GH_TOKEN=ghp_..."
+        )
+
+    owner, repo, pr_number = parse_pr_url(args.pr)
+    print(f"🔍 Fetching PR #{pr_number} from {owner}/{repo}...", file=sys.stderr)
+
+    pr_data = github_api(f"/repos/{owner}/{repo}/pulls/{pr_number}", token)
+
+    print("📥 Fetching diff...", file=sys.stderr)
+    diff = fetch_diff(owner, repo, pr_number, token)
+
+    print("🔬 Analyzing diff...", file=sys.stderr)
+    stats = parse_diff_stats(diff)
+    result = analyze_diff(diff, stats, pr_data)
+
+    markdown = render_markdown(result, args.pr)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(markdown)
+        print(f"✅ Review written to {args.output}", file=sys.stderr)
+    else:
+        # No ANSI — render directly
+        _print_sub = lambda x: None
+        print(markdown)
+
+
+if __name__ == "__main__":
+    main()
