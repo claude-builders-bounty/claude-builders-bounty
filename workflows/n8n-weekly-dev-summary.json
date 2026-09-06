@@ -1,0 +1,338 @@
+{
+  "name": "GitHub Weekly Narrative Summary with Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [5],
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-trigger",
+      "name": "Weekly Schedule (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_REPO_OWNER",
+              "value": "your-org"
+            },
+            {
+              "name": "GITHUB_REPO_NAME",
+              "value": "your-repo"
+            },
+            {
+              "name": "SUMMARY_LANGUAGE",
+              "value": "EN"
+            },
+            {
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/your/webhook"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config-set",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Workflow Configuration').item.json.GITHUB_REPO_OWNER }}/{{ $('Workflow Configuration').item.json.GITHUB_REPO_NAME }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus({ days: 7 }).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-commits",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 160]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Workflow Configuration').item.json.GITHUB_REPO_OWNER }}/{{ $('Workflow Configuration').item.json.GITHUB_REPO_NAME }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-prs",
+      "name": "Fetch Closed Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Workflow Configuration').item.json.GITHUB_REPO_OWNER }}/{{ $('Workflow Configuration').item.json.GITHUB_REPO_NAME }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $now.minus({ days: 7 }).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 440]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate Commits, Closed Issues, and Merged PRs from past 7 days\nconst config = $('Workflow Configuration').first().json;\nconst sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\n\n// 1. Commits\nconst commitItems = $('Fetch Weekly Commits').all();\nconst commits = commitItems.map(item => {\n  const c = item.json;\n  return {\n    message: (c.commit?.message || '').split('\\n')[0],\n    author: c.commit?.author?.name || 'Unknown',\n    date: c.commit?.author?.date\n  };\n}).slice(0, 25);\n\n// 2. Merged PRs\nconst prItems = $('Fetch Closed Pull Requests').all();\nconst mergedPrs = prItems\n  .map(item => item.json)\n  .filter(pr => pr.merged_at && new Date(pr.merged_at) >= sevenDaysAgo)\n  .map(pr => ({\n    title: pr.title,\n    number: pr.number,\n    user: pr.user?.login,\n    merged_at: pr.merged_at\n  }));\n\n// 3. Closed Issues (excluding PRs which GitHub API returns under issues)\nconst issueItems = $('Fetch Closed Issues').all();\nconst closedIssues = issueItems\n  .map(item => item.json)\n  .filter(issue => !issue.pull_request && issue.closed_at && new Date(issue.closed_at) >= sevenDaysAgo)\n  .map(issue => ({\n    title: issue.title,\n    number: issue.number,\n    user: issue.user?.login,\n    closed_at: issue.closed_at\n  }));\n\n// 4. Prompt Generation\nconst isFrench = config.SUMMARY_LANGUAGE === 'FR';\nconst prompt = `You are a Lead Staff Engineer writing a concise, high-impact weekly engineering digest for our development team and stakeholders.\n\nRepository: ${config.GITHUB_REPO_OWNER}/${config.GITHUB_REPO_NAME}\nReporting Window: Past 7 Days\nTarget Language: ${isFrench ? 'French' : 'English'}\n\nActivity Summary:\n- Merged PRs: ${mergedPrs.length}\n- Closed Issues: ${closedIssues.length}\n- Commits: ${commits.length}\n\nMerged Pull Requests:\n${mergedPrs.length > 0 ? mergedPrs.map(p => `- #${p.number} ${p.title} (@${p.user})`).join('\\n') : 'No PRs merged this week.'}\n\nClosed Issues:\n${closedIssues.length > 0 ? closedIssues.map(i => `- #${i.number} ${i.title}`).join('\\n') : 'No issues closed this week.'}\n\nKey Commits:\n${commits.length > 0 ? commits.slice(0, 15).map(c => `- ${c.message} (${c.author})`).join('\\n') : 'No direct commits.'}\n\nPlease generate a clean narrative report structured as:\n1. 🚀 **Headline & Impact** (1 crisp sentence)\n2. 📦 **Key Deliverables Shipped** (merged features & user-facing improvements)\n3. 🐛 **Bugs Squashed & Issues Resolved** (resolved issues summary)\n4. 🛠️ **Refactoring & Performance** (backend polish, CI/CD, maintenance)\n5. 🎯 **Focus for Next Sprint**`;\n\nreturn [{\n  json: {\n    prompt,\n    repo: `${config.GITHUB_REPO_OWNER}/${config.GITHUB_REPO_NAME}`,\n    discordWebhook: config.DISCORD_WEBHOOK_URL,\n    mergedPrCount: mergedPrs.length,\n    closedIssueCount: closedIssues.length,\n    commitCount: commits.length\n  }\n}];"
+      },
+      "id": "node-prepare-prompt",
+      "name": "Prepare Activity Payload & Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "node-call-claude",
+      "name": "Call Claude API (Sonnet)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1180, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Prepare Activity Payload & Prompt').item.json.discordWebhook }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"username\": \"Weekly Dev Summary Bot\",\n  \"avatar_url\": \"https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png\",\n  \"content\": {{ JSON.stringify($json.content[0].text) }}\n}",
+        "options": {}
+      },
+      "id": "node-webhook-delivery",
+      "name": "Deliver via Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1420, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Pull Requests",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [
+          {
+            "node": "Prepare Activity Payload & Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "Prepare Activity Payload & Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Prepare Activity Payload & Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Activity Payload & Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API (Sonnet)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API (Sonnet)": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
