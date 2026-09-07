@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# claude-review — structured Markdown PR review via Claude Code / API
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  claude-review --pr https://github.com/OWNER/REPO/pull/NUMBER
+  claude-review --diff path/to.diff
+
+Requires: gh (authenticated), and either:
+  - `claude` CLI on PATH, or
+  - ANTHROPIC_API_KEY for a direct Messages API call
+EOF
+}
+
+PR_URL=""
+DIFF_FILE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="${2:-}"; shift 2 ;;
+    --diff) DIFF_FILE="${2:-}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
+  esac
+done
+
+if [[ -z "$PR_URL" && -z "$DIFF_FILE" ]]; then
+  usage
+  exit 1
+fi
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+mkdir -p samples/reviews
+
+if [[ -n "$PR_URL" ]]; then
+  if [[ ! "$PR_URL" =~ github.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    echo "Could not parse PR URL: $PR_URL" >&2
+    exit 1
+  fi
+  OWNER="${BASH_REMATCH[1]}"
+  REPO="${BASH_REMATCH[2]}"
+  NUM="${BASH_REMATCH[3]}"
+  {
+    echo "PR: $PR_URL"
+    echo "META:"
+    gh api "repos/${OWNER}/${REPO}/pulls/${NUM}" --jq '{title:.title,body:.body,user:.user.login,base:.base.ref,head:.head.ref}'
+    echo
+    echo "DIFF:"
+    gh api "repos/${OWNER}/${REPO}/pulls/${NUM}" -H "Accept: application/vnd.github.diff"
+  } > "$TMP/context.txt"
+  LABEL="${OWNER}_${REPO}_PR${NUM}"
+else
+  cp "$DIFF_FILE" "$TMP/context.txt"
+  LABEL="local_diff"
+fi
+
+OUT="samples/reviews/${LABEL}.md"
+PROMPT_FILE="$TMP/prompt.txt"
+{
+  cat <<'HDR'
+You are a senior code reviewer. Read the PR context/diff below and produce ONLY Markdown with these exact sections:
+
+## Summary
+2–3 sentences on what changed.
+
+## Risks
+- bullet list of concrete risks (security, correctness, data loss, breaking API). If none, say "None identified."
+
+## Suggestions
+- actionable improvement bullets
+
+## Confidence
+One of: Low / Medium / High — with a one-line reason.
+
+Be specific to the diff. Do not invent files that are not present.
+
+-----
+HDR
+  # cap context size
+  head -c 120000 "$TMP/context.txt"
+} > "$PROMPT_FILE"
+
+if command -v claude >/dev/null 2>&1; then
+  claude -p --output-format text < "$PROMPT_FILE" > "$OUT"
+elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  python3 - "$PROMPT_FILE" "$OUT" <<'PY'
+import json, os, sys, urllib.request
+prompt = open(sys.argv[1], encoding="utf-8").read()
+out = sys.argv[2]
+body = {
+  "model": "claude-sonnet-4-20250514",
+  "max_tokens": 1200,
+  "messages": [{"role": "user", "content": prompt}],
+}
+req = urllib.request.Request(
+  "https://api.anthropic.com/v1/messages",
+  data=json.dumps(body).encode(),
+  headers={
+    "content-type": "application/json",
+    "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+    "anthropic-version": "2023-06-01",
+  },
+  method="POST",
+)
+resp = json.load(urllib.request.urlopen(req, timeout=120))
+text = "".join(p.get("text", "") for p in resp.get("content", []) if p.get("type") == "text")
+open(out, "w", encoding="utf-8").write(text)
+print(text)
+PY
+else
+  cat > "$OUT" <<EOF
+## Summary
+Captured review context for \`${LABEL}\` but no model was available. Re-run with the \`claude\` CLI or \`ANTHROPIC_API_KEY\` for a full review.
+
+## Risks
+- Model review was not executed in this run.
+
+## Suggestions
+- Install Claude Code CLI or export ANTHROPIC_API_KEY, then re-run the same command.
+
+## Confidence
+Low — scaffolding only; no model analysis.
+EOF
+  echo "Wrote offline scaffold to $OUT (no claude CLI / API key)" >&2
+fi
+
+echo "Review written to $OUT"
+cat "$OUT"
