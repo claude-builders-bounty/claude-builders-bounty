@@ -1,0 +1,524 @@
+{
+  "name": "Weekly Dev Summary (GitHub + Claude + Discord)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "Weekly Schedule - Fri 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-owner",
+              "name": "owner",
+              "value": "claude-builders-bounty",
+              "type": "string"
+            },
+            {
+              "id": "cfg-repo",
+              "name": "repo",
+              "value": "claude-builders-bounty",
+              "type": "string"
+            },
+            {
+              "id": "cfg-language",
+              "name": "language",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "cfg-webhook",
+              "name": "discord_webhook_url",
+              "value": "YOUR_DISCORD_WEBHOOK_URL",
+              "type": "string"
+            },
+            {
+              "id": "cfg-max",
+              "name": "max_items_per_source",
+              "value": 30,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "name": "Config (Edit Me)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Compute 7-day window for GitHub `since` filters.\n// Input: { owner, repo, language, discord_webhook_url, max_items_per_source }\n// Output: same + now_iso / since_iso / since_date\nconst cfg = $input.first().json;\nconst now = new Date();\nconst since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn [{ json: { ...cfg, now_iso: now.toISOString(), since_iso: since.toISOString(), since_date: since.toISOString().split('T')[0] } }];"
+      },
+      "id": "33333333-3333-4333-8333-333333333333",
+      "name": "Compute Week Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits?since={{ $json.since_iso }}&per_page={{ $json.max_items_per_source }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "44444444-4444-4444-8444-444444444444",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/issues?state=closed&since={{ $json.since_iso }}&per_page={{ $json.max_items_per_source }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "55555555-5555-4555-8555-555555555555",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/pulls?state=closed&sort=updated&direction=desc&per_page={{ $json.max_items_per_source }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "66666666-6666-4666-8666-666666666666",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Keep only PRs merged in the last 7 days.\n// Input items: raw GitHub Pull objects (array or single items).\n// Uses Config + Week Window from $('Compute Week Window').\nconst sinceIso = $('Compute Week Window').first().json.since_iso;\nconst since = new Date(sinceIso).getTime();\nconst raw = $input.all().flatMap((i) => Array.isArray(i.json) ? i.json : [i.json]);\nconst merged = raw.filter((pr) => pr && pr.merged_at && new Date(pr.merged_at).getTime() >= since);\nif (merged.length === 0) return [{ json: { prs: [], count: 0, note: 'no merged PRs this week' } }];\nreturn merged.map((pr) => ({ json: { number: pr.number, title: pr.title, user: pr.user?.login, merged_at: pr.merged_at, url: pr.html_url } }));"
+      },
+      "id": "77777777-7777-4777-8777-777777777777",
+      "name": "Filter Merged PRs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "88888888-8888-4888-8888-888888888888",
+      "name": "Merge Commits + Issues",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1120,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "99999999-9999-4999-8999-999999999999",
+      "name": "Merge All Activity",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1340,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Build Claude prompt from merged GitHub activity.\n// Supports language = 'EN' | 'FR' from Config node.\nconst cfg = $('Config (Edit Me)').first().json;\nconst win = $('Compute Week Window').first().json;\nconst lang = (cfg.language || 'EN').toUpperCase();\nconst items = $input.all().map((i) => i.json);\nconst payload = JSON.stringify(items, null, 2).slice(0, 12000);\nconst header = `Repository: ${cfg.owner}/${cfg.repo}\\nWeek: ${win.since_date} .. ${win.now_iso.split('T')[0]}\\nSources: commits + closed issues + merged PRs (GitHub public API, unauthenticated)`;\nlet instruction;\nif (lang === 'FR') {\n  instruction = `Rédige un résumé hebdomadaire concis en français : Faits saillants, Commits, Issues clôturées, PRs mergées, Risques/Next steps. Ton neutre, format Markdown compatible Discord (max ~1800 caractères). Si aucune activité, dis-le explicitement et propose une action.`;\n} else {\n  instruction = `Write a concise weekly dev summary in English: Highlights, Commits, Closed issues, Merged PRs, Risks/Next steps. Neutral tone, Discord-compatible Markdown (max ~1800 chars). If no activity, say so explicitly and suggest one action.`;\n}\nconst prompt = `${header}\\n\\n${instruction}\\n\\nDATA:\\n${payload}`;\nreturn [{ json: { prompt, language: lang, owner: cfg.owner, repo: cfg.repo, since_date: win.since_date, now_iso: win.now_iso, discord_webhook_url: cfg.discord_webhook_url, activity_items: items.length } }];"
+      },
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Build Claude Prompt (EN/FR)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [{ \"role\": \"user\", \"content\": {{ JSON.stringify($json.prompt) }} }]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "name": "Claude Summary (sonnet-4)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-activity",
+              "leftValue": "={{ $('Merge All Activity').all().filter(i => { const j = i.json; if (Array.isArray(j)) return j.length > 0; if (j && j.prs !== undefined && j.count !== undefined) return j.count > 0; return j && Object.keys(j).length > 0; }).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "larger",
+                "name": "filter.operator.number.larger"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "name": "Has Activity?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1450,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config (Edit Me)').first().json.discord_webhook_url }}",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": {{ JSON.stringify((($json.content?.[0]?.text) || $json.content || 'No GitHub activity this week (no commits, closed issues, or merged PRs). Enjoy the quiet week \\u2014 consider triaging the backlog or planning next steps.') .slice(0, 1800)) }},\n  \"username\": \"Weekly Dev Summary\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "name": "Discord Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2220,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Weekly Dev Summary — setup (2 min)\n1. Edit `Config (Edit Me)`: owner / repo / language EN|FR / discord_webhook_url.\n2. Set env `ANTHROPIC_API_KEY` in n8n (Docker: `-e ANTHROPIC_API_KEY=...`).\n3. Import workflow.json → Execute Workflow (test) → Activate.\nCron: `0 17 * * 5` = Friday 5pm. GitHub calls use public unauthenticated API.\nEmail alternative: duplicate `Discord Notify`, replace with Send Email (SMTP) node, map `{{$json.content[0].text}}` to email body.",
+        "height": 300,
+        "width": 420,
+        "color": 4
+      },
+      "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "name": "Sticky Note - Setup Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule - Fri 5pm": {
+      "main": [
+        [
+          {
+            "node": "Config (Edit Me)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config (Edit Me)": {
+      "main": [
+        [
+          {
+            "node": "Compute Week Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Week Window": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits + Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge Commits + Issues",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Filter Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge All Activity",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Commits + Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge All Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge All Activity": {
+      "main": [
+        [
+          {
+            "node": "Has Activity?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Activity?": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt (EN/FR)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discord Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Prompt (EN/FR)": {
+      "main": [
+        [
+          {
+            "node": "Claude Summary (sonnet-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summary (sonnet-4)": {
+      "main": [
+        [
+          {
+            "node": "Discord Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {}
+}
