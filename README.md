@@ -51,3 +51,15 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Changelog Generator
+
+Generate a categorized `CHANGELOG.md` from Git commit history.
+
+1. Make sure the script is executable:
+   `chmod +x changelog.sh`
+2. Run it from the repository root:
+   `./changelog.sh`
+3. The generated changelog is written to `CHANGELOG.md`.
+
+The generator uses the latest Git tag as the starting point when one exists and categorizes commits into Added, Fixed, Changed, and Removed.
