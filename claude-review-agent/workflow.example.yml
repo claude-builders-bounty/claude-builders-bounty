@@ -1,0 +1,61 @@
+# Example GitHub Actions workflow: auto-review every PR with claude-review-agent.
+#
+# SETUP (2 steps):
+#   1. Copy this file to .github/workflows/claude-review.yml in the repo you
+#      want reviewed (or keep the agent in its own repo and check it out below).
+#   2. No secrets needed for public repos. The default GITHUB_TOKEN is enough
+#      to post the comment and stays within API limits (1-2 calls per PR).
+#
+# HOW IT WORKS:
+#   - On every opened/synchronized PR, the workflow runs the stdlib-only
+#     reviewer against the PR URL and posts the structured Markdown
+#     (Summary / Risks / Suggestions / Confidence) as a PR comment.
+#   - Deterministic heuristics only: no Anthropic/OpenAI key required.
+#     Optional LLM polish step is included below (commented out).
+
+name: claude-review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out review agent
+        uses: actions/checkout@v4
+        with:
+          # If this workflow lives in the repo being reviewed and the agent
+          # is vendored there, drop the `repository:` line.
+          repository: YOUR-ORG/claude-review-agent
+          path: claude-review-agent
+
+      - name: Run heuristic review
+        run: >
+          python claude-review-agent/claude_review.py
+          --pr "${{ github.event.pull_request.html_url }}"
+          --output review.md
+        env:
+          # Optional but recommended: raises the API limit 60 -> 5000 req/hour.
+          # GITHUB_TOKEN is provided automatically; no setup needed.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Optional: polish with Claude (requires ANTHROPIC_API_KEY secret).
+      # - name: Polish with Claude (optional)
+      #   run: |
+      #     pip install anthropic
+      #     claude -p "Tighten this code review, keep the Summary/Risks/Suggestions/Confidence headings:" < review.md > review-polished.md
+      #     mv review-polished.md review.md
+      #   env:
+      #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post review comment
+        run: >
+          gh pr comment "${{ github.event.pull_request.html_url }}"
+          --body-file review.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
