@@ -1,5 +1,13 @@
 # Claude Builders Bounty 🤖
 
+## Generate a changelog
+
+1. Copy `changelog.sh` and `generate_changelog.py` together into a repository with complete Git history and tags.
+2. Run `bash changelog.sh` (requires Git and Python 3.9+).
+3. Review the generated `CHANGELOG.md` before publishing.
+
+See [behavior and tests](GENERATE_CHANGELOG.md) and the [real-repository example](examples/README.md). Each run refreshes Unreleased; existing release sections are preserved.
+
 > A community bounty board for Claude Code builders.
 
 Building with Claude Code? Have tasks to delegate?
