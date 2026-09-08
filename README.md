@@ -51,3 +51,35 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+<!-- Fix for issue #1 -->
+```bash
+#!/usr/bin/env bash
+# changelog.sh — Generate a structured CHANGELOG.md from git history
+# Usage: bash changelog.sh [--output CHANGELOG.md] [--repo /path/to/repo]
+
+set -euo pipefail
+
+# Defaults
+OUTPUT_FILE="CHANGELOG.md"
+REPO_DIR="."
+SINCE_TAG=""
+
+# Parse args
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      OUTPUT_FILE="$2"
+      shift 2
+      ;;
+    --repo)
+      REPO_DIR="$2"
+      shift 2
+      ;;
+    --since)
+      SINCE_TAG="$2"
+      shift 2
+      ;;
+    *)
+      echo "
