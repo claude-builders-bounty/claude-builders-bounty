@@ -51,3 +51,25 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+<!-- Fix for issue #1 -->
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# changelog.sh - Generate a structured CHANGELOG.md from git history
+# Usage: bash changelog.sh [output_file] [since_tag]
+#   output_file: path to write CHANGELOG.md (default: CHANGELOG.md)
+#   since_tag:   git tag to start from (default: last tag, or first commit)
+
+OUTPUT_FILE="${1:-CHANGELOG.md}"
+SINCE_TAG="${2:-}"
+
+# Colors for terminal output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Check if we're in a g
