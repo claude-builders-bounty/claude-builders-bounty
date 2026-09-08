@@ -51,3 +51,30 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+<!-- Fix for issue #1 -->
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# changelog.sh - Generate a structured CHANGELOG.md from git history
+# Usage: bash changelog.sh [--output CHANGELOG.md] [--repo /path/to/repo]
+
+OUTPUT="CHANGELOG.md"
+REPO_DIR="."
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --output)
+      OUTPUT="$2"
+      shift 2
+      ;;
+    --repo)
+      REPO_DIR="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: bash changelog.sh [--output CHANGELOG.md] [--repo
