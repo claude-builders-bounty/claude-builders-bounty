@@ -51,3 +51,23 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+<!-- Fix for issue #1 -->
+```bash
+#!/usr/bin/env bash
+# changelog.sh - Generate a structured CHANGELOG.md from git history
+# Usage: bash changelog.sh [output-file]
+# Default output: CHANGELOG.md
+
+set -euo pipefail
+
+OUTPUT_FILE="${1:-CHANGELOG.md}"
+REPO_URL="$(git config --get remote.origin.url 2>/dev/null || echo '')"
+REPO_URL="${REPO_URL%.git}"
+
+# Get the last tag (fallback to first commit if no tags exist)
+LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)"
+
+# Get current date
+
