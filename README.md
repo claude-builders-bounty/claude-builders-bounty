@@ -18,9 +18,7 @@ You're in the right place.
 **To claim a bounty**
 1. Browse the open issues below
 2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
+3. Submit a PR — payment is automatic on merge
 
 ## Active Bounties
 
@@ -31,6 +29,52 @@ You're in the right place.
 | [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+
+---
+
+## Destructive Bash Hook
+
+A lightweight Claude Code `PreToolUse` hook that blocks destructive Bash commands before execution.
+
+### Installation
+
+Run:
+
+~~~
+./install.sh
+~~~
+
+Requires `jq`.
+
+The installer registers the hook for Claude Code's Bash tool, preserves unrelated hooks, removes duplicate copies of this hook, and sets a 10-second hook timeout.
+
+### Blocked commands
+
+- `rm` with both recursive and force flags, including `rm -rf`, `rm -fr`, `rm -r -f`, and long-form flags
+- `git push --force` / `git push -f`
+- `DROP TABLE`
+- `TRUNCATE`
+- `DELETE FROM` without `WHERE`
+
+`git push --force-with-lease` and ordinary non-destructive Bash commands are allowed.
+
+Blocked attempts are logged to:
+
+~~~
+~/.claude/hooks/blocked.log
+~~~
+
+Each log entry includes a UTC timestamp, project path, attempted command, and blocking reason.
+
+### Testing
+
+Run:
+
+~~~
+bash tests/test_destructive_bash_guard.sh
+~~~
+
+The test suite covers destructive variants, chained SQL statements, case-insensitive matching, safe commands, and `--force-with-lease`.
 
 ---
 
