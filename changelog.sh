@@ -101,7 +101,9 @@ trap cleanup EXIT
     else
       printf '_None._\n'
     fi
-    printf '\n'
+    if [[ "$category" != Removed ]]; then
+      printf '\n'
+    fi
   done
 } >"$tmp"
 mv -- "$tmp" "$output"

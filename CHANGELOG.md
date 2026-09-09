@@ -19,4 +19,3 @@ _None._
 ### Removed
 
 _None._
-
