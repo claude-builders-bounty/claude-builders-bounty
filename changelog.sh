@@ -19,6 +19,11 @@ while getopts ':o:h' option; do
       ;;
   esac
 done
+shift "$((OPTIND - 1))"
+if (($#)); then
+  printf 'Unexpected argument: %s\n' "$1" >&2
+  exit 2
+fi
 
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   printf 'Run this script from inside a Git repository.\n' >&2
@@ -32,14 +37,19 @@ else
   range=HEAD
 fi
 
-mapfile -t commits < <(git log --reverse --format='%h%x09%s' "$range")
+# Capture separately so Git failures propagate instead of being hidden by mapfile.
+commit_log=$(git log --reverse --format='%h%x09%s' "$range")
+commits=()
+if [[ -n "$commit_log" ]]; then
+  mapfile -t commits <<<"$commit_log"
+fi
 
 classify() {
   local subject=${1,,}
   case "$subject" in
-    feat\(*|add\(*|new\(*|feat:*|add:*|new:*) echo Added ;;
-    fix\(*|bug\(*|hotfix\(*|fix:*|bug:*|hotfix:*) echo Fixed ;;
-    remove\(*|delete\(*|drop\(*|remove:*|delete:*|drop:*) echo Removed ;;
+    feat\(*|add\(*|new\(*|feat:*|feat!:*|add:*|add!:*|new:*|new!:*) echo Added ;;
+    fix\(*|bug\(*|hotfix\(*|fix:*|fix!:*|bug:*|bug!:*|hotfix:*|hotfix!:*) echo Fixed ;;
+    remove\(*|delete\(*|drop\(*|remove:*|remove!:*|delete:*|delete!:*|drop:*|drop!:*) echo Removed ;;
     *)
       case "$subject" in
         add\ *|added\ *|new\ *) echo Added ;;
