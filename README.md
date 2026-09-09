@@ -1,53 +1,19 @@
-# Claude Builders Bounty 🤖
+# Git history CHANGELOG generator
 
-> A community bounty board for Claude Code builders.
+`changelog.sh` turns commits since the most recent Git tag into a structured `CHANGELOG.md`. It groups conventional commit prefixes and common action words under `Added`, `Fixed`, `Changed`, and `Removed`.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup and use
 
----
+1. Copy `changelog.sh` into the root of a Git repository and make it executable: `chmod +x changelog.sh`.
+2. Create a release tag when the next changelog should start a new section: `git tag v1.0.0`.
+3. Run `bash changelog.sh` (or `./changelog.sh`) to write `CHANGELOG.md`.
 
-## How it works
+The script includes every commit after the latest tag; with no tags, it includes the repository's complete history. Use `-o PATH` to choose another output file, for example `bash changelog.sh -o docs/CHANGELOG.md`. Existing output is replaced atomically after the Git history has been read successfully.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+## Generated format
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Each run writes a heading with the latest tag (or `Unreleased`), the generation date, and all four categories. Commits that do not match a more specific prefix are placed in `Changed`. The commit's short ID is included so each entry can be traced back to Git history.
 
----
+## Validation
 
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+The script was run against the real GitHub repository [claude-builders-bounty/claude-builders-bounty](https://github.com/claude-builders-bounty/claude-builders-bounty). The resulting sample is checked in as [`CHANGELOG.md`](CHANGELOG.md).
