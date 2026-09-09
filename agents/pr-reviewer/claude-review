@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# claude-review — one-shot PR review using the pr-reviewer agent prompt.
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123 [--output review.md]
+set -euo pipefail
+
+URL=""
+OUT=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --pr) URL="$2"; shift 2 ;;
+    --output) OUT="$2"; shift 2 ;;
+    *) echo "Unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+[ -z "$URL" ] && { echo "Usage: claude-review --pr <PR_URL> [--output review.md]" >&2; exit 2; }
+command -v gh >/dev/null 2>&1 || { echo "gh CLI is required (https://cli.github.com)" >&2; exit 1; }
+command -v claude >/dev/null 2>&1 || { echo "Claude Code CLI is required" >&2; exit 1; }
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENT_PROMPT="$SCRIPT_DIR/agents/pr-reviewer/pr-reviewer.md"
+
+TMPDIR_WORK="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_WORK"' EXIT
+
+echo "Fetching PR metadata and diff..."
+gh pr view "$URL" --json title,body,additions,deletions > "$TMPDIR_WORK/meta.json"
+gh pr diff "$URL" > "$TMPDIR_WORK/diff.patch"
+
+TITLE="$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['title'])" "$TMPDIR_WORK/meta.json" 2>/dev/null || echo "$URL")"
+
+{
+  cat "$AGENT_PROMPT"
+  echo ""
+  echo "---"
+  echo "PR: $URL"
+  echo "Title: $TITLE"
+  echo ""
+  echo "```diff"
+  cat "$TMPDIR_WORK/diff.patch"
+  echo "```"
+} > "$TMPDIR_WORK/prompt.md"
+
+echo "Running Claude Code review..."
+REVIEW="$(claude -p --output-format text < "$TMPDIR_WORK/prompt.md")"
+
+if [ -n "$OUT" ]; then
+  printf '%s\n' "# Review of $URL" "" "$REVIEW" > "$OUT"
+  echo "Review written to $OUT"
+else
+  printf '%s\n' "$REVIEW"
+fi
