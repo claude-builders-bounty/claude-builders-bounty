@@ -51,3 +51,34 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+## Git history CHANGELOG generator
+
+Requires Git and Bash 4 or later (on macOS, install a newer Bash rather than
+using the system Bash 3.2).
+
+### Setup and use
+
+1. Copy `changelog.sh` into the repository whose history you want to document.
+2. From that repository, run `bash changelog.sh`.
+3. Review the generated `CHANGELOG.md` before publishing it.
+
+The script includes commits since the nearest tag reachable from `HEAD`, including
+lightweight tags. With no reachable tags, it includes the complete history.
+It does not fetch remote history: fetch the desired commits/tags first if your
+clone is shallow or outdated. Use `-o PATH` for a different output file, for example
+`bash changelog.sh -o docs/CHANGELOG.md`. Existing output is replaced, not appended;
+Git read failures leave it untouched.
+
+Conventional prefixes (including scoped and breaking-change forms) and leading
+action words map to `Added`, `Fixed`, and `Removed`. Other commits fall back to
+`Changed`. These are message-based heuristics, not semantic analysis; review the
+categories, particularly for repositories not using conventional commits. Each
+entry includes its short commit ID. All four sections appear, even when empty.
+
+### Validation and sample
+
+Run `python3 -m unittest discover -s tests -v` for isolated Git fixture tests.
+The checked-in [`CHANGELOG.md`](CHANGELOG.md) is a sample generated from this real
+GitHub repository at upstream commit `1aeae2a` (two commits, no tags).
