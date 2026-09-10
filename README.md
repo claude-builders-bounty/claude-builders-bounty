@@ -1,53 +1,57 @@
-# Claude Builders Bounty 🤖
+# Block Destructive Commands — Claude Code Hook
 
-> A community bounty board for Claude Code builders.
+A lightweight pre-tool-use hook that intercepts dangerous bash commands before they execute.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Install (2 commands)
 
----
+```bash
+cp block_destructive.py ~/.claude/hooks/block_destructive.py && chmod +x ~/.claude/hooks/block_destructive.py
+cp settings.json ~/.claude/settings.json  # or merge into existing file
+```
+
+## What it blocks
+
+| Pattern | Example |
+|---------|---------|
+| `rm -rf` | `rm -rf /tmp/build` |
+| `DROP TABLE` | `DROP TABLE users` |
+| `TRUNCATE` | `TRUNCATE TABLE logs` |
+| `DELETE` without `WHERE` | `DELETE FROM sessions` |
+| `git push --force` | `git push --force origin main` |
+| `mkfs` | `mkfs.ext4 /dev/sda1` |
+| `dd` to device | `dd if=file of=/dev/sdb` |
+
+## What it allows
+
+All non-destructive commands pass through unchanged: `ls`, `cat`, `git status`, `git push`, `git push --force-with-lease`, `rm` (single file), `DELETE FROM table WHERE id=1`, etc.
+
+## Triple-signal blocking
+
+When a destructive command is detected, the hook fires all three signals simultaneously:
+
+1. **stdout JSON** — `{"hookSpecificOutput": {"permissionDecision": "deny", ...}, "decision": "block", "reason": "..."}`
+2. **stderr** — reason text printed to stderr
+3. **exit code 2** — signals block to Claude Code
+
+## Logs
+
+Every blocked attempt is logged to `~/.claude/hooks/blocked.log`:
+
+```
+[2026-09-10T12:00:00Z] BLOCKED | project=/home/user/repo | command=rm -rf node_modules
+```
 
 ## How it works
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+1. Claude Code calls the hook before every `Bash` tool use
+2. The hook reads the command from stdin JSON
+3. If the command matches a blocked pattern, it returns deny + stderr + exit 2
+4. If safe, it exits 0 and Claude proceeds normally
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Testing
 
----
+31 test cases covering blocked patterns, allowed commands, and edge cases. Run with:
 
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+```bash
+python3 test_hook.py
+```
