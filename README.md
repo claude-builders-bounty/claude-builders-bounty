@@ -50,4 +50,22 @@ You're in the right place.
 
 ---
 
-*Started by the Claude builder community · March 2026 · MIT License*
+## 🧾 Generate a CHANGELOG from git history
+
+A Claude Code skill + bash script that turns your git history into a structured `CHANGELOG.md`.
+
+### Setup (3 steps)
+
+1. Copy `changelog.sh` (and optionally `.claude/skills/generate-changelog/SKILL.md`) into your repo.
+2. Make it executable: `chmod +x changelog.sh`
+3. Run it: `bash changelog.sh` — or in Claude Code, use `/generate-changelog`
+
+### What it does
+
+- Fetches commits since the last git tag (falls back to full history if no tags exist)
+- Auto-categorizes commits into **Added** / **Fixed** / **Changed** / **Removed**
+  based on conventional-commit prefixes (`feat`, `fix`, `refactor`, `chore`, `remove`, …)
+  and keyword heuristics in the commit subject
+- Writes a properly formatted `CHANGELOG.md` with a dated section per release
+
+### Example output
