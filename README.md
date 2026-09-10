@@ -51,3 +51,25 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Claude Code destructive Bash blocker
+
+This repository includes a Claude Code `PreToolUse` hook that blocks selected destructive Bash commands before execution.
+
+### Installation
+
+Run:
+
+```bash
+./install.sh
+```
+
+The installer copies the hook to `~/.claude/hooks/` and creates or updates the Claude Code `settings.json`.
+
+### Testing
+
+```bash
+python3 test_hook.py
+```
+
+Expected result: `PASS: 15 tests`
