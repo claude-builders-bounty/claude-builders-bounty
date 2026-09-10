@@ -41,12 +41,22 @@ You're in the right place.
 - Payment is handled by [Opire](https://opire.dev) (Stripe)
 - Quality over speed — a solid PR beats a fast one
 
----
-
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
 - 📧 Contact: claudebounty@gmail.com
+
+---
+
+## Destructive Bash Hook
+
+For a project-local setup, keep `block_destructive_bash.py` at the project
+root and copy `settings.json` to `.claude/settings.json`. For a user-wide
+setup, use the command in `INSTALL.md` and merge `global-settings.json` into
+your global settings. It blocks recursive force removal, force pushes,
+`DROP TABLE`, `TRUNCATE`, and `DELETE FROM` without `WHERE`, while leaving
+safe commands silent. Blocked attempts are recorded in
+`~/.claude/hooks/blocked.log`.
 
 ---
 
