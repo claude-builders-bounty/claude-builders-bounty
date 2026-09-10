@@ -34,20 +34,16 @@ You're in the right place.
 
 ---
 
-## Rules
+## 🛠️ Skill: Generate a CHANGELOG from git history
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Automatically generate a structured `CHANGELOG.md` from your project's git history.
+Commits since the last git tag are fetched and auto-categorized into
+**Added** / **Fixed** / **Changed** / **Removed**.
 
----
+### Setup (3 steps)
 
-## Community
+1. Copy `changelog.sh` (and optionally `SKILL.md`) into your project root.
+2. Make it executable: `chmod +x changelog.sh`
+3. Run it: `bash changelog.sh` — or use the Claude Code command `/generate-changelog`
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+### Usage
