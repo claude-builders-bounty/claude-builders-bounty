@@ -51,3 +51,13 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## PR review agent
+
+Run the reviewer in three steps:
+
+1. Install Python 3.10+.
+2. Run `python claude_review.py --pr https://github.com/owner/repo/pull/123` (or `claude-review.cmd --pr ...` on Windows).
+3. Paste the Markdown output into the pull request review discussion.
+
+The CLI reads the public GitHub pull request and changed-file APIs, then emits a deterministic review with a two-sentence summary, risks, improvement suggestions, and a Low/Medium/High confidence score. Set `GITHUB_TOKEN` when GitHub's unauthenticated API limit is reached.
