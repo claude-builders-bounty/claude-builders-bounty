@@ -1,0 +1,37 @@
+name: claude-pr-review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_url:
+        description: 'Full GitHub PR URL to review'
+        required: true
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate structured review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          PR_URL="${{ github.event.inputs.pr_url }}"
+          if [ -z "$PR_URL" ]; then
+            PR_URL="${{ github.event.pull_request.html_url }}"
+          fi
+          python3 agents/pr-review/claude_review.py --pr "$PR_URL" -o review.md
+          cat review.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment review on PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body-file review.md || true
