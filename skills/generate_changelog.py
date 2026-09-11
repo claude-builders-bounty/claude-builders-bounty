@@ -21,7 +21,7 @@ def run_git(args, cwd=None):
             check=True
         )
         return res.stdout.strip()
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, FileNotFoundError, Exception) as e:
         return None
 
 def get_latest_tag(cwd=None):
