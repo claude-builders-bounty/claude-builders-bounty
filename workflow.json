@@ -1,0 +1,266 @@
+{
+  "name": "Weekly Dev Summary (GitHub + Claude + Slack)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weekDay",
+              "weekDay": 5,
+              "hour": 17,
+              "minute": 0
+            }
+          ]
+        },
+        "timezone": "{{ $env.TIMEZONE || 'UTC' }}"
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000001",
+      "name": "Weekly cron (Fri 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-640, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fromDate",
+              "name": "since",
+              "value": "={{ $now.minus({ days: 7 }).toISODate() }}",
+              "type": "string"
+            },
+            {
+              "id": "repo",
+              "name": "repo",
+              "value": "={{ $env.GH_REPO || 'owner/repo' }}",
+              "type": "string"
+            },
+            {
+              "id": "lang",
+              "name": "language",
+              "value": "={{ $env.LANGUAGE || 'EN' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000002",
+      "name": "Init context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [-460, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits?since={{ $json.since }}T00:00:00Z&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.GH_TOKEN ? 'Bearer ' + $env.GH_TOKEN : '' }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000003",
+      "name": "GitHub commits (week)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, -140]
+    },
+    {
+      "parameters": {
+        "jsCode": "// summarize commits -> devSummary\nconst entries = $input.all();\nconst commits = [];\nfor (const e of entries) {\n  const c = e.json;\n  commits.push({ msg: c.commit && c.commit.message, author: c.author && c.author.login, date: c.commit && c.commit.author && c.commit.author.date });\n}\nconst prev = $('Init context').first().json;\nreturn [{ json: { ...prev, commits, commitCount: commits.length } }];\n"
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000004",
+      "name": "Normalize commits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-120, -140]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Init context').first().json.repo }}/issues?state=closed&since={{ $('Init context').first().json.since }}T00:00:00Z&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.GH_TOKEN ? 'Bearer ' + $env.GH_TOKEN : '' }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000005",
+      "name": "GitHub closed issues + PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-120, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "// categorize issues vs merged PRs\nconst entries = $input.all();\nconst issues = [];\nconst prs = [];\nfor (const e of entries) {\n  const i = e.json;\n  if (i.pull_request) {\n    prs.push({ n: i.number, title: i.title, state: i.state, merged: i.pull_request && i.pull_request.merged_at ? true : false });\n  } else {\n    issues.push({ n: i.number, title: i.title });\n  }\n}\nconst prev = $('Init context').first().json;\nreturn [{ json: { ...prev, issues, prs, issueCount: issues.length, prCount: prs.length } }];\n"
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000006",
+      "name": "Normalize issues/PRs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "// merge both sources into a single context item\nconst input = $input.all();\nconst init = $('Init context').first().json;\nlet merged = { ...init };\nfor (const e of input) {\n  for (const k of ['commits', 'commitCount', 'issues', 'prs', 'issueCount', 'prCount']) {\n    if (e.json[k] !== undefined) merged[k] = e.json[k];\n  }\n}\n// limit context size for Claude\nif (merged.commits) merged.commits = merged.commits.slice(0, 200);\nif (merged.issues) merged.issues = merged.issues.slice(0, 200);\nif (merged.prs) merged.prs = merged.prs.slice(0, 200);\nmerged.jobId = Date.now();\nreturn [{ json: merged }];\n"
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000007",
+      "name": "Merge github data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// build the Anthropic request body (language EN/FR)\nconst d = $input.first().json;\nconst lang = (d.language || 'EN').toUpperCase();\nconst langDir = lang === 'FR'\n  ? 'Rédige le résumé en français. Utilise un ton professionnel et synthétique.'\n  : 'Write the summary in English. Use a professional, concise tone.';\nconst sys = 'You are a senior engineering manager producing a weekly summary for a GitHub repository. ' + langDir + ' Use bullet points and a short intro.';\nconst user = `Weekly activity for *${d.repo}* since ${d.since}:\n\nCommits (${d.commitCount}):\n${(d.commits || []).map(c => `- ${c.msg && c.msg.split('\\n')[0]} (${c.author})`).join('\\n')}\n\nIssues closed (${d.issueCount}):\n${(d.issues || []).map(i => `- #${i.n} ${i.title}`).join('\\n')}\n\nPull requests (${d.prCount}):\n${(d.prs || []).map(p => `- #${p.n} ${p.title} [merged=${p.merged}]`).join('\\n')}\n\nGive a structured weekly dev summary (max 2000 chars).`;\nconst model = $env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';\nreturn [{ json: { repo: d.repo, since: d.since, language: lang, body: { model, max_tokens: 1000, system: sys, messages: [{ role: 'user', content: user }] } } }];\n"
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000008",
+      "name": "Build Claude payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, -140]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000009",
+      "name": "Claude API (summary)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, -140]
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $input.first().json;\nlet text = '';\nif (c.content && Array.isArray(c.content)) {\n  text = c.content.filter(b => b.type === 'text').map(b => b.text).join('\\n');\n}\nconst meta = $('Build Claude payload').first().json;\nreturn [{ json: { repo: meta.repo, summary: text, since: meta.since, rawUsage: c.usage || null } }];\n"
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000010",
+      "name": "Extract summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, -140]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.summary, mrkdwn: true }) }}",
+        "options": {}
+      },
+      "id": "1f2c0f70-0000-4000-8000-000000000011",
+      "name": "Slack webhook (deliver)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, -140]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Weekly cron (Fri 17:00)": {
+      "main": [[{ "node": "Init context", "type": "main", "index": 0 }]]
+    },
+    "Init context": {
+      "main": [
+        [
+          { "node": "GitHub commits (week)", "type": "main", "index": 0 },
+          { "node": "GitHub closed issues + PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "GitHub commits (week)": {
+      "main": [[{ "node": "Normalize commits", "type": "main", "index": 0 }]]
+    },
+    "GitHub closed issues + PRs": {
+      "main": [[{ "node": "Normalize issues/PRs", "type": "main", "index": 0 }]]
+    },
+    "Normalize commits": {
+      "main": [[{ "node": "Merge github data", "type": "main", "index": 0 }]]
+    },
+    "Normalize issues/PRs": {
+      "main": [[{ "node": "Merge github data", "type": "main", "index": 0 }]]
+    },
+    "Merge github data": {
+      "main": [[{ "node": "Build Claude payload", "type": "main", "index": 0 }]]
+    },
+    "Build Claude payload": {
+      "main": [[{ "node": "Claude API (summary)", "type": "main", "index": 0 }]]
+    },
+    "Claude API (summary)": {
+      "main": [[{ "node": "Extract summary", "type": "main", "index": 0 }]]
+    },
+    "Extract summary": {
+      "main": [[{ "node": "Slack webhook (deliver)", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "versionId": "20260911-weekly-dev-summary-0001"
+}
