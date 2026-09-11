@@ -52,6 +52,20 @@ No customer, auth, payment, email, or remote Turso integration is implemented.
 
 ## Repeat the outstanding Claude Code test
 
+From `verify/`, run `node --test context-smoke.test.mjs` for the harness checks,
+then `node context-smoke.mjs --response-file private-context-response.txt` with an
+already authenticated Claude Code on PATH. This creates a fresh temporary project,
+copies the unchanged guidance and fixture source, disables tools/MCP/hooks for the
+invocation, and removes that temporary project afterwards. It does not install
+dependencies, edit credentials, log in, or change global settings. The private
+response file is opt-in and never overwritten; review/redact it before sharing.
+
+Exit 1 means the invocation/output failed. Exit 2 means a response exists but
+requires human review. There is deliberately no automatic acceptance-pass exit:
+JSON success cannot establish that the plan follows the template or asks no
+clarifying questions. The prompt allows missing conventions to be surfaced and
+does not force Claude to suppress questions. Raw provider output is not printed.
+
 Create a fresh project or copy the fixture into an isolated directory. Paste the
 top-level `CLAUDE.md` there unchanged. With an already authenticated Claude Code,
 ask for a read-only tenant-scoped CRUD implementation plan. Do not supply the

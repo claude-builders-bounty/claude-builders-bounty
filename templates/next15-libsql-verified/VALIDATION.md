@@ -40,3 +40,19 @@ The process exited 1 with `is_error: true`, `api_error_status: 401` and zero inp
 and output tokens. It produced no implementation plan. No comprehension result
 is inferred from successful file copying or static review. The template remains
 draft pending a successful authenticated rerun. No merge or reward is claimed.
+
+## 2026-09-11 follow-up
+
+The comprehension attempt still returned HTTP 401 before inference. A new
+`context-smoke.mjs` harness now makes the fresh-project attempt reproducible and
+keeps transport success separate from human semantic acceptance. Its prompt does
+not instruct Claude to suppress clarification questions. Provider errors, invalid
+JSON and zero-token responses cannot produce an acceptance pass. Optional model
+responses are written only to a new private file, never stdout or an existing file.
+No new Claude comprehension pass, remote Turso test, deployment or payment is claimed.
+
+`node --test context-smoke.test.mjs`: 7 passed, 0 failed on Node.js 24.19.0.
+The live harness returned `status: blocked`, `reason: process_failed`, and
+`acceptance_passed: false`; the direct CLI attempt independently reported OAuth
+401 with zero model tokens. Earlier DB/build results above belong to 2026-09-10;
+they were not rerun for this harness-only follow-up.
