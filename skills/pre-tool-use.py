@@ -13,17 +13,37 @@ from datetime import datetime, timezone
 
 BLOCKED_LOG_PATH = os.path.expanduser("~/.claude/hooks/blocked.log")
 
+def strip_comments(cmd):
+    if not cmd:
+        return ""
+    lines = []
+    for line in cmd.splitlines():
+        # Strip trailing shell # comment if not quoted
+        clean = re.sub(r"(?<!['\"])\s+#(?![^{]*\}).*$", "", line)
+        # Strip SQL line comments --
+        clean = re.sub(r"(?<!['\"])\s*--.*$", "", clean)
+        lines.append(clean)
+    text = "\n".join(lines)
+    # Strip SQL block comments /* ... */
+    text = re.sub(r"/\*[\s\S]*?\*/", "", text)
+    return text
+
 def is_rm_rf(cmd):
-    # Matches rm with both recursive (-r, -R) and force (-f) flags, whether combined or separate
-    if not re.search(r"\brm\b", cmd, re.IGNORECASE):
+    clean = strip_comments(cmd)
+    if not re.search(r"\brm\b", clean, re.IGNORECASE):
         return False
-    # Check if flags include r/R and f
-    has_r = bool(re.search(r"\s-[a-zA-Z]*[rR]", cmd))
-    has_f = bool(re.search(r"\s-[a-zA-Z]*f", cmd))
-    return has_r and has_f
+    # Combined flags like -rf, -fr, -Rvf, etc.
+    combined = bool(re.search(r"\s-[a-zA-Z]*[rR][a-zA-Z]*f", clean) or re.search(r"\s-[a-zA-Z]*f[a-zA-Z]*[rR]", clean))
+    # Separate short flags like -r ... -f or -R ... -f
+    separate_short = bool(re.search(r"\s-[a-zA-Z]*[rR]\b", clean) and re.search(r"\s-[a-zA-Z]*f\b", clean))
+    # GNU long flags: --recursive and --force
+    has_rec = bool(re.search(r"--recursive\b", clean) or re.search(r"\s-[a-zA-Z]*[rR]\b", clean))
+    has_force = bool(re.search(r"--force\b", clean) or re.search(r"\s-[a-zA-Z]*f\b", clean))
+    return combined or separate_short or (has_rec and has_force)
 
 def is_unbounded_delete(cmd):
-    match = re.search(r"\bDELETE\s+FROM\s+([a-zA-Z0-9_.\"']+)(.*)", cmd, re.IGNORECASE)
+    clean = strip_comments(cmd)
+    match = re.search(r"\bDELETE\s+FROM\s+([a-zA-Z0-9_.\"']+)(.*)", clean, re.IGNORECASE)
     if match:
         rest = match.group(2)
         end_match = re.search(r"[;'\"|]", rest)
@@ -36,18 +56,18 @@ DESTRUCTIVE_RULES = [
         "id": "RM_RF",
         "name": "Recursive Force Removal",
         "check": is_rm_rf,
-        "reason": "Indiscriminate recursive file deletion (rm -rf) can destroy critical project or system files."
+        "reason": "Indiscriminate recursive file deletion (rm -rf / rm -r -f) can destroy critical project or system files."
     },
     {
         "id": "SQL_DROP_TABLE",
         "name": "SQL Drop Table",
-        "check": lambda cmd: bool(re.search(r"\bDROP\s+TABLE\b", cmd, re.IGNORECASE)),
+        "check": lambda cmd: bool(re.search(r"\bDROP\s+TABLE\b", strip_comments(cmd), re.IGNORECASE)),
         "reason": "DROP TABLE irreversibly deletes database tables and schemas."
     },
     {
         "id": "SQL_TRUNCATE",
         "name": "SQL Truncate Table",
-        "check": lambda cmd: bool(re.search(r"\bTRUNCATE\s+(?:TABLE\s+)?[a-zA-Z0-9_.]+", cmd, re.IGNORECASE)),
+        "check": lambda cmd: bool(re.search(r"\bTRUNCATE\s+(?:TABLE\s+)?[a-zA-Z0-9_.]+", strip_comments(cmd), re.IGNORECASE)),
         "reason": "TRUNCATE irreversibly purges all data from the target table."
     },
     {
@@ -59,7 +79,7 @@ DESTRUCTIVE_RULES = [
     {
         "id": "GIT_PUSH_FORCE",
         "name": "Git Force Push",
-        "check": lambda cmd: bool(re.search(r"\bgit\s+push\s+.*(?:--force|-f\b|--force-with-lease)", cmd, re.IGNORECASE)),
+        "check": lambda cmd: bool(re.search(r"\bgit\s+push\s+.*(?:--force|-f\b|--force-with-lease)", strip_comments(cmd), re.IGNORECASE)),
         "reason": "Force pushing can overwrite remote team commit history."
     }
 ]
@@ -127,6 +147,7 @@ def main():
             except Exception:
                 command = stdin_content.strip()
 
+    # If run directly by user with no command passed, show interactive status & demo
     if not command:
         print("=" * 64)
         print("🛡️  Claude Code Safety Hook: Destructive Command Interceptor")
@@ -135,7 +156,16 @@ def main():
         print("\nEnforced Safety Rules:")
         for r in DESTRUCTIVE_RULES:
             print(f"  • [{r['id']}] {r['name']}")
+            print(f"    Reason: {r['reason']}")
+        print("\nHow to Test / Run:")
+        print('  1. Test directly: python pre-tool-use.py "rm -rf /data"')
+        print('  2. Test via JSON: echo \'{"command": "DROP TABLE users;"}\' | python pre-tool-use.py')
         print("=" * 64)
+        if sys.platform == "win32" and sys.stdin.isatty():
+            try:
+                input("\nPress Enter to exit...")
+            except Exception:
+                pass
         sys.exit(0)
 
     allowed, violated_rule = evaluate_command(command, project_path)
