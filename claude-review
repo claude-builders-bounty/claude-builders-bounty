@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""CLI PR reviewer for claude-builders-bounty Issue #4."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from urllib.request import Request, urlopen
+
+
+def build_headers() -> dict:
+    headers = {"User-Agent": "claude-reviewer/1.0"}
+    token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def parse_pr_url(url: str):
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)$", url)
+    if not m:
+        raise ValueError("Expected PR URL like https://github.com/owner/repo/pull/123")
+    return m.group(1), m.group(2), m.group(3)
+
+
+def fetch_json(url: str) -> dict:
+    req = Request(url, headers=build_headers())
+    with urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def extract_filename_risks(files):
+    risks = []
+    names = [f.get("filename", "") for f in files]
+    joined = " ".join(names).lower()
+
+    if any(n.endswith((".db", ".sqlite", ".sqlite3")) for n in names):
+        risks.append("Database file artifacts are modified. Verify whether this is intentional and backed up.")
+    if "migration" in joined:
+        risks.append("Migration-like changes detected. Verify rollback and compatibility impact.")
+    if "workflow" in joined or ".github/workflows" in joined:
+        risks.append("Workflow files changed. Validate secret scope and CI permission assumptions.")
+    if "secrets" in joined:
+        risks.append("Potential secret/token-related content touched. Confirm no secrets committed in diff.")
+
+    status_counts = {}
+    for f in files:
+        status_counts[f.get("status", "modified")] = status_counts.get(f.get("status", "modified"), 0) + 1
+    removed = status_counts.get("removed", 0)
+    added = status_counts.get("added", 0)
+    renamed = status_counts.get("renamed", 0)
+    if removed:
+        risks.append(f"Contains {removed} removed file(s), validate replacement and deprecation behavior.")
+    if renamed:
+        risks.append(f"Contains {renamed} renamed file(s), ensure imports/usages are updated consistently.")
+    if added > 20:
+        risks.append(f"Large number of added files ({added}). Check namespace and packaging impact.")
+
+    return risks
+
+
+def extract_suggestions(files, pr_title):
+    names = [f.get("filename", "") for f in files]
+    suggestions = []
+
+    diff_total = sum((f.get("additions", 0) + f.get("deletions", 0)) for f in files)
+    if diff_total > 250:
+        suggestions.append("Large diff. Consider splitting into smaller PRs for safer, faster review.")
+    if not any("test" in n.lower() for n in names):
+        suggestions.append("Add/update targeted tests covering changed logic or behavior.")
+    if any(n.startswith("README") for n in names):
+        suggestions.append("README changed; add a short verification example for affected commands/paths.")
+    if any(n.endswith(".md") for n in names) and not any(n.endswith(".md") for n in names if "changelog" in n.lower()):
+        suggestions.append("Documented changes should include migration and compatibility notes if behavior changed.")
+    if any("workflow" in n.lower() for n in names):
+        suggestions.append("Run a dry CI pass to confirm workflow-level impact before merge.")
+    if not suggestions:
+        suggestions.append("No critical suggestion needed; continue with direct review checklist on logic and tests.")
+
+    return suggestions
+
+
+def confidence_level(files, additions, deletions):
+    changed = len(files)
+    churn = additions + deletions
+    if changed == 0:
+        return "Low"
+    avg_lines = churn / max(1, changed)
+    if changed <= 6 and avg_lines <= 120:
+        return "High"
+    if changed <= 15 and churn <= 800:
+        return "Medium"
+    return "Low"
+
+
+def run_review(pr_url: str) -> str:
+    owner, repo, pr_num = parse_pr_url(pr_url)
+    api = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}"
+    files_api = f"{api}/files?per_page=100"
+
+    pr = fetch_json(api)
+    files = fetch_json(files_api)
+
+    title = pr.get("title", "Untitled")
+    author = pr.get("user", {}).get("login", "unknown")
+    head_ref = pr.get("head", {}).get("ref", "")
+    base_ref = pr.get("base", {}).get("ref", "")
+    changed_files = pr.get("changed_files", len(files))
+    additions = pr.get("additions", 0)
+    deletions = pr.get("deletions", 0)
+
+    risk_items = extract_filename_risks(files)
+    if not risk_items:
+        risk_items = ["No critical risks detected by heuristic checks."]
+
+    suggestions = extract_suggestions(files, title)
+    confidence = confidence_level(files, additions, deletions)
+
+    summary = (
+        f"This PR (#{pr_num}) from `@{author}` updates `{changed_files}` files (`{head_ref}` -> `{base_ref}`) "
+        f"in `{title}` with {additions} additions and {deletions} deletions. "
+        f"The changed surface is moderate-to-large, so prioritize semantic validation of touched modules first."
+    )
+
+    output = [
+        "### Summary",
+        summary,
+        "",
+        "### Risks",
+    ]
+    output += [f"- {r}" for r in risk_items[:10]]
+    output += ["", "### Suggestions", *(f"- {s}" for s in suggestions[:10]), "", "### Confidence", confidence]
+    return "\n".join(output)
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description="Generate structured PR review summary")
+    p.add_argument("--pr", required=True, help="GitHub PR URL")
+    p.add_argument("--to-file", help="Optional markdown output file")
+    args = p.parse_args()
+
+    try:
+        md = run_review(args.pr)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.to_file:
+        with open(args.to_file, "w", encoding="utf-8") as f:
+            f.write(md)
+        print(f"saved: {args.to_file}")
+    else:
+        print(md)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
