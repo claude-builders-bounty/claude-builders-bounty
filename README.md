@@ -50,4 +50,23 @@ You're in the right place.
 
 ---
 
+## Destructive-command hook
+
+This repository includes a project-local Claude Code `PreToolUse` hook at
+`.claude/hooks/block-destructive.sh`. It blocks `rm -rf`, `DROP TABLE`, forced
+pushes, `TRUNCATE`, and `DELETE FROM` statements without a `WHERE` clause.
+Blocked attempts are recorded as JSON lines in `~/.claude/hooks/blocked.log`.
+
+The hook uses only Python 3's standard library. From the repository root, install
+it into an existing project with:
+
+```bash
+cp -R .claude /path/to/your-project/.claude
+chmod +x /path/to/your-project/.claude/hooks/block-destructive.sh
+```
+
+The hook leaves other Bash commands on Claude Code's normal permission path.
+
+---
+
 *Started by the Claude builder community · March 2026 · MIT License*
