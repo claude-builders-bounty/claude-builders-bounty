@@ -8,8 +8,17 @@ It does not comment on GitHub, open pull requests, claim the bounty, use Opire, 
 
 ## Usage
 
+Run directly:
+
 ```powershell
 node bin\claude-review.mjs --pr https://github.com/owner/repo/pull/123
+```
+
+Install locally as a CLI:
+
+```powershell
+npm link
+claude-review --pr https://github.com/owner/repo/pull/123
 ```
 
 Write output to a file:
@@ -53,6 +62,8 @@ This package includes a Claude Code subagent definition:
 ```
 
 The subagent file uses YAML frontmatter with `name`, `description`, `tools`, and `model`, followed by review instructions and the required Markdown output structure.
+
+See `docs/claude-code-subagent.md` for the subagent compatibility notes and installation path.
 
 ## External Actions That Require Felipe
 

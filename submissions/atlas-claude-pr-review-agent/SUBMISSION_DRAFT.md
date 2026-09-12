@@ -22,6 +22,7 @@ What it includes:
   - confidence score.
 - GitHub Actions workflow draft.
 - Claude Code subagent definition at `.claude/agents/pr-reviewer.md`.
+- Subagent compatibility notes at `docs/claude-code-subagent.md`.
 - Two example outputs from public PRs.
 
 I can open a PR with the implementation and examples if this direction fits the bounty.
