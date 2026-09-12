@@ -44,6 +44,16 @@ node bin\claude-review.mjs --pr https://github.com/prisma/deployment-example-ver
 
 See `.github/workflows/claude-review.yml` for a draft workflow that runs the CLI on pull requests. It is included as a local example only and has not been pushed anywhere.
 
+## Claude Code Subagent
+
+This package includes a Claude Code subagent definition:
+
+```text
+.claude/agents/pr-reviewer.md
+```
+
+The subagent file uses YAML frontmatter with `name`, `description`, `tools`, and `model`, followed by review instructions and the required Markdown output structure.
+
 ## External Actions That Require Felipe
 
 - Commenting `/opire try`.

@@ -21,6 +21,7 @@ What it includes:
   - changed files;
   - confidence score.
 - GitHub Actions workflow draft.
+- Claude Code subagent definition at `.claude/agents/pr-reviewer.md`.
 - Two example outputs from public PRs.
 
 I can open a PR with the implementation and examples if this direction fits the bounty.
@@ -33,4 +34,3 @@ Before posting anything:
 - Felipe approves `/opire try` or alternative claim step.
 - Felipe approves opening a PR.
 - Payment/receiving method remains unset until needed.
-
