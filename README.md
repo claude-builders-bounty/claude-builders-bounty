@@ -34,6 +34,27 @@ You're in the right place.
 
 ---
 
+## Security Hooks (Issue #3)
+
+### Pre-Tool-Use Security Hook: Block Destructive Bash Commands
+
+Intercepts dangerous bash commands (`rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, `DELETE FROM` without `WHERE`) before execution and logs blocked attempts to `~/.claude/hooks/blocked.log`.
+
+#### Quick Installation (2 commands)
+
+```bash
+mkdir -p ~/.claude/hooks
+curl -fsSL https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/hooks/block_destructive.py -o ~/.claude/hooks/block_destructive.py && chmod +x ~/.claude/hooks/block_destructive.py
+```
+
+#### Running Tests
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
