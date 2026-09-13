@@ -34,6 +34,63 @@ You're in the right place.
 
 ---
 
+## Bounty #4 Deliverable: `claude-review`
+
+This repository now includes a Claude Code-style PR review agent that accepts a GitHub PR URL or a local diff and prints a structured Markdown review.
+
+### Usage
+
+```bash
+npm install
+npm run review -- --pr https://github.com/owner/repo/pull/123
+```
+
+You can also review a saved diff:
+
+```bash
+npm run review -- --diff ./pr.diff
+```
+
+Or pipe a diff through stdin:
+
+```bash
+cat pr.diff | node ./bin/claude-review.js --stdin
+```
+
+The output includes:
+
+- Summary of changes
+- Identified risks
+- Improvement suggestions
+- Changed file snapshot
+- Confidence score: Low, Medium, or High
+
+### GitHub Action
+
+The workflow at `.github/workflows/claude-review.yml` runs on pull requests, generates the structured review from the PR diff, and posts it as a PR comment using the built-in `GITHUB_TOKEN`.
+
+### Local Test
+
+```bash
+npm test
+```
+
+### Sample Outputs
+
+Two real GitHub PR examples are included under `examples/`:
+
+- `examples/sample-review-nodejs-undici-pr-4019.md`
+- `examples/sample-review-vercel-next-js-pr-82802.md`
+
+They were generated with:
+
+```bash
+node ./bin/claude-review.js --pr https://github.com/nodejs/undici/pull/4019
+node ./bin/claude-review.js --pr https://github.com/vercel/next.js/pull/82802
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
