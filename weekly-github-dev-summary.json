@@ -1,0 +1,352 @@
+{
+  "name": "Weekly GitHub Dev Summary (n8n + Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-weekly",
+      "name": "Friday 5pm Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "repo",
+              "name": "githubRepo",
+              "value": "={{$env.GITHUB_REPO || 'owner/repo'}}",
+              "type": "string"
+            },
+            {
+              "id": "since",
+              "name": "since",
+              "value": "={{$now.minus({days: 7}).toISODate()}}",
+              "type": "string"
+            },
+            {
+              "id": "until",
+              "name": "until",
+              "value": "={{$now.toISODate()}}",
+              "type": "string"
+            },
+            {
+              "id": "language",
+              "name": "language",
+              "value": "={{$env.SUMMARY_LANG || 'EN'}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "init-context",
+      "name": "Init Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$json.githubRepo}}/commits",
+        "method": "GET",
+        "options": {
+          "queryParameters": [
+            {
+              "name": "since",
+              "value": "={{$json.since}}"
+            },
+            {
+              "name": "until",
+              "value": "={{$json.until}}"
+            },
+            {
+              "name": "per_page",
+              "value": 100
+            }
+          ],
+          "headers": {
+            "Authorization": "Bearer {{$env.GITHUB_TOKEN}}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "n8n-weekly-dev-summary"
+          }
+        },
+        "jsonParameters": true
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        750,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/{{$json.githubRepo}}/issues",
+        "method": "GET",
+        "options": {
+          "queryParameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{$json.since}}"
+            },
+            {
+              "name": "per_page",
+              "value": 100
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            }
+          ],
+          "headers": {
+            "Authorization": "Bearer {{$env.GITHUB_TOKEN}}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "n8n-weekly-dev-summary"
+          }
+        },
+        "jsonParameters": true
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues + PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        750,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const commits = items[0].json;\nconst issues = items[1].json.filter(i => !i.pull_request);\nconst prs = items[1].json.filter(i => i.pull_request && i.pull_request.merged_at);\n\nconst summary = {\n  repo: $json.githubRepo,\n  period: { since: $json.since, until: $json.until },\n  language: $json.language,\n  stats: {\n    commits: commits.length,\n    closed_issues: issues.length,\n    merged_prs: prs.length\n  },\n  commits: commits.slice(0, 30).map(c => ({\n    sha: c.sha.slice(0, 7),\n    message: c.commit.message.split('\\n')[0],\n    author: c.commit.author?.name || 'unknown',\n    date: c.commit.author?.date\n  })),\n  issues: issues.slice(0, 20).map(i => ({\n    number: i.number,\n    title: i.title,\n    labels: i.labels?.map(l => l.name) || [],\n    closed_at: i.closed_at\n  })),\n  prs: prs.slice(0, 20).map(p => ({\n    number: p.number,\n    title: p.title,\n    author: p.user?.login,\n    merged_at: p.pull_request.merged_at\n  }))\n};\n\nreturn [{ json: summary }];"
+      },
+      "id": "aggregate",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "options": {
+          "headers": {
+            "x-api-key": "={{$env.ANTHROPIC_API_KEY}}",
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+          }
+        },
+        "jsonParameters": true,
+        "bodyParametersJson": "={{const lang = $json.language === 'FR' ? 'French' : 'English'; const data = JSON.stringify($json, null, 2); return { model: 'claude-sonnet-4-20250514', max_tokens: 2000, messages: [{ role: 'user', content: 'You are a release narrator for GitHub repo ' + $json.repo + '.\\nWindow: ' + $json.period.since + ' to ' + $json.period.until + '\\nWrite the summary in clear professional ' + lang + '.\\n\\nProduce a weekly narrative summary with sections:\\n1) Highlights\\n2) Shipping (merged PRs)\\n3) Fixes & closed issues\\n4) Commit themes\\n5) Risks / follow-ups\\n\\nDATA (JSON):\\n' + data }] }}"
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1250,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const claudeResponse = items[0].json;\nconst content = claudeResponse.content?.[0]?.text || 'No summary generated';\nreturn [{ json: { ...$json, summary: content } }];"
+      },
+      "id": "extract-summary",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "if ($env.SLACK_WEBHOOK_URL) return [{json: {delivered: 'slack'}}];\nif ($env.DISCORD_WEBHOOK_URL) return [{json: {delivered: 'discord'}}];\nreturn [{json: {delivered: 'none', message: 'No webhook URL configured'}}];"
+      },
+      "id": "route-delivery",
+      "name": "Route Delivery",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.SLACK_WEBHOOK_URL}}",
+        "method": "POST",
+        "options": {
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        },
+        "jsonParameters": true,
+        "bodyParametersJson": "={{const lang = $json.language === 'FR' ? 'French' : 'English'; const repo = $json.repo; const period = $json.period; return { text: '*Weekly Dev Summary: ' + repo + '* (' + period.since + ' to ' + period.until + ')\\n' + $json.summary, blocks: [{ type: 'section', text: { type: 'mrkdwn', text: '*Weekly Dev Summary: ' + repo + '* (' + period.since + ' to ' + period.until + ')\\n' + $json.summary } }] }}"
+      },
+      "id": "deliver-slack",
+      "name": "Deliver to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1750,
+        50
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.DISCORD_WEBHOOK_URL}}",
+        "method": "POST",
+        "options": {
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        },
+        "jsonParameters": true,
+        "bodyParametersJson": "={{const lang = $json.language === 'FR' ? 'French' : 'English'; const repo = $json.repo; const period = $json.period; return { content: '**Weekly Dev Summary: ' + repo + '** (' + period.since + ' to ' + period.until + ')\\n' + $json.summary }}"
+      },
+      "id": "deliver-discord",
+      "name": "Deliver to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1750,
+        250
+      ]
+    }
+  ],
+  "connections": {
+    "Friday 5pm Cron": {
+      "main": [
+        [
+          {
+            "node": "Init Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Context": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues + PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues + PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary": {
+      "main": [
+        [
+          {
+            "node": "Route Delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Delivery": {
+      "main": [
+        [
+          {
+            "node": "Deliver to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Deliver to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1"
+}
