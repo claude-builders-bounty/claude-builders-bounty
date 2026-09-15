@@ -8,6 +8,14 @@ You're in the right place.
 
 ---
 
+## Setup Instructions
+
+1. Clone the repository and navigate into it.
+2. Make the script executable: `chmod +x changelog.sh`
+3. Run the script: `./changelog.sh`
+
+---
+
 ## How it works
 
 **To post a bounty**
