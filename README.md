@@ -1,53 +1,34 @@
-# Claude Builders Bounty 🤖
+# Block Destructive Bash — Claude Code pre-tool-use hook
 
-> A community bounty board for Claude Code builders.
+Blocks dangerous shell commands before Claude Code runs them. Logs every block to `~/.claude/hooks/blocked.log`.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Blocks
+- `rm -rf` / `rm -fr` (and `-r…f` flag combos)
+- `DROP TABLE`
+- `TRUNCATE` / `TRUNCATE TABLE`
+- `DELETE FROM …` without a `WHERE` clause
+- `git push --force` / `git push -f`
 
----
+Normal bash commands are left alone.
 
-## How it works
+## Install (2 commands)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+```bash
+mkdir -p ~/.claude/hooks && cp .claude/hooks/block_destructive.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/block_destructive.py
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+mkdir -p ~/.claude && printf '%s\n' '{' '  "hooks": {' '    "PreToolUse": [' '      {' '        "matcher": "Bash",' '        "hooks": [' '          {' '            "type": "command",' '            "command": "python3 ~/.claude/hooks/block_destructive.py"' '          }' '        ]' '      }' '    ]' '  }' '}' > ~/.claude/settings.json
+```
 
----
+(If you already have `~/.claude/settings.json`, merge the `PreToolUse` Bash hook that runs `python3 ~/.claude/hooks/block_destructive.py` instead of overwriting.)
 
-## Active Bounties
+Bash alternative: use `.claude/hooks/block-destructive.sh` the same way (`command`: `bash ~/.claude/hooks/block-destructive.sh`).
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Log format
+Each blocked attempt appends one line:
 
----
+`ISO8601_UTC | project=<path> | command=<attempted command>`
 
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## Why Claude sees a clear message
+On block, the hook exits non-zero and prints the reason on stderr so Claude Code refuses the tool call and shows the explanation.
