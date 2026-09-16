@@ -51,3 +51,19 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+## Pre-Tool-Use Dangerous Command Blocker Hook (Issue #3)
+
+This hook blocks destructive bash commands before execution in Claude Code.
+
+### Installation
+```bash
+mkdir -p ~/.claude/hooks
+cp pre_tool_use_hook.py ~/.claude/hooks/
+```
+
+### Verification
+```bash
+python -m unittest test_pre_tool_use_hook.py
+```
