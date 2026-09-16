@@ -119,7 +119,7 @@ function inferSuggestions(pr, risks) {
     suggestions.push("Expand the PR description with motivation, implementation notes, and validation steps.");
   }
 
-  if (risks.some((risk) => /security|credentials|payments|deployment|production/.test(risk))) {
+  if (risks.some((risk) => /security|credential|secret|payment|billing|deployment|production/.test(risk))) {
     suggestions.push("Include explicit rollout, rollback, and secret-handling notes before merge.");
   }
 
