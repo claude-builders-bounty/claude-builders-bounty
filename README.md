@@ -34,6 +34,28 @@ You're in the right place.
 
 ---
 
+## Destructive-command guard
+
+`block_destructive.py` is a Claude Code `PreToolUse` hook for the `Bash` tool.
+It blocks `rm -rf`, `DROP TABLE`, force pushes, `TRUNCATE`, and `DELETE FROM`
+statements without a `WHERE` clause. Each blocked command is recorded as JSONL
+in `~/.claude/hooks/blocked.log` with its UTC timestamp, command, and project
+path. Safe Bash commands exit normally and are not logged.
+
+The project-level hook registration is in `.claude/settings.json`.
+
+### Install
+
+```sh
+mkdir -p ~/.claude/hooks && cp block_destructive.py ~/.claude/hooks/
+chmod +x ~/.claude/hooks/block_destructive.py
+```
+
+Open Claude Code in this repository after installing. The hook will then run
+before every Bash tool invocation.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
