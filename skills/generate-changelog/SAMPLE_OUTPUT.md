@@ -1,0 +1,115 @@
+# Sample Output — real run on [cli/cli](https://github.com/cli/cli) (GitHub CLI)
+
+**Command executed:**
+
+```bash
+python generate_changelog.py --stdout --version "v2.101.0" --tag "v2.100.0" --date "2026-09-15"
+```
+
+*Generated with this very tool — commits between tags `v2.100.0` (2026-09-03) and `v2.101.0` (2026-09-15). Merge commits excluded via `--no-merges`.*
+
+---
+
+## [v2.101.0] - 2026-09-15
+
+### Added
+- Add repo default network acceptance test (`be35276a6`)
+- Address acceptance capability review (`7901e7efa`)
+- simplify attachment telemetry initialization (`2ac2543e3`)
+- Add clipboard preference for auth flows (`cbe04588f`)
+- Add trustworthy VHS demo skill (`d4d6e70f4`)
+
+### Changed
+- Bump github.com/cli/go-gh/v2 to v2.16.1 (`e09f1b1ca`)
+- Bump golang.org/x/text from 0.41.0 to 0.42.0 (`28a47f46a`)
+- Bump golang.org/x/crypto from 0.56.0 to 0.57.0 (`e4dc24104`)
+- Use internal Apple codesign action (#14437) (`38316c1c4`)
+- Bump azure/login from 3.0.2 to 3.1.0 (`617bbcfb4`)
+- Bump the codeql-actions group with 3 updates (`be5f9acf5`)
+- Bump golang.org/x/term from 0.45.0 to 0.46.0 (`17659961c`)
+- Bump Go to 1.27.1 (`a4f0de068`)
+- Safely replace stale Go bump branches (#14441) (`97de96962`)
+- Recognize maintainer authorization (#14438) (`4595165df`)
+- Retire multi-account migration (#14430) (`ba51bb477`)
+- Update Go bump validation tools (`d171a9111`)
+- Bump golang.org/x/sys from 0.47.0 to 0.48.0 (`9a779be4f`)
+- Wait for repository before archiving (`07e906502`)
+- Run acceptance tests in Actions with a GitHub App token (#14356) (`c265dd86f`)
+- Restore GH_EXTENSION and GH_PATH help entries (`983071ab7`)
+- Propagate gh path to extensions (`30419651a`)
+- Validate repository names during interactive creation (#14313) (`9174ffb07`)
+- Filter acceptance tests by token capability (`6dc60bf60`)
+- Stabilize variable list assertions (`734a22cbe`)
+- Keep repository rename test explicit (`cf2f3fcaa`)
+- clarify attachment tests and telemetry state (`1ba640d1c`)
+- Retry conflicting repository renames (`1f6b063bb`)
+- Consolidate secret workflow coverage (`89f056119`)
+- simplify telemetry recording and tests (`81780e761`)
+- simplify telemetry test coverage (`b54469f47`)
+- Improve workflow timeout diagnostics (`3c0f54c8d`)
+- Explain renamed repository cleanup (`be67f31d9`)
+- Harden acceptance resource readiness (`24e91441a`)
+- Improve acceptance linter guidance (`dcef13b4b`)
+- Restore acceptance test coverage (`118e3484d`)
+- Tighten acceptance feedback loop (`7f58f9101`)
+- Harden acceptance test isolation (`040ddb081`)
+- Synchronize acceptance test operations (`b5eb79f92`)
+- Reduce acceptance test contention (`f39af8a66`)
+- Avoid redundant acceptance clones (`3a821770c`)
+- Reduce acceptance repository creation (`109807c6a`)
+- use typed attachment telemetry events (`38704130e`)
+- start attachment telemetry before asset validation (`d2fe6e98d`)
+- minimize incidental telemetry service changes (`14fc1ff84`)
+- name pending telemetry updates as upserts (`03acc10bb`)
+- limit telemetry disabling to the service (`3c517fa04`)
+- move service back into telemetry.go (`07105963f`)
+- rename telemetry BeginEvent to Begin (`570183b09`)
+- restore telemetry service naming (`c41dd03ff`)
+- send telemetry when invocation finishes (`7f3b49171`)
+- separate event recording from invocation policy (`46e09a548`)
+- Bump golang.org/x/sync from 0.22.0 to 0.23.0 (`20c599bb3`)
+- finalize telemetry at invocation completion (`5e078edf2`)
+- Share development guides across contributors (`d6cbbe9f1`)
+- Update release deep dive for new PGP signing key (`5aef01fab`)
+- Rewrite CLI agent guidance (`f537efa45`)
+- Bump github.com/yuin/goldmark from 1.8.5 to 1.8.6 (`5a7c407d1`)
+- Bump github.com/google/go-containerregistry (`123c1e72c`)
+- Bump github.com/klauspost/compress from 1.19.2 to 1.20.0 (`2091aae79`)
+- Bump github.com/microsoft/dev-tunnels from 0.1.27 to 0.2.0 (`145d839ab`)
+- Fix broken "GitHub language" link in primer foundations (`a6cb3e857`)
+- Record attachment operation counts (`091c24d70`)
+- Check normalized Go state for lint bump (`a73c594ce`)
+- Harden Go bump version and cleanup (`6232ed14d`)
+- Keep Go bump inputs scoped (`05dee0297`)
+- Defer Go source migrations to bump (`fda2d6138`)
+- Validate automated Go version bumps (`41b7d3c18`)
+- Clear legacy enterprise token (`2ea56b15e`)
+- Tighten quality gate guidance (`d2637ff4e`)
+- Enable clipboard auth by default (`e316a01d2`)
+- Preserve host-scoped config compatibility (`c11b7021e`)
+- Guard repository query selections (`77e282ebe`)
+- Use API SSH URLs for repository clones (`03740ac4c`)
+- Announce Linux PGP key rotation (`ef3045591`)
+- Sign Linux repositories only with the new PGP key (`1d5eab82c`)
+
+### Fixed
+- Fix remote branch deletion for owner case mismatch (#14429) (`8fcd6a643`)
+- Fix acceptance script paths on Windows (`3b3093fce`)
+- Merge pull request #14412 from cli/williammartin-fix-workflow-failure (`cebba8ca6`)
+
+- Reuse workflow dispatch run IDs (`9a16764cc`)
+- Address acceptance fixture review (`8d44b2760`)
+- Enable discussions in shared fixture (`d1e29601b`)
+- Share acceptance fixture repositories (`d9b962e88`)
+- Prepare exit errors for Go 1.27 (`75fc31e57`)
+- Resolve linter version during Go bumps (`3e3eb860c`)
+- Fix Go bump workflow toolchain (`69e69c1b1`)
+- Apply Go fixes to changed packages (`6de236a15`)
+- Fix VHS evidence inspection (`b174ed58a`)
+- Require verified commit SHAs in issue-triage permalinks (`92029a9e7`)
+
+### Removed
+- Revert "Use internal Apple codesign action (#14437)" (`189706bcc`)
+- Delete repo garden command (`5448cdc20`)
+- Remove GH_EXTENSION help text per review feedback (`c708a53e5`)
+
