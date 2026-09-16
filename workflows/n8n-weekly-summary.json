@@ -1,0 +1,229 @@
+{
+  "name": "Automated Weekly GitHub Dev Summary via Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "hours": 17,
+              "minutes": 0,
+              "weeksInterval": 1
+            }
+          ]
+        }
+      },
+      "name": "Weekly Cron Trigger (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "mode": "set",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "github_repo",
+              "value": "={{$workflow.github_repo}}",
+              "type": "string"
+            },
+            {
+              "id": "2",
+              "name": "language",
+              "value": "={{$workflow.language || 'EN'}}",
+              "type": "string"
+            },
+            {
+              "id": "3",
+              "name": "since_date",
+              "value": "={{new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] + 'T00:00:00Z'}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "name": "Set Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.github_repo}}/commits?since={{$json.since_date}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "name": "Fetch GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.github_repo}}/issues?state=closed&since={{$json.since_date}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "name": "Fetch Closed Issues & PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1500,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Generate a concise weekly narrative summary of this repository activity in {{ $json.language }}. Focus on key achievements, notable changes, and trends.\\n\\nCommits: {{ JSON.stringify($json.commits || []) }}\\n\\nClosed PRs/Issues: {{ JSON.stringify($json.issues || []) }}\"\n    }\n  ]\n}"
+      },
+      "name": "Generate Summary via Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1130, 300]
+    },
+    {
+      "parameters": {
+        "mode": "set",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "summary",
+              "value": "={{$json.content[0].text}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "name": "Extract Summary Text",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$workflow.discord_webhook_url}}",
+        "method": "POST",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"📊 **Weekly Dev Summary - {{new Date().toLocaleDateString()}}**\\n\\n{{ $json.summary }}\",\n  \"username\": \"Dev Summary Bot\"\n}",
+        "options": {}
+      },
+      "name": "Send to Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1570, 300],
+      "disabled": "={{!$workflow.discord_webhook_url}}"
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$workflow.email_from}}",
+        "toEmail": "={{$workflow.email_to}}",
+        "subject": "=📊 Weekly Dev Summary - {{new Date().toLocaleDateString()}}",
+        "text": "={{$json.summary}}",
+        "html": "<h2>📊 Weekly Dev Summary</h2><p>{{new Date().toLocaleDateString()}}</p><hr><pre>{{$json.summary}}</pre>",
+        "options": {}
+      },
+      "name": "Send via Email",
+      "type": "n8n-nodes-base.sendEmail",
+      "typeVersion": 2.1,
+      "position": [1570, 450],
+      "disabled": "={{!$workflow.email_to}}"
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger (Friday 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Set Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Fetch Closed Issues & PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues & PRs": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary via Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary via Claude API": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary Text": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send via Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "config": {
+      "github_repo": "owner/repo",
+      "discord_webhook_url": "",
+      "email_from": "",
+      "email_to": "",
+      "language": "EN"
+    }
+  }
+}
