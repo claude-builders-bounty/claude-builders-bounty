@@ -1,0 +1,217 @@
+{
+  "name": "Weekly Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "repository": "={{ $env.GITHUB_REPO }}",
+        "owner": "={{ $env.GITHUB_REPO.split('/')[0] }}",
+        "additionalFields": {
+          "since": "={{ new Date(new Date().setDate(new Date().getDate() - 7)).toISOString() }}"
+        }
+      },
+      "id": "2",
+      "name": "Get Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "repository": "={{ $env.GITHUB_REPO.split('/')[1] }}",
+        "owner": "={{ $env.GITHUB_REPO.split('/')[0] }}",
+        "additionalFields": {
+          "state": "closed",
+          "since": "={{ new Date(new Date().setDate(new Date().getDate() - 7)).toISOString() }}"
+        }
+      },
+      "id": "3",
+      "name": "Get Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "pullRequest",
+        "operation": "getAll",
+        "repository": "={{ $env.GITHUB_REPO.split('/')[1] }}",
+        "owner": "={{ $env.GITHUB_REPO.split('/')[0] }}",
+        "additionalFields": {
+          "state": "closed"
+        }
+      },
+      "id": "4",
+      "name": "Get Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $items(\"Get Commits\").map(i => i.json.commit.message);\nconst issues = $items(\"Get Closed Issues\").map(i => i.json.title);\nconst prs = $items(\"Get Merged PRs\").filter(i => i.json.merged_at !== null).map(i => i.json.title);\n\nconst language = $env.LANGUAGE || 'EN';\n\nconst prompt = `Please provide a weekly narrative summary for the GitHub repository activity.\\nLanguage: ${language}\\n\\nCommits:\\n${commits.join('\\n')}\\n\\nClosed Issues:\\n${issues.join('\\n')}\\n\\nMerged PRs:\\n${prs.join('\\n')}\\n\\nGenerate a Markdown formatted narrative summary highlighting the key progress, major features, and technical details.`;\n\nreturn [{ json: { prompt } }];"
+      },
+      "id": "5",
+      "name": "Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "prompt": "={{ $json.prompt }}",
+        "maxTokens": 1000
+      },
+      "id": "6",
+      "name": "Anthropic Claude",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "webhookUri": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "text": "={{ $json.message.content[0].text }}",
+        "options": {}
+      },
+      "id": "7",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Get Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Get Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Data": {
+      "main": [
+        [
+          {
+            "node": "Anthropic Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Claude": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
