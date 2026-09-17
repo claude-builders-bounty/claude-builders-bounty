@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# claude-review - Claude Code sub-agent that reviews a GitHub PR and prints a
+# structured Markdown review.
+#
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+# Requires: claude (Claude Code CLI) and curl. No other dependencies.
+set -euo pipefail
+
+PR_URL=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="${2:?--pr needs a URL}"; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+[[ -n "$PR_URL" ]] || { echo "usage: claude-review --pr <github-pr-url>" >&2; exit 2; }
+
+# Parse owner/repo/number out of the URL.
+if [[ "$PR_URL" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+  OWNER="${BASH_REMATCH[1]}"; REPO="${BASH_REMATCH[2]}"; NUM="${BASH_REMATCH[3]}"
+else
+  echo "not a GitHub PR URL: $PR_URL" >&2; exit 2
+fi
+
+API="https://api.github.com/repos/$OWNER/$REPO/pulls/$NUM"
+META=$(curl -fsSL "$API")
+TITLE=$(printf '%s' "$META" | grep -m1 '"title"' | cut -d'"' -f4)
+DIFF=$(curl -fsSL -H 'Accept: application/vnd.github.v3.diff' "$API")
+
+# Cap the diff so huge PRs still fit the context window.
+DIFF="${DIFF:0:120000}"
+
+PROMPT="$(cat <<PROMPT_EOF
+You are a senior engineer reviewing a pull request. Output ONLY Markdown with
+exactly these sections:
+
+## Summary
+(2-3 sentences: what the PR changes and why)
+
+## Risks
+(bulleted list of concrete risks; "None identified" if truly none)
+
+## Suggestions
+(bulleted list of specific improvements)
+
+## Confidence
+(one of: Low / Medium / High, with one sentence of justification)
+
+PR: $PR_URL
+Title: $TITLE
+
+DIFF:
+$DIFF
+PROMPT_EOF
+)"
+
+exec claude -p "$PROMPT"
