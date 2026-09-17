@@ -1,0 +1,52 @@
+{
+  "url": "https://github.com/pallets/click/pull/3860",
+  "repository": "pallets/click",
+  "number": 3860,
+  "title": "Always list all positional arguments",
+  "head_sha": "05f6fd0df4ecbd104eb7a229f9f185c2484dee69",
+  "base_sha": "86949d19b930ef68a45566544cb4b9508d895d0d",
+  "files": [
+    {
+      "path": "CHANGES.md",
+      "status": "modified",
+      "previous_path": null,
+      "additions": 5,
+      "deletions": 0,
+      "patch": "@@ -9,6 +9,11 @@ Unreleased\n - Add {meth}`Option.get_help_spec`, which returns the option's left help\n   column even when the option is hidden. {meth}`Option.get_help_record` still\n   returns `None` for hidden options, so help screens are unchanged. {pr}`3821`\n+- The `Positional arguments` help section lists every argument of the command,\n+  not only the documented ones. An argument with no `help` gets an empty\n+  description, the same way an option with no `help` does. {pr}`3860`\n+- {meth}`Argument.get_help_record` always returns a tuple. It used to return\n+  `None` for an argument with no `help`. {pr}`3860`\n - Document which types are inferred from `default`, and what an unrecognized\n   `type` callable does to a command-line value. {issue}`3036` {pr}`3808`\n - `path_type` narrows the converted value's type for `convert` and `prompt`."
+    },
+    {
+      "path": "docs/arguments.md",
+      "status": "modified",
+      "previous_path": null,
+      "additions": 2,
+      "deletions": 1,
+      "patch": "@@ -12,7 +12,8 @@ Arguments are:\n   can take an arbitrary number of inputs\n * Can take an optional `help` string shown in the `Positional arguments`\n   section of the help page, or be {ref}`documented in the command docstring\n-  <documenting-arguments>`.\n+  <documenting-arguments>`. One argument with a `help` makes the section list\n+  all the arguments of the command.\n \n Useful and often used kwargs are:\n "
+    },
+    {
+      "path": "docs/documentation.md",
+      "status": "modified",
+      "previous_path": null,
+      "additions": 4,
+      "deletions": 0,
+      "patch": "@@ -118,6 +118,10 @@ the `Positional arguments` section of the help page. You can still document\n arguments in the command docstring, especially when you want to describe them\n in the main help text by name.\n \n+The section shows up as soon as one argument of the command has a `help`. It\n+then lists every argument, so it always matches the usage line. Arguments with\n+no `help` are listed with an empty description.\n+\n A brief example:\n \n ```{eval-rst}"
+    },
+    {
+      "path": "src/click/core.py",
+      "status": "modified",
+      "previous_path": null,
+      "additions": 20,
+      "deletions": 12,
+      "patch": "@@ -1310,16 +1310,17 @@ def format_options(self, ctx: Context, formatter: HelpFormatter) -> None:\n                 formatter.write_dl(opts)\n \n     def format_arguments(self, ctx: Context, formatter: HelpFormatter) -> None:\n-        \"\"\"Writes the arguments that have a help record into the formatter.\"\"\"\n-        args = []\n-        for param in self.get_params(ctx):\n-            rv = param.get_help_record(ctx)\n-            if rv is not None and isinstance(param, Argument):\n-                args.append(rv)\n+        \"\"\"Writes all arguments into the formatter, if at least one is documented.\n+\n+        An argument with no help gets an empty description, the same way an option\n+        with no help does. That keeps the section an exhaustive list of the\n+        positional arguments, matching the usage line.\n+        \"\"\"\n+        args = [param for param in self.get_params(ctx) if isinstance(param, Argument)]\n \n-        if args:\n+        if any(arg.help is not None for arg in args):\n             with formatter.section(_(\"Positional arguments\")):\n-                formatter.write_dl(args)\n+                formatter.write_dl([arg.get_help_record(ctx) for arg in args])\n \n     def format_epilog(self, ctx: Context, formatter: HelpFormatter) -> None:\n         \"\"\"Writes the epilog into the formatter if it exists.\"\"\"\n@@ -3799,11 +3800,18 @@ def _parse_decls(\n     def get_usage_pieces(self, ctx: Context) -> list[str]:\n         return [self.make_metavar(ctx)]\n \n-    def get_help_record(self, ctx: Context) -> tuple[str, str] | None:\n-        if self.help is None:\n-            return None\n+    def get_help_record(self, ctx: Context) -> tuple[str, str]:\n+        \"\"\"Returns the argument's help row: its metavar and its help text.\n \n-        return self.make_metavar(ctx), self.help\n+        Unlike :meth:`Option.get_help_record`, this never returns ``None``. An\n+        argument cannot be hidden, so an undocumented one still gets a row, with\n+        an empty description.\n+\n+        .. versionchanged:: 8.5.1\n+            Always returns a tuple. It used to return ``None`` when ``help`` was\n+            not set.\n+        \"\"\"\n+        return self.make_metavar(ctx), self.help or \"\"\n \n     def get_error_hint(self, ctx: Context | None) -> str:\n         if ctx is not None:"
+    },
+    {
+      "path": "tests/test_arguments.py",
+      "status": "modified",
+      "previous_path": null,
+      "additions": 93,
+      "deletions": 0,
+      "patch": "@@ -324,6 +324,99 @@ def cli(count):\n     assert \"number of greetings\" in result.output\n \n \n+def test_argument_help_lists_undocumented_arguments(runner):\n+    \"\"\"One documented argument makes the section list all of them.\"\"\"\n+\n+    @click.command()\n+    @click.argument(\"src\", help=\"Source path\")\n+    @click.argument(\"dst\")\n+    @click.argument(\"extra\", nargs=-1)\n+    def cli(src, dst, extra):\n+        pass\n+\n+    result = runner.invoke(cli, [\"--help\"])\n+    assert result.exit_code == 0, result.output\n+    lines = result.output.splitlines()\n+    start = lines.index(\"Positional arguments:\")\n+    assert lines[start : start + 4] == [\n+        \"Positional arguments:\",\n+        \"  SRC         Source path\",\n+        \"  DST\",\n+        \"  [EXTRA]...\",\n+    ]\n+\n+\n+def test_argument_help_undocumented_arguments_only_no_section(runner):\n+    \"\"\"Arguments alone produce no section: at least one needs a help.\"\"\"\n+\n+    @click.command()\n+    @click.argument(\"src\")\n+    @click.argument(\"dst\")\n+    def cli(src, dst):\n+        pass\n+\n+    result = runner.invoke(cli, [\"--help\"])\n+    assert result.exit_code == 0, result.output\n+    assert \"Positional arguments:\" not in result.output\n+\n+\n+def test_argument_help_deprecated_without_help_lists_all(runner):\n+    \"\"\"A deprecation label counts as help and brings every argument into view.\"\"\"\n+\n+    @click.command()\n+    @click.argument(\"src\", required=False, deprecated=True)\n+    @click.argument(\"dst\")\n+    def cli(src, dst):\n+        pass\n+\n+    result = runner.invoke(cli, [\"--help\"])\n+    assert result.exit_code == 0, result.output\n+    lines = result.output.splitlines()\n+    start = lines.index(\"Positional arguments:\")\n+    assert lines[start : start + 3] == [\n+        \"Positional arguments:\",\n+        \"  [SRC!]  (DEPRECATED)\",\n+        \"  DST\",\n+    ]\n+\n+\n+def test_argument_help_empty_string_lists_all(runner):\n+    \"\"\"An explicit empty help opens the section, the same way an empty option help\n+    keeps its option listed.\n+    \"\"\"\n+\n+    @click.command()\n+    @click.argument(\"src\", help=\"\")\n+    @click.argument(\"dst\")\n+    def cli(src, dst):\n+        pass\n+\n+    result = runner.invoke(cli, [\"--help\"])\n+    assert result.exit_code == 0, result.output\n+    lines = result.output.splitlines()\n+    start = lines.index(\"Positional arguments:\")\n+    assert lines[start : start + 3] == [\n+        \"Positional arguments:\",\n+        \"  SRC\",\n+        \"  DST\",\n+    ]\n+\n+\n+@pytest.mark.parametrize(\n+    (\"help_text\", \"expected\"),\n+    [\n+        pytest.param(None, (\"SRC\", \"\"), id=\"None\"),\n+        pytest.param(\"\", (\"SRC\", \"\"), id=\"empty\"),\n+        pytest.param(\"Source path\", (\"SRC\", \"Source path\"), id=\"documented\"),\n+    ],\n+)\n+def test_argument_get_help_record_never_none(help_text, expected):\n+    \"\"\"Every argument gets a row, even an undocumented one.\"\"\"\n+    arg = click.Argument([\"src\"], help=help_text)\n+    ctx = click.Context(click.Command(\"cli\"))\n+    assert arg.get_help_record(ctx) == expected\n+\n+\n def test_argument_help_optional_metavar(runner):\n     @click.command()\n     @click.argument(\"name\", required=False, default=\"\", help=\"The name to print\")"
+    }
+  ],
+  "limitations": [],
+  "tests_executed": false
+}
