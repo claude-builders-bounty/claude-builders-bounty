@@ -1,0 +1,334 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "Weekly Trigger (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_OWNER",
+              "value": "owner"
+            },
+            {
+              "name": "GITHUB_REPO",
+              "value": "repository"
+            },
+            {
+              "name": "WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/your-webhook-url"
+            },
+            {
+              "name": "LANGUAGE",
+              "value": "EN"
+            },
+            {
+              "name": "ANTHROPIC_API_KEY",
+              "value": "sk-ant-api03-placeholder"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "name": "Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();\nreturn {\n  json: {\n    since_iso: oneWeekAgo,\n    now_iso: now.toISOString(),\n    owner: $('Config Variables').first().json.GITHUB_OWNER,\n    repo: $('Config Variables').first().json.GITHUB_REPO,\n    lang: $('Config Variables').first().json.LANGUAGE || 'EN',\n    webhook: $('Config Variables').first().json.WEBHOOK_URL,\n    anthropic_key: $('Config Variables').first().json.ANTHROPIC_API_KEY\n  }\n};"
+      },
+      "id": "33333333-3333-4333-8333-333333333333",
+      "name": "Compute Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Compute Date Range').first().json.owner }}/{{ $('Compute Date Range').first().json.repo }}/commits?since={{ $('Compute Date Range').first().json.since_iso }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "44444444-4444-4444-8444-444444444444",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Compute Date Range').first().json.owner }}/{{ $('Compute Date Range').first().json.repo }}/issues?state=closed&since={{ $('Compute Date Range').first().json.since_iso }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55555555-5555-4555-8555-555555555555",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Compute Date Range').first().json.owner }}/{{ $('Compute Date Range').first().json.repo }}/pulls?state=closed&per_page=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "66666666-6666-4666-8666-666666666666",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Compute Date Range').first().json;\nconst sinceDate = new Date(config.since_iso);\n\n// 1. Process Commits\nlet commits = [];\ntry {\n  const rawCommits = $('Fetch Commits').all();\n  commits = rawCommits.map(c => {\n    const j = c.json;\n    return `- ${j.commit?.message?.split('\\n')[0]} (by ${j.commit?.author?.name || 'unknown'})`;\n  }).slice(0, 30);\n} catch (e) {}\n\n// 2. Process Closed Issues\nlet issues = [];\ntry {\n  const rawIssues = $('Fetch Closed Issues').all();\n  issues = rawIssues.filter(i => !i.json.pull_request).map(i => {\n    return `- #${i.json.number}: ${i.json.title}`;\n  }).slice(0, 20);\n} catch (e) {}\n\n// 3. Process Merged PRs\nlet prs = [];\ntry {\n  const rawPrs = $('Fetch Merged PRs').all();\n  prs = rawPrs.filter(p => {\n    if (!p.json.merged_at) return false;\n    return new Date(p.json.merged_at) >= sinceDate;\n  }).map(p => {\n    return `- PR #${p.json.number}: ${p.json.title} (merged by ${p.json.user?.login || 'contributor'})`;\n  }).slice(0, 20);\n} catch (e) {}\n\nconst languagePrompt = config.lang.toUpperCase() === 'FR'\n  ? 'Rédige le résumé complet en français avec un ton professionnel et engageant.'\n  : 'Write the complete summary in English with a professional, inspiring developer-friendly tone.';\n\nconst prompt = `You are an expert technical writer. Generate a comprehensive weekly developer narrative digest for the GitHub repository \"${config.owner}/${config.repo}\".\\n\\nLanguage Instruction: ${languagePrompt}\\n\\nActivity Data for the past 7 days:\\n\\n### COMMITS (${commits.length}):\\n${commits.join('\\n') || 'No direct commits.'}\\n\\n### CLOSED ISSUES (${issues.length}):\\n${issues.join('\\n') || 'No issues closed this week.'}\\n\\n### MERGED PULL REQUESTS (${prs.length}):\\n${prs.join('\\n') || 'No PRs merged this week.'}\\n\\nStructure your response in Markdown with:\\n1. 🌟 **Executive Summary**: 2-3 paragraphs highlighting key achievements and velocity.\\n2. 🚀 **Key Features & Improvements**: Highlights from merged PRs and commits.\\n3. 🐛 **Bugs Resolved & Quality**: Critical fixes and closed issues.\\n4. 🔮 **Outlook for Next Week**: Suggested focus areas based on recent trajectory.`;\n\nreturn {\n  json: {\n    prompt: prompt,\n    anthropic_key: config.anthropic_key,\n    webhook_url: config.webhook,\n    repo: `${config.owner}/${config.repo}`\n  }\n};"
+      },
+      "id": "77777777-7777-4777-8777-777777777777",
+      "name": "Aggregate & Format Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $('Aggregate & Format Prompt').first().json.anthropic_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1500,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($('Aggregate & Format Prompt').first().json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "88888888-8888-4888-8888-888888888888",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Aggregate & Format Prompt').first().json.webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": {{ JSON.stringify(\"📢 **Weekly Developer Summary for \" + $('Aggregate & Format Prompt').first().json.repo + \"**\\n\\n\" + $json.content[0].text) }}\n}",
+        "options": {}
+      },
+      "id": "99999999-9999-4999-8999-999999999999",
+      "name": "Deliver via Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Compute Date Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Date Range": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Format Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Format Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Format Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate & Format Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
