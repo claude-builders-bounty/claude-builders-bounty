@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+import sys
+import json
+import re
+import os
+import datetime
+
+# Setup paths
+CLAUDE_DIR = os.path.expanduser('~/.claude/hooks')
+LOG_FILE = os.path.join(CLAUDE_DIR, 'blocked.log')
+
+# Destructive patterns to block
+PATTERNS = [
+    r'rm\s+-rf',
+    r'DROP\s+TABLE',
+    r'git\s+push\s+--force',
+    r'TRUNCATE',
+    # DELETE FROM without WHERE
+    # This uses a regex that looks for DELETE FROM but not WHERE afterwards
+    r'DELETE\s+FROM(?!\s+.*WHERE)'
+]
+
+def log_blocked(command):
+    if not os.path.exists(CLAUDE_DIR):
+        os.makedirs(CLAUDE_DIR, exist_ok=True)
+    
+    timestamp = datetime.datetime.now().isoformat()
+    project_path = os.getcwd()
+    
+    with open(LOG_FILE, 'a') as f:
+        f.write(f"[{timestamp}] BLOCKED: {command} | PATH: {project_path}\n")
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(0)
+    
+    tool_name = sys.argv[1].lower()
+    
+    # We only care about bash/terminal tools
+    if tool_name not in ['bash', 'run_command', 'terminal']:
+        sys.exit(0)
+        
+    try:
+        # Read parameters from stdin
+        stdin_data = sys.stdin.read()
+        if not stdin_data:
+            sys.exit(0)
+            
+        params = json.loads(stdin_data)
+        command = params.get('command', '')
+        
+        # Check patterns
+        for pattern in PATTERNS:
+            if re.search(pattern, command, re.IGNORECASE):
+                log_blocked(command)
+                # Print clear message for Claude (hook stdout/stderr is returned to the agent if it errors)
+                print(f"ERROR: Command execution blocked by pre-tool-use hook.")
+                print(f"Reason: Command matched destructive pattern '{pattern}'.")
+                print(f"Please use a safer alternative.")
+                # Exit with non-zero to block execution
+                sys.exit(1)
+                
+    except Exception as e:
+        # In case of any parsing error, let it pass so we don't block normal commands
+        sys.exit(0)
+        
+    # Exit 0 means allow execution
+    sys.exit(0)
+
+if __name__ == '__main__':
+    main()
