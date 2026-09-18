@@ -2,6 +2,18 @@
 
 > A community bounty board for Claude Code builders.
 
+## Changelog generator (bounty #1)
+
+With Git, Bash and Python 3.9+ installed:
+
+1. Clone this repository.
+2. Ensure your target repository has its complete Git history and release tags.
+3. Run `bash changelog.sh --repo /path/to/project` to generate its `CHANGELOG.md`.
+
+See [usage, behavior and tests](CHANGELOG_GENERATOR.md) and the
+[real-repository sample](SAMPLE_CHANGELOG.md). Use `--stdout` to preview without
+writing; existing handwritten changelogs are protected.
+
 Building with Claude Code? Have tasks to delegate?
 Want to get paid for contributing to AI projects?
 You're in the right place.
