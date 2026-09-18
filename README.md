@@ -1,53 +1,46 @@
-# Claude Builders Bounty 🤖
+# destructive-command-hook
 
-> A community bounty board for Claude Code builders.
+Un hook `PreToolUse` pequeño y local para Claude Code. Lee el evento JSON de stdin y bloquea, antes de ejecutar, estos casos de alto riesgo:
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+- `rm -rf` (incluidas las variantes separadas `-r -f`).
+- `git push --force` / `git push -f`.
+- `DROP TABLE` y `TRUNCATE`.
+- `DELETE FROM` cuando la sentencia no tiene `WHERE`.
+- En Windows, `Remove-Item -Recurse -Force` y equivalentes comunes.
 
----
+Cada bloqueo se añade como una línea JSON a `~/.claude/hooks/blocked.log`, con timestamp UTC, comando, ruta del proyecto y regla. El hook devuelve el código de salida `2` y una explicación clara a Claude Code. Los comandos seguros (incluidos `git status`, `rm archivo`, `DELETE ... WHERE ...` y ejemplos dentro de `echo`) pasan sin salida.
 
-## How it works
+## Instalación (dos comandos)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+Desde esta carpeta:
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```text
+python destructive_command_hook.py --install
+python -m unittest -v
+```
 
----
+El primer comando crea o actualiza `~/.claude/settings.json`, conserva la configuración existente y registra el matcher `Bash|PowerShell`. Si se usa una instalación de Python distinta en el entorno de Claude Code, edita el comando guardado en `settings.json` para apuntar a ese intérprete.
 
-## Active Bounties
+## Uso y pruebas
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+Claude Code invoca el script como comando de hook y le entrega un único evento JSON por stdin. Para una prueba aislada segura:
 
----
+```powershell
+'{"tool_name":"Bash","tool_input":{"command":"rm -rf ./fixture"},"cwd":"C:\\fixture-project"}' | python .\destructive_command_hook.py
+```
 
-## Rules
+La prueba anterior solo analiza una cadena: nunca ejecuta `rm`. Las pruebas automatizadas tampoco ejecutan comandos de shell.
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+También se puede escoger otro archivo de log durante pruebas o integración con `DESTRUCTIVE_HOOK_LOG`. El valor por defecto cumple el bounty: `~/.claude/hooks/blocked.log`.
 
----
+## Decisiones y límites
 
-## Community
+La normalización separa operadores compuestos (`;`, `&&`, `||`, `|` y saltos de línea) solo cuando están fuera de comillas, reconoce Bash y formas frecuentes de PowerShell y evita bloquear texto meramente citado en `echo`/`printf`/`Write-Output`. No evalúa shell, no sigue aliases o funciones, no es un parser SQL completo y no pretende ser un sandbox: una defensa real debe combinarlo con permisos mínimos, revisión humana, backups y controles del sistema de archivos. Los wrappers, codificaciones y sintaxis shell exótica pueden requerir reglas adicionales.
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Pendiente de revisión
 
----
+- Validar la sintaxis exacta de `settings.json` contra la versión de Claude Code usada en cada equipo.
+- Añadir casos específicos si el equipo usa aliases, wrappers SQL o shells distintos.
+- Decidir una política de rotación si `blocked.log` crece mucho.
 
-*Started by the Claude builder community · March 2026 · MIT License*
+Licencia: MIT.
