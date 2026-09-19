@@ -2,6 +2,9 @@
 
 > A community bounty board for Claude Code builders.
 
+The [destructive-command hook](destructive-hook/README.md) implements bounty #3
+with a Python PreToolUse guard, a two-command installation and local tests.
+
 Building with Claude Code? Have tasks to delegate?
 Want to get paid for contributing to AI projects?
 You're in the right place.
