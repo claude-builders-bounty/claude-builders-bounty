@@ -1,0 +1,99 @@
+{
+  "name": "GitHub Weekly Activity Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {"triggerTimes": {"item": [{"mode": "everyWeek", "weekday": "5", "hour": 17, "minute": 0}]}},
+      "id": "weekly-trigger",
+      "name": "Weekly trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {"functionCode": "return [{ json: { owner: 'YOUR_OWNER', repo: 'YOUR_REPO', language: 'en', githubToken: 'SET_IN_CREDENTIALS', anthropicApiKey: 'SET_IN_CREDENTIALS', destinationWebhook: 'SET_IN_CREDENTIALS', since: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), until: new Date().toISOString() } }];"},
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {"url": "=https://api.github.com/repos/{{$json.owner}}/{{$json.repo}}/commits?since={{$json.since}}&until={{$json.until}}&per_page=100", "options": {}, "headerParametersUi": {"parameter": [{"name": "Accept", "value": "application/vnd.github+json"}, {"name": "Authorization", "value": "=Bearer {{$json.githubToken}}"}]}},
+      "id": "commits",
+      "name": "GitHub commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [700, 120]
+    },
+    {
+      "parameters": {"url": "=https://api.github.com/repos/{{$node['Config'].json.owner}}/{{$node['Config'].json.repo}}/issues?state=closed&since={{$node['Config'].json.since}}&per_page=100", "options": {}, "headerParametersUi": {"parameter": [{"name": "Accept", "value": "application/vnd.github+json"}, {"name": "Authorization", "value": "=Bearer {{$node['Config'].json.githubToken}}"}]}},
+      "id": "issues",
+      "name": "GitHub closed issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {"url": "=https://api.github.com/repos/{{$node['Config'].json.owner}}/{{$node['Config'].json.repo}}/pulls?state=closed&sort=updated&direction=desc&per_page=100", "options": {}, "headerParametersUi": {"parameter": [{"name": "Accept", "value": "application/vnd.github+json"}, {"name": "Authorization", "value": "=Bearer {{$node['Config'].json.githubToken}}"}]}},
+      "id": "pulls",
+      "name": "GitHub pull requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [700, 480]
+    },
+    {
+      "parameters": {"mode": "append", "numberInputs": 3},
+      "id": "merge",
+      "name": "Merge GitHub data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {"functionCode": "const c = $node['Config'].json; const all = items.map(i => i.json); const commits = all.find(x => Array.isArray(x) && x[0]?.sha)?.filter(x => x.commit?.author?.date >= c.since) || []; const issues = all.find(x => Array.isArray(x) && x[0]?.pull_request === undefined && x[0]?.closed_at)?.filter(x => x.closed_at >= c.since) || []; const pulls = all.find(x => Array.isArray(x) && x[0]?.pull_request)?.filter(x => x.merged_at && x.merged_at >= c.since) || []; return [{json: {...c, commits, issues, pulls, prompt: `Summarize the GitHub activity for ${c.owner}/${c.repo} from the last 7 days in ${c.language}. Include highlights, shipped changes, closed issues, merged pull requests, risks, and next-step suggestions. Be factual and concise. Data: ${JSON.stringify({commits, issues, pulls})}`}}];"},
+      "id": "prepare",
+      "name": "Prepare summary prompt",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1180, 300]
+    },
+    {
+      "parameters": {"url": "https://api.anthropic.com/v1/messages", "method": "POST", "jsonParameters": true, "options": {}, "headerParametersUi": {"parameter": [{"name": "x-api-key", "value": "={{$json.anthropicApiKey}}"}, {"name": "anthropic-version", "value": "2023-06-01"}, {"name": "content-type", "value": "application/json"}]}, "bodyParametersJson": "={\"model\":\"claude-sonnet-4-20250514\",\"max_tokens\":1200,\"messages\":[{\"role\":\"user\",\"content\":{{$json.prompt.toJsonString()}}}]}"},
+      "id": "claude",
+      "name": "Claude weekly narrative",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [1420, 300]
+    },
+    {
+      "parameters": {"functionCode": "const c = $node['Prepare summary prompt'].json; const text = items[0].json.content?.map(x => x.text || '').join('\\n') || 'Claude returned no summary.'; return [{json: {content: `# Weekly GitHub Summary — ${c.owner}/${c.repo}\\n\\n${text}`, destinationWebhook: c.destinationWebhook}}];"},
+      "id": "format",
+      "name": "Format delivery",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1660, 300]
+    },
+    {
+      "parameters": {"url": "={{$json.destinationWebhook}}", "method": "POST", "jsonParameters": true, "options": {}, "bodyParametersJson": "={\"content\":{{$json.content.toJsonString()}}}"},
+      "id": "deliver",
+      "name": "Deliver to Slack or Discord webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [1900, 300]
+    }
+  ],
+  "connections": {
+    "Weekly trigger": {"main": [[{"node": "Config", "type": "main", "index": 0}]]},
+    "Config": {"main": [[{"node": "GitHub commits", "type": "main", "index": 0}, {"node": "GitHub closed issues", "type": "main", "index": 0}, {"node": "GitHub pull requests", "type": "main", "index": 0}]]},
+    "GitHub commits": {"main": [[{"node": "Merge GitHub data", "type": "main", "index": 0}]]},
+    "GitHub closed issues": {"main": [[{"node": "Merge GitHub data", "type": "main", "index": 1}]]},
+    "GitHub pull requests": {"main": [[{"node": "Merge GitHub data", "type": "main", "index": 2}]]},
+    "Merge GitHub data": {"main": [[{"node": "Prepare summary prompt", "type": "main", "index": 0}]]},
+    "Prepare summary prompt": {"main": [[{"node": "Claude weekly narrative", "type": "main", "index": 0}]]},
+    "Claude weekly narrative": {"main": [[{"node": "Format delivery", "type": "main", "index": 0}]]},
+    "Format delivery": {"main": [[{"node": "Deliver to Slack or Discord webhook", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "github-weekly-claude-v1"
+}
