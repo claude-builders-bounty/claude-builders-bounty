@@ -24,7 +24,7 @@ required_names = {
 missing = required_names - names
 assert not missing, f"missing nodes: {sorted(missing)}"
 assert "everyWeek" in text, "weekly trigger is not configured"
-assert "api.github.com/repos" in text, "GitHub API calls are missing"
+assert "githubApiBaseUrl" in text and "/repos" in text, "GitHub API calls are missing"
 assert "commits" in text and "closed" in text and "pulls" in text
 assert "claude-sonnet-4-20250514" in text, "required Claude model is missing"
 assert "destinationWebhook" in text, "delivery destination is not configurable"
