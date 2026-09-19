@@ -51,3 +51,10 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+## Changelog generator (3 steps)
+1. Run `bash changelog.sh` (or ask Claude with `/generate-changelog`).
+2. Review the generated `CHANGELOG.md` grouped into Added/Fixed/Changed/Removed.
+3. Commit the changelog alongside your changes.
