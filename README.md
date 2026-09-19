@@ -1,53 +1,56 @@
-# Claude Builders Bounty 🤖
+# Destructive-command PreToolUse Hook
 
-> A community bounty board for Claude Code builders.
+This repository contains a small, dependency-free Claude Code `PreToolUse`
+hook for Bash. It blocks the destructive command patterns requested by the
+bounty, records blocked attempts, and leaves normal commands in the standard
+permission flow.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Install
 
----
+From the repository root:
 
-## How it works
+```bash
+mkdir -p ~/.claude/hooks
+cp .claude/hooks/block-destructive.py ~/.claude/hooks/
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+The committed `.claude/settings.json` is the shareable project configuration.
+It runs the hook for Bash tool calls with:
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```text
+python3 ${CLAUDE_PROJECT_DIR}/.claude/hooks/block-destructive.py
+```
 
----
+The hook reads the PreToolUse JSON object from stdin and returns Claude Code's
+`hookSpecificOutput.permissionDecision` format. A denial is shown to Claude
+with the reason; a safe command produces no output, so normal permissions
+continue to apply.
 
-## Active Bounties
+Blocked patterns are:
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+- `rm -rf`
+- `DROP TABLE`
+- `TRUNCATE` or `TRUNCATE TABLE`
+- `DELETE FROM` unless the same statement contains `WHERE`
 
----
+Each blocked attempt is appended to `~/.claude/hooks/blocked.log` with an ISO
+UTC timestamp, attempted command, project path, and blocking reason. Commands
+are kept to one log line and truncated to bounded lengths.
 
-## Rules
+## Verify
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Run:
 
----
+```bash
+python3 -m unittest discover -s tests -v
+```
 
-## Community
+The tests cover every required blocked pattern, safe commands, and a scoped
+`DELETE FROM ... WHERE ...` statement.
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Design notes
 
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+The hook is intentionally narrow: it matches Bash only, does not approve any
+command, and does not modify command input. Invalid JSON is denied rather
+than silently authorized. This is a pattern guard, not a shell parser; users
+should retain Claude Code permission review and normal host-level safeguards.
