@@ -1,0 +1,289 @@
+{
+  "name": "GitHub Weekly Development Summary (Claude Code)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "node-trigger-cron",
+      "name": "Weekly Schedule (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "owner",
+              "value": "={{ $env.GITHUB_OWNER || 'owner' }}"
+            },
+            {
+              "name": "repo",
+              "value": "={{ $env.GITHUB_REPO || 'repo' }}"
+            },
+            {
+              "name": "slack_webhook",
+              "value": "={{ $env.SLACK_WEBHOOK_URL || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst now = new Date();\nconst oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn [{\n  json: {\n    since: oneWeekAgo.toISOString(),\n    until: now.toISOString(),\n    owner: $('Workflow Configuration').item.json.owner,\n    repo: $('Workflow Configuration').item.json.repo\n  }\n}];\n"
+      },
+      "id": "node-date-range",
+      "name": "Calculate Date Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits?since={{ $json.since }}&per_page=100",
+        "authentication": "none",
+        "headers": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Summary/1.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-commits",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Calculate Date Window').item.json.owner }}/{{ $('Calculate Date Window').item.json.repo }}/issues?state=closed&since={{ $('Calculate Date Window').item.json.since }}&per_page=100",
+        "authentication": "none",
+        "headers": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Summary/1.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-issues",
+      "name": "Fetch Closed Issues & PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst commits = $('Fetch Weekly Commits').all().map(c => `- ${c.json.commit?.message?.split('\\n')[0]} (${c.json.author?.login || c.json.commit?.author?.name})`).slice(0, 50).join('\\n');\n\nconst issuesAndPRs = $('Fetch Closed Issues & PRs').all().map(i => {\n  const isPR = !!i.json.pull_request;\n  return `- [${isPR ? 'PR' : 'ISSUE'} #${i.json.number}] ${i.json.title} (by @${i.json.user?.login})`;\n}).slice(0, 50).join('\\n');\n\nconst prompt = `You are a Principal Engineering Lead. Write an executive weekly engineering summary for GitHub repository \"${$('Calculate Date Window').item.json.owner}/${$('Calculate Date Window').item.json.repo}\".\n\n### COMMITS THIS WEEK:\n${commits || 'No commits recorded this week.'}\n\n### CLOSED ISSUES & MERGED PRS:\n${issuesAndPRs || 'No issues or PRs closed this week.'}\n\nFormat the summary with:\n1. \ud83d\ude80 Highlights & Key Deliverables (3-5 bullet points)\n2. \ud83d\udee0\ufe0f Major Architectural & Bug Fixes\n3. \ud83d\udc65 Contributor Shoutouts\n4. \ud83d\udd2d Focus Areas for Next Sprint\n\nKeep the tone professional, narrative, and actionable.`;\n\nreturn [{ json: { prompt } }];\n"
+      },
+      "id": "node-aggregate",
+      "name": "Format Prompt for Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2048
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": {{ JSON.stringify($json.prompt) }} }]"
+            }
+          ]
+        }
+      },
+      "id": "node-claude-api",
+      "name": "Claude API Narrative Synthesis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Workflow Configuration').item.json.slack_webhook || 'https://httpbin.org/post' }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "=\ud83d\udcf0 *Weekly Engineering Summary*\n\n{{ $json.content[0].text }}"
+            }
+          ]
+        }
+      },
+      "id": "node-deliver-slack",
+      "name": "Deliver Report to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1580,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Window": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Commits",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Closed Issues & PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [
+          {
+            "node": "Format Prompt for Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues & PRs": {
+      "main": [
+        [
+          {
+            "node": "Format Prompt for Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Prompt for Claude": {
+      "main": [
+        [
+          {
+            "node": "Claude API Narrative Synthesis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API Narrative Synthesis": {
+      "main": [
+        [
+          {
+            "node": "Deliver Report to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
