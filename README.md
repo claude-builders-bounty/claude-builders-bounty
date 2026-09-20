@@ -26,11 +26,11 @@ You're in the right place.
 
 | # | Task | Amount | Status |
 |---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+| [#1](../../issues/1) | [SKILL: Generate a CHANGELOG from git history](skills/generate-changelog/) | $50 | 🟢 Open |
+| [#2](../../issues/2) | [TEMPLATE: CLAUDE.md for a Next.js + SQLite project](templates/nextjs-sqlite-saas/) | $75 | 🟢 Open |
+| [#3](../../issues/3) | [HOOK: Block destructive bash commands in Claude Code](hooks/block-destructive-commands/) | $100 | 🟢 Open |
+| [#4](../../issues/4) | [AGENT: PR reviewer with structured Markdown output](agents/pr-reviewer/) | $150 | 🟢 Open |
+| [#5](../../issues/5) | [WORKFLOW: n8n + Claude API — automated weekly dev summary](workflows/n8n-weekly-dev-summary/) | $200 | 🟢 Open |
 
 ---
 
