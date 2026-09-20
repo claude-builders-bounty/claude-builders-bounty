@@ -26,6 +26,8 @@ class GuardTests(unittest.TestCase):
     def test_dangerous_commands_are_denied(self):
         for command in (
             "rm -rf ./build",
+            "rm -r -f ./build",
+            "rm --recursive --force ./build",
             "DROP TABLE users",
             "git push --force origin main",
             "TRUNCATE TABLE users",
