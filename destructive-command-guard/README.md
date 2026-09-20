@@ -13,7 +13,7 @@ mkdir -p ~/.claude/hooks && cp pre_tool_use_guard.py ~/.claude/hooks/
 Add this hook to the `PreToolUse` handlers for the `Bash` tool in your Claude
 Code settings. The hook reads the standard JSON event on stdin, allows safe
 commands with exit code 0, and denies dangerous commands with exit code 2 and
-a JSON explanation.
+the current `hookSpecificOutput.permissionDecision` JSON response.
 
 ## Verify
 

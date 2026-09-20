@@ -36,7 +36,10 @@ class GuardTests(unittest.TestCase):
             result = run(command)
             self.assertEqual(result.returncode, 2)
             self.assertIn("Blocked dangerous command", result.stderr)
-            self.assertIn('"decision": "deny"', result.stdout)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["hookSpecificOutput"]["hookEventName"], "PreToolUse")
+            self.assertEqual(payload["hookSpecificOutput"]["permissionDecision"], "deny")
+            self.assertIn("Blocked dangerous command", payload["systemMessage"])
 
 
 if __name__ == "__main__":

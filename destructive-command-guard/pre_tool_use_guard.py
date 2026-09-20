@@ -85,7 +85,18 @@ def main() -> int:
         log.write(f"{timestamp}\t{project}\t{command}\n")
 
     message = f"Blocked dangerous command: {reason}. Review it and run it manually only if intentional."
-    print(json.dumps({"decision": "deny", "reason": message}))
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": message,
+                },
+                "systemMessage": message,
+            }
+        )
+    )
     print(message, file=sys.stderr)
     return 2
 
