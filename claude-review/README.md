@@ -22,4 +22,10 @@ Or run directly without packaging:
 python3 claude_review.py --pr https://github.com/owner/repo/pull/123
 ```
 
+Run the offline unit tests with:
+
+```bash
+python3 -m unittest -v test_claude_review.py
+```
+
 The command only reads the public diff and writes the report to stdout.
