@@ -20,8 +20,6 @@ You're in the right place.
 2. Comment `/opire try` in the issue you want to work on
 3. Submit a PR — payment is automatic on merge ✅
 
----
-
 ## Active Bounties
 
 | # | Task | Amount | Status |
@@ -32,7 +30,21 @@ You're in the right place.
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
----
+## Bounty #1: structured changelog generator
+
+`changelog.sh` creates a formatted `CHANGELOG.md` from commits since the last
+git tag. It categorizes conventional prefixes into Added, Fixed, Changed, and
+Removed; `sample-CHANGELOG.md` is generated from this real GitHub repository.
+
+### Setup (3 steps)
+
+1. Copy `changelog.sh` into a git repository and run `chmod +x changelog.sh`.
+2. Run `./changelog.sh` or pass an output path such as
+   `./changelog.sh docs/CHANGELOG.md`.
+3. Review the generated `Unreleased` section and commit it.
+
+Run `bash test_changelog.sh` for the isolated smoke test. The script uses the
+latest reachable tag or the repository's root commit when no tag exists.
 
 ## Rules
 
@@ -40,8 +52,6 @@ You're in the right place.
 - Every issue must have clear acceptance criteria before a bounty is activated
 - Payment is handled by [Opire](https://opire.dev) (Stripe)
 - Quality over speed — a solid PR beats a fast one
-
----
 
 ## Community
 
