@@ -1,23 +1,63 @@
-# Git changelog generator
+# Claude Builders Bounty 🤖
 
-`changelog.sh` creates a structured `CHANGELOG.md` from commits since the last
-git tag. Conventional prefixes map to `Added`, `Fixed`, `Changed`, and
-`Removed`; unrecognised commits go to `Changed`.
+> A community bounty board for Claude Code builders.
 
-## Setup and use (3 steps)
+Building with Claude Code? Have tasks to delegate?
+Want to get paid for contributing to AI projects?
+You're in the right place.
 
-1. Copy `changelog.sh` into a git repository and make it executable:
-   `chmod +x changelog.sh`.
-2. Run `./changelog.sh` (or pass an output path such as
-   `./changelog.sh docs/CHANGELOG.md`).
-3. Review the generated `Unreleased` section and commit the file.
+---
 
-The script uses the latest reachable tag as the start point. If no tag exists,
-it uses the repository's root commit. Commit links use the configured `origin`
-remote when available; the commit text remains useful when no remote exists.
+## How it works
 
-## Categories
+**To post a bounty**
+1. Open a GitHub issue with a clear description and acceptance criteria
+2. Comment `/opire create $XXX` in the issue to set the reward
+3. Share the link — contributors will find it
 
-`feat`, `feature`, `add`, `new`, and `create` become **Added**; `fix`, `bug`,
-`bugfix`, and `hotfix` become **Fixed**; `remove`, `delete`, and `drop` become
-**Removed**. Other subjects become **Changed**.
+**To claim a bounty**
+1. Browse the open issues below
+2. Comment `/opire try` in the issue you want to work on
+3. Submit a PR — payment is automatic on merge ✅
+
+## Active Bounties
+
+| # | Task | Amount | Status |
+|---|------|--------|--------|
+| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
+| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
+| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
+| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+
+## Bounty #1: structured changelog generator
+
+`changelog.sh` creates a formatted `CHANGELOG.md` from commits since the last
+git tag. It categorizes conventional prefixes into Added, Fixed, Changed, and
+Removed; `sample-CHANGELOG.md` is generated from this real GitHub repository.
+
+### Setup (3 steps)
+
+1. Copy `changelog.sh` into a git repository and run `chmod +x changelog.sh`.
+2. Run `./changelog.sh` or pass an output path such as
+   `./changelog.sh docs/CHANGELOG.md`.
+3. Review the generated `Unreleased` section and commit it.
+
+Run `bash test_changelog.sh` for the isolated smoke test. The script uses the
+latest reachable tag or the repository's root commit when no tag exists.
+
+## Rules
+
+- Tasks must be related to Claude Code or AI tooling
+- Every issue must have clear acceptance criteria before a bounty is activated
+- Payment is handled by [Opire](https://opire.dev) (Stripe)
+- Quality over speed — a solid PR beats a fast one
+
+## Community
+
+- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
+- 📧 Contact: claudebounty@gmail.com
+
+---
+
+*Started by the Claude builder community · March 2026 · MIT License*
