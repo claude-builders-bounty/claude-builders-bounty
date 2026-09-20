@@ -6,8 +6,6 @@ Building with Claude Code? Have tasks to delegate?
 Want to get paid for contributing to AI projects?
 You're in the right place.
 
----
-
 ## How it works
 
 **To post a bounty**
@@ -20,8 +18,6 @@ You're in the right place.
 2. Comment `/opire try` in the issue you want to work on
 3. Submit a PR — payment is automatic on merge ✅
 
----
-
 ## Active Bounties
 
 | # | Task | Amount | Status |
@@ -32,7 +28,24 @@ You're in the right place.
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
----
+## Bounty #5: weekly GitHub narrative summary
+
+`weekly-github-summary.json` is an importable n8n workflow. It runs every
+Friday at 17:00, fetches the last seven days of commits, closed issues, and
+merged pull requests, asks `claude-sonnet-4-20250514` for a factual narrative,
+and posts it to a configurable Discord webhook.
+
+### Setup (5 steps)
+
+1. Import `weekly-github-summary.json` into n8n.
+2. Set `GITHUB_REPO`, `GITHUB_TOKEN`, and `ANTHROPIC_API_KEY` in n8n.
+3. Set `LANGUAGE` to `EN` or `FR`, plus `DISCORD_WEBHOOK_URL`.
+4. Activate the workflow; the Cron node runs at 17:00 every Friday.
+5. Execute it manually once and confirm the Discord message.
+
+`python3 workflow_smoke_test.py` validates the export locally. A live n8n
+execution requires the operator's own credentials; no credentials are stored
+in this repository.
 
 ## Rules
 
@@ -40,8 +53,6 @@ You're in the right place.
 - Every issue must have clear acceptance criteria before a bounty is activated
 - Payment is handled by [Opire](https://opire.dev) (Stripe)
 - Quality over speed — a solid PR beats a fast one
-
----
 
 ## Community
 
