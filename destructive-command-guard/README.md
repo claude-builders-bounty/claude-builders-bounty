@@ -18,7 +18,7 @@ the current `hookSpecificOutput.permissionDecision` JSON response.
 ## Verify
 
 ```bash
-python3 -m pytest -q
+python3 -m unittest discover -s . -p "test*.py" -v
 ```
 
 The guard blocks `rm -rf`, `DROP TABLE`, forced `git push`, `TRUNCATE`, and
