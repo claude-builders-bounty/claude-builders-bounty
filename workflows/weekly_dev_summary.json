@@ -1,0 +1,372 @@
+{
+  "name": "Automated Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Schedule Trigger (Friday 5 PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Set configuration variables & calculate cutoff date (7 days ago)\nconst now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nreturn [\n  {\n    json: {\n      GITHUB_OWNER: \"claude-builders-bounty\",\n      GITHUB_REPO: \"claude-builders-bounty\",\n      WEBHOOK_URL: \"https://discord.com/api/webhooks/YOUR_WEBHOOK_URL\",\n      LANGUAGE: \"EN\", // \"EN\" or \"FR\"\n      ANTHROPIC_API_KEY: \"sk-ant-YOUR_API_KEY\",\n      GITHUB_TOKEN: \"\", // Optional GitHub Token for higher rate limits\n      since_date: sevenDaysAgo.toISOString()\n    }\n  }\n];"
+      },
+      "id": "2",
+      "name": "Set Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since_date }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.GITHUB_TOKEN ? 'Bearer ' + $json.GITHUB_TOKEN : '' }}"
+            }
+          ]
+        },
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "3",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Set Configuration').first().json.GITHUB_OWNER }}/{{ $('Set Configuration').first().json.GITHUB_REPO }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $('Set Configuration').first().json.since_date }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $('Set Configuration').first().json.GITHUB_TOKEN ? 'Bearer ' + $('Set Configuration').first().json.GITHUB_TOKEN : '' }}"
+            }
+          ]
+        },
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "4",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Set Configuration').first().json.GITHUB_OWNER }}/{{ $('Set Configuration').first().json.GITHUB_REPO }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $('Set Configuration').first().json.GITHUB_TOKEN ? 'Bearer ' + $('Set Configuration').first().json.GITHUB_TOKEN : '' }}"
+            }
+          ]
+        },
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "5",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Set Configuration').first().json;\nconst sinceDate = new Date(config.since_date);\n\n// Process Commits\nconst commitsRaw = $('Fetch Commits').all();\nconst commits = [];\nfor (const item of commitsRaw) {\n  if (item.json && item.json.commit) {\n    commits.push({\n      sha: item.json.sha ? item.json.sha.substring(0, 7) : '',\n      author: item.json.commit.author ? item.json.commit.author.name : 'Unknown',\n      message: item.json.commit.message ? item.json.commit.message.split('\\n')[0] : ''\n    });\n  }\n}\n\n// Process Closed Issues (excluding PRs)\nconst issuesRaw = $('Fetch Closed Issues').all();\nconst closedIssues = [];\nfor (const item of issuesRaw) {\n  if (item.json && item.json.number && !item.json.pull_request) {\n    const closedAt = item.json.closed_at ? new Date(item.json.closed_at) : null;\n    if (closedAt && closedAt >= sinceDate) {\n      closedIssues.push({\n        number: item.json.number,\n        title: item.json.title,\n        user: item.json.user ? item.json.user.login : 'Unknown'\n      });\n    }\n  }\n}\n\n// Process Merged PRs\nconst prsRaw = $('Fetch Merged PRs').all();\nconst mergedPRs = [];\nfor (const item of prsRaw) {\n  if (item.json && item.json.number && item.json.merged_at) {\n    const mergedAt = new Date(item.json.merged_at);\n    if (mergedAt >= sinceDate) {\n      mergedPRs.push({\n        number: item.json.number,\n        title: item.json.title,\n        user: item.json.user ? item.json.user.login : 'Unknown'\n      });\n    }\n  }\n}\n\nconst lang = (config.LANGUAGE || 'EN').toUpperCase();\nconst repo = `${config.GITHUB_OWNER}/${config.GITHUB_REPO}`;\n\nlet userPrompt = \"\";\n\nif (lang === \"FR\") {\n  userPrompt = `G\u00e9n\u00e9rez un r\u00e9sum\u00e9 hebdomadaire clair, concis et structur\u00e9 de l'activit\u00e9 du d\u00e9p\u00f4t GitHub \"${repo}\" pour la semaine \u00e9coul\u00e9e.\n\nVoici les donn\u00e9es d'activit\u00e9 r\u00e9colt\u00e9es :\n\n### Commits (${commits.length}) :\n${commits.length > 0 ? commits.map(c => `- [${c.sha}] ${c.message} (par ${c.author})`).join('\\n') : 'Aucun commit cette semaine.'}\n\n### Issues Ferm\u00e9es (${closedIssues.length}) :\n${closedIssues.length > 0 ? closedIssues.map(i => `- #${i.number}: ${i.title} (ferm\u00e9e par ${i.user})`).join('\\n') : 'Aucune issue ferm\u00e9e cette semaine.'}\n\n### Pull Requests Fusionn\u00e9es (${mergedPRs.length}) :\n${mergedPRs.length > 0 ? mergedPRs.map(p => `- #${p.number}: ${p.title} (fusionn\u00e9e par ${p.user})`).join('\\n') : 'Aucune PR fusionn\u00e9e cette semaine.'}\n\nInstructions :\n1. R\u00e9digez le r\u00e9sum\u00e9 en Fran\u00e7ais.\n2. Structurez avec des \u00e9mojis et des sections claires (Vue d'ensemble, R\u00e9alisations cl\u00e9s, Stats rapides).\n3. Gardez un ton professionnel et enthousiaste. Format Markdown.`;\n} else {\n  userPrompt = `Generate a clear, concise, and structured weekly summary of development activity for the GitHub repository \"${repo}\" for the past week.\n\nHere is the collected activity data:\n\n### Commits (${commits.length}):\n${commits.length > 0 ? commits.map(c => `- [${c.sha}] ${c.message} (by ${c.author})`).join('\\n') : 'No commits this week.'}\n\n### Closed Issues (${closedIssues.length}):\n${closedIssues.length > 0 ? closedIssues.map(i => `- #${i.number}: ${i.title} (closed by ${i.user})`).join('\\n') : 'No closed issues this week.'}\n\n### Merged Pull Requests (${mergedPRs.length}):\n${mergedPRs.length > 0 ? mergedPRs.map(p => `- #${p.number}: ${p.title} (merged by ${p.user})`).join('\\n') : 'No merged PRs this week.'}\n\nInstructions:\n1. Write the summary in English.\n2. Structure with emojis and clear sections (Overview, Key Highlights, Quick Stats).\n3. Keep the tone professional and engaging. Format in clean Markdown.`;\n}\n\nreturn [\n  {\n    json: {\n      anthropic_payload: {\n        model: \"claude-sonnet-4-20250514\",\n        max_tokens: 1024,\n        messages: [\n          {\n            role: \"user\",\n            content: userPrompt\n          }\n        ]\n      },\n      webhook_url: config.WEBHOOK_URL,\n      anthropic_api_key: config.ANTHROPIC_API_KEY\n    }\n  }\n];"
+      },
+      "id": "6",
+      "name": "Format Data & Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.anthropic_api_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.anthropic_payload) }}",
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "7",
+      "name": "Summarize via Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nlet summaryText = \"\";\n\nif (response.content && Array.isArray(response.content) && response.content.length > 0) {\n  summaryText = response.content.map(c => c.text || '').join('\\n');\n} else if (response.error) {\n  summaryText = `\u26a0\ufe0f Error generating summary from Claude API: ${response.error.message || JSON.stringify(response.error)}`;\n} else {\n  summaryText = \"No summary generated.\";\n}\n\nconst config = $('Format Data & Build Claude Prompt').first().json;\n\nreturn [\n  {\n    json: {\n      summaryText: summaryText,\n      webhook_url: config.webhook_url\n    }\n  }\n];"
+      },
+      "id": "8",
+      "name": "Format Webhook Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.summaryText, text: $json.summaryText }) }}",
+        "options": {
+          "alwaysOutputData": true
+        }
+      },
+      "id": "9",
+      "name": "Deliver Summary via Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (Friday 5 PM)": {
+      "main": [
+        [
+          {
+            "node": "Set Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Format Data & Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Data & Build Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Summarize via Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize via Claude API": {
+      "main": [
+        [
+          {
+            "node": "Format Webhook Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Webhook Payload": {
+      "main": [
+        [
+          {
+            "node": "Deliver Summary via Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateId": "weekly-dev-summary"
+  }
+}

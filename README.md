@@ -34,6 +34,43 @@ You're in the right place.
 
 ---
 
+## Security Hooks (Issue #3)
+
+### Pre-Tool-Use Security Hook: Block Destructive Bash Commands
+
+Intercepts dangerous bash commands (`rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, `DELETE FROM` without `WHERE`) before execution and logs blocked attempts to `~/.claude/hooks/blocked.log`.
+
+#### Quick Installation (2 commands)
+
+```bash
+mkdir -p ~/.claude/hooks
+curl -fsSL https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/hooks/block_destructive.py -o ~/.claude/hooks/block_destructive.py && chmod +x ~/.claude/hooks/block_destructive.py
+```
+
+#### Running Tests
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+---
+
+## Workflows (Issue #5)
+
+### Weekly Dev Summary (n8n + Claude Code)
+
+Automated n8n workflow (`workflows/weekly_dev_summary.json`) that fetches commits, closed issues, and merged PRs from GitHub API every Friday at 5 PM, summarizes them with Claude API (`claude-sonnet-4-20250514`), and sends the update via Discord/Slack webhook in English or French.
+
+#### Quick Setup (5 Steps)
+
+1. **Import**: Import `workflows/weekly_dev_summary.json` into n8n.
+2. **Configure**: Edit the **Set Configuration** node with your `GITHUB_OWNER`, `GITHUB_REPO`, `WEBHOOK_URL`, `ANTHROPIC_API_KEY`, and `LANGUAGE` (`EN`/`FR`).
+3. **Schedule**: Confirm trigger is set for **Friday 5:00 PM**.
+4. **Test**: Run workflow to test GitHub fetching, Claude summarization, and webhook delivery.
+5. **Activate**: Switch workflow toggle to **Active**.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
