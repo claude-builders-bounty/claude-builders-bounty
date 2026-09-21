@@ -1,0 +1,240 @@
+{
+  "name": "Weekly GitHub Dev Summary via Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "schedule",
+      "name": "Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repo = $env.GITHUB_REPO || 'owner/repo';\nconst lang = ($env.SUMMARY_LANGUAGE || 'EN').toUpperCase();\nif (!/^[^/]+\\/[^/]+$/.test(repo)) throw new Error('GITHUB_REPO must be owner/repo');\nif (!['EN','FR'].includes(lang)) throw new Error('SUMMARY_LANGUAGE must be EN or FR');\nconst until = new Date();\nconst since = new Date(until.getTime() - 7*24*60*60*1000);\nconst base = `https://api.github.com/repos/${repo}`;\nreturn [\n {json:{kind:'commits',repo,lang,since:since.toISOString(),until:until.toISOString(),url:`${base}/commits?since=${encodeURIComponent(since.toISOString())}&until=${encodeURIComponent(until.toISOString())}&per_page=100`}},\n {json:{kind:'issues',repo,lang,since:since.toISOString(),until:until.toISOString(),url:`${base}/issues?state=closed&since=${encodeURIComponent(since.toISOString())}&per_page=100`}},\n {json:{kind:'pulls',repo,lang,since:since.toISOString(),until:until.toISOString(),url:`${base}/pulls?state=closed&sort=updated&direction=desc&per_page=100`}}\n];"
+      },
+      "id": "window",
+      "name": "Build weekly API requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "github",
+      "name": "Fetch GitHub activity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\nconst buckets={commits:[],issues:[],pulls:[]};\nlet repo='', lang='EN', since='', until='';\nfor (const item of rows) {\n  const src=item.pairedItem?.item ?? 0;\n  const meta=$('Build weekly API requests').all()[src]?.json || {};\n  repo=meta.repo||repo; lang=meta.lang||lang; since=meta.since||since; until=meta.until||until;\n  const body=item.json;\n  const data=Array.isArray(body)?body:(body.body && Array.isArray(body.body)?body.body:[]);\n  if (meta.kind==='commits') buckets.commits.push(...data.map(x=>({sha:x.sha?.slice(0,7),message:x.commit?.message?.split('\\n')[0],author:x.commit?.author?.name,url:x.html_url})));\n  if (meta.kind==='issues') buckets.issues.push(...data.filter(x=>!x.pull_request).map(x=>({number:x.number,title:x.title,url:x.html_url,closed_at:x.closed_at})));\n  if (meta.kind==='pulls') buckets.pulls.push(...data.filter(x=>x.merged_at && new Date(x.merged_at)>=new Date(since)).map(x=>({number:x.number,title:x.title,url:x.html_url,merged_at:x.merged_at,user:x.user?.login})));\n}\nconst instruction=lang==='FR'?'R\u00e9dige le r\u00e9sum\u00e9 en fran\u00e7ais.':'Write the summary in English.';\nconst prompt=`You are preparing a weekly engineering update for ${repo}. ${instruction} Be factual; do not invent causes or impact. Cover shipped work, closed issues, themes, and what to watch next.\\n\\nWindow: ${since} to ${until}\\n\\nDATA:\\n${JSON.stringify(buckets,null,2)}`;\nreturn [{json:{repo,lang,since,until,prompt,counts:{commits:buckets.commits.length,closedIssues:buckets.issues.length,mergedPRs:buckets.pulls.length}}}];"
+      },
+      "id": "prompt",
+      "name": "Build Claude prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({model: $env.CLAUDE_MODEL || 'claude-sonnet-4-20250514', max_tokens: 1200, messages: [{role:'user', content:$json.prompt}]}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "claude",
+      "name": "Generate narrative with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body=$json.body || $json;\nconst text=body.content?.filter(x=>x.type==='text').map(x=>x.text).join('\\n') || '';\nif (!text) throw new Error('Claude response contained no text');\nconst meta=$('Build Claude prompt').first().json;\nreturn [{json:{text,repo:meta.repo,counts:meta.counts,window:`${meta.since} \u2192 ${meta.until}`}}];"
+      },
+      "id": "extract",
+      "name": "Extract Claude text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({text: `*Weekly dev summary \u2014 ${$json.repo}*\\n${$json.text}\\n\\n_${$json.window} \u00b7 ${$json.counts.commits} commits \u00b7 ${$json.counts.closedIssues} closed issues \u00b7 ${$json.counts.mergedPRs} merged PRs_`}) }}",
+        "options": {}
+      },
+      "id": "slack",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1420,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Build weekly API requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build weekly API requests": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub activity": {
+      "main": [
+        [
+          {
+            "node": "Build Claude prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate narrative with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate narrative with Claude": {
+      "main": [
+        [
+          {
+            "node": "Extract Claude text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Claude text": {
+      "main": [
+        [
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
