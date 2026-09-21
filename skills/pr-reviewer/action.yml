@@ -1,0 +1,110 @@
+name: 'PR Reviewer Agent'
+description: 'Review pull requests and produce structured Markdown output with code quality, security, test coverage, and improvement suggestions.'
+inputs:
+  pr_number:
+    description: 'Pull request number to review'
+    required: true
+  github_token:
+    description: 'GitHub token for API access'
+    required: true
+    default: ${{ github.token }}
+  post_as_comment:
+    description: 'Post review as PR comment (true/false)'
+    required: false
+    default: 'false'
+  output_file:
+    description: 'Write review to this file path'
+    required: false
+    default: 'pr-review-report.md'
+
+outputs:
+  report_path:
+    description: 'Path to the generated review report'
+    value: ${{ steps.review.outputs.report_path }}
+  report_summary:
+    description: 'One-line summary of the review'
+    value: ${{ steps.review.outputs.report_summary }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+
+    - name: Fetch PR diff
+      id: fetch
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        echo "Fetching PR #$PR_NUMBER from $REPO..."
+        gh pr view "$PR_NUMBER" --repo "$REPO" --json title,body,files,additions,deletions,changedFiles > pr_metadata.json
+        gh pr diff "$PR_NUMBER" --repo "$REPO" > pr_diff.patch
+        echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+        echo "title=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["title"])' < pr_metadata.json)" >> "$GITHUB_OUTPUT"
+
+    - name: Generate review report
+      id: review
+      shell: bash
+      env:
+        OUTPUT_FILE: ${{ inputs.output_file }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        # Reports are intentionally workspace-relative. Resolve the path after
+        # expansion so ../ and symlink escapes cannot write outside the checkout.
+        python3 - "$OUTPUT_FILE" <<'PY'
+        import os, sys
+        from pathlib import Path
+        value = sys.argv[1]
+        candidate = Path(value)
+        root = Path.cwd().resolve()
+        resolved = candidate.resolve(strict=False)
+        if (not value or candidate.is_absolute() or "\x00" in value or "\n" in value or "\r" in value or
+                os.path.commonpath((str(root), str(resolved))) != str(root)):
+            raise SystemExit("output_file must be a non-empty path inside the workspace")
+        PY
+        mkdir -p -- "$(dirname -- "$OUTPUT_FILE")"
+        python3 "$ACTION_PATH/scripts/generate_review.py" \
+          --metadata pr_metadata.json \
+          --diff pr_diff.patch \
+          --output "$OUTPUT_FILE"
+
+        SUMMARY=$(head -20 -- "$OUTPUT_FILE" | grep -A1 "Overall assessment" | tail -1)
+        echo "report_summary=$SUMMARY" >> "$GITHUB_OUTPUT"
+        echo "report_path=$OUTPUT_FILE" >> "$GITHUB_OUTPUT"
+
+    - name: Post review as PR comment
+      if: inputs.post_as_comment == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        REPO: ${{ github.repository }}
+        OUTPUT_FILE: ${{ inputs.output_file }}
+      run: |
+        set -euo pipefail
+        REPORT=$(cat -- "$OUTPUT_FILE")
+        gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$REPORT"
+
+    - name: Upload report artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pr-review-report
+        path: ${{ inputs.output_file }}
