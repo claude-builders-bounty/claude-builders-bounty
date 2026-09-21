@@ -1,0 +1,233 @@
+{
+  "id": "B5WeeklySummary20260921",
+  "name": "Weekly GitHub Narrative Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-1000, 120]
+    },
+    {
+      "parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "0 17 * * 5"}]}},
+      "id": "weekly-trigger",
+      "name": "Friday 5 PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-1000, -120]
+    },
+    {
+      "parameters": {
+        "assignments": {"assignments": [
+          {"id": "owner", "name": "GITHUB_OWNER", "value": "={{ $env.GITHUB_OWNER || 'octocat' }}", "type": "string"},
+          {"id": "repo", "name": "GITHUB_REPO", "value": "={{ $env.GITHUB_REPO || 'Hello-World' }}", "type": "string"},
+          {"id": "destination", "name": "DESTINATION_WEBHOOK_URL", "value": "={{ $env.DESTINATION_WEBHOOK_URL || '' }}", "type": "string"},
+          {"id": "language", "name": "LANGUAGE", "value": "={{ ['EN','FR'].includes(($env.LANGUAGE || 'EN').toUpperCase()) ? ($env.LANGUAGE || 'EN').toUpperCase() : 'EN' }}", "type": "string"},
+          {"id": "weekStart", "name": "WEEK_START", "value": "={{ $now.minus({ days: 7 }).toUTC().toISO() }}", "type": "string"},
+          {"id": "weekEnd", "name": "WEEK_END", "value": "={{ $now.toUTC().toISO() }}", "type": "string"}
+        ]},
+        "options": {}
+      },
+      "id": "config",
+      "name": "Set Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-780, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.GITHUB_API_BASE || 'https://api.github.com') + '/repos/' + $json.GITHUB_OWNER + '/' + $json.GITHUB_REPO + '/issues' }}",
+        "sendQuery": true,
+        "queryParameters": {"parameters": [
+          {"name": "state", "value": "closed"},
+          {"name": "since", "value": "={{ $json.WEEK_START }}"},
+          {"name": "per_page", "value": "100"}
+        ]},
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "Accept", "value": "application/vnd.github+json"},
+          {"name": "User-Agent", "value": "n8n-weekly-summary"}
+        ]},
+        "options": {"response": {"response": {"responseFormat": "json"}}}
+      },
+      "id": "issues-request",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "alwaysOutputData": true,
+      "typeVersion": 4.2,
+      "position": [-540, -240]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.GITHUB_API_BASE || 'https://api.github.com') + '/repos/' + $json.GITHUB_OWNER + '/' + $json.GITHUB_REPO + '/pulls' }}",
+        "sendQuery": true,
+        "queryParameters": {"parameters": [
+          {"name": "state", "value": "closed"},
+          {"name": "sort", "value": "updated"},
+          {"name": "direction", "value": "desc"},
+          {"name": "per_page", "value": "100"}
+        ]},
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "Accept", "value": "application/vnd.github+json"},
+          {"name": "User-Agent", "value": "n8n-weekly-summary"}
+        ]},
+        "options": {"response": {"response": {"responseFormat": "json"}}}
+      },
+      "id": "prs-request",
+      "name": "Fetch Closed Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "alwaysOutputData": true,
+      "typeVersion": 4.2,
+      "position": [-540, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.GITHUB_API_BASE || 'https://api.github.com') + '/repos/' + $json.GITHUB_OWNER + '/' + $json.GITHUB_REPO + '/commits' }}",
+        "sendQuery": true,
+        "queryParameters": {"parameters": [
+          {"name": "since", "value": "={{ $json.WEEK_START }}"},
+          {"name": "until", "value": "={{ $json.WEEK_END }}"},
+          {"name": "per_page", "value": "100"}
+        ]},
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "Accept", "value": "application/vnd.github+json"},
+          {"name": "User-Agent", "value": "n8n-weekly-summary"}
+        ]},
+        "options": {"response": {"response": {"responseFormat": "json"}}}
+      },
+      "id": "commits-request",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "alwaysOutputData": true,
+      "typeVersion": 4.2,
+      "position": [-540, 240]
+    },
+    {
+      "parameters": {"jsCode": "const cfg = $('Set Configuration').first().json; const rows = $input.all().map(i => i.json).filter(x => !x.pull_request && x.closed_at && x.closed_at >= cfg.WEEK_START && x.closed_at <= cfg.WEEK_END); return [{json:{issues: rows.map(x => ({number:x.number,title:x.title,closed_at:x.closed_at,labels:(x.labels||[]).map(l=>l.name)}))}}];"},
+      "id": "normalize-issues",
+      "name": "Normalize Issues",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-300, -240]
+    },
+    {
+      "parameters": {"jsCode": "const cfg = $('Set Configuration').first().json; const rows = $input.all().map(i => i.json).filter(x => x.merged_at && x.merged_at >= cfg.WEEK_START && x.merged_at <= cfg.WEEK_END); return [{json:{prs: rows.map(x => ({number:x.number,title:x.title,merged_at:x.merged_at,user:x.user?.login,additions:x.additions,deletions:x.deletions}))}}];"},
+      "id": "normalize-prs",
+      "name": "Normalize Merged PRs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-300, 0]
+    },
+    {
+      "parameters": {"jsCode": "const rows = $input.all().map(i => i.json).filter(x => x && typeof x.sha === 'string' && x.sha.length > 0 && x.commit && typeof x.commit.message === 'string'); return [{json:{commits: rows.map(x => ({sha:x.sha.slice(0,7),message:x.commit.message.split('\\n')[0],author:x.commit.author?.name,date:x.commit.author?.date}))}}];"},
+      "id": "normalize-commits",
+      "name": "Normalize Commits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-300, 240]
+    },
+    {
+      "parameters": {"mode": "combine", "combineBy": "combineByPosition", "options": {}},
+      "id": "merge-one",
+      "name": "Merge Issues and PRs",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [-40, -100]
+    },
+    {
+      "parameters": {"mode": "combine", "combineBy": "combineByPosition", "options": {}},
+      "id": "merge-two",
+      "name": "Merge All Activity",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [180, 0]
+    },
+    {
+      "parameters": {"jsCode": "const cfg = $('Set Configuration').first().json; const data = $input.first().json; const language = cfg.LANGUAGE === 'FR' ? 'French' : 'English'; const prompt = `Write a concise weekly engineering narrative in ${language} for ${cfg.GITHUB_OWNER}/${cfg.GITHUB_REPO}. Use only the supplied JSON; do not invent activity. Include: Summary, Key changes, Closed issues, Merged pull requests, and Metrics. If a list is empty, say so. Window: ${cfg.WEEK_START} through ${cfg.WEEK_END}.\\n\\n${JSON.stringify({commits:data.commits||[],issues:data.issues||[],prs:data.prs||[]})}`; return [{json:{config:cfg,prompt,counts:{commits:(data.commits||[]).length,issues:(data.issues||[]).length,prs:(data.prs||[]).length}}}];"},
+      "id": "prepare-prompt",
+      "name": "Prepare Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com') + '/v1/messages' }}",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}"},
+          {"name": "anthropic-version", "value": "2023-06-01"},
+          {"name": "content-type", "value": "application/json"}
+        ]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'claude-sonnet-4-20250514', max_tokens: 1200, messages: [{ role: 'user', content: $json.prompt }] } }}",
+        "options": {"response": {"response": {"responseFormat": "json"}}}
+      },
+      "id": "claude-request",
+      "name": "Generate with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [620, 0]
+    },
+    {
+      "parameters": {"jsCode": "const response = $input.first().json; const summary = response.content?.find(x => x.type === 'text')?.text; if (!summary) throw new Error('Claude response did not contain text; refusing false success'); const prepared = $('Prepare Claude Prompt').first().json; return [{json:{...prepared,summary,generated_at:new Date().toISOString()}}];"},
+      "id": "verify-claude",
+      "name": "Verify Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 0]
+    },
+    {
+      "parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"}, "conditions": [{"id": "has-webhook", "leftValue": "={{ $json.config.DESTINATION_WEBHOOK_URL }}", "rightValue": "", "operator": {"type": "string", "operation": "notEmpty", "singleValue": true}}], "combinator": "and"}, "options": {}},
+      "id": "has-destination",
+      "name": "Destination Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1060, 0]
+    },
+    {
+      "parameters": {"method": "POST", "url": "={{ $json.config.DESTINATION_WEBHOOK_URL }}", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { content: $json.summary } }}", "options": {"response": {"response": {"responseFormat": "json"}}}},
+      "id": "deliver",
+      "name": "Deliver to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1280, -80]
+    },
+    {
+      "parameters": {"errorMessage": "DESTINATION_WEBHOOK_URL is empty; summary was generated but not delivered"},
+      "id": "missing-destination",
+      "name": "Fail Missing Destination",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1280, 100]
+    }
+  ],
+  "connections": {
+    "Manual Test Trigger": {"main": [[{"node": "Set Configuration", "type": "main", "index": 0}]]},
+    "Friday 5 PM": {"main": [[{"node": "Set Configuration", "type": "main", "index": 0}]]},
+    "Set Configuration": {"main": [[{"node": "Fetch Closed Issues", "type": "main", "index": 0}, {"node": "Fetch Closed Pull Requests", "type": "main", "index": 0}, {"node": "Fetch Weekly Commits", "type": "main", "index": 0}]]},
+    "Fetch Closed Issues": {"main": [[{"node": "Normalize Issues", "type": "main", "index": 0}]]},
+    "Fetch Closed Pull Requests": {"main": [[{"node": "Normalize Merged PRs", "type": "main", "index": 0}]]},
+    "Fetch Weekly Commits": {"main": [[{"node": "Normalize Commits", "type": "main", "index": 0}]]},
+    "Normalize Issues": {"main": [[{"node": "Merge Issues and PRs", "type": "main", "index": 0}]]},
+    "Normalize Merged PRs": {"main": [[{"node": "Merge Issues and PRs", "type": "main", "index": 1}]]},
+    "Merge Issues and PRs": {"main": [[{"node": "Merge All Activity", "type": "main", "index": 0}]]},
+    "Normalize Commits": {"main": [[{"node": "Merge All Activity", "type": "main", "index": 1}]]},
+    "Merge All Activity": {"main": [[{"node": "Prepare Claude Prompt", "type": "main", "index": 0}]]},
+    "Prepare Claude Prompt": {"main": [[{"node": "Generate with Claude", "type": "main", "index": 0}]]},
+    "Generate with Claude": {"main": [[{"node": "Verify Claude Response", "type": "main", "index": 0}]]},
+    "Verify Claude Response": {"main": [[{"node": "Destination Configured?", "type": "main", "index": 0}]]},
+    "Destination Configured?": {"main": [[{"node": "Deliver to Discord", "type": "main", "index": 0}], [{"node": "Fail Missing Destination", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1", "timezone": "America/New_York"},
+  "meta": {"templateCredsSetupCompleted": true},
+  "pinData": {},
+  "active": false,
+  "versionId": "a9d41ce2-f33a-4c55-8648-b8b9a86ae005"
+}
