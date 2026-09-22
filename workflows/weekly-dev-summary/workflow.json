@@ -1,0 +1,123 @@
+{
+  "name": "GitHub Weekly Narrative Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [ { "field": "cronExpression", "expression": "0 17 * * 5" } ] } },
+      "id": "trigger-1",
+      "name": "Weekly Trigger (Friday 5 PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [ 0, 0 ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            { "name": "repo", "value": "claude-builders-bounty/claude-builders-bounty" },
+            { "name": "discord_webhook", "value": "https://discord.com/api/webhooks/your-webhook-url" },
+            { "name": "language", "value": "EN" }
+          ]
+        }
+      },
+      "id": "config-1",
+      "name": "Configuration Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [ 200, 0 ]
+    },
+    {
+      "parameters": {
+        "action": "calculate",
+        "value": "={{ $now }}",
+        "operation": "subtract",
+        "duration": 7,
+        "timeUnit": "days",
+        "dataPropertyName": "sevenDaysAgo"
+      },
+      "id": "date-1",
+      "name": "Calculate 7 Days Ago",
+      "type": "n8n-nodes-base.dateTime",
+      "typeVersion": 2,
+      "position": [ 400, 0 ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $('Configuration Variables').item.json.repo + '/commits?since=' + $('Calculate 7 Days Ago').item.json.sevenDaysAgo }}",
+        "authentication": "none",
+        "options": { "headers": { "property": [ { "name": "User-Agent", "value": "n8n-Weekly-Summary" } ] } }
+      },
+      "id": "fetch-1",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [ 600, 0 ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $('Configuration Variables').item.json.repo + '/issues?state=closed&since=' + $('Calculate 7 Days Ago').item.json.sevenDaysAgo }}",
+        "authentication": "none",
+        "options": { "headers": { "property": [ { "name": "User-Agent", "value": "n8n-Weekly-Summary" } ] } }
+      },
+      "id": "fetch-2",
+      "name": "Fetch Closed Issues & PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [ 800, 0 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Fetch Commits').item.json.map(c => `- ${c.commit.message}`).join('\\n');\nconst issues = $input.item.json.map(i => `- #${i.number}: ${i.title}`).join('\\n');\nconst prompt = `You are a technical writer. Summarize the following GitHub activity for the week. Language: ${$('Configuration Variables').item.json.language}. Make it narrative and engaging.\\n\\nCommits:\\n${commits || 'None'}\\n\\nIssues & PRs:\\n${issues || 'None'}`;\nreturn { json: { prompt } };"
+      },
+      "id": "format-1",
+      "name": "Format Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [ 1000, 0 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "x-api-key", "value": "YOUR_ANTHROPIC_API_KEY" }, { "name": "anthropic-version", "value": "2023-06-01" }, { "name": "content-type", "value": "application/json" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"model\": \"claude-sonnet-4-20250514\", \"max_tokens\": 1024, \"messages\": [ { \"role\": \"user\", \"content\": {{ JSON.stringify($json.prompt) }} } ] }",
+        "options": {}
+      },
+      "id": "claude-1",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [ 1200, 0 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuration Variables').item.json.discord_webhook }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"content\": {{ JSON.stringify($json.content[0].text) }} }",
+        "options": {}
+      },
+      "id": "send-1",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [ 1400, 0 ]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5 PM)": { "main": [ [ { "node": "Configuration Variables", "type": "main", "index": 0 } ] ] },
+    "Configuration Variables": { "main": [ [ { "node": "Calculate 7 Days Ago", "type": "main", "index": 0 } ] ] },
+    "Calculate 7 Days Ago": { "main": [ [ { "node": "Fetch Commits", "type": "main", "index": 0 } ] ] },
+    "Fetch Commits": { "main": [ [ { "node": "Fetch Closed Issues & PRs", "type": "main", "index": 0 } ] ] },
+    "Fetch Closed Issues & PRs": { "main": [ [ { "node": "Format Prompt", "type": "main", "index": 0 } ] ] },
+    "Format Prompt": { "main": [ [ { "node": "Claude API", "type": "main", "index": 0 } ] ] },
+    "Claude API": { "main": [ [ { "node": "Send to Discord", "type": "main", "index": 0 } ] ] }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "c50d0410-aed0-428c-8663-0a2d0810ede7"
+}
