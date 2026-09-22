@@ -1,0 +1,283 @@
+{
+  "name": "Weekly Developer Summary with Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [5],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "b3e0c07e-52db-424a-9b76-47a8df8d0001",
+      "name": "Weekly Schedule (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "github_owner",
+              "value": "MergeFi"
+            },
+            {
+              "name": "github_repo",
+              "value": "frontend"
+            },
+            {
+              "name": "github_token",
+              "value": "YOUR_GITHUB_PAT_TOKEN"
+            },
+            {
+              "name": "anthropic_api_key",
+              "value": "YOUR_ANTHROPIC_API_KEY"
+            },
+            {
+              "name": "webhook_url",
+              "value": "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL"
+            },
+            {
+              "name": "language",
+              "value": "EN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b3e0c07e-52db-424a-9b76-47a8df8d0002",
+      "name": "Configure Workflow Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn {\n  ...items[0].json,\n  since_date: sevenDaysAgo.toISOString(),\n  now_date: now.toISOString().split('T')[0]\n};"
+      },
+      "id": "b3e0c07e-52db-424a-9b76-47a8df8d0003",
+      "name": "Calculate Date Range (7 Days)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.github_owner}}/{{$json.github_repo}}/commits?since={{$json.since_date}}",
+        "authentication": "none",
+        "headers": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.github_token}}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Reporter"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b3e0c07e-52db-424a-9b76-47a8df8d0004",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [860, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$('Calculate Date Range (7 Days)').item.json.github_owner}}/{{$('Calculate Date Range (7 Days)').item.json.github_repo}}/issues?state=closed&since={{$('Calculate Date Range (7 Days)').item.json.since_date}}",
+        "authentication": "none",
+        "headers": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Calculate Date Range (7 Days)').item.json.github_token}}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Reporter"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b3e0c07e-52db-424a-9b76-47a8df8d0005",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [860, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Calculate Date Range (7 Days)').first().json;\nconst commitsData = $('Fetch Commits').all().map(i => i.json);\nconst issuesData = $('Fetch Closed Issues').all().map(i => i.json);\n\nconst commits = Array.isArray(commitsData[0]) ? commitsData[0] : commitsData;\nconst issues = Array.isArray(issuesData[0]) ? issuesData[0] : issuesData;\n\nconst pureIssues = issues.filter(i => !i.pull_request);\nconst mergedPRs = issues.filter(i => i.pull_request);\n\nconst commitList = (commits || []).slice(0, 30).map(c => `- ${c.commit?.message?.split('\\n')[0]} (@${c.commit?.author?.name})`).join('\\n');\nconst closedIssuesList = pureIssues.slice(0, 20).map(i => `- #${i.number}: ${i.title}`).join('\\n');\nconst prList = mergedPRs.slice(0, 20).map(p => `- #${p.number}: ${p.title}`).join('\\n');\n\nconst languageInstruction = config.language === 'FR' ? 'Write the narrative summary entirely in French.' : 'Write the narrative summary in English.';\n\nconst systemPrompt = `You are a Lead Staff Technical Writer preparing a polished weekly executive developer digest for an engineering team. ${languageInstruction} Output clean Markdown with sections: 🎯 Key Highlights, 🚀 Features & Enhancements, 🛠️ Bug Fixes & Refactoring, and 📈 Next Week Outlook.`;\n\nconst userContent = `Weekly Activity Report for repository: ${config.github_owner}/${config.github_repo}\\nPeriod: ${config.since_date.split('T')[0]} to ${config.now_date}\\n\\nCOMMITS (${commits.length}):\\n${commitList || 'No commits this week.'}\\n\\nCLOSED ISSUES (${pureIssues.length}):\\n${closedIssuesList || 'No issues closed this week.'}\\n\\nMERGED PULL REQUESTS (${mergedPRs.length}):\\n${prList || 'No PRs merged this week.'}`;\n\nreturn {\n  system_prompt: systemPrompt,\n  user_content: userContent,\n  api_key: config.anthropic_api_key,\n  webhook_url: config.webhook_url,\n  repo_name: `${config.github_owner}/${config.github_repo}`,\n  report_date: config.now_date\n};"
+      },
+      "id": "b3e0c07e-52db-424a-9b76-47a8df8d0006",
+      "name": "Aggregate Git Metrics & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos",
+        "urlOverride": "https://api.anthropic.com/v1/messages",
+        "authentication": "none",
+        "headers": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-3-7-sonnet-20250219\",\n  \"max_tokens\": 2000,\n  \"system\": \"{{$json.system_prompt.replace(/\"/g, '\\\\\"').replace(/\\n/g, '\\\\n')}}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"{{$json.user_content.replace(/\"/g, '\\\\\"').replace(/\\n/g, '\\\\n')}}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "b3e0c07e-52db-424a-9b76-47a8df8d0007",
+      "name": "Generate Summary with Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('Aggregate Git Metrics & Build Prompt').item.json.webhook_url}}",
+        "authentication": "none",
+        "headers": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"📢 **Weekly Dev Digest: {{$('Aggregate Git Metrics & Build Prompt').item.json.repo_name}} ({{$('Aggregate Git Metrics & Build Prompt').item.json.report_date}})**\\n\\n\" + {{$json.content[0].text}}\n}",
+        "options": {}
+      },
+      "id": "b3e0c07e-52db-424a-9b76-47a8df8d0008",
+      "name": "Deliver via Webhook (Discord / Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1580, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Configure Workflow Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure Workflow Variables": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Range (7 Days)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Range (7 Days)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Git Metrics & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Git Metrics & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Git Metrics & Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary with Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary with Claude API": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Webhook (Discord / Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
