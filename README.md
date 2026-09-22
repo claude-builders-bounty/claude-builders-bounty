@@ -1,53 +1,45 @@
-# Claude Builders Bounty 🤖
+﻿# Claude Code Pre-Tool-Use Security Hook
 
-> A community bounty board for Claude Code builders.
+An automatic security hook for [Claude Code](https://docs.anthropic.com/claude-code/hooks) that intercepts and blocks destructive bash commands before execution.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Blocked Patterns
+- `rm -rf` (Recursive forced deletion)
+- `DROP TABLE` (Database table drops)
+- `git push --force`, `-f`, `--force-with-lease` (Destructive git history rewrites)
+- `TRUNCATE [TABLE]` (Full table wipes)
+- `DELETE FROM` without a `WHERE` clause (Unbounded deletions)
 
----
-
-## How it works
-
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+Blocked attempts are automatically logged to `~/.claude/hooks/blocked.log` with timestamp, attempted command, and project path. Safe commands execute normally.
 
 ---
 
-## Active Bounties
+## Installation (2 Commands)
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```bash
+mkdir -p ~/.claude/hooks && cp block_destructive_commands.py ~/.claude/hooks/
+chmod +x ~/.claude/hooks/block_destructive_commands.py
+```
 
 ---
 
-## Rules
+## Configuration in Claude Code
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+Add the hook to your `~/.claude/settings.json` under `hooks`:
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "command": "python3 ~/.claude/hooks/block_destructive_commands.py"
+      }
+    ]
+  }
+}
+```
 
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## Running Tests
+Run the test suite to verify all rules:
+```bash
+python3 test_hook.py
+```
