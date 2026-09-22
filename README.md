@@ -1,53 +1,22 @@
-# Claude Builders Bounty 🤖
+﻿# Next.js 15 + SQLite SaaS Template (`CLAUDE.md`)
 
-> A community bounty board for Claude Code builders.
+A production-ready, opinionated `CLAUDE.md` template designed for SaaS projects built with **Next.js 15 App Router**, **SQLite (Turso / better-sqlite3)**, and **Drizzle ORM**.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Why This Template?
+Claude Code works best when given strict, opinionated architectural guardrails. This template ensures that Claude Code:
+1. Always leverages React Server Components (RSC) by default.
+2. Properly manages SQLite concurrency with WAL mode and singleton connection caching.
+3. Enforces strict input validation on all Server Actions with Zod.
+4. Prevents common pitfalls like client-side database queries and unparameterized SQL.
 
----
+## How to Use in 2 Steps
 
-## How it works
+### 1. Copy `CLAUDE.md`
+Copy `CLAUDE.md` into the root directory of your Next.js project.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+### 2. Launch Claude Code
+Start Claude Code in your project directory:
+```bash
+claude
+```
+Claude Code will immediately detect `CLAUDE.md`, understand your stack and folder conventions, and generate consistent, type-safe code without asking clarifying questions.
