@@ -8,6 +8,21 @@ You're in the right place.
 
 ---
 
+
+## Bounty #4: PR review agent
+
+This repository includes `agents/claude-review.py`, a small CLI agent that reviews a GitHub pull request diff and prints a structured Markdown review comment.
+
+Usage:
+
+```bash
+python agents/claude-review.py --pr https://github.com/owner/repo/pull/123
+```
+
+The output includes a short summary, identified risks, improvement suggestions, and a Low/Medium/High confidence score. See `AGENT_README.md` and `samples/` for example outputs from two real PRs.
+
+---
+
 ## How it works
 
 **To post a bounty**
