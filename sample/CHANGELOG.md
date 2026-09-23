@@ -1,0 +1,279 @@
+# Changelog
+
+All notable changes to `bat` will be documented in this file.
+
+## [Unreleased] - 2026-09-20
+
+_260 commit(s) since tag `v0.26.1`._
+
+### Added
+
+- `061fb216` feat: implement `-b` / `--number-nonblank` for `cat -b` compatibility
+- `bb492fff` Add changelog entry for #3877
+- `df382256` Add CHANGELOG entry for #3862
+- `d7216316` add sanitize option
+- `088f1e42` Add changelog entry
+- `53769d03` Add syntax mapping for DNF config
+- `98f09fd6` Add test with fauly git repo version
+- `d695ad8f` Add more tests for git diff
+- `6b888713` feat: add syntax highlighting for `Caddyfile`
+- `0ef0342f` Add changelog entry
+- `de396794` Add Ghostty syntax mapping
+- `43c4957e` Add changelog entry
+- `530e83a4` feat: bat auto-detects language from stdin via first-line patterns
+- `52763e02` feat: add tclsh, wish, and expect shebang detection for Tcl syntax
+- `e89c515e` [Python] Support uv as script runner in shebang
+- `6876a782` Apply code changes: @orbisai0security can you address code review comm...
+- `a9137fab` Support BAT_WIDTH as an alias for --terminal-width
+- `c64b6761` Add .NET slnx extension
+- `87e043b9` Add Home/End key bindings to builtin minus pager
+- `2a3ed948` feat: preserve change markers when combining --diff with --plain
+- `a1917275` Add syntax mappings for GCloud CLI config files
+- `56fe0fa2` Add case-sensitive glob support to syntax mapping
+- `91965d28` Add COBOL sans CPY ext
+- `844bfded` Add --fallback-syntax for undetected files (#3617)
+- `ab80bd97` feat(syntax): add support for hidden_file_extensions (#3613)
+- `cc5f782d` Add word wrapping mode (#3597)
+- `ab393a02` Add COBOL syntax highlighting
+- `167dda63` feat: implement --unbuffered mode for streaming input (#3555)
+- `36b37e1a` Add x86_64-darwin (Intel macOS) to flake.nix
+- `ba97230b` feat: Map BUILD to Python (Starlark) for Bazel (fixes #3575)
+- `783acbc8` feat: implement quiet_empty behavior in printer
+- `6f0a61ce` feat: wire up quiet_empty config in app
+- `53a10e0b` feat: add --quiet-empty CLI flag
+- `62615431` feat: add quiet_empty config option
+- `0a97a1ed` Add changelog entry
+- `8c7fccc8` Update changelog for feature #3527
+- `b22fc5db` Add show-all integration test
+- `80ef6832` Add a changelog entry
+- `51bdaa5f` Strip overstriking to better support man pages
+- `b7dd88ea` Support custom assets (themes) when displaying help output
+- `c0545417` add empty changelog sections ready for future changes
+
+### Fixed
+
+- `400c5dc6` fix: avoid parsing syntax fixture as Cargo manifest
+- `1cedc1b4` fix: use last occurrence in combined short flags
+- `b8430080` fix: use last occurrence in combined short flags
+- `cecbb800` fix(syntax): preserve log-level scopes in Syslog
+- `3ca4a01b` fix(syntax): use start-of-line anchor for log levels
+- `a58f2372` Fix doubled word in README
+- `db69aab1` fix(syntax): avoid repeated log level scans
+- `c2cc79da` Fix --sanitize passing through the bidi control characters U+200E, U+200F and U+061C
+- `0a52e432` improve patch
+- `c75cc01e` Fix --ignored-suffix to fall back to first-line detection
+- `df164cc2` fix immediate dereference of reference
+- `e2568c52` Use correct PR number
+- `8f931372` doc(changelog): add #3812 bugfix entry
+- `fa00fb8c` fix(list-languages): clamp desired_width to avoid usize underflow at tiny --terminal-width
+- `d28aa4a8` Fix capacity-overflow panic in print_snip at --terminal-width 1
+- `66e336bc` fix(completions): force --no-paging on bat invocations in completion scripts (#3760)
+- `138d70fd` fix(zsh): drop redundant awk pipeline in language completion
+- `98df2543` fix: reference PR number in changelog entry
+- `5f952066` fix: only offer language names in zsh tab completion for `-l`
+- `a0c95618` fix: pass --color=never --decorations=never in zsh completions
+- `3be4e30e` improve patch
+- `f776d1ad` build(deps): bump bugreport from 0.5.1 to 0.6.0
+- `c437ad4d` fix command injection in LESS template
+- `1c6e763d` Update readme to fix Fedora section
+- `f39d63b8` fix(zsh): use newline-splitting for language completions to fix word-splitting on names with spaces
+- `4144059e` Fixed CHANGELOG.md entry format
+- `c3df0e6a` Fixed a bug with hardcoded terminal probing when `--list-themes` is called
+- `1f89178f` fix: reference PR number in changelog entry
+- `db647c98` fix: V-001 security vulnerability
+- `5c3b8040` fix: add changelog entry for LESSCLOSE warning fix
+- `7ff1fb32` fix: warn when $LESSCLOSE fails, not when it succeeds
+- `b8d462ba` fix: add PR number and author to changelog entry
+- `ca3ef28d` fix: use correct Debian architecture name for i686 .deb package
+- `e60875ac` fix: gate Changes component on git feature flag
+- `1f540752` fix: reference PR number in CHANGELOG entry
+- `fc94a0ec` fix: account for caret notation width in text wrapping
+- `5e140558` fix: update changelog entry with PR number for CI check
+- `99c8e15c` fix: update changelog entry with PR number for CI check
+- `618d7340` fix: consistent .deb MUSL package names
+- `f49641a6` Fix syntax highlighting for symlinked files by resolving target path
+- `9cce9e04` Fix BAT_CONFIG_DIR pointing at system config dir causing duplicate flag errors
+- `fd67095c` Fix panic in BuiltinPager drop when pager thread panics
+- `16d04149` fix pr number in changelog
+- `22ee03ff` add changelog entry for wrap-never bug fix
+- `790bed3a` fix: respect --wrap=never flag when paging is enabled
+- `319811df` fix test: use builtin pager instead of less, revert to warn for all missing pagers
+- `335eff51` fix type error, pager.bin is already a string
+- `a71d16fa` Fixed manpage syntax-test format
+- `5bd08845` Fixed manpage regex regression and add syntax test
+- `cb8b6375` fix(cache): allow --help flag for cache subcommand (#3580)
+- `eff57943` Add initial flake.nix; just for develop, for now (fixes#3577)
+- `fa66d8e3` fix: correct position of --quiet-empty in long-help.txt
+- `cb83b8fb` fix: correct position of --quiet-empty in short-help.txt
+- `6b8decf2` Small typo fixes
+- `31f982e7` Fixed formatting
+- `b34a1e0c` Make the repository clone correctly under Windows
+- `c8514543` Fix integration tests on Windows
+- `ad608014` fix issue #3526 (#3529)
+- `fca5502f` Fix bat crash with BusyBox less on Windows - Retrieve less version earlier in src/output.rs. - Skip -K argument if less is detected as BusyBox version. - Reuses the version check for the existing --no-init logic. - Fixes #3518.
+- `17963245` Fix --help --pager=builtin
+
+### Changed
+
+- `cf72a432` Allow boolean flags to be repeated
+- `b784eaf0` Use parsed CLI arguments to detect number flags
+- `b5c8e101` build(deps): bump console from 0.16.3 to 0.16.4
+- `7928b4be` build(deps): bump bytesize from 2.4.2 to 2.7.0
+- `2da852dc` build(deps): bump indexmap from 2.14.0 to 2.14.1
+- `b3c9516a` build(deps): bump globset from 0.4.18 to 0.4.20
+- `7892a875` chore: add pull request number to changelog
+- `a96b9e22` Detect binary content beyond the first line
+- `531d54b1` docs: add changelog entry for #3876
+- `d3448444` build(deps): bump minus from 5.7.1 to 5.7.2
+- `1cf12d49` build(deps): bump gix from 0.85.0 to 0.86.0
+- `6573ca93` build(deps): bump terminal-colorsaurus from 1.0.0 to 1.0.3
+- `e6ac6ce0` build(deps): bump execute from 0.2.15 to 0.3.0
+- `969b33da` build(deps): bump proc-macro2 from 1.0.106 to 1.0.107
+- `060ccb13` build(deps): bump regex from 1.12.3 to 1.13.1
+- `839f2300` build(deps): bump serde_with from 3.19.0 to 3.21.0
+- `bfa6e599` build(deps): bump quote from 1.0.45 to 1.0.47
+- `a9b67b2d` build(deps): bump bytesize from 2.3.1 to 2.4.2
+- `be5343c7` build(deps): bump unicode-segmentation from 1.13.2 to 1.13.3
+- `d449ce5b` chore(deps): resolve current cargo audit failures
+- `218afc30` Respect paging mode for list languages
+- `57d43686` build(deps): bump assets/syntaxes/02_Extra/LESS
+- `e34595b5` Update gix to 0.85
+- `6ba745b7` cargo fmt
+- `69f40d9d` Regenerate Cargo.lock after rebase
+- `6e6137ce` Update to gix 0.83
+- `f9eed8d6` cargo fmt
+- `e60d184f` Use histogram instead of myers for diffing
+- `c5e6f6aa` Replace libgit2 with gitoxide
+- `d117bf23` Summarise the change in the `CHANGELOG.md` file
+- `f4d836ee` Include `.code-workspace` as a JSON extension
+- `e7025d9b` build(deps): bump assets/syntaxes/02_Extra/vscode-wgsl
+- `e9b552d5` docs: fix SML syntax source link
+- `8033b1e7` build(deps): bump nix from 0.31.2 to 0.31.3
+- `bcd1d3f4` build(deps): bump predicates from 3.1.3 to 3.1.4
+- `67aa4913` build(deps): bump indexmap from 2.13.0 to 2.14.0
+- `2d29ecb9` build(deps): bump minus from 5.6.1 to 5.7.1
+- `fd53693e` build(deps): bump plist from 1.7.0 to 1.9.0
+- `c9fa10e7` Include `.ssh/` subdirectories in SSH Config syntax mapping
+- `72fc6973` build(deps): bump terminal-colorsaurus from 1.0.1 to 1.0.3
+- `787a36ac` build(deps): bump flate2 from 1.1.2 to 1.1.9
+- `3bcbc45a` build(deps): bump regex from 1.12.2 to 1.12.3
+- `443bcb92` build(deps): bump clap from 4.5.60 to 4.6.1
+- `89d7c86b` update fedora package link
+- `6edad56b` build(deps): bump assets/syntaxes/02_Extra/typst-syntax-highlight
+- `816aea06` build(deps): bump assets/syntaxes/02_Extra/PureScript
+- `cbe79194` docs(README): list available --style components in Output style section
+- `ebf469b9` Update README
+- `de64d3a0` build(deps): bump assets/syntaxes/02_Extra/Idris2
+- `492c387c` CHANGELOG: reference PR not issue
+- `bceb260e` Improve Kotlin syntax
+- `64567c48` Propagate initial input read errors
+- `5722311b` docs(changelog): add bugfix entry for zsh completion fix
+- `044d445a` Updated CHANGELOG.md
+- `71c894e8` santize filenames
+- `0ecdeb28` test(Tcl): regenerate shebang golden files to match patched syntax
+- `77ea750e` test(Tcl): add shebang source files for regression test
+- `cafad6b0` test: add highlighted outputs for Tcl shebang regression tests
+- `e070d105` test: add shebang regression tests and move changelog to Syntaxes section
+- `01174b31` Update changelog entry for #3687
+- `b3aec318` Update changelog entry for #3686
+- `2459aa94` Detect ZIP archives as binary content
+- `956f0aeb` build(deps): bump quote from 1.0.40 to 1.0.45
+- `57e99e9b` build(deps): bump tempfile from 3.23.0 to 3.27.0
+- `de9ca4ef` build(deps): bump toml from 0.9.8 to 1.1.1+spec-1.1.0
+- `f820ad10` build(deps): bump unicode-width from 0.2.1 to 0.2.2
+- `31b0a357` build(deps): bump unicode-segmentation from 1.12.0 to 1.13.2
+- `3e4169b8` cargo fmt
+- `ba223289` Update --diagnostic output with detected terminal color scheme type
+- `abab6533` Update --diagnostic output with BAT_THEME_LIGHT/DARK env vars
+- `65248925` docs: move removal instructions into a TIP callout
+- `89f3d2d3` docs: add instructions for removing fish help abbreviations
+- `b511b928` Write changelog
+- `3e789f52` Imprv: cleanup matcher glob parsing logic
+- `eef71074` update changelog
+- `0b4c886e` ci: Use git version of cross for better target support
+- `e86797fb` style: auto-format integration tests
+- `a19593b3` improvements from PR review
+- `7a6f442c` improvements from PR review
+- `3767f15c` improvements from PR review
+- `169dc7c4` test: add integration tests for --diff combined with --plain
+- `9fccdbc4` docs: clarify Ubuntu and Debian executable name
+- `c6e661d8` cargo fmt
+- `2a29802d` Refactor: string-or-struct matcher syntax, Case enum, remove case_sensitive_mappings table
+- `ffed52f6` Document how to contribute syntax mappings
+- `a4e853c4` Map ignore files to Git Ignore syntax
+- `de209f8a` docs: fix README sidebar wording
+- `b1f04995` docs: clarify supported custom theme format
+- `ac973569` build(deps): bump assets/syntaxes/02_Extra/cmd-help
+- `92787339` Drop .ss extension from COBOL
+- `652d50e9` Makefile syntax for justfiles
+- `a1a10c77` Docs: clarify PATH requirement and explain highlighted outputs (Fixes… (#3610)
+- `17a70d9b` build(deps): bump bytesize from 1.3.0 to 2.3.1
+- `fa354958` build(deps): bump clap from 4.5.56 to 4.5.60
+- `397252d2` build(deps): bump git2 from 0.20.3 to 0.20.4
+- `90f8e00e` build(deps): bump nix from 0.30.1 to 0.31.2
+- `e36bb8cc` build(deps): bump serde_with from 3.16.1 to 3.17.0
+- `bc84854d` use cat as test pager instead of builtin (builtin is interactive, doesnt output to stdout)
+- `2c1a8caa` simplify: just never warn for less (universal default)
+- `a240aa4a` never warn for missing 'less' pager (common default)
+- `00e38cd0` only warn for explicitly configured pagers, not defaults
+- `d04b960c` warn when pager is missing instead of silently falling back
+- `2b47f3c5` Updated CHANGELOG.md
+- `9f8ac934` Updated CHANGELOG.md
+- `0c883d6f` docs: add changelog entry for --unbuffered mode (#3583)
+- `2b517199` docs: add changelog entry for MSRV bump and time crate update
+- `a0f326aa` chore: bump MSRV to 1.88
+- `a4a76921` chore(deps): update time crate to 0.3.47 (RUSTSEC-2026-0009)
+- `3f12b1c1` docs: Use PR not Issue ID in CHANGELOG.md
+- `2c682ff6` docs: Document flake.nix in CHANGELOG.md (see #3577)
+- `5a4a7de9` docs: Document mapping BUILD to Python (Starlark) for Bazel in CHANGELOG.md (see #3576)
+- `3b34b47d` docs: add --quiet-empty to PowerShell completion
+- `9a551905` docs: add --quiet-empty to fish completion
+- `93411a96` docs: add --quiet-empty to zsh completion
+- `bd461afd` docs: add --quiet-empty to bash completion
+- `55306c15` docs: add --quiet-empty to man page
+- `8f6f5dfb` build(deps): bump indexmap from 2.12.1 to 2.13.0
+- `b396ab86` build(deps): bump proc-macro2 from 1.0.103 to 1.0.106
+- `c3c19c80` build(deps): bump serde_with from 3.15.1 to 3.16.1
+- `cddfad83` build(deps): bump clap from 4.5.46 to 4.5.56
+- `593cf768` build(deps): bump git2 from 0.20.2 to 0.20.3
+- `3aaec8cb` docs: update long-help.txt with --quiet-empty flag
+- `2030ffa6` docs: update short-help.txt with --quiet-empty flag
+- `edb8342e` docs: fix changelog entry to reference PR number
+- `6a7936a2` test: add integration tests for --quiet-empty flag
+- `26118afd` docs: add changelog entry for --quiet-empty flag
+- `69a2ffbd` Update src/config.rs
+- `3cb55e85` build(deps): bump actions/checkout from 5 to 6
+- `57bf8ff7` Update changelog with PR number
+- `d48bf240` build(deps): bump shell-words from 1.1.1 to 1.1.1
+- `3276e946` build(deps): bump console from 0.16.1 to 0.16.2
+- `c12cdcac` build(deps): bump nu-ansi-term from 0.50.1 to 0.50.3
+- `88d6fd02` build(deps): bump tempfile from 3.16.0 to 3.23.0
+- `56678dc7` Change the Jinja2 fork URL
+- `782ce712` Update issue references in CHANGELOG.md
+- `4db18583` Update changelog
+- `4549ab3f` Move the strip_overstrike check
+- `de414ed6` Limit overstrike stripping to man pages and help
+- `59c58969` Simplify MANPAGER guide
+- `64a4b204` Only strip overstrike when a syntax highlighting theme is used
+- `5fb8a25c` Performance optimization
+- `d15e399f` [CSV] don't apply string highlighting by default
+- `abce6ac0` chore: Change URL of Zig submodule
+- `23710773` Update sponsors section (#3514)
+- `4a1ceb3c` build(deps): bump execute from 0.2.13 to 0.2.15
+- `3eeaf296` build(deps): bump toml from 0.9.1 to 0.9.8
+- `9d4ca3bc` build(deps): bump proc-macro2 from 1.0.95 to 1.0.103
+- `f3e8ffc2` build(deps): bump console from 0.16.0 to 0.16.1
+- `25bfa9fa` build(deps): bump grep-cli from 0.1.11 to 0.1.12
+
+### Removed
+
+- `10b4f07a` Remove sponsors
+- `ea7fafca` windows: statically link the CRT to remove vcruntime dependency
+- `62b03882` remove code comments
+- `3ebfbb7a` Fixed manpage syntax to remove ANSI artifacts
+- `d19c80a7` Remove allowUnfree = true from flake.nix
+- `f6f1f18e` remove trailing whitespace
+- `099d7164` Remove Visual Studio Dark+ theme
+- `6c75acff` Replace deprecated cargo_bin with cargo_bin! macro
+- `629a8968` Remove unnecessary code change
+- `f97f9ebf` Remove double backspace scan
