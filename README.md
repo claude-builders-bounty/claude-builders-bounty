@@ -8,6 +8,22 @@ You're in the right place.
 
 ---
 
+
+## Bounty #3: Destructive Bash command guard
+
+This repository includes `hooks/pre_tool_use_guard.py`, a Claude Code pre-tool-use hook that blocks dangerous Bash commands and logs every blocked attempt.
+
+Install in 2 commands:
+
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/pre_tool_use_guard.py ~/.claude/hooks/pre_tool_use_guard.py
+chmod +x ~/.claude/hooks/pre_tool_use_guard.py
+```
+
+The hook blocks `rm -rf`, `DROP TABLE`, forced git pushes, `TRUNCATE`, and `DELETE FROM` statements without a `WHERE` clause. See `HOOK_README.md` for details and run `python -m unittest tests/test_pre_tool_use_guard.py` to validate behavior.
+
+---
+
 ## How it works
 
 **To post a bounty**
