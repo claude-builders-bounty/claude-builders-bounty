@@ -1,0 +1,412 @@
+{
+  "name": "Weekly Dev Summary (GitHub + Claude)",
+  "nodes": [
+    {
+      "id": "trigger-schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "name": "Every Friday 17:00",
+      "position": [
+        -720,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "field": "hour",
+          "rules": [
+            {
+              "field": "dayOfWeek",
+              "operation": "dayOfWeek",
+              "value": 5
+            },
+            {
+              "field": "hour",
+              "operation": "setTime",
+              "value": {
+                "hour": 17,
+                "minute": 0
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fetch-commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "name": "Fetch commits (7d)",
+      "position": [
+        -460,
+        -140
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.WEEKLY_SUMMARY_REPO_URL || 'https://api.github.com/repos/OWNER/REPO/commits?per_page=30' }}",
+        "sendHeaders": true,
+        "options": {
+          "timeout": 60000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN || '' }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "fetch-issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "name": "Fetch closed issues (7d)",
+      "position": [
+        -460,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.WEEKLY_SUMMARY_ISSUES_URL || 'https://api.github.com/repos/OWNER/REPO/issues?state=closed&sort=updated&direction=desc&per_page=30' }}",
+        "sendHeaders": true,
+        "options": {
+          "timeout": 60000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN || '' }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "fetch-prs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "name": "Fetch merged PRs (7d)",
+      "position": [
+        -460,
+        140
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.WEEKLY_SUMMARY_PRS_URL || 'https://api.github.com/repos/OWNER/REPO/pulls?state=closed&sort=updated&direction=desc&per_page=30' }}",
+        "sendHeaders": true,
+        "options": {
+          "timeout": 60000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN || '' }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "build-prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Build Claude prompt",
+      "position": [
+        -180,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Merge the three GitHub feeds (commits / closed issues / merged PRs)\n// into a one-week digest and build the Anthropic Messages API request.\nconst cutoff = Date.now() - 7 * 24 * 3600 * 1000;\nconst t = (s) => (s ? new Date(s).getTime() : 0);\n\nconst commits = [];\nconst issues = [];\nconst prs = [];\nconst seen = new Set();\nconst remember = (kind, n) => {\n  const k = kind + ':' + n;\n  if (seen.has(k)) return false;\n  seen.add(k);\n  return true;\n};\n\nfor (const item of items) {\n  const o = item.json || {};\n  if (o.pull_request) {\n    // PR objects (from the pulls endpoint, and PRs leaking in via issues)\n    if (t(o.merged_at || o.closed_at) >= cutoff && remember('pr', o.number)) prs.push(o);\n  } else if (o.state === 'closed' && typeof o.number === 'number') {\n    if (t(o.closed_at) >= cutoff && remember('issue', o.number)) issues.push(o);\n  } else if (o.sha && o.commit) {\n    const authorDate = o.commit.author ? o.commit.author.date : null;\n    if (t(authorDate) >= cutoff && remember('commit', o.sha)) commits.push(o);\n  }\n}\n\nconst commitLines = commits\n  .map((c) => '- ' + c.commit.message.split('\\n')[0] + ' (' + c.sha.slice(0, 7) + ')')\n  .join('\\n');\nconst issueLines = issues\n  .map((i) => '- #' + i.number + ' ' + i.title)\n  .join('\\n');\nconst prLines = prs\n  .map((p) => '- #' + p.number + ' ' + p.title + ' (by ' + (p.user && p.user.login ? p.user.login : 'unknown') + ')')\n  .join('\\n');\n\nconst lang = String($env.SUMMARY_LANGUAGE || 'EN').toUpperCase();\nconst langInstruction = lang === 'FR'\n  ? 'R\\u00e9dige le r\\u00e9sum\\u00e9 en fran\\u00e7ais.'\n  : 'Write the summary in English.';\n\nconst prompt = [\n  'You are a developer-communications assistant. Below is one week of',\n  'activity from a GitHub repository.',\n  '',\n  'COMMIT ACTIVITY:',\n  commitLines || '(none)',\n  '',\n  'CLOSED ISSUES:',\n  issueLines || '(none)',\n  '',\n  'MERGED PULL REQUESTS:',\n  prLines || '(none)',\n  '',\n  'Write a concise weekly development summary (150-250 words) for the team.',\n  'Use these Markdown sections:',\n  '- **What shipped** (merged PRs and their impact)',\n  '- **What changed** (notable commit activity)',\n  '- **What was closed** (issues)',\n  '- **Follow-ups / risks** (only if evident)',\n  '',\n  langInstruction,\n  'Output only the summary body, no preamble.',\n].join('\\n');\n\nreturn [{\n  json: {\n    body: {\n      model: $env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',\n      max_tokens: 1024,\n      messages: [{ role: 'user', content: prompt }],\n    },\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "call-claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "name": "Call Claude API",
+      "position": [
+        80,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' }}/v1/messages",
+        "sendHeaders": true,
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {
+          "timeout": 300000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY || '' }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 10000
+    },
+    {
+      "id": "extract-text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "name": "Extract summary text",
+      "position": [
+        340,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Anthropic Messages API response -> plain summary text.\nconst texts = ($json.content || []).filter((c) => c.type === 'text').map((c) => c.text);\nconst summary = texts.join('\\n').trim();\nreturn [{ json: { summary: summary || '(empty response from model)' } }];\n"
+      }
+    },
+    {
+      "id": "post-issue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "name": "Post to GitHub issue",
+      "position": [
+        600,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GITHUB_REPORT_URL || 'https://api.github.com/repos/OWNER/REPO/issues/42/comments' }}",
+        "sendHeaders": true,
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { body: $json.summary } }}",
+        "options": {
+          "timeout": 60000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN || '' }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "if-slack",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "name": "Slack webhook set?",
+      "position": [
+        600,
+        140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "slack-set",
+              "leftValue": "={{ $env.SLACK_WEBHOOK_URL || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "slack-webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "name": "Notify Slack webhook",
+      "position": [
+        860,
+        140
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { text: $json.summary } }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every Friday 17:00": {
+      "main": [
+        [
+          {
+            "node": "Fetch commits (7d)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch closed issues (7d)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch merged PRs (7d)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch commits (7d)": {
+      "main": [
+        [
+          {
+            "node": "Build Claude prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch closed issues (7d)": {
+      "main": [
+        [
+          {
+            "node": "Build Claude prompt",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch merged PRs (7d)": {
+      "main": [
+        [
+          {
+            "node": "Build Claude prompt",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Build Claude prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Extract summary text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract summary text": {
+      "main": [
+        [
+          {
+            "node": "Post to GitHub issue",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack webhook set?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack webhook set?": {
+      "main": [
+        [
+          {
+            "node": "Notify Slack webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "975b90bd-5dee-480c-9d9a-07dba7d8818a"
+}
