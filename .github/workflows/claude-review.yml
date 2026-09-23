@@ -1,0 +1,70 @@
+# claude-review — GitHub Action entry point for the PR review agent (bounty #4).
+#
+# Trigger: Actions tab → "claude-review" → Run workflow
+#   (or `gh workflow run claude-review -f owner=... -f repo=... -f pr=123`)
+#
+# Runs scripts/review_pr.py --post against the given PR and posts the
+# structured Markdown review as a PR comment. Draft PRs are refused
+# unless you tick "force".
+name: claude-review
+
+on:
+  workflow_dispatch:
+    inputs:
+      owner:
+        description: "Repo owner (e.g. octocat)"
+        required: true
+      repo:
+        description: "Repo name (e.g. demo)"
+        required: true
+      pr:
+        description: "PR number to review"
+        required: true
+      dry_run:
+        description: "Print the review instead of posting it"
+        type: boolean
+        default: false
+      force:
+        description: "Post even if the PR is a draft"
+        type: boolean
+        default: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    env:
+      # Required for posting to private repos / higher rate limits.
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run PR review
+        id: run
+        env:
+          OWNER: ${{ inputs.owner }}
+          REPO: ${{ inputs.repo }}
+          PR: ${{ inputs.pr }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            python3 scripts/review_pr.py "$OWNER" "$REPO" "$PR" review.md
+            echo "path=review.md" >> "$GITHUB_OUTPUT"
+          else
+            if [ "$FORCE" = "true" ]; then
+              python3 scripts/review_pr.py --post --force "$OWNER" "$REPO" "$PR"
+            else
+              python3 scripts/review_pr.py --post "$OWNER" "$REPO" "$PR"
+            fi
+          fi
+
+      - name: Upload review (dry run)
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-review
+          path: review.md
