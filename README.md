@@ -8,6 +8,15 @@ You're in the right place.
 
 ---
 
+
+## Bounty #2: Next.js 15 + SQLite CLAUDE.md template
+
+This repository includes `CLAUDE.md`, an opinionated project guide for a greenfield SaaS app built with Next.js 15 App Router and SQLite. It covers stack choices, folder structure, naming conventions, SQL migration rules, component patterns, dev commands, anti-patterns, and Claude Code working rules.
+
+The template is designed to be pasted directly into a new project without editing before Claude Code starts work.
+
+---
+
 ## How it works
 
 **To post a bounty**
