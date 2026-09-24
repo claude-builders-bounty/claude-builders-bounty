@@ -1,0 +1,1752 @@
+# Changelog
+
+## [2026-09-25]
+
+### Added
+- c6ea084a implement: complete WP1-WP9 remediation + Human Network records + Agent Network model + Router self-qualification
+- 1daff596 implement: WP1-WP5 remediation — listener, authority, beads purge list, failure mechanics, ledger clocks, product register, OPS registers
+- 7959e808 canonical: capture full NEW MOZA + Extreme Autonomy + remediation state
+- 4e4ef0e6 add: engineering handoff for Sol adversarial readiness audit
+- 9cb33760 add: native macOS app/window focus targeting for Computer Worker (Cua-reference PRE-WAKE ESSENTIAL gap)
+- 43416645 reconcile: digital-markets test/implementation authority (one truthful current surface)
+- 3c265fe2 ocean-pearl: add product master schema (confirmed gap, empty template only)
+- afb06cb2 feat: freeze legacy trader and add TradingAgents Binance shadow probe
+- 2e7edf0e evidence: add bounty qualification detail
+- 8935f10f Add Superteam owner gate receipt
+- a02560c5 canonicalization: add exact current evidence artifact
+- f711d954 ops: add evidence-based execution progress scorecard
+- b190299c docs: add focused moza execution runbook
+- 8c8c20d3 feat: enforce trader launch ladder and freelancer filter
+- c0349a43 evidence: add live executor repair detail
+- 2b22b94d strategy: add exhaustive Agent Commerce build and activation plan
+- b4b25bde docs: add comprehensive Agent Commerce lane rebuild specification
+- 9afc62cb Add commerce and shadow progress receipts
+- cc3a4a26 Add bounded shadow progress receipt
+- f6fcfbb7 Add point-in-time event aware position learning
+- c56039b3 Prioritize commerce and add full-quality historical learning
+- d9731e37 Record new forward shadow decisions
+- 903188ec Add GitHub material-event observer feed
+- f3851330 Add forward shadow qualification gate
+- bd0aa6fd Add immutable ten-decision shadow qualification bridge
+- 57273196 feat(kernel): implement P0 Autonomous Execution Kernel v1 and Agent-Commerce 10-task revenue pilot
+- a68d0730 fix(autonomy): retract mock interop POC, add aggregate RSS/CPU telemetry, and run SHADOW cross-runtime interop acceptance
+- 6d7fe44d fix(bridge): repair GitHub bridge daemon polling, add watchdog, timeouts, reconciliation, consume RND-06
+- 40c9f355 feat(interop): add AgentConnect decision matrix and executable DEV POC
+- 69de9e7f feat(orchestration): add autonomous dev architecture, benchmark, state machine, and executable DEV prototype
+- f7cb7858 feat(orchestration): add autonomous dev architecture, benchmark, state machine, and executable DEV prototype
+- 24306e24 docs(audit): add Moza full system audit, agent org, 24/7 autonomy architecture, and revenue OS package
+- f698f9e5 docs(audit): add Moza full system audit, agent org, 24/7 autonomy architecture, and revenue OS package
+- 2fa34284 docs(handover): add Session 2 post-reactivation seq 171 read-only audit handoff
+- 859310dc docs(handover): add Session 2 post-reactivation seq 171 read-only audit handoff
+- d7061a7b docs(handover): add Session 2 Codex supervision watcher diagnosis handoff for WATCH_20260912_0838_CLOSEOUT_ACK_01
+- 0f66d553 docs(foundry): add closeout and durability report for WATCH_20260912_0830_CLOSEOUT_01
+- 699433ad docs(foundry): add RND-09 Shared Global Intelligence & Metadata Engine Specification
+- e38b4234 docs(foundry): add read-only diagnosis for Agent-Commerce bridge sequence desync
+- 56f01f43 feat(dashboard): add human-centered mission cockpit
+- 20fab22d Add immediate development feedback loop and fast autonomy proof
+- 3ea941c7 fix(router): expand single route wall clock budget and add transient 503 retry
+- b158f7aa Add harmless Agent-Commerce bridge acceptance instruction
+- ec84dc07 evidence: add real Monkey UI router checks
+- 31e1a5cf Add standing cross-agent state reconciliation contract
+- 797264de coordination: add MoltJobs money-first parallel verification
+- 374e1ec3 coordination: add independent Codex rescue watcher
+- a36ff888 coordination: add Codex rescue return channel
+- ad510b5c coordination: add independent Codex rescue channel
+- a5aa8798 coordination: add selective agency-agents adoption directive
+- 2b370ef5 coordination: add explicit ChatGPT to Codex routing protocol
+- c2893f8e router: add qualified agent-tooling fallback
+- 0fe3b767 router: add Codex Responses compatibility
+- 80ec3c00 strategy: add research, ROI and revenue portfolio allocation engine
+- fa1d6fd6 strategy: add Moza autonomous project operating system plan
+- 9a480ac5 strategy: add research, ROI and revenue portfolio allocation engine
+- 8a345d05 strategy: add Moza autonomous project operating system plan
+- 4f54bfa6 docs: add OpenCode execution stability report (audit + bridge truth fix)
+- ead6feef docs: add OpenCode execution stability report (audit + bridge truth fix)
+- 74963327 strategy: add shared TencentDB memory report — shared fabric for OpenClaw+OpenCode+Codex
+- f3a4b09a strategy: add unified agent harness + shared memory R&D report (Ruflo/TencentDB/HarnessRouter audit + PoC)
+- 30080573 strategy: add shared TencentDB memory report — shared fabric for OpenClaw+OpenCode+Codex
+- 8af28dd4 strategy: add unified agent harness + shared memory R&D report (Ruflo/TencentDB/HarnessRouter audit + PoC)
+- 9c1afd1e strategy: add agent-market qualification delta
+- 6b6b25e2 strategy: add Digital Markets execution plan (plan only, no implementation)
+- 8cb59964 strategy: add second Digital Markets review/refinement (R&D only)
+- b9658fb2 strategy: add Digital Markets R&D and architecture report (R&D only)
+- 954f8c35 policy: record authenticated page-read reliability fix (open new tab + evaluate)
+- 2549e78b strategy: add email cleanup and 10-site revenue expansion mission
+- 5404e696 finance: provision Solana/EVM receive wallets, store BRI/PayPal refs, add Binance acceptance harness
+- 412fc682 strategy: add binding real-world execution method
+- bd425ff7 Add bounded same-root computer executor
+- d4861ad6 strategy: add official sandbox-policy inspector to P0 closure
+- 290b7bf5 Correct rebased P0 implementation reference
+- db6aeb2a Record P0 capability-routing implementation commit
+- de239d00 Add capability-aware computer routing and honest P0 runner
+- 5c6bd6c0 strategy: adopt final completion audit and ordered implementation path
+- 02059096 strategy: add final Moza completion audit
+- 3f0b4073 finance: add safe Binance receive rail
+- 0957e384 strategy: add safe wallet and receive-rail policy
+- 9f0420ea evidence: add top source owner readiness matrix
+- a8adc07b Bridge: add Moza public IP watch for Binance/API whitelist
+- 62944d88 strategy: add owner parallel execution plan
+- 8d41c506 strategy: seq97 enforce commercial production and verify new agent-market source
+- 25afb58e strategy: add OpenClaw Discord source expansion follow-up
+- cf4722cc strategy: add 12-hour project completion sprint
+- 91c6c0bf strategy: seq77 require additive execution and delta-first reporting
+- 629b784e strategy: add project-wide setup-run-follow completion rollout
+- b8f13e0d mission-control: add revenue rollout truth
+- 5e11306b strategy: add sequential revenue infrastructure rollout
+- bc3bedb5 mission-control: add automatic sanitized runtime producer
+- 26e138b3 strategy: seq69 make genspark ladder primary and freelance maintenance-only
+- ff6b3d5f strategy: add staged genspark automatic revenue execution ladder
+- b83292ac strategy: add public portfolio build and publish task
+- 718cb67b strategy: add no-upfront-cost freelance account expansion sprint
+- a5f3e0b0 strategy: add independent Codex dashboard recovery side-session task
+- 2cb12215 strategy: add fast cash sprint
+- 53151e29 strategy: seq47 add account-prep and Gmail subscription audit
+- 6749624e strategy: add canonical automatic revenue execution queue
+- b2b55b08 strategy: add low-priority trading agent R&D lane
+- a158213f Add OverseasSeafood Hostinger recovery side task
+- 28ffb45b strategy: add final first-1000 operating plan
+- 14d95c77 strategy: add parallel OSS adoption plan for Codex and Moza
+- a9cead68 strategy: add autonomous revenue agent deep research
+- f564c340 strategy: add mission control, payout readiness and parallel engine watchdog
+- 102a7b18 strategy: add operating-system audit and mission-control spec
+- 1449578a Add urgent Codex supervisor observation and bridge-delivery correction
+- e1b73d3b Add Telegram-to-strategy-bridge mirror protocol
+- a696bd3a Add urgent runtime reliability correction from live Telegram evidence
+- f43191ca Add commission and cross-sector trade opportunity mandate
+- b222a857 Add full-asset hunting mandate and owner-contact boundaries
+- ff868f20 Add ChatGPT-Codex strategy bridge
+- d85bec70 Add persona response SLA and 24-hour communication monitoring
+- 26a2a563 Add dedicated persona work-channel isolation policy
+- be2d22ee Add inbox hygiene and low-cost processing rules
+- 13f9407a Add canonical Codex supervisor role
+- 4406901c Add persona language communication skill
+- 55d89793 Add persona communication language protocol
+- d4d0cdc9 Add non-blocking persona onboarding and recovery acceptance
+- ddcb8148 Add OpenClaw-native task recovery skill
+- 599f7a64 Add canonical task recovery and resilience capability
+- 8ea0821f Define free-first provider ladder and avoid GPT default usage
+- d8cd7fca Add email-first freelancer intake and day-one product factory to Codex handoff
+- 0477fa9d Add day-one product factory to first $1000 sprint
+- 0788d36b Add email-first job intake and portfolio product factory
+- 312007bb Add day-one demand-to-product portfolio loop
+- f903c362 Add final pre-Moza platform certification evidence
+- 88f64601 Add planner economics and mandatory final QA to main-agent contract
+- 4f68169e Add final quality audit skill
+- 328b221d Add mandatory quality assurance and final audit capability
+- 0ca2a1f3 Add independent quality-audit routing doctrine
+- 89715583 Add opportunity expansion skill
+- 366d8ae6 Add autonomous opportunity discovery and expansion capability
+- 52fef7f3 Add Project and Funding Hub specification
+- c56d9fa0 Add capital and funding engine to economic portfolio
+- 49e065b0 Add capital funding pipeline skill
+- 20efd7b9 Add Capital & Funding Engine
+- a771b3d5 docs: add MASTER_PLAN, OPENCLAW_NATIVE_INTEGRATION, OPENCLAW_ACTIVATION_PLAN; update CANONICAL_MANIFEST
+- 896d7f4f Fix: add bootstrap/owner_fact_set/capability_verify/resource_check to ALLOWED_SKILLS
+
+### Fixed
+- 33d69e8e fix: skip catalog-toolkit PDF/DOCX tests gracefully when their required libs aren't in the active interpreter
+- e0e59dfb fix: route focus activation through System Events, identify the real stable permission target
+- d414f8fb fix: prioritize live branches and drop null fields in project-context bootstrap (context-builder budget failure)
+- 53aed77b trader: net realistic fees/slippage into qualification; resolve evaluator question; flag stale risk-policy JSON
+- 5ebe07fd native-continuation: wire Builder's confined sandbox into a dispatchable tool
+- c0dcb1bc fix: reconcile Binance private readiness
+- 0a466bf5 fix: preserve shadow wrapper exit status
+- 7084a41d fix: refresh catalog verification manifest
+- 8058fc16 fix: deduplicate shadow receipt field
+- dee81730 fix: serialize campaign runner entrypoint
+- eb0fbd7f fix: serialize shadow portfolio cycles
+- c71958ba fix: correct shadow receipt serialization
+- 8aaa1ede record catalog fixture output readback
+- f95ab9ef Fix insufficient event learning exit path
+- a361b96e Resolve historical knowledge from campaign state roots
+- 7d2f1fc1 fix(bridge): sanitize hardcoded session ID and make launchd plist template-safe
+- 703918ad fix(bridge): sanitize hardcoded session ID and make launchd plist template-safe
+- c7f90f1c fix(bridge): harden comment retrieval with multi-page pagination for >100 comments
+- 2237732e fix: reconcile project-wide context awareness
+- 056d87e7 fix(catalog-toolkit): complete audited commercial defect remediation
+- 50b658e9 fix(router): absorb short cooldowns and return retryable 429/529 during rate limit
+- 6064ae36 fix(router): use total_seconds for httpx client timeout to prevent premature client drop
+- c45ab6fe docs(status): record release b5d6cbd circular recovery fix and stress acceptance results
+- b5d6cbd9 fix(health): tune continuity recovery margin to floor - 0.15
+- f7c176a9 fix(health): refine continuity recovery margin to floor - 0.10 for eligible routes
+- 628dba20 fix(router): adjust default timeouts to 90/85/35s for heavy multi-modal queue tolerance
+- a852d0ea fix(router): self-healing recovery_qualified for eligible routes and expand schema sanitization
+- 40621d05 feat(quality): wire governed DISPATCH/COMPLETE gates into native loop
+- 37c49a7e fix(economics): record base UNKNOWN attempt on exception path before enrichment
+- e8bc5c00 fix(router): bounded transient recovery for tool/vision within grace
+- ef054cc5 fix: reject failed dispatch exits and malformed worker receipts
+- bf239250 fix: match blocked Beads by exact structured identity
+- 9485995c fix: harden persistent operator identity and optional supervision
+- 1d748d09 fix: require qualified task classes during foundation observation
+- 09fb301b fix: join native usage by receipt and accept valid recovery arguments
+- 13af6df6 fix(memory): atomically write learned records and the existing native search index
+- 41a1df54 fix(router): recover qualified routes from reliability latch with bounded native probes
+- d995118d fix(dashboard): expose actual agent routing health and accepted startup stages
+- e44146b4 fix(runtime): expose same-attempt evidence reconciliation to native jobs
+- 12efe047 fix(acceptance): observe real heartbeat health and reconcile native memory authority
+- 4f482aaa fix(runtime): normalize actual Beads nested metadata before execution
+- 17b688a0 fix(context): bound cleanup and expose existing shared library safely
+- e7b8de58 fix(context): deliver exact bounded packets and repair memory retrieval
+- 2182f835 fix(runtime): verify native execution and reconcile same-task recovery
+- 772fe5e5 fix(economics): require observed costs and contain fabricated demand
+- a9d325cb fix(router): bind behavioral admission and bound agent fallback
+- 2a717dfd fix: complete retirement of all gpt-5.4 variants (DISABLED)
+- f6212f6f fix: deterministic Telegram status readback + handoff evidence
+- 5a8feece fix: force-track provider_health.json with retired gpt-5.4 variants
+- 79e1e019 fix: retire gpt-5.4 + gpt-5.4-pro (DISABLED) alongside gpt-5.4-mini
+- b0fa70f4 fix(live-runtime): retire gpt-5.4-mini — replace active refs with OmniRoute aliases + gpt-5.6-luna fallback
+- 11c5aaab fix(live-runtime): retire gpt-5.4-mini — replace active refs with OmniRoute aliases + gpt-5.6-luna fallback
+- 00a1c23c Resolve events.jsonl merge conflict
+- 1e9ac02d dashboard: real Mission Control service (port 8765) + human-first visual layout + owner brand fixes
+- 1f9480b5 truth-reconciliation: fix IP single-truth + heartbeat recovery + router health sync
+- cfc0040e fix: post-cutover verification — router catalog refresh + opencode config 4002→4001 + supervision POST_CUTOVER
+- eff391dc dashboard: real Mission Control service (port 8765) + human-first visual layout + owner brand fixes
+- 7c54b402 truth-reconciliation: fix IP single-truth + heartbeat recovery + router health sync
+- 0b2110e9 fix: expose delivery paths while keeping operational state local
+- d08c16f5 context: Beads→OpenCode bounded packet builder + dispatch (Phase 2 apg.2)
+- 7a49ed35 fix: expose delivery paths while keeping operational state local
+- 0482772c context: Beads→OpenCode bounded packet builder + dispatch (Phase 2 apg.2)
+- 93c77d57 fix: allow strategy/ in .gitignore for R&D reports
+- a65622a5 fix: allow strategy/ in .gitignore for R&D reports
+- 1e9b049f strategy: refresh bridge state after authenticated Chrome routing fix
+- 0c1dc842 fix: enable real worker browser and computer autonomy
+- af2d6ab9 strategy bridge seq105: fix Chrome path, stale mission control, and cash continuity
+- 149ae8ae strategy bridge seq74: prioritize cash-reachable revenue and fix evidence/reporting gaps
+- 495941fb strategy: seq70 fix stale Telegram supervisory report
+- 1e4fb69b bridge: dispatch seq57 P0 recovery wave
+- dacc5329 strategy: enforce seq52 live queue dispatch and supervisor sync
+- 105ee358 Fix capability_verify param alias: accept capability as well as capability_id
+- ab997070 Context budget fix: align OpenClaw safety window below Router 32k eligible
+- 41b8f853 Fix gateway stability: make moza-workflow plugin non-blocking (async)
+- ff916586 Executive micro-patch: model/provider decoupling, high-value PAYG gate, isolated acceptance
+- c1934430 Fix sync drift detection + preflight allowlist
+- 311a8bf6 Prelaunch: fix 32k context via Tool Search, fix computer key chord, real research skill
+- e27d9cab Native execution wiring: moza_workflow tool, 13 skills, computer+notification fix
+- 56d2fa9e Fix OI candidate placeholder count for 16 columns
+
+### Changed
+- 0a54c514 canonical: update submodule pointers to stable snapshots
+- a1d6fe07 Record changed-route catalog readback
+- cf01019c canonical: record owner handoff approved - phase AUTONOMOUS_EXECUTION, W05 unblocked, gate truth updated
+- 2f1162e2 feat(kernel): enforce full plan/asset/revenue coverage gate, generate reconciliation matrix, and update Mission Control
+- 067e8228 Update overnight return channel with current verified state
+- bdc3f5ef merge: reconcile origin/main Router vNext (141c0a7) into main — preserve all router/runtime/evidence changes
+- d787eba5 evidence: update router promoted release status
+- 6c9aec1b evidence: update router promoted release status
+- 0da3dc9f POST_CUTOVER_OPERATING: Router rebuild complete - fresh OmniRoute on :20128, 31 providers, 85 routes, 4 combos; OpenCode/OpenClaw/Kilo verified; LaunchAgent stable; Mission Control updated; Legacy router stack removed
+- 363e757e docs: housekeeping production vs development + post-cutover verification update
+- fe33ff59 strategy: require dashboard update after every rollout stage
+- 832f3e09 strategy: seq48 stage OpenClaw 2026.9.2 update safely
+- ff8de83a audit live Moza operating system and update strategy bridge
+- d5f29316 Require bridge updates to sync to origin/main
+
+### Removed
+- 26e040fb cleanup: remove obsolete v2-overlay.js (replaced by human-first index.html)
+- b7f624dc strategy: remove reward-site lane and require multi-source revenue cycles
+- 52ae1f9b cleanup: remove obsolete v2-overlay.js (replaced by human-first index.html)
+- dcb82c22 strategy: remove reward-site lane and require multi-source revenue cycles
+- b4a7ba73 strategy: seq67 remove Projects.co.id from active plan and owner actions
+- 1b08f135 Guard: keep only batch safety constraint, remove first-step scripting
+- 1c62b898 Compress bootstrap to dynamic-only: remove static foundation duplication
+
+### Other Changes
+- 51afe55b commerce: preserve exact waits at 0741
+- ee8e827c commerce: record ShafiCloud source-level wait
+- 4ee9e3e9 commerce: record Mercor eligibility wait
+- 5e1bc861 record commerce continuation no-gate readback
+- 40ca5f18 Publish standing release in plugin tool contract
+- b2cc3290 Complete native Bead adoption and standing claim release
+- 0ca0161c correct: recover expert_judgment.py into legacy donor archive (self-correction)
+- 3cc2aecd repair: wire six durable roles into native-continuation role authorization (defect 2, code side)
+- 7e9d596e repair: wire capability-grant and platform-knowledge ledgers into a real decision path (defects 4, 5)
+- 718b268c repair: reusable Beads triage/adoption mechanism (defect 3)
+- df67bbc7 repair: global tool paralysis (critical), stale acceptance tests, audit-harness cleanup
+- b9e46f34 final self-audit: close two real gaps — persistent capability-grant ledger, classified platform-knowledge store
+- 1eab1a12 closure: reconcile stale Trader risk policy to zero executable authority; record owner action required
+- 7877d24e trader: deterministic Spot order writer, risk ledger, and protective-action spine (canonical §P execution core)
+- 2846d958 agent-commerce: full lifecycle stage tracker beyond discover->qualify
+- 91ff81dd hunter: dossier format + executive-convergence anti-repetition gate
+- dff98577 money/settlement extension, capability registry gaps, HNC/reporting/operating-principle docs
+- 3b53307b builder: real OS-enforced confined job sandbox; trader: consecutive-cycle qualification counter
+- 79af1a1b agents/digital-markets-lead: correct an unverified Trader readiness claim
+- 66113d63 agents: stand up 6 missing durable role identities + reactivate Ocean Pearl
+- eba1b5f5 runtime: land guarded Beads/native-lifecycle plugin (moza-native-continuation)
+- 636dd3b1 evidence: reconcile bounty closure at 13:10 WITA
+- aa8d7d1c evidence: record bounty acceptance-criteria gap closure for PRs #4347 and #4350
+- a0d5e86d commerce: record Tenor bounty mechanism test
+- f9cd44fa commerce: record Omi bounty route kill
+- 154bb5ba record commerce negative-bounty filter test
+- 12cae7a6 evidence: reconcile RustChain and MoltJobs at 22:10 WITA
+- 0f2d2dd7 evidence: hand off Digital Markets to native paper worker
+- 3ecd34f7 record pending GitHub receipt delivery
+- 691f75ef record canonicalization proof and shadow regression receipts
+- b6588fb0 evidence: record scoped P02 acceptance
+- d2222718 commerce: reconcile RustChain and MoltJobs settlement
+- 709a64be evidence: record bounded shadow progress
+- 01ff58ac evidence: record P02 independent review blocker
+- 6d76b278 Record current P02 isolation proof blocker
+- bbdff74c evidence: record bounded shadow progress 2026-09-16T132538Z
+- 34c05a8d evidence: record bounded shadow continuation timeout
+- fd5bf2e7 Record bounded shadow overlap reconciliation
+- 3c9c4ffb evidence: accept capability regression suite
+- b191cf59 evidence: qualify PayanAgent free surfaces
+- 97f5dbae Record BlindOracle payload readback
+- 6a8e581d record bounded shadow timeout reconciliation
+- c514dfe5 obs: record shadow candidate binding blocker
+- f1ee8554 evidence: record bounded shadow cycle 20260916 1939
+- 1af032fa observability: record fresh agent bounties window readback
+- 87feb215 record Craig BlindOracle readiness packet
+- 91e8463a record Craig BlindOracle readiness decision
+- d6fe41c0 Record Craig BlindOracle bid packet preparation
+- b5fea4f6 Record BlindOracle bid packet preparation
+- 6f140925 evidence: qualify Delx and BlindOracle demand
+- bd758ef0 Record bounded digital markets shadow progress
+- 0186d74e evidence: reconcile and advance shadow cycle
+- c5391753 obs: record shadow state reconciliation discrepancy
+- e98148e9 obs: record bounded shadow progress 2026-09-16 16:36
+- 2c282a4c record bounded digital markets shadow cycle
+- 76acc648 evidence: record current agent bounty readback
+- fd109357 chore(commerce): reconcile RustChain and MoltJobs settlement
+- 9dd8da01 chore: record shadow cycle material receipt
+- 602ff2fd Record bounded shadow cycle progress
+- bb0305c2 Record fresh bounty source qualification
+- befef4c6 evidence: record bounded shadow cycle 2026-09-16 15:37
+- 5618ae99 evidence: qualify contested Prometheus bounty
+- 15a10767 evidence: record bounded shadow cycle 1513
+- 9263aaff obs: record rejected contested RustChain bounty
+- 57b33548 record bounded shadow cycle 20260916 1428
+- d3d25058 evidence: record bounded shadow cycle
+- 1b86a7d9 evidence: record exact-current P02 proof readiness
+- a1f415dc evidence: preserve P02 reviewer timeout
+- c3a52964 evidence: bind exact-current DEV isolation proof
+- 15d8d193 evidence: reject merged GitHub bounty candidate
+- 3dfca120 evidence: reconcile scoped P02 acceptance
+- 172154a0 evidence: correct bounded shadow receipt schema
+- e933c5ef evidence: record current commerce readback regression
+- 7ed5cdf9 evidence: record bounded shadow cycle
+- 24350332 evidence: accept p02 isolation boundary
+- 20861b36 evidence: reconcile p02 acceptance conflict
+- 3acef598 evidence: record isolation acceptance blocker
+- e42d5bb2 evidence: record bounded digital markets cycle
+- ccd26355 evidence: record independent P02 noninheritance acceptance
+- 3034f7d5 evidence: record bounded shadow portfolio cycle
+- 7adcec07 evidence: record independent P02 acceptance blocker
+- 633ec0bf evidence: record fresh catalog operational readback
+- 6ffdd8c7 Record bounded shadow continuation receipt
+- 18abcf7e Record catalog operational readback
+- 076c42d4 docs: record bounded shadow cycle
+- e891b034 docs: record catalog wrapper QA acceptance
+- 031949e0 Record Catalog V1 production promotion receipt
+- 2a497cd9 Record shadow aggregate consistency
+- f67c07ed Record shadow counter reconciliation
+- 9b4dd4a8 Record shadow state reconciliation regression
+- 517d66d3 Record shadow ledger reconciliation requirement
+- 1f6a6b13 Record x402 wrapper QA acceptance
+- d371c25f Record x402 wrapper QA readback
+- 86a9110f Record x402 wrapper preparation
+- 8f96e089 Prepare fail-closed Catalog x402 wrapper
+- 09771140 Record canonicalization bead closure
+- b27f9f0a Persist Steve Agent Arena preparation evidence
+- 433b5e32 Prepare Steve Agent Arena submission assets
+- 2a8650f4 Record shadow state reconciliation regression
+- e24890fb obs: record shadow state reconciliation regression
+- f2877a7e Record shadow state discrepancy
+- 2da6b372 Record Agent Bounties no-safe-action qualification
+- 37fdc5c0 Record bounded shadow portfolio progress
+- 90692035 Record payer-reachable commerce revalidation
+- 2274b0f1 Record bounded shadow portfolio progress
+- be041f2e evidence: record shadow state reconciliation requirement
+- f9245237 Record bounded shadow continuation
+- 54f5948d Record Commerce source qualification continuation
+- e2f4d7ef Record bounded shadow progress 2026-09-16 10:21 WITA
+- 004e47c3 Record RustChain MoltJobs reconciliation and commerce continuation
+- 5c9945c3 Record bounded shadow progress receipt
+- 511934d7 Record bounded shadow progress receipt
+- 24cf2dc1 Record bounded shadow progress at 0949
+- fd4100db Reconcile current global canonicalization acceptance
+- 13977d5c Record bounded shadow progress
+- a8de61c5 Normalize dashboard repair receipt
+- 39644c3d Repair mission control dashboard syntax
+- b0545089 Record bounded shadow progress
+- ce32a63d Record Superteam Commerce owner gate
+- 118b9463 record bounded shadow portfolio allocation
+- d7e167ef record fresh agent commerce bounty qualification
+- cb8934ea record bounded shadow progress receipt
+- 70e07f9b record bounded shadow progress receipt
+- ec6bf6c0 record independent DEV isolation review evidence
+- da47184f accept scoped DEV isolation boundary review
+- 6059e43c record native wake evidence receipts
+- 0c1703f5 record DEV boundary proof gate transition
+- 942d80d4 advance canonical trader and commerce execution package
+- 705fd594 obs: record bounded shadow progress 20260916 0730
+- 0495226e Recover canonical heartbeat schedule gap
+- 5e98dda6 obs: record Superteam package QA 2026-09-16 07:58 WITA
+- 7c8a5399 obs: record bounded shadow progress 2026-09-16 07:55 WITA
+- 3b682da0 evidence: deliver bounded shadow progress 0753
+- a6fad8aa obs: record bounded shadow progress 20260916 0741
+- 68f1c590 Record fresh catalog commerce readback
+- e494937f obs: record canonicalization acceptance owner gate
+- 982e4927 obs: record bounded shadow progress 20260916 0722
+- c90233c8 Record bounded shadow progress
+- cff4f57c Record Superteam agent source qualification
+- e5333119 Record recurring heartbeat lifecycle recovery
+- 3c4a340a Record canonical heartbeat lifecycle recovery
+- b98e792b evidence: record heartbeat lifecycle recovery
+- 52e6c239 evidence: record fresh agent bounty qualification
+- fe0be1bd evidence: record canonical environment acceptance
+- dce3e2cf obs: record 2026-09-16 shadow progress
+- bee4c5ad evidence: record bounded shadow progress 20260916T0448
+- 78b0ee71 evidence: record 0419 shadow progress
+- 3fe31131 Record fresh commerce reconciliation readback
+- 0f601635 Record bounded shadow progress 20260916T0238
+- 3aeb4153 obs: record bounded shadow progress 2026-09-16 0204
+- 07bb41cb evidence: record bounded shadow progress 2026-09-16 01:24
+- a62e2360 evidence: record bounded shadow progress 2026-09-16 00:38
+- aea42480 Record independent acceptance blocker
+- d64b4710 Record bounded shadow progress 20260916T0029
+- 9112814d Record Commerce source reconciliation
+- 5dc4f914 Record bounded shadow progress
+- 63c24716 Record exact-current canonicalization blocker
+- 30c5e86d obs: record digital markets shadow progress 20260915T2317
+- 626c8340 chore(evidence): record fresh agent bounties reconciliation
+- d6816f61 evidence: record trader candidate-state repair
+- c13809bf repair trader candidate and shadow state gates
+- 7f55465c obs: record Binance owner alert delivery
+- 4090af03 obs: record Binance withdrawal owner action alert
+- 6a0935a8 obs: record continuation wake receipts 20260915T2235+0800
+- f6b6d10f obs: record bounded shadow progress 20260915T2227+0800
+- 7dee9017 obs: record bounded shadow progress 20260915T2216
+- 2a33ad5e record independent canonicalization review blocker
+- 7819ba79 record canonicalization boundary blocker
+- 0083c91d obs: record bounded shadow wake 20260915T135834Z
+- f3f84a0e obs: record bounded shadow progress 20260915T2107
+- a4bc5053 obs: record bounded shadow portfolio cycle
+- e81bc28e obs: record agent bounty capital gate
+- ffc29fc1 chore(observability): record shadow portfolio progress
+- 57d3582d obs: record 2020 shadow portfolio cycle
+- 67fd9388 ops: enforce freelancer freeze after regression
+- 8a91a7aa chore: record 2015 shadow portfolio cycle
+- a4849faa obs: record live verified commerce proposal
+- f1360695 obs: record live verified Freelancer opportunity
+- f868186e obs: record commerce freelancer shortlist
+- fbd09acc obs: record Freelancer project 40709801 qualification
+- 60541d7f ops: reconcile trader fail-closed state
+- 7adde2c0 ops: enforce freelancer freeze regression
+- c6ac9286 obs: record shadow portfolio cycle 2026-09-15 19:37
+- 580db5a3 obs: record Freelancer owner gate delivery
+- 7e89b0c9 obs: record fresh Freelancer sales formatting opportunity
+- 62ad9c37 obs: record catalog production readback 2026-09-15 19:27
+- 25e9d1e9 obs: record 1928 shadow portfolio progress
+- 91113e8d ops: persist agent bounties repair reverification
+- 5dcc6648 obs: record 1909 shadow portfolio progress
+- d88fd993 ops: persist 1909 execution checkpoint
+- 8c0b7b3e record commerce authenticated readback blocker
+- bfd672c7 ops: persist 1852 execution checkpoint
+- 3e70dcf6 ops: persist 1826 execution checkpoint
+- 98b9e3e6 record Freelancer opportunity qualification
+- 8326609f evidence: record fresh canonicalization integrity blocker
+- f0550c4e Record bounded shadow portfolio progress receipt
+- 1bafb075 ops: persist 1810 execution checkpoint
+- 891a912a evidence: use canonical shadow cycle receipt
+- eaf91ffb Record bounded shadow progress 20260915T180944
+- fdf441d4 evidence: record bounded shadow progress
+- 01db7413 Record bounded shadow allocation overlap
+- e686b107 Record exact-current DEV review blocker receipt
+- ec39e6e0 Record bounded shadow campaign cycle
+- c2b1d76c canonicalization: record independent review verdict
+- c99ae9b9 canonicalization: reconcile exact current DEV isolation
+- 12bb427e digital-markets: record bounded shadow progress
+- 924c06fe observability: record bounded shadow progress
+- 964a0be2 commerce: record inbound wait reconciliation
+- d97d4df1 chore(evidence): record shadow allocation overlap
+- 417143f2 ops: persist execution progress scorecard
+- e863750f observability: record bounded shadow overlap
+- e52a594b commerce: record agent bounties requalification
+- 02caf48f record commerce bounty feed qualification
+- 65504a9c observability: record guarded shadow allocation
+- b461545b commerce: record Freelancer OCR qualification
+- 9c5947ec commerce: repair agent bounties 1368 qualification
+- 85e1b01f evidence: record bounded shadow progress 1650
+- 22f87a49 policy: repair eligible commerce gaps before rejection
+- 2cb6a4e5 record Freelancer OCR opportunity receipt
+- d25a8ad6 evidence: checkpoint overlapping shadow allocation
+- 891ede0d obs: record canonicalization acceptance blocker
+- 5e846a76 evidence: reject unavailable agent bounty candidate
+- b994c254 evidence: record bounded shadow progress
+- 99dc240a commerce: reconcile owner deferral evidence
+- c67ee1ba commerce: enforce owner deferral and settlement checkpoint
+- ac104a58 evidence: record owner scope deferral
+- 835f4fad policy: defer ocean pearl commerce lane
+- 37821208 evidence: record commerce expiry and shadow progress
+- 62e78f98 obs: record bounded shadow progress 1631
+- 0c4097c6 obs: reconcile commerce settlement wait
+- 5238adce obs: record bounded shadow progress
+- e2a6f0b0 obs: record Dartin supplier opportunity
+- f0db9b44 trader: persist runbook checkpoint shadow readback
+- b7f4be13 obs: reconcile final shadow progress readback
+- 2d1994e7 evidence: record completed shadow progress
+- 70d4681f evidence: record shadow allocation overlap
+- a64548bd chore(evidence): record relayhop bounty qualification
+- 9df2e44b obs: reconcile serialized shadow readback
+- 9799ea10 obs: record serialized shadow progress
+- d3436af5 obs: record RustChain settlement readback
+- 656eb27c Record Apollo commerce opportunity receipt
+- e73314a8 record preserved DEV state blocker
+- 3bf8322d policy: enforce freelancer freeze and shadow readback
+- 268c04d6 evidence: correct shadow readback drift
+- 67bff79d evidence: record bounded shadow cycle 1535
+- 0e8a8548 commerce: prepare PDF conversion offer asset
+- 141c598b Record bounded shadow portfolio continuation
+- 69760bb2 evidence: record bounded shadow overlap guard
+- d3024514 commerce: enforce freelancer freeze and exclude referrals
+- 9b8bbff5 policy: gate freelancer on settled commerce value
+- 5f3d1273 digital-markets: persist bounded shadow progress receipt
+- bfadd24a evidence: reconcile latest shadow cycle
+- 96684dd8 evidence: record bounded shadow progress
+- 058c0d8f canonicalization: reconcile exact-current state boundaries
+- a65a07b7 evidence: correct shadow totals 2026-09-15 1505
+- c033a2c5 commerce: persist payer reachability and catalog readback
+- 3dea7e7f Record exact-current canonicalization review blocker
+- ff01eca8 evidence: record catalog production readback
+- b54ec5c7 obs: record bounded shadow progress 20260915 1505
+- e2e6d21d observability: record verified shadow completion
+- af3f27fd ops: record bounded shadow progress receipt
+- ea20ce68 ops: record bounded shadow progress receipt
+- a387a64d observability: record Freelancer live verification refresh
+- f1e1e5e3 commerce: refresh payer reachability and continue shadow
+- 6d86313c evidence: record bounded shadow progress
+- accc0aad evidence: qualify SMERGERS foodservice opportunity
+- b96ebb93 observability: record bounded shadow progress
+- c15b0a9d evidence: reconcile RustChain settlement wait
+- 0165aa81 obs: record buyer-match preparation
+- dde20dce obs: record supplier diligence preparation
+- dc708e86 chore: record native continuation material events
+- 8cc018e9 record supplier opportunity qualification
+- 31c52fbd digital-markets: record competitor parity gap repair
+- faa712dd obs: record bounded shadow progress
+- a22658a1 obs: record SMERGERS acquisition signal
+- d0b44e45 ops: record skipped shadow allocation receipt
+- d10ff49f obs: record shadow allocation active-run block
+- 92c42b52 commerce: record Freelancer email intake checkpoint
+- dac5d6f1 commerce: persist catalog independent readback
+- 0755bffd feat: enforce freelancer 12h opportunity cycle
+- 82d1dbca record Dartin Fisheries supplier opportunity
+- 1e81fe29 obs: record bounded shadow progress 20260915 1405
+- da966908 receipt: catalog production readback recovered
+- 10d0ce2b obs: record bounded shadow progress 20260915 1358
+- 024aa691 obs: record bounded shadow progress 20260915 1355
+- 050538b0 commerce: persist freelancer eligibility owner gate
+- 0771e22f commerce: reconcile current collection gates
+- 05f82229 obs: record commerce owner gate 40712036
+- e543c3ea chore(evidence): record bounded shadow progress
+- 1c34adb6 digital-markets: persist commerce-checked shadow cycle
+- 6c6a9fe7 record bounded shadow progress
+- af279a46 evidence: record commerce recommendation reconciliation
+- dacea4d0 obs: record seafood sourcing signal
+- 682ce1ed record RustChain settlement wait reconciliation
+- 90910403 record qualified seafood supplier pack
+- 0a025cea record inbound seafood supplier opportunity
+- 426d0543 evidence: record 13:12 bounded shadow progress
+- 7d6f4d45 digital-markets: persist 13:09 bounded shadow readback
+- b4d19030 evidence: record exact current catalog acceptance
+- 60076546 evidence: record catalog manifest repair
+- 67359a27 Record canonicalization review blocker and shadow progress
+- e6c7212a Record bounded shadow portfolio allocation
+- 1082ad0b record bounded shadow portfolio progress
+- 72a447bf Record Freelancer opportunity qualification
+- 6d46e5a8 record live Freelancer owner gate
+- 63143237 Record fresh Freelancer opportunity shortlist
+- 6129a8de Record bounded shadow portfolio progress
+- c64f9773 digital-markets: persist latest bounded shadow cycle
+- 1ec759dc Record bounded shadow portfolio progress
+- 5d4c4c7b Record prepared Freelancer proposal milestone
+- cbd3fc28 obs: record bounded shadow portfolio progress
+- 015bea58 obs: record live Freelancer opportunity verification
+- 7af6339d record fresh Freelancer shortlist
+- 712d8b23 obs: record Outlier commerce opportunity screen
+- 0c5ae806 record Mercor location qualification
+- f4a41f7a obs: record bounded shadow continuation
+- 8b2fcb00 record bounded shadow portfolio progress
+- 5ba5e941 obs: record bounded shadow portfolio progress
+- 61410a01 obs: record Mercor commerce opportunity
+- 6656d1f8 digital-markets: persist post-commerce shadow cycle
+- 7edb2694 obs: record latest digital markets shadow progress
+- 45e01191 obs: record Outlier commerce discovery refresh
+- 7798acb6 obs: record canonicalization provenance blocker
+- b8207fa3 obs: record latest digital markets shadow progress
+- df879274 obs: record paid platform discovery refresh
+- 1acc4e50 obs: record commerce opportunity refresh
+- dd61b4b1 obs: record bounded shadow portfolio progress
+- df2cfd13 obs: reconcile commerce inbound waits
+- 66b2a97f digital-markets: persist 15m cycle readback
+- e3a95f4d obs: record recovered shadow campaign progress
+- fd876a55 obs: record commerce discovery refresh
+- 431bc686 evidence: record commerce inbound reconciliation
+- ef9029cf obs: record shadow campaign regression
+- c4484464 obs: record bounded shadow progress
+- f0ada009 obs: record rejected Smergers acquisition signal
+- dc793367 obs: record bounded shadow progress
+- 666d95ea observability: record unqualified GitHub opportunity
+- 5b21de28 obs: record bounded shadow progress
+- ff9a953b obs: record canonicalization reviewer auth blocker
+- d755281e observability: record exact-current acceptance blocker
+- ad73f141 record digital markets shadow progress
+- 4528f837 observability: record bounded shadow progress 20260915T1021
+- 0bbdf75d chore: record commerce lead rejection
+- 6932c949 observability: record non-cash bounty rejection
+- 93aaa196 observability: record Freelancer owner gate 40708277
+- 7d91c87c evidence: record bounded shadow progress 20260915T1015
+- 5b9be9c7 evidence: qualify zero-bounty source
+- 6f732d25 digital-markets: persist bounded shadow cycle evidence
+- 0fe1e227 evidence: record exact-current canonicalization review rejection
+- 0bff6319 evidence: record fresh commerce opportunity screen
+- baded4d0 chore(evidence): record shadow progress wake
+- 9424d828 chore(evidence): record shadow integrity acceptance
+- 0bbe916d observability: record bounded 5m shadow progress
+- dddbd3d2 evidence: reconcile bounded shadow cycle
+- 1d507149 chore(evidence): record shadow settlement regression
+- 17afb051 commerce: reconcile collection attribution and repeat state
+- 4ae8cf18 chore(evidence): record bounded shadow progress
+- cd3c9517 chore(evidence): record bounded shadow progress receipt
+- 0482cbac evidence: record 2026-09-15 shadow progress
+- 9188387a observability: record bounded shadow progress 0920
+- 25129cab observability: record bounded shadow progress
+- f3bb4b2f chore(evidence): record commerce-shadow continuation
+- 18cc1087 Record blocked agent bounty qualification
+- edcf8625 observability: record shadow duplicate settlement regression
+- e4aac6bc commerce: validate research lead-data offer artifact
+- 5d610c57 evidence: record freelancer listing refresh blocker
+- 3513e910 evidence: record independent review attempt
+- c3f52981 evidence: record catalog production recovery
+- ffddcca0 evidence: record dev state preservation
+- 34a99d92 obs: record bounded shadow progress 20260915 0839
+- 43f765df record reconciled shadow heartbeat progress
+- 9154f8ca obs: record bounded shadow progress 20260915 0835
+- ea75ad47 obs: record bounded shadow progress 20260915 0834
+- d0be93da obs: record canonicalization review retry blocker
+- ebfb8d87 correct bounded shadow readback receipt
+- 623339a0 record bounded shadow progress
+- e076afdf record Freelancer funding owner gate
+- 69e0ca2b record canonicalization independent review blocker
+- a1cd0173 obs: record bounded shadow and proposal preparation
+- 45696f7e obs: record Freelancer owner-gated opportunity
+- 4caa9654 Record Commerce proposal preparation checkpoint
+- 6fd681a5 obs: record fresh Freelancer opportunity screen
+- f7ae522d Record bounded digital markets shadow progress
+- 68744512 record commerce opportunity screening receipt
+- 24c7c89f obs: record bounded shadow progress
+- ca42880c obs: record exact-current DEV blocker
+- 2a1eb5ec obs: record DEV isolation regression
+- 8cfcf3a9 obs: record shadow portfolio progress
+- 6fdb4fbd obs: record unexpected DEV state regression
+- dcf51190 obs: record bounded shadow progress
+- 0f4740cc obs: record live DEV isolation regression
+- f2c6ab08 evidence: record bounded shadow cycle
+- f7e8e7f3 evidence: record Freelancer eligibility financial gate
+- 33b9155f observability: record bounded shadow progress
+- 5282dec3 observability: record qualified freelancer opportunity
+- 4e087a13 observability: record recovered shadow cycle
+- f94b55d7 record shadow ledger diagnosis
+- 9a7ea1a4 record incomplete shadow allocation anchor blocker
+- 87f29362 record digital markets shadow regression
+- d30f242a observability: record shadow portfolio progress
+- 50fddc9c observability: record contested GitHub bounty
+- 1efcbbce record verified freelancer bid 40708424
+- 66d8b6f6 merge: retain concurrent canonicalization receipt
+- 5a77e2e3 observability: record Codex acceptance owner gate
+- 5ae3516b observability: record Codex acceptance owner gate
+- 98e8ee00 observability: correct shadow progress totals
+- a83edecf observability: record bounded shadow progress
+- a2f16d5a observability: record exact current canonical reconciliation
+- ed1ed5c1 evidence: reconcile exact current canonical head
+- a02acc2b chore: checkpoint evaluated challenger strategy state
+- f0bc851d receipt: Freelancer auth readback blocked
+- b9739c85 observability: record bounded shadow progress
+- 86d46ac8 obs: record fresh Freelancer opportunity verification
+- ac8130e2 obs: record bounty 1231 rejection
+- 8f2f12ad obs: record bounty 1214 rejection
+- e1d80a1a obs: record digital markets shadow progress
+- 83a0f1c2 docs: record digital markets shadow progress
+- 41aae6ca evidence: record bounded shadow progress
+- 59c7ab5d evidence: record exact-current scoped isolation proof
+- abe2202c preserve catalog deployment asset in canonical lineage
+- feb938c6 obs: record rejected contested commerce candidates
+- fe56051b evidence: record exact-head acceptance blocker
+- 4b01dcee evidence: record blocked github bounty refresh
+- 6a842a47 evidence: record bounded shadow progress
+- b1908f4a obs: record bounded shadow cycle progress
+- a7858bd4 evidence: record rejected bounty 1548
+- e93dee0c obs: record catalog toolkit readback acceptance
+- 9d56232b evidence: record bounded shadow progress
+- 8d5a2c7b obs: record completed shadow allocation
+- 92f1fdba evidence: record reconciled shadow progress
+- 3b071bb2 obs: record catalog production readback recovery
+- 85802378 evidence: reconcile shadow duplicate settlement blocker
+- 3235f552 evidence: record shadow duplicate settlement blocker
+- 81c266d6 obs: record hosted catalog body readback
+- 459d2342 evidence: persist catalog readback detail
+- 130689b8 obs: record digital markets shadow progress
+- d49d0005 evidence: record shadow anchor reconciliation blocker
+- 2d28e5c5 obs: record commerce opportunity blocker
+- 8323e865 obs: normalize executor acceptance receipt
+- 028fc10a evidence: record digital markets shadow progress
+- 2aa26351 obs: record non-actionable bounty offer 1552
+- 218c8563 feat: persist gated live executor repair
+- 911a8692 obs: record executor repair acceptance
+- cc1cb0fd obs: record bounded shadow allocation blocker
+- 605eba4c evidence: checkpoint bounded shadow interruption
+- 9720f083 evidence: checkpoint exact-current canonicalization review
+- e267153e evidence: reject contested bounty 1334
+- 4f025beb Record shadow portfolio progress
+- a029f98a obs: record rejected contested bounty 1335
+- 6a78bab6 record bounty 1336 qualification rejection
+- 5c94a5f4 evidence: record bounded shadow progress
+- 977b7bf7 chore(evidence): record bounty qualification rejection
+- d86b8cbd Record blocked shadow allocation attempt
+- 6bd4e264 Record rejected contested bounty qualification
+- 920990d0 observability: record exact-current canonicalization blocker
+- 1920b00c obs: record bounty 265 rejection
+- 1ee6bbb7 obs: record bounded shadow progress
+- 6ce5e693 obs: reconcile Quantum Pi Forge external wait
+- 13a36b19 obs: record shadow active-run guard
+- 3a3c4eab obs: record contested bounty 1472
+- 99b4fc74 obs: record contested bounty 1509
+- 8d5d598e obs: record qualified commerce opportunity receipt
+- 823fb9fb evidence: record bounty 1211 rejection
+- b80a0872 obs: record catalog production readback recovery
+- 4f6e834a obs: record shadow portfolio progress
+- 187b25e6 obs: record rejected GitHub bounty candidate
+- ee69daca obs: record catalog production regression
+- ec0ad6ae checkpoint active shadow cycle wait
+- 7170dbad record rejected GitHub bounty qualification
+- 73134f7a obs: record qualified GitHub bounty opportunity
+- 445f3740 obs: record bounded shadow portfolio progress
+- 60ef5ebe chore: record exact-current canonicalization blocker
+- 33f729b1 obs: record current canonicalization acceptance blocker
+- c9798f12 obs: record bounded shadow portfolio progress 2026-09-15 01:49
+- 9bed9140 obs: record bounded shadow progress 2026-09-15 01:40
+- ef7f48b6 Record current-head DEV isolation acceptance
+- 31eca373 obs: record fresh Freelancer recommendation intake
+- 3a1fdf23 obs: record bounded shadow portfolio progress
+- d4e3942e obs: record independent catalog toolkit QA
+- 1893f16d obs: record bounded shadow portfolio progress 2026-09-15 00:48
+- b1b83416 docs: define Moza priority reset and lane boundaries
+- c141407c obs: record bounded shadow progress 2026-09-15
+- b8414f97 obs: record bounded shadow progress 2026-09-14 23:28
+- a9ca822c obs: record commerce inbound reconciliation 2026-09-14
+- a35799d7 observability: record bounded shadow completion 2026-09-14 23:28
+- 9de0709f obs: record bounded shadow completion 2026-09-14 23:28
+- dc2a2e76 obs: record bounded shadow progress no live order
+- fa74b7ab obs: record isolation acceptance and shadow progress
+- c842b8db evidence: record bounded shadow progress 2026-09-14 2248
+- e6b4a0a8 obs: record bounded shadow progress 2026-09-14 22:38
+- 2e36e421 observability: record bounded shadow progress
+- 76724f04 observability: record bounded shadow timeout
+- 7be74b11 observability: record shadow progress
+- 45e0813b observability: record bounded shadow blocker
+- 4ff0f90e observability: record bounded shadow completion
+- 79bc4e58 record global canonicalization acceptance receipt
+- 0d490129 record interrupted shadow allocation checkpoint
+- 6bc22d77 record fresh Freelancer recommendation signal
+- ef04090e obs: record bounded shadow progress
+- 67cd9ab7 obs: record verified commerce receive rails
+- 0c8bdc3b obs: record bounded digital markets shadow progress
+- b853013b record bounded shadow allocation receipt
+- 30623d16 record bounded shadow allocation receipt
+- 8f087c8c record bounded digital markets shadow progress
+- bebda3d5 Record Freelancer pre-bid owner gate
+- 9ac3e044 obs: record bounded digital markets shadow progress
+- 870a6b6d obs: record live commerce opportunity verification
+- e89a6e10 obs: record bounded shadow progress 20260914 1843
+- d820f1e6 observability: record bounded shadow progress
+- 4be4d19e observability: record commerce recommendation reconciliation
+- 66a1f5a1 obs: record bounded shadow progress 2026-09-14 18:19
+- 498fc81b evidence: record live Freelancer opportunity verification
+- a7045583 record reconciled shadow progress
+- f071f388 record bounded shadow progress reconciliation
+- 4cf628df observability: record bounded shadow progress 2026-09-14 17:24
+- ee353168 observability: record bounded shadow progress 2026-09-14 17:00
+- 74a81eef observability: reconcile bounded shadow progress 2026-09-14 16:58
+- f59d63a2 observability: record bounded shadow progress 2026-09-14 16:29
+- ec1e010e observability: record bounded shadow progress 2026-09-14 16:29
+- ce865568 chore(evidence): record Freelancer shortlist event
+- 8a85049d Record canonicalization gate alert delivery
+- 7752c9d8 Record bounded shadow progress
+- f948e301 observability: record exact-current canonicalization blocker
+- cee93b89 evidence: record bounded shadow progress
+- 2e7fdd4a evidence: record bounded shadow progress
+- 9170bb1c obs: record canonicalization test progress
+- 37305ce3 obs: record current-head DEV isolation gate
+- 65705dd3 evidence: record bounded shadow progress
+- 04ccacb2 obs: record validated catalog sample
+- 4ce555cd evidence: record acceptance blocker
+- 87413dde evidence: record bounded shadow progress
+- 4be568e2 evidence: reconcile DEV Beads at exact head
+- 2e4b38c5 evidence: record canonicalization acceptance blocker
+- 46326395 chore(evidence): record commerce opportunity refresh
+- 075360fd record bounded shadow cycle receipt
+- 1467c759 canonical: autonomous evidence - Context benchmark smoke harness PASS
+- 4688ac76 canonical: autonomous evidence - OpenClaw contextEngine native slot gap (unregistered)
+- 2c31461e canonical: autonomous evidence - W05/W06 router cost truth gap + Context-to-Router contract verify (8/13)
+- a6a97c2f canonical: W05 first autonomous post-handoff provider-truth reconciliation + owner handoff receipt
+- 9f04faff evidence: record bounded shadow cycle
+- 74648bcc foundation S0: final closeout - clean main session context, forced router fallback drill, >=2h continuous soak + delta review evidence
+- 3f025979 evidence: record bounded shadow cycle
+- f4507dc8 evidence: accept isolated catalog toolkit tests
+- 46707b4c record native wake isolation and commerce blockers
+- 2482ae2a evidence: record bounded shadow cycle progress
+- ee3c7aa6 evidence: reconcile Freshworks listing verification
+- 8b11e350 evidence: record bounded shadow progress
+- 78ab318c Record marketplace verification blocker
+- ee6559ca record bounded shadow progress
+- e6042c5b obs: record current-head acceptance blocker
+- 35dd72c1 chore(evidence): record bounded shadow progress
+- 55128b10 evidence: reconcile DEV beads provenance blocker
+- 30dcbcb0 evidence: reconcile bounded shadow timeout
+- 00284ec7 evidence: reconcile DEV isolation blocker
+- db3546b8 evidence: record bounded shadow progress 2026-09-14 11:09
+- 9fad6dfe evidence: record deterministic acceptance checkpoint
+- adf3f970 evidence: record bounded shadow timeout 2026-09-14 10:53
+- 7398cf72 evidence: reconcile bounded shadow progress after timeout
+- a5e2cbde record bounded shadow cycle readback
+- 7d6b469e evidence: record bounded shadow progress 2026-09-14 10:17
+- 29834402 obs: record bounded shadow progress
+- 80efe7e6 record bounded digital markets shadow progress
+- deadb126 evidence: record bounded shadow progress
+- 94d37542 evidence: record bounded shadow progress
+- 8eec1ac1 Correct shadow progress receipt lineage
+- 487913b6 Record bounded digital markets shadow progress 2026-09-14 09:37
+- 4352fdc8 Record bounded canonical acceptance blocker
+- 99dc0986 Record fresh foundation observer blocker
+- 62b93f7a Record current-head acceptance capability blocker
+- a1a100b2 Correct shadow receipt to authoritative readback
+- e31750b7 Revert "Record bounded shadow progress 2026-09-14 09:07"
+- 63e61f8e Record bounded shadow progress 2026-09-14 09:07
+- 0742b9f4 Record fresh bounded shadow progress
+- d7d86a1a record bounded shadow cycle material receipt
+- 6953bbb2 record catalog toolkit acceptance readback
+- c534b045 chore(evidence): record bounded shadow progress
+- d640aba3 record bounded shadow progress
+- 10908723 align toolkit acceptance event policy
+- 04396d99 record catalog toolkit DEV acceptance
+- 6bd908e3 record catalog toolkit CLI repair
+- 48528365 classify catalog input errors before exports
+- d6b07662 record catalog toolkit verification blocker
+- 150cc580 evidence: checkpoint fresh DEV isolation readback
+- f9b8295a evidence: record fresh shadow allocation
+- 3ad3f3af Record bounded digital markets shadow progress
+- 71b33b23 obs: record independent acceptance timeout
+- a0d5ac2c obs: record foundation observer acceptance progress
+- c4208351 obs: record 0719 shadow progress
+- 9319ce0f Record bounded digital markets shadow progress
+- 9df55809 obs: record bounded shadow allocation 0656
+- 017a9e8b obs: record bounded shadow allocation 0634
+- e1b94069 evidence: record bounded shadow allocation
+- 5ca52b2b obs: record bounded shadow allocation
+- eb502e74 obs: record Airtable proposal preparation
+- c6e9423e obs: queue live Airtable automation opportunity
+- 799602df obs: record live qualified commerce opportunity
+- e50ecb5d obs: record bounded shadow progress 20260914T0607
+- 7d13e061 obs: record bounded shadow allocation 2026-09-14 05:53
+- 04ba6d99 obs: record bounded shadow allocation 2026-09-14 05:44
+- 78f796ee obs: record bounded shadow cycle progress
+- d2f4819a obs: record Freelancer proposal preparation event
+- 38b2df8d obs: record bounded shadow progress 2026-09-14 04:57
+- 90c784a6 evidence: record bounded shadow progress
+- 5f7ff3ed evidence: record qualified commerce opportunity
+- 876ee4a0 obs: record bounded digital markets shadow progress
+- 10612352 chore(evidence): record bounded shadow progress
+- c70e6868 chore(evidence): reconcile unattributed RustChain payment
+- 0f1279c4 Record fresh commerce and shadow material events
+- 6dc7f48b evidence: record bounded shadow cycle
+- 38fc78ee evidence: checkpoint independent acceptance blocker
+- e7199c7a evidence: reconcile canonical acceptance lineage
+- e1d4b86a evidence: record bounded shadow cycle
+- 030320af evidence: record bounded shadow cycle
+- f8e895af Record native continuation shadow wake
+- 02caba54 Record native continuation shadow wake
+- dea4cb2b Record native continuation shadow wake
+- df35efac Record native continuation shadow wake
+- b3163cec Record native continuation shadow wake
+- 2b735a6f Record native continuation shadow wake
+- 791f0857 Record native continuation shadow wake
+- 1a014a12 Record native continuation shadow wake
+- 80756891 Record native continuation shadow wake
+- 4e08335b Record native continuation shadow wake
+- 253814b9 Record latest bounded shadow cycle
+- c7a9fb38 Record latest bounded shadow cycle
+- 7384ca56 Record current fail-closed gate truth
+- 5619f3df Record fresh shadow continuation checkpoint
+- 9b168590 Record continuation shadow wake evidence
+- 3f037c92 Record continuation shadow evidence
+- ccfe4c3e Record native continuation shadow checkpoint
+- 989ec882 Record bounded shadow continuation
+- 04582573 Record bounded shadow wake evidence
+- 1339c089 Record bounded shadow continuation checkpoint
+- 7c158e39 Correct shadow checkpoint totals
+- 18535538 Record bounded shadow wake checkpoint
+- 2daed7e3 Checkpoint foundation observation input blocker
+- 713bba03 Record bounded 15m shadow checkpoint
+- 321a9c28 Reconcile acceptance revision against current head
+- 2922edc4 Checkpoint foundation readback blockers
+- 3140653b Record bounded 5m shadow checkpoint
+- 2e596046 Checkpoint foundation observation attention
+- c56ae0c0 Record bounded 1m shadow checkpoint
+- b35a8a2c Record bounded 15m shadow checkpoint
+- d424fcb2 Record bounded 5m shadow settlement
+- 00b265af Record bounded 1m shadow evaluation
+- f8783080 Record bounded 15m shadow evaluation
+- 16e0ee13 Record fresh Freelancer opportunity reconciliation
+- b86d6776 Record bounded 5m shadow checkpoint
+- d1912d42 Record bounded 1m shadow checkpoint
+- 60809dd2 Record bounded 15m shadow checkpoint
+- e8078564 Record bounded 5m shadow checkpoint
+- 19f1606f Record bounded 1m shadow checkpoint
+- aaecc76a Record bounded 15m shadow checkpoint
+- bef350ec Record bounded 5m shadow checkpoint
+- 687cd49b Record bounded 1m shadow checkpoint
+- bd5bb480 Record bounded 15m shadow checkpoint
+- e9a67181 Record bounded 5m shadow checkpoint
+- 498d92a1 Record bounded 1m shadow checkpoint
+- a6c88995 Record bounded 15m shadow checkpoint
+- fc4b4c1b Record bounded 5m shadow checkpoint
+- d919615b Record bounded shadow allocation checkpoint
+- 8e24031e Record 15m shadow allocation checkpoint
+- c7547caf Record 5m shadow allocation checkpoint
+- 5ba0472d Record 1m shadow allocation checkpoint
+- 691eff9b Record 15m shadow allocation checkpoint
+- 39504ab4 Record completed shadow allocation checkpoint
+- 9296f859 Checkpoint bounded shadow retry timeout
+- d0f6ae8e Record successful bounded shadow allocation
+- d420bac8 Checkpoint latest bounded shadow timeout
+- 0e477a16 Record independent acceptance suite
+- a88b994a Checkpoint background shadow timeout
+- d5abff87 Reconcile fresh commerce inbound events
+- 57b3b1ad Checkpoint bounded shadow allocation timeout
+- b83166b0 Revalidate prepared commerce asset
+- ef4f38bd Checkpoint bounded shadow timeout
+- b34c6c75 Checkpoint commerce bid draft package
+- 33ee61e5 Record bounded shadow retry pending
+- a01d946a Checkpoint commerce offer revision preparation
+- 4a4051b6 Checkpoint bounded 15m shadow settlement
+- a1d7ed98 Checkpoint bounded 5m shadow settlement
+- 99e666f3 Checkpoint fresh commerce source qualification
+- 83873642 Checkpoint bounded 1m shadow settlement
+- a0caa205 Checkpoint bounded 15m shadow settlement
+- 58234772 Checkpoint bounded 5m shadow settlement
+- 924d91f9 Checkpoint bounded 1m shadow settlement
+- df2a3498 Checkpoint Commerce delivery asset QA
+- 00e7943e Checkpoint bounded 5m shadow settlement
+- a0166118 Checkpoint bounded 1m shadow settlement
+- 506d46f2 Checkpoint bounded 15m shadow allocation
+- 426ac730 Checkpoint bounded shadow allocation
+- 26717b45 Record bounded historical replay blocker
+- e793a988 Checkpoint bounded shadow continuation
+- 8de508ee Checkpoint bounded shadow continuation
+- e7624344 Checkpoint bounded shadow continuation
+- 122be517 Checkpoint bounded shadow continuation
+- b14a5ba9 Checkpoint bounded shadow continuation
+- f7679487 Checkpoint bounded shadow continuation
+- 1c01b2c4 Checkpoint bounded shadow continuation
+- da0f03d6 Checkpoint bounded shadow continuation
+- 721d20ea Checkpoint bounded shadow continuation
+- 66fa01ac Checkpoint bounded shadow continuation
+- 2a423100 Checkpoint bounded shadow continuation
+- 793a7125 Checkpoint bounded shadow continuation
+- 7103a6b7 Checkpoint bounded shadow continuation
+- 3a2229f1 Checkpoint bounded shadow continuation
+- 148e7e7f Checkpoint bounded shadow continuation
+- e910f253 Checkpoint bounded shadow continuation
+- fefd1e93 Checkpoint bounded shadow continuation
+- 06a7cf57 Checkpoint bounded shadow continuation
+- a460a12f Checkpoint bounded shadow continuation
+- 30321787 Checkpoint bounded shadow continuation
+- b41bcd69 Checkpoint bounded shadow continuation
+- caf9a170 Checkpoint bounded shadow continuation
+- d4442c52 Checkpoint bounded shadow continuation
+- 56257545 Checkpoint bounded shadow continuation
+- 9f9483fb Checkpoint bounded shadow continuation
+- 2dda17b7 Checkpoint bounded shadow continuation
+- 39af4914 Checkpoint bounded shadow continuation
+- 3ddadf5b Checkpoint bounded shadow continuation
+- cc72583c Checkpoint bounded shadow continuation
+- 980802bc Checkpoint bounded shadow continuation
+- 90035f9c Checkpoint bounded shadow continuation
+- bad85b95 Checkpoint bounded shadow continuation
+- fb7d87d7 Checkpoint bounded shadow continuation
+- 2b397de0 Checkpoint bounded shadow continuation
+- 19fd1df1 Checkpoint bounded shadow continuation
+- 7b13803e Checkpoint bounded shadow continuation
+- 7285b75c Checkpoint bounded shadow continuation
+- c35bdc45 Checkpoint bounded shadow continuation
+- 47d35182 Checkpoint bounded shadow continuation
+- 4d5252b2 Checkpoint bounded shadow continuation
+- fe86ded5 Checkpoint bounded shadow continuation
+- 7f65f18c Checkpoint bounded shadow continuation
+- b3be0ba9 Checkpoint bounded shadow continuation
+- e0e2a48c Checkpoint bounded shadow continuation
+- 14212ebe Checkpoint bounded shadow continuation
+- 74982b9f Checkpoint bounded shadow continuation
+- 8bf9b76a Checkpoint bounded shadow continuation
+- 961b6f24 Checkpoint bounded shadow continuation
+- 0ea9157a Checkpoint bounded shadow continuation
+- 8d8d377b Checkpoint bounded shadow continuation
+- 68a4b00e Checkpoint bounded shadow continuation
+- 07dbb589 Checkpoint bounded shadow continuation
+- f3b340e7 Checkpoint bounded shadow continuation
+- 7a1e3d83 Checkpoint bounded shadow continuation
+- bcc88a6e Checkpoint bounded shadow continuation
+- bde871bb Checkpoint bounded shadow continuation
+- 38abcbfe Checkpoint bounded shadow portfolio
+- 8da98ce6 Checkpoint bounded shadow portfolio
+- e83bd607 Checkpoint bounded shadow continuation
+- cd572a51 Checkpoint bounded shadow continuation
+- bed3fa68 Checkpoint bounded shadow allocation
+- 27cdda87 Checkpoint bounded shadow continuation
+- 519a8cc8 Checkpoint bounded shadow allocation
+- c0519609 Checkpoint bounded shadow continuation
+- 5ee30094 Checkpoint bounded shadow allocation
+- 6dff8fac Record blocked foundation observation input
+- f6e9daea Checkpoint bounded shadow continuation
+- e6cdd1f9 Checkpoint bounded shadow allocation
+- 8c2a7c97 Checkpoint bounded shadow continuation
+- 5bbb3052 Record reusable Commerce demo acceptance
+- 05a700e5 Checkpoint bounded shadow continuation
+- 2963e7d9 Checkpoint bounded shadow allocation
+- 8b522965 Checkpoint deterministic acceptance suite
+- 9b7698f3 Checkpoint bounded shadow continuation
+- 22fd5394 Record Commerce opportunity qualification hold
+- 603641f5 Checkpoint full quality shadow allocation
+- 70372d03 Record canonical policy acceptance checkpoint
+- fb95330c Checkpoint bounded shadow continuation
+- 975c64e5 Make learning expand decision maturity
+- 912495d3 Checkpoint next bounded shadow allocation
+- 150a80b6 Record canonicalization isolation reconciliation
+- c134fa53 Checkpoint native continuation wake
+- 36d5b456 Score frozen position management after settlement
+- 538c6b01 Checkpoint current bounded shadow allocation
+- f764e6ed Use closed-bar availability for position decisions
+- 639f84c5 Record native wake continuation checkpoint
+- b326020c Checkpoint bounded shadow continuation wake
+- 8967c547 Checkpoint continuation sprint and shadow progress
+- e8ebc0b3 Prioritize agent commerce revenue sprint
+- 5edbde91 Record fresh 1m shadow checkpoint
+- d8ad361f Record fresh 15m shadow checkpoint
+- fa2ad31a Record fresh 5m shadow checkpoint
+- 837484e8 Support legacy point-in-time event records
+- aeb078d5 Record recovered 1m shadow allocation
+- 0f64ac9a Handle legacy information event fields safely
+- ea0bfe8d Record shadow runner legacy event blocker
+- bc72ec9c Record commerce-first production adoption
+- 99a78acf Record fresh 15m shadow allocation checkpoint
+- 366b4306 Correct shadow settlement outcome breakdown
+- 415186d6 Record fresh 5m shadow settlement checkpoint
+- de3ef59a Record fresh 1m shadow settlement checkpoint
+- 51c2ec07 Record fresh 15m shadow checkpoint
+- 967f5d9c Record fresh 5m shadow allocation
+- 67874bc0 Record matured shadow outcome checkpoint
+- e8510a77 Record fresh 15m shadow allocation
+- dc5e51f5 Record fresh 5m shadow checkpoint
+- 395b361e Record matured shadow settlement checkpoint
+- 18dc63ea Record 15m forward shadow cycle
+- 101197fc Report shadow confidence calibration honestly
+- 91e4cd2c Record forward shadow campaign checkpoint
+- 3410198d Fence legacy shadow commands into campaign
+- 8bff39d2 Record post-rollover shadow checkpoint
+- ac0c0a6c Route Digital Markets operator through shadow campaign
+- 4a8ce697 Record shadow policy rollover checkpoint
+- 8e5b736b Record accelerated shadow campaign adoption
+- ce610f8b Record momentum rollover shadow checkpoint
+- d651761a Run accelerated multi-timeframe shadow campaign
+- 3f244b0e Record strategy performance adaptation checkpoint
+- 9f776e3b Record profitable shadow settlement checkpoint
+- 964a0a90 Record shadow settlement and relative strength checkpoint
+- af154b1a Record fresh shadow portfolio checkpoint
+- d121c94c Record grid range rollover checkpoint
+- a77ed66f Record relative strength rollover checkpoint
+- a477f3e0 Record fresh shadow settlement checkpoint
+- eb0f1379 Record mean reversion rollover checkpoint
+- e4ccec14 Record event driven rollover checkpoint
+- 1f72bf30 Record breakout regime adaptive rollover checkpoint
+- ec4cc84c Record momentum relative strength rollover checkpoint
+- 6d651b27 Record multi-family shadow rollover checkpoint
+- 025a8446 Record volatility breakout rollover checkpoint
+- c94e0aa7 Record measured forward shadow checkpoint
+- 57f4d30e Record fresh shadow settlement checkpoint
+- 7041490d Record positive shadow learning checkpoint
+- b2d6a11b Record fresh shadow qualification checkpoint
+- 8d7ee5bc Record fresh shadow evidence checkpoint
+- a8ac5b02 Record forward shadow qualification checkpoint
+- 58aace99 Record relative strength rollover checkpoint
+- 6f01a3d2 Record measured shadow loss checkpoint
+- cce05e74 Record fresh forward shadow checkpoint
+- b102a481 Record momentum event driven rollover
+- 2addec7d Record multi timeframe shadow rollover
+- 7eb1e9da Record shadow forward qualification checkpoint
+- dd1c7b95 Record shadow settlement and forward checkpoint
+- 768a0569 Record forward shadow freeze checkpoint
+- 7839d791 Record breakout relative strength rollovers
+- 61b2c420 Record relative strength maturation checkpoint
+- dec47462 Record grid range rollover checkpoint
+- 2c2ee3f2 Record measured shadow risk checkpoint
+- e881c376 Record event driven rollover checkpoint
+- ab7573b6 Record mean reversion rollover checkpoint
+- 4f1e1c54 Record momentum rollover checkpoint
+- d7fcda64 Record shadow settlement safety checkpoint
+- 10c2c802 Record relative strength rollover checkpoint
+- 8aa182a3 Record regime adaptive rollover checkpoint
+- b52cd882 Record volatility breakout rollover checkpoint
+- bbcea008 Record mean reversion rollover checkpoint
+- 0fecbe9c Record forward shadow continuation checkpoint
+- 7fcebc86 Record event driven rollover checkpoint
+- 45392ce5 Record trend following rollover checkpoint
+- d4e96c5f Record fresh shadow safety checkpoint
+- 7249b476 Record mean reversion shadow checkpoint
+- 5cee876c Record multi family shadow rollovers
+- 6d4bb9a4 Record breakout relative strength checkpoint
+- b31b3c23 Record grid range rollover checkpoint
+- 20be7aad Record fresh shadow settlement checkpoint
+- 3455e195 Record regime adaptive rollover checkpoint
+- fc83aeb1 Record fresh shadow loss evidence
+- 93ce0629 Record strategy loss shadow checkpoint
+- 485ab6f8 Record latest shadow settlement
+- d542e1aa Record fresh shadow settlement checkpoint
+- 8ae601c2 Record measured shadow strategy checkpoint
+- 6c424415 Record shadow allocation checkpoint
+- 9642fcec Record relative strength rollover checkpoint
+- 26d923a1 Record shadow forward decision checkpoint
+- 20e25204 Record event-driven shadow rollover
+- 03c6ca7c Record shadow allocation checkpoint
+- 04a8dbc2 Record shadow forward checkpoint
+- e75d51cc Record shadow strategy batch rollover
+- 7a0c73a5 Record native shadow continuation wake
+- 208e5f49 Record fresh shadow continuation
+- cc1a89a6 Record relative strength batch rollover
+- 53268bd1 Record shadow continuation wake
+- 4a746a72 Record shadow batch rollover evidence
+- cbeb8d35 Record native shadow wake evidence
+- 290bf0b7 Record shadow forward checkpoint
+- 4cdbc372 Record shadow continuation checkpoint
+- 765c6d6c Record shadow continuation evidence
+- bb07b6c5 Record fresh shadow outcomes
+- 63bb55f8 Record shadow evidence checkpoint
+- ff9b609e Record native continuation shadow cycle
+- 0009425a Record shadow settlement checkpoint
+- 987cdaf7 Preserve Binance Spot execution rules in universe
+- a1b2f5da Record shadow policy rollovers
+- d69d8c3e Record Digital Markets material alert delivery
+- 3ea93512 Adopt expanded Digital Markets shadow runtime
+- 7110b459 Record expanded shadow portfolio cycle
+- ed167311 Expand Digital Markets platform intelligence
+- 1bacd35c Record shadow no-fill and ETH decisions
+- 5a19ff96 Record shadow no-fill settlements
+- 94e78f78 Record shadow settlement and ETH breakout freeze
+- dc680f8f Record shadow settlement and breakout freeze
+- 97662975 Record shadow settlement and freeze
+- afb73258 Checkpoint Digital Markets shadow cycle
+- 14e266f3 Record autonomous shadow settlement learning
+- 4c56ddf3 Record Digital Markets shadow freeze
+- 60e220b3 Reconcile Digital Markets runtime truth
+- b1b7d2ec Record Digital Markets shadow progress
+- ef414bf3 Record active multi-strategy shadow portfolio
+- 6171dac4 Adopt continuous strategy shadow portfolio
+- 30fefdfe Run multi-strategy Binance shadow portfolio
+- 18903b69 Record global canonicalization acceptance event
+- c64d8f12 Use live runtime truth for observer reporting
+- 6e5d2b59 record accepted canonical cutover state
+- 46c0c622 scope policy reconciliation to canonical sources
+- a418f190 link specialist to canonical Digital Markets skill
+- c2cfe392 canonicalize Digital Markets expert workspace
+- df20eede Enforce canonical gates at Binance order boundary
+- 6cb5dd79 reconcile Moza to one current operating system
+- 93d6f481 reconcile active Moza authorities and retire legacy control planes
+- 1cfc6a12 Clarify OpenClaw ownership of shadow qualification
+- 23aeb00c Harden shadow market evidence provenance
+- 1a5d6253 Bind shadow qualification to signed live market evidence
+- aad9490f Harden shadow evidence chain and forward settlement
+- c279ce17 Weight strategy expectancy by trades and close fold bypass
+- 4fa74d07 Keep small coherent samples classified as insufficient
+- 2f448c4c Enforce per-symbol trade aggregation invariants
+- 83d38768 Fail closed on malformed market qualification evidence
+- 5d8f3e8c Harden market evidence versioning and aggregation gates
+- 4ee67f8e Separate Digital Markets research micro-live and scale gates
+- 1be87d1a Preserve current owner preferences and durable operating lessons
+- 645c3e8f Preserve and harden Digital Markets runtime in DEV
+- 9383d18b Enforce bounded session governance for Moza workers
+- 0fbf40c0 docs: publish final canonical Moza operating package
+- 94d283d2 feat(orchestration): upgrade dev orchestrator prototype with real parallel workers, DAG auto-unblock, SIGKILL recovery, and host resource telemetry
+- 1c1a49c4 merge: integrate origin/main into opencode/primary preserving audit & bridge artifacts
+- e98ac36b Agent-Commerce seq171 reactivate canonical Codex watcher and recover backlog
+- ae402737 Reactivate Codex bridge supervision for Agent-Commerce only
+- 24b78ad5 feat(bridge): make github bridge daemon, launchd plist, RND-01..09 evidence, and Session 2 handoff durable on main
+- cb10199c feat(foundry): persist repaired github bridge daemon, launchd plist, and RND evidence reports (RND-01 through RND-08)
+- 1831676d Escalate Agent-Commerce bridge recovery after seq169 timeout
+- 92482463 Agent-Commerce bridge watchdog repair seq 169
+- aedf083d Agent-Commerce: reject daily cadence and require real autonomous production loop
+- e86bbb5c bridge: publish automatic seq 167 cursor
+- dbca1617 bridge: publish automatic seq 167 acceptance receipt
+- 3405662c bridge: reconcile automatic seq 167 cursor
+- f8312127 bridge: automatic supervision acceptance seq 167
+- 0a0e5634 bridge: correct harmless test sequence header
+- 0b67e268 bridge: harmless automatic supervision test seq 167
+- 689d1f25 bridge: harmless automatic supervision round-trip test
+- 558f601e Start first full Agent-Commerce cycle and continuity proof
+- 435a560f Advance Agent-Commerce from partial autonomy proof to full execution
+- 9fb25eb1 bridge: reconcile Agent-Commerce seq 164 cursor
+- 66f06ed1 bridge: consume Agent-Commerce seq 164
+- 360efdbe Start Agent-Commerce execution and continuous repair loop
+- fedb01be Correct Agent-Commerce sprint gaps after canonical session verification
+- 7497bed3 bridge: reconcile Agent-Commerce cursor to seq 161
+- 19012926 bridge: acknowledge Agent-Commerce sprint seq 161
+- 90028230 Launch aggressive Agent-Commerce completion sprint
+- dc44ebcd Advance Agent-Commerce Line 1 after Monkey remediation
+- de4b0589 Align scheduled tasks with currently active sessions only
+- d1ef5fd7 Escalate Agent-Commerce to end-to-end production-line sprint
+- f0ac4d24 Launch Moza-led Agent-Commerce execution and build factory sprint
+- ba6eb13d Remediate catalog toolkit commercial defects
+- e06d9405 Reconcile observability lag without disturbing active revenue execution
+- 5637cd8b docs(status): record release 50b658e rate limit absorption and timeout repair
+- 34c63635 Refine agent-commerce sprint for full-loop closure and standing email/monetization monitoring
+- 4c021a1d chore(router): record stress acceptance results and test suite for release a73de7a
+- a73de7a7 router: harden long-context vision-agent routing, schema sanitization, and continuity recovery
+- 094ec086 Launch full-power Agent-Commerce execution sprint
+- d6d12b90 sync mission control generated readback
+- 8a92b3a5 merge remote canonical history
+- 700cc96b refresh mission control truth snapshot
+- 87859301 reconcile canonical runtime truth
+- 15fcc11d Advance bridge cursors after seq153 reconciliation
+- 2fcb6f62 Record Codex consumption of seq153
+- c6abfd58 Record seq153 RustChain reconciliation and recovery
+- 9437bab9 Bridge RustChain correction to Agent-Commerce supervisor
+- 2a4b6d92 Align ChatGPT bridge cursor with BRIDGE_STATE
+- cd6322c8 Align Codex bridge cursor with BRIDGE_STATE
+- 2a5471fc Bind lane-scoped Codex supervision to existing bridge state
+- 66f3d22d Record Agent-Commerce bridge restoration and acceptance acknowledgement
+- 09ec1df4 Document bounded material bridge schema and existing transport
+- 6eb5ad46 feat(expertise): harden superhuman domain expertise and unblock domain memory namespaces
+- 4659e8d4 Record independent Codex rescue round-trip evidence
+- 9adf9c44 evidence: rebind router admission to promoted release
+- 140357f6 evidence: record router admission recovery and caller checks
+- 55b1316c router: allow verified route recovery past sibling auth state
+- cbdd4271 router: isolate stale pooled-account auth failures
+- ae326e53 router: compact nested tool schema metadata
+- a58b8a7c router: honor provider-specific agent output limits
+- 236fac2d router: compact oversized agent tool schemas on 413
+- 6a8bebb5 router: restore bounded agent admission after recovery canary
+- ce3056ef evidence: verify OpenCode and Monkey Moza Router callers
+- 1116364a escalate rescue from canary-only to bounded OpenClaw recovery
+- bb98ec85 router: record Antigravity-qualified promotion
+- 507e2e4f evidence: bind qualified router tier probes to c32b8d6
+- 0416045f Record independent Codex rescue round-trip evidence
+- c32b8d65 router: incorporate capability-specific provider qualification
+- f4ff146b Run bounded strategy robustness sweep
+- 7c1bbb9e Evaluate Digital Markets strategy edge
+- 092c475f refresh Codex rescue directive from overnight watch
+- 2eb5e9aa reconcile Antigravity router findings into Moza shared state
+- 1b1c8c00 evidence: record Binance Stage A live readback
+- 66747f99 Clarify autonomous economic action authority
+- fea418b0 Make autonomous economic lane continuous and API-first
+- 466bd6f2 Record independent Codex rescue round-trip evidence
+- a2480c3f P0: force Codex rescue on fresh provider-error recurrence
+- 08ebee7a Activate Codex rescue channel and target verified proxy/DNS incident
+- 1b739805 Record independent Codex rescue round-trip evidence
+- 5baaccfd coordination: redact rescue command output
+- 1715f1a1 Record independent Codex rescue round-trip evidence
+- 29d91ee0 Record independent Codex rescue round-trip evidence
+- fc19f769 Record independent Codex rescue round-trip evidence
+- 11a0b2e1 coordination: escalate unconsumed bridge and force same-path recovery
+- bfbaf21c coordination: recover stale bridge and execute agent-native money lane
+- 67ac6d97 coordination: assert final agent-native authority and recover stale execution
+- 9a64755b coordination: reconcile stale agent-lane gate and persistent liveness
+- 6efa2176 coordination: escalate bridge liveness and require autonomous recovery
+- 5c5ee23c coordination: escalate stale overnight execution and require real work proof
+- f7d1883c coordination: prioritize real Telegram/provider failure repair
+- 95457458 coordination: keep Codex building while OpenClaw operates
+- a92649b9 coordination: prioritize autonomous economic lane to verified revenue
+- 940f06a9 coordination: prioritize money build and OpenClaw reliability
+- 050d2890 coordination: authorize maximum overnight execution with money first
+- 6228c76e coordination: extend overnight Astra build and economic execution mandate
+- a1cd1230 chore: refresh Moza overnight bridge timestamp
+- f37bcfe4 chore: publish Moza overnight bridge state
+- be45b2b8 coordination: establish Moza to ChatGPT overnight return channel
+- 487ce00e coordination: establish overnight ChatGPT to Moza bridge
+- 9b59f677 docs: checkpoint foundation repairs and quality-floor continuation
+- 4e2db49b feat: expose bounded native session capability preflight
+- 03f8a9e7 feat: capture native attempt usage through scoped observation hooks
+- 65d92f9e docs: make native development coordination a foundation gate
+- f4c90880 docs(status): append live regression truth and preserved commercial execution
+- 70a7d208 feat(mission-control): replace owner dashboard and expose source truth
+- cf62860a plan: apply accepted Astra amendments and first-wave graph reconciliation
+- 8d44f1e7 merge: reconcile current main planning and router regression evidence in DEV
+- 39cbcb75 merge: reconcile duplicate router evidence commit 69252f0 — preserve V2 planning
+- 69252f05 evidence: correct router source integration commit
+- f0e7f471 evidence: correct router source integration commit
+- 2330c5a6 plan: Autonomous Economic Agent V2 planning reconciliation (Astra gate)
+- d6d0f2a0 router: record OpenCode continuity regression repair
+- 24bdc8a4 router: record OpenCode continuity regression repair
+- 4a80de47 router: demote nvidia nano from agent continuity workloads
+- db3d15d0 plan: Autonomous Economic Agent V2 planning reconciliation (Astra gate)
+- 141c0a70 evidence: correct router source integration reference
+- ad19dce6 evidence: correct router source integration reference
+- 9c57dd91 evidence: record corrected router qualification lesson
+- 679522b1 evidence: record corrected router qualification lesson
+- 3c3b999a evidence: record Router vNext production promotion
+- 85341223 evidence: deploy router qualification provenance
+- d174c6b0 router: integrate production-ready vNext candidate
+- 6e2456cb evidence: record Router vNext production promotion
+- e042c3ae evidence: deploy router qualification provenance
+- 1bf7ba34 router: integrate production-ready vNext candidate
+- df8eb959 evidence: bind router production readiness to exact release
+- 8330ca82 router: make intelligence admission transactional
+- 1998fcd2 router: make first promotion use candidate verifier
+- 91c185fc test: isolate router evidence side effects
+- 6c3a9725 router: close final Sol release blockers
+- 73b2b642 router: remediate production acceptance blockers
+- a595d3b8 bridge: flag MoltJobs live funded forum bounties
+- 2f1be2dd router: promote vNext production gateway
+- 32293976 router: record production promotion evidence
+- 8c22e801 router: wait for health during rollback
+- 8c02e115 router: qualify probed free agent-tool fallbacks
+- 55a77230 router: validate upstream completion before streaming
+- 6c016db1 router: qualify tool-heavy agent routes separately
+- 9ca4694d router: use canonical TencentDB promotion schema
+- e284e744 router: validate final Responses output for Codex
+- f5020436 docs(router): normalize Phase 1.5 audit formatting
+- d99ac12c feat(router): complete vNext DEV gateway and acceptance
+- 5ac04ea0 Merge remote-tracking branch 'origin/main'
+- 05b26f65 promote: shared agent platform + Context Core V1 to main (from opencode/primary 8386f20)
+- 8386f20b merge: adopt freelance 3-bid batch policy from main (7de0034) into platform branch
+- 17f637c1 feat(platform): shared Context Core + permanent agent protocol foundation
+- 7de00349 freelance: batch up to 3 qualified bids within 24h expiry window
+- d1775812 mission-control: FINAL_CUTOVER_OPERATING phase (promote from opencode/primary 0e88704)
+- 0e887049 mission-control: FINAL_CUTOVER_OPERATING phase + economic-gate next-work derivation
+- 28e516ae evidence: engineering acceptance for task economics + router policy (mirror main 3e3f52a)
+- 3e3f52a7 evidence: engineering acceptance for task economics (ru9.6.1) + router policy/paid-exceptions (ru9.6.2) + task economics ledger
+- 9e07e233 canonical truth: FINAL CUTOVER OPERATING (promote from opencode/primary a22e648)
+- a22e648b canonical truth: CURRENT_STATUS FINAL CUTOVER OPERATING — FINAL strategy, MOZA MASTER Beads graph, economic view, task economics, Astra reconciliation, OpenClaw→OpenCode real task
+- 7aeee24d loop: real-delivery truth guard (promote from opencode/primary 5326ef3)
+- 5326ef31 loop: enforce real-delivery truth guard — economic execution beads never auto-closed by LLM/stub turns
+- 29086e88 final cutover (promote): FINAL strategy + economic telemetry + Mission Control economic view + Astra reconciliation + Codex L8 gate
+- 40b3c91b final cutover: FINAL strategy in place + Beads reconciled to MOZA MASTER graph + economic telemetry + Mission Control economic view + Astra reconciliation + Codex L8 task-class gate
+- ba57f0fd consolidation: machine cleanup record + mission-control prod-path repoint (GOLDEN STATE follow-up)
+- 7e05a94d consolidation: machine cleanup record + mission-control prod-path repoint (GOLDEN STATE follow-up)
+- 3828e11e GOLDEN STATE (dev): pre-revenue full-system acceptance PASS — mirror prod acaf3a1
+- 5ce65938 GOLDEN STATE evidence: GATE3 autonomous-loop acceptance artifacts (workspace-ezs/wcn/xv2)
+- a6081ec3 GOLDEN STATE: pre-revenue full-system acceptance PASS — router E2E, multi-model failover, autonomous loop, structure cleanup
+- 1cc84638 strategy: sync post-cutover cash execution and Digital Markets fast-track
+- e8df0991 strategy: consolidate post-cutover cash execution and Digital Markets fast-track
+- 50473b21 canonical truth: sync CURRENT_STATUS to HEAD f5f2f37/013f481 POST_CUTOVER_OPERATING, no dev contradiction
+- f5f2f379 canonical truth: CURRENT_STATUS POST_CUTOVER_OPERATING HEAD 013f481, OmniRoute 20128 31p/85r/4c, no 4001/4002 prod dep, freecash archived, revenue full power
+- 2e6c865b strategy bridge: seq146 accept phases 3/5, enforce revenue parallelism and Phase6 proof
+- df404ef1 feat: Phase 5 Master Beads graph reconciliation (workspace-apg.5) — ONE graph 33 beads 7 epics
+- f03b800d feat: Phase 3 formalize TencentDB in real loop (workspace-apg.3) — 23/23 gates PASS
+- 9e9d9386 bridge state: seq145 production router truth and remaining cutover defects
+- bcbbc282 strategy bridge: seq145 production truth reconciliation and codex-emergency policy
+- fb9c4d81 production-router: wire dynamic catalog into all real OpenClaw execution paths + live multi-layer soak + pre-cutover acceptance
+- f8d5fe72 legacy+dynamics: recover 30 MozaRouter keys to Keychain + dynamic catalog + model-specific routing + OpenCode adoption + dashboard polish
+- 798b3435 bridge state: seq144 router truth and dynamic catalog hardening
+- 54f2206a strategy bridge: seq144 router truth, dynamic catalog, dashboard acceptance
+- d07d03e7 dashboard: human-first Mission Control redesign — 8-tab visual control center
+- 91118d56 router+dashboard: pre-cutover audit — economic layers 0-8 + Mission Control V2
+- 88db8b6c bridge state: seq143 reliability review and digital markets amendment
+- db987606 strategy bridge: seq143 reliability evidence and revenue scan
+- 2f71ac16 strategy: amend digital markets profit locking and fast-exit plan
+- a404dc46 bridge state: seq142 owner revenue override and staged supervision
+- 9a809fdd strategy bridge: owner revenue override and staged OpenClaw supervision
+- 3ca33ac5 bridge state: advance seq141 and align autonomous build truth
+- 5e1a59c6 strategy bridge: align Beads-led autonomous build and current recovery gaps
+- b03bcabd strategy: bind canonical Digital Markets plan into Moza master execution graph
+- 8488f838 strategy: challenge recovery proof gaps and align staged OpenClaw cutover
+- 8f2597d3 strategy: finalize ChatGPT↔OpenClaw operating model and staged worker-pool cutover
+- f56bb0ab strategy: reconcile recovery hardening, Codex role drift, and stale control truth
+- 013f4811 strategy: advance bridge state seq150 cleanup truth
+- 6a6452f1 strategy: supervise cleanup truth and reliability gate seq150
+- 9bff5beb strategy: advance bridge state seq149
+- 32111a42 strategy: supervise no-delta bridge and OpenClaw 9.3 candidate
+- 9f55b50f strategy: advance bridge state after router housekeeping review
+- a6a29c25 strategy: reconcile post-cutover router and truth defects
+- a8fbed04 bridge state: seq147 accept cutover, gate revenue full power on router restart and supervision truth
+- d700016b strategy bridge: seq147 post-cutover router and supervision verification gate
+- 79dd83df feat: Phases 9-12 Final Closure Package — Mission Control V2 + Full Acceptance + Soak + Cutover (workspace-apg.9..12, apg epic)
+- 4a0a4c9f feat: Phase 8 ROI / Portfolio Allocation Engine (workspace-apg.8) — lane scoring vs verified
+- 1f61e14e feat: Phase 7 Research/Opportunity Engine (workspace-apg.7) — DISCOVER→SCREEN→VALIDATE→EXPERIMENT
+- 3abc6749 feat: Phase 6 OpenClaw Autonomous Loop V1 (workspace-apg.6) — multi-cycle autonomy 3/3
+- d33d2f42 strategy bridge: seq146 accept phases 3/5, enforce revenue parallelism and Phase6 proof
+- e8cf3560 feat: Phase 5 Master Beads graph reconciliation (workspace-apg.5) — ONE graph 33 beads 7 epics
+- c9bab2b8 feat: Phase 3 formalize TencentDB in real loop (workspace-apg.3) — 23/23 gates PASS
+- be80d4b4 bridge state: seq145 production router truth and remaining cutover defects
+- 4edb6bea strategy bridge: seq145 production truth reconciliation and codex-emergency policy
+- bd75c910 production-router: wire dynamic catalog into all real OpenClaw execution paths + live multi-layer soak + pre-cutover acceptance
+- bbad1f7b legacy+dynamics: recover 30 MozaRouter keys to Keychain + dynamic catalog + model-specific routing + OpenCode adoption + dashboard polish
+- 29f67433 bridge state: seq144 router truth and dynamic catalog hardening
+- 5b182296 strategy bridge: seq144 router truth, dynamic catalog, dashboard acceptance
+- e8afcb7b dashboard: human-first Mission Control redesign — 8-tab visual control center
+- 3c621e54 router+dashboard: pre-cutover audit — economic layers 0-8 + Mission Control V2
+- 7fe1b9dc context: Phase 4 production Context Builder v0.2.0 + live apg.4 acceptance (workspace-apg.4)
+- 7e90d241 recovery: production wiring for scheduled/event recovery (Phase 1)
+- 3d223c8a hardening: soak+concurrency+integrity+backup+version-pin (TencentDB pilot)
+- f30c5ff4 bridge state: seq143 reliability review and digital markets amendment
+- 09831d04 strategy bridge: seq143 reliability evidence and revenue scan
+- 922774d1 strategy: amend digital markets profit locking and fast-exit plan
+- 8549f9e6 bridge state: seq142 owner revenue override and staged supervision
+- cc23389c strategy bridge: owner revenue override and staged OpenClaw supervision
+- d7e3cef9 context: Phase 4 production Context Builder v0.2.0 + live apg.4 acceptance (workspace-apg.4)
+- 0f41f991 bridge state: advance seq141 and align autonomous build truth
+- 7a5293ca strategy bridge: align Beads-led autonomous build and current recovery gaps
+- c2cceda8 recovery: production wiring for scheduled/event recovery (Phase 1)
+- 91cbba24 strategy: bind canonical Digital Markets plan into Moza master execution graph
+- 4c364810 hardening: soak+concurrency+integrity+backup+version-pin (TencentDB pilot)
+- 77ed9d85 recovery: bounded provider-failure + capability-miss recovery controller (proven on persona task)
+- 6ba41f49 bridge: advance strategy cursor and focus active stability defects
+- c433425a strategy: enforce provider failover and capability-miss recovery acceptance
+- 8c577a1b strategy: accept stability audit baseline and narrow next P0 repairs
+- 24bb0a6a strategy: challenge recovery proof gaps and align staged OpenClaw cutover
+- 48fedb0c strategy: finalize ChatGPT↔OpenClaw operating model and staged worker-pool cutover
+- 6ae02383 strategy: reconcile recovery hardening, Codex role drift, and stale control truth
+- 4e673780 recovery: bounded provider-failure + capability-miss recovery controller (proven on persona task)
+- c319581f pilot: Moza shared TencentDB memory — production pilot (OpenClaw+OpenCode+Codex, local BM25)
+- 746bc421 bridge: advance strategy cursor and focus active stability defects
+- 41cc6799 strategy: enforce provider failover and capability-miss recovery acceptance
+- 50a56f3e pilot: Moza shared TencentDB memory — production pilot (OpenClaw+OpenCode+Codex, local BM25)
+- 42720fcc bridge: refresh runtime truth (portfolio live, source current, stability-audit defects)
+- aa7c0b30 strategy: prioritize execution stability and capability evolution
+- f007b3bb strategy: verify fresh execution recovery and challenge stale mixed state
+- 43ddec26 strategy: accept stability audit baseline and narrow next P0 repairs
+- f2280eef bridge: refresh runtime truth (portfolio live, source current, stability-audit defects)
+- 7dae9dd0 strategy: prioritize execution stability and capability evolution
+- e90c5c0d strategy: verify fresh execution recovery and challenge stale mixed state
+- fb750210 runtime: refresh Mission Control + operating snapshot truth (portfolio live, finance rails, free-first routing, Freelancer payout gate)
+- 9c1a6316 strategy: advance bridge cursor and record Freecash evidence/session continuity review
+- 44872e8c strategy: review live evidence freshness and keep Digital Markets plan non-active
+- a9d90b94 strategy: amend Digital Markets execution plan — A1/A2 split, multi-instance paper, post-F graph, acceptance split (plan only)
+- b959d019 strategy: review Freecash live output and session failure
+- 4f552d7d strategy: mark sustained execution-evidence defect
+- dc5941a6 strategy: refresh supervision evidence without advancing cursor
+- d532265f strategy: advance supervision cursor to seq132
+- 76882a22 strategy: require fresh commercial execution evidence
+- 0d9c31b1 strategy: advance bridge state after P0 17/0 closure
+- 13d92346 strategy: accept P0 closure and shift supervision to cash execution
+- ba475c72 p0: close computer-browser autonomy package to 17/0 (reconciled upload/download, finder picker, fallback)
+- 4dfd6cfb strategy: refresh bridge state for email-first execution and DM draft quarantine
+- 82a38617 strategy: challenge premature digital-markets plan and refocus execution
+- fe79f981 skill: email-first freelancer intake cadence (2x/day browser, multi-site expansion)
+- a375aeff strategy: reconcile authenticated browser routing and keep cash execution primary
+- cf27bc15 policy: enforce browser profile routing (authenticated chrome profile for business work)
+- e6b316a5 strategy: queue Gmail cleanup and 10-site revenue expansion for Moza
+- 50fb2fd9 strategy: refresh bridge after finance/session-routing evidence
+- a346ce90 strategy: advance bridge after finance/session-management evidence
+- a263dece policy: enforce session-management (stable roots, bounded children, probe hygiene)
+- b45e686b strategy: bind free-first router exhaustion policy
+- e69a61d0 bridge: Moza finance/payout receive-rails material report
+- fe673699 strategy: refresh bridge state for finance operator acceptance
+- e537b1ff strategy: enforce Moza operator proof for finance lane
+- 1f42f11e finance: refresh receive-rail registry verification timestamp
+- cd53f7c8 bridge: install direct OpenClaw->ChatGPT operational report channel
+- 2ce95c19 strategy: advance supervision state after OpenCode transition
+- e2228232 strategy: record post-Codex supervision correction
+- 696432f2 strategy: reconcile bridge state for Codex stop and OpenCode transition
+- 6c6ba764 strategy: terminally stop Codex bridge participation
+- 1f704eed strategy: put Codex fully dormant and make OpenCode primary
+- e6680e10 docs: final Codex P0 autonomy handover
+- 210a2a1b strategy: switch engineering execution to OpenCode Go and test OpenClaw independence
+- 36efcc10 strategy: advance bridge state to seq122
+- 365072b4 strategy: advance supervision cursor to seq121
+- 9df1e34b strategy: enforce end-to-end one-cycle repair mandate
+- 204a5f12 strategy: advance bridge state to seq120
+- e089fe98 strategy: classify P0 blocker and restore cash throughput
+- de22c40c Correct P0 browser-file and local-auth bridge truth
+- 434a7005 Sync P0 capability-routing blocker to bridge
+- 0b9b77b3 strategy: correct P0 completion standard and close missing evidence
+- 00a13d53 audit: correct P0 status to incomplete
+- 0b0ae819 audit: complete original P0 acceptance matrix
+- 49a1102c audit: close computer browser autonomy P0
+- 68f039a5 strategy: reconcile bridge state after P0 autonomy proof
+- db907948 strategy: accept P0 autonomy evidence and reclassify local-auth parser defect
+- 2bc6b992 strategy: advance bridge state cursor to seq117
+- d3f261c4 strategy: reconcile bridge state to seq116 evidence
+- 3343833a strategy: reconcile finance gates, cash execution and bridge discipline
+- 542d3350 dashboard: bind producer to canonical workspace
+- 46e1faf2 dashboard: check IP only on gateway lifecycle
+- de3ae7f1 dashboard: monitor Binance whitelist IP visibly
+- 45a92753 strategy: require verified receive-wallet capability
+- c96e1b18 strategy: launch deep revenue-system completion research side job
+- 185bb312 bridge: register Superteam agent and reconcile seq113
+- a748a15c bridge: seq113 constrain source expansion by cash and demand proof
+- caa10106 strategy: expand fast-cash source portfolio with evidence-gated lanes
+- e31d29df bridge: wire Binance local env and prove receive/readiness
+- 877342a0 bridge: record seq109 execution defects
+- 28d5dd5c bridge: advance state to seq109 with stale liveness correction
+- f2be49d0 bridge: seq109 challenge stale cash liveness and Superteam auth
+- 1f36266c bridge: record authenticated browser and Superteam API result
+- 25300172 bridge: advance strategy state to seq108 and flag Superteam route defect
+- b70b7a98 bridge: correct Superteam execution path and restore cash-worker liveness
+- d50978fe bridge: mark Chrome gate cleared and Mission Control stale state defect
+- 0edfa823 bridge: clear Chrome gate and require stale Mission Control repair
+- e00f5da5 Bridge seq47 persist economic results and cadence truth
+- 896f8714 bridge: refresh state for seq106 cash-worker and Chrome gate review
+- 2bbda358 bridge: seq106 enforce cash-worker evidence and continuation
+- f0949cbd Bridge seq46 prepare Chrome extension path
+- ec58e882 bridge state: advance to strategy seq105 and mark stale cash/runtime evidence
+- ba98296e supervision: use computer control before escalating trivial Mac owner gates
+- a68bfb2d Bridge seq45 repair Moza native orchestration
+- 464ffd49 bridge state seq103: Moza-native orchestration acceptance and Clustly verification
+- a1545523 strategy bridge seq103: redirect native tool acceptance to Moza main and reopen cash execution
+- b82e1e31 Bridge seq44 record native tool exposure defect
+- bc140b4e Bridge seq43 diagnose child runtime and refresh control plane
+- 23c3314b bridge state seq102: timeout root cause and stale mission control
+- 3189ed6e bridge seq102: diagnose subagent timeouts and force non-Freelancer cash action
+- 06a46281 Bridge seq42 prove native orchestration
+- 25e544e9 bridge: record seq101 autonomy diagnosis and tool-policy check
+- 62879cf2 strategy: escalate unrepaired Moza autonomy and verify session tool permissions
+- f962b629 Record disabled no-op watchdog and Catalog no-write
+- 4eaf4591 Disable ineffective cash watchdog and record no-write
+- 044205f2 Move cash watchdog to Moza main event loop
+- cfec1d81 Correct browser control and main watchdog truth
+- 376e6050 strategy: advance bridge state to seq100 and record owner browser gate
+- c03d68ae strategy: enforce owner browser gate and non-Freelancer cash continuity
+- c7a82594 Record Chrome attachment owner gate
+- 1640f6d6 Surface authenticated Chrome attachment gate
+- 1ae84157 Configure same-session cash repeat loop
+- 82c1a04e Activate five-minute cash repeat continuity
+- 361d2a71 strategy: advance bridge cursor and browser continuity defect state
+- 051785fd strategy: enforce continuous cash workers and deterministic browser recovery
+- d6bcf745 Record repeat acquisition continuity failure
+- 31d9be04 Record stalled repeat acquisition cycle
+- be65a73f Record fourth Freelancer bid and Agrenting QA gate
+- 5a44744c Record fourth cash-reachable Freelancer bid
+- 7f5d43f4 strategy: advance bridge state to seq98
+- b956bbef strategy: enforce commercial production and verify Agrenting
+- f8baa445 Correct SporeAgent source integrity
+- 78c50b3d Reject seeded SporeAgent demo as revenue
+- 5bf7167f Reconcile seq97 SporeAgent verification
+- 93648328 Track cash-worker and SporeAgent execution truth
+- 064022c6 strategy: advance bridge state to seq97
+- 63e82311 Apply seq96 payout correction
+- 5017159e Apply corrected payout taxonomy and section truth
+- 236ff583 supervision: correct payout reachability scoring
+- fb77b7aa bridge: advance strategy cursor to seq95 and record browser/dashboard defects
+- 6114f422 bridge: strategy supervision seq95 execution/browser truth corrections
+- 34b3b027 Reconcile seq94 execution and counts
+- 43b58a79 Normalize Mission Control money taxonomy
+- ca96d0a6 strategy: advance bridge cursor to seq94 and record production defects
+- 0b1c3748 strategy: seq94 enforce commercial production and cash-source expansion
+- 74bca257 Reconcile bridge seq31 after OpenClaw upgrade
+- ce70896c Refresh Mission Control after OpenClaw upgrade
+- 6fd8b348 supervision: seq93 stale reconciliation and commercial execution delta
+- 2a66793e strategy: seq92 post-upgrade validation without pausing noon sprint
+- d9d8a527 strategy: advance bridge state to seq91 and flag stale remote evidence
+- 70c5d666 strategy: seq91 enforce fresh execution evidence and targeted browser recovery
+- 09251256 strategy: seq90 lock noon delivery and keep dashboard polish non-blocking
+- cdf62a60 strategy: seq89 agent market must activate next source, not wait for owner
+- ae390894 mission-control: adopt execution constitution
+- 57f0d4e4 strategy: seq88 broaden freelance mix and review bid positioning
+- 86c0b905 strategy: broaden freelance opportunity mix and review bid positioning
+- 65f72ebe strategy: seq86 collapse execution directives to one canonical source
+- 7540cc78 strategy: consolidate all active execution directives into one canonical constitution
+- 65af01eb bridge: record seq83 supervision recovery
+- 0c33fc77 strategy: prioritize near-expiry bids and premium portfolio conversion
+- 9db1f3cb mission-control: publish failover and current runtime evidence
+- d1c8e052 mission-control: expose routing circuit breaker evidence
+- a3e34cc5 strategy: seq84 launch 12-hour completion sprint
+- a9989703 strategy: advance bridge state through seq83 audit
+- e2fe4007 strategy: challenge routing autonomy and evidence drift
+- 6ca3ae40 strategy: seq82 repair routing failures and runtime autonomy
+- 3da14717 strategy: seq81 enforce OpenClaw browser autonomy and Codex enablement
+- 565c429b strategy: define OpenClaw browser autonomy and Codex enablement role
+- 599aea5f bridge: advance strategy cursor to seq80 and flag proof defects
+- 18030bf1 strategy: seq80 enforce autonomy proof and repair evidence gaps
+- b027a9d5 strategy: seq79 switch to observation-led autonomy and capability repair
+- 94de89b1 strategy: define observation-led autonomy operating model
+- 71648796 bridge: apply repeat scale expansion doctrine
+- fb97403d mission-control: expose repeat scale expansion loops
+- 99857122 strategy: seq78 require repeat, scale, and expand successful work
+- 3e639321 Mirror Telegram rollout report
+- 83e138ce bridge: activate seq75 revenue rollout
+- 0625fd9a strategy: seq76 project-wide setup run follow completion cycle
+- 6c255594 strategy: seq75 sequential ROI rollout with mandatory dashboard sync
+- 29eb67d5 bridge state: review codex seq27 and classify RTC as illiquid
+- 66e6470b bridge: record seq73 execution evidence
+- ead6d72f strategy: advance bridge cursors through seq73 and record live-execution gap
+- 7c67d49a strategy: seq73 shift from dashboard repair to live revenue execution
+- 0e4c7540 strategy: seq72 prioritize Southern Italy property research bid
+- c7aa6f32 mission-control: keep automatic snapshots out of worktree
+- 616b7437 strategy: seq71 require action-specific Telegram lane reporting
+- 8508d685 bridge: reconcile seq68 execution scope
+- e6ccfa78 strategy: seq68 execute genspark, dashboard side-session, freelance expansion, public portfolio
+- df48db8a Seq66: repair dashboard handoff blockers and reconcile canonical state
+- f8b03c80 bridge: confirm seq24 remote readback
+- 7e4875c3 bridge: record Projects.co.id login gate
+- 4a2e4c0b strategy: seq65 push dashboard and automatic revenue execution scoreboard
+- 6039dae9 bridge: start Projects.co.id readiness check
+- 9f353eb1 strategy: advance bridge state to seq64
+- 9769c0d0 strategy: seq64 prioritize live local demand and close evidence defects
+- f2cbdf39 strategy: advance bridge state through seq63 and refresh evidence cursors
+- 57750df1 strategy: seq63 enforce fast-cash ingestion and evidence freshness
+- 0229e273 strategy: seq62 launch fast cash sprint
+- c84b8364 bridge: record second Freelancer bid
+- 0b897843 bridge: resume second Freelancer bid
+- e863fa0f strategy: seq61 aggressive freelancing acquisition cycle
+- 3e294961 strategy: seq60 repair canonical state split and dashboard handoff
+- 6d2358d7 bridge: apply seq59 first-revenue focus
+- 8019418b strategy: seq59 first revenue sprint focus
+- 618724a1 strategy: seq58 dashboard handoff still blocked
+- f83ba263 bridge: advance strategy cursor to seq57 and reprioritize live P0 proof
+- 286778c8 strategy: seq57 shift from supervisor repair to live P0 execution proof
+- d4c5eb6b bridge: prove canonical supervisor heartbeat wake
+- c72c1fc2 bridge: advance strategy cursor to seq56 and mark stale supervisor evidence
+- 338ce3e9 strategy: seq56 require real supervisor wake and fresh runtime evidence
+- c4b0140f strategy: seq55 repair missed supervisor wake and owner dashboard defects
+- e48bcd93 bridge: record verified Freelancer profile save
+- e28a7036 strategy: seq54 enforce history carry-forward and dashboard handoff
+- ef859a78 strategy: require active owner actions and live control panel
+- e33fad43 strategy: sync bridge state to seq52 and current execution defects
+- 61b7d6ba strategy: seq51 reject false healthy idle and force queue execution
+- edb8abe6 strategy: seq50 distribute bids across platforms and respect quotas
+- f6871afc strategy: seq49 require multi-bid freelancer execution
+- 72837d3c bridge: record seq16 remote readback
+- 4e03b50f supervision: schedule seq46 bridge heartbeat
+- 1d019e9d strategy: seq46 close confirmed scheduler and profile gaps now
+- 76902911 strategy: seq45 require visible 30-minute scheduler proof
+- 2497c34f strategy: advance bridge to seq44 revenue queue directive
+- 3746dc66 strategy: seq44 activate canonical revenue execution queue
+- 91f1979b bridge: record seq15 remote readback
+- 7d4ac23a freelance: record verified first marketplace bid
+- 09e8f555 bridge: record seq14 remote readback
+- 5c6b2b5f supervision: reconcile seq43 execution evidence
+- fb4f1b5e strategy: force full OpenClaw capability activation
+- b824a611 strategy: advance bridge state to seq42 supervisor audit
+- e4f65515 strategy: record seq42 execution-proof audit
+- 9ca84a30 strategy: advance bridge state to seq41 execution defects
+- 5a291ba6 strategy: repair web search and force bounty execution
+- 28f67d2e strategy: force live agent execution and dashboard delivery
+- 95f30580 strategy: define live agent assignments and dashboard acceptance
+- 90c0f812 strategy: prioritize first earned cash for Binance
+- 3bd73d56 strategy: advance execution watch state to seq38
+- aed4bf3e strategy: reconcile routing and persona execution watch
+- a01e259b strategy: reconcile historical archaeology decisions
+- c03daac4 bridge: advance state to strategy seq36 and Freelancer activation
+- 487db6ef strategy: verify Freelancer activation and reconcile bridge state
+- 731fdfe8 bridge: freelancer.com paid membership activation and bidding execution
+- 8531d22e telegram-revenue: record proof commit c164943 in BRIDGE_STATE
+- c1649435 telegram-revenue: self-delivered mirror entry 2026-09-06T14:54 (path proof)
+- 30e14ae8 strategy: correct routing and resume persona execution
+- b9c8a542 strategy: bind side-task reconciliation to bridge and plan
+- fab071bd strategy: require side task reconciliation
+- d9d0aacf strategy: require side-task reconciliation into bridge and execution plan
+- 434ecb3e record post-sleep Moza execution validation
+- 6980c3e2 reconcile post-sleep Moza roots and repair native failover
+- c76b452d bridge: advance strategy state to seq32
+- 5af130b0 strategy: seq32 resume after sleep and advance persona/revenue execution
+- 45407c38 bridge: reconcile state through strategy seq31
+- 6c1e51bd strategy: seq31 require remote lineage proof and native failover
+- d580627f bridge: reconcile state through strategy seq30
+- 802caa45 strategy: seq30 enforce Moza-owned lineages and conversion evidence
+- 830560d6 strategy: enforce single objective task lineage
+- eb2ffa72 strategy: bind task lineage and session governance
+- 7864b84b strategy: enforce unattended browser and automatic model failover
+- 25f4dfd3 strategy: require unattended browser control and automatic model failover
+- 246f825b strategy: correct owner-intent and over-defensive resource resolution
+- 7e72bb2a strategy: strengthen owner-intent resource resolution
+- 95dce8f5 strategy: require automatic connected-resource resolution
+- cc4b2b7a strategy: bind connected resource resolution behavior
+- 41bc80f2 strategy: force execution proof after audit
+- 40f18c6c strategy: enforce explicit executor boundary
+- 6650198c strategy: enforce explicit task executor labels
+- a34405d5 strategy: bind final operating plan and 30-minute sprint supervision
+- 83e283ea strategy: create master execution register for all revenue and system ideas
+- 7f238ca2 strategy: reconcile master plan with live autonomy and revenue target
+- aa779173 strategy: activate buried revenue ideas and channel monetization
+- 69171e18 strategy: activate buried revenue ideas and OpenClaw skill library
+- 5c45e723 strategy: parallel OSS adoption without stopping money lanes
+- 3d3fed19 strategy: launch autonomous revenue agent experiments
+- b47c98e4 strategy: activate Tariq standing freelance mandate and force money execution
+- 7498a8dd strategy: record Tariq freelance standing A3 mandate
+- 9cbd1860 strategy: reconcile bridge seq18 and live evidence gaps
+- 48289f83 strategy: enforce live topology proof and evaluate OpenClaw 2026.9.2 safely
+- c382cde2 strategy: require live OpenClaw agent topology and subagent proof
+- 228f070e strategy: define live OpenClaw agent architecture and observability
+- 2cd1f546 activate Tariq-first freelance supervision lane
+- 9cfdc8af strategy: activate Tariq-first freelance lane and single-page execution cockpit
+- 5c1e7c39 strategy: refine mission control into single-page execution cockpit
+- 5c6d7237 finalize remote strategy bridge proof
+- c9858c18 record latest ChatGPT strategy sequence
+- fd4092de verify strategy bridge transport and live runtime
+- 613802eb strategy: track mission-control and payout-readiness defects
+- 3fdc0d6e strategy: record cash-conversion evidence defect
+- 5c8561d1 strategy: seq14 force cash-conversion evidence and owner-gate readiness
+- 5f01f931 strategy: reconcile bridge proof and cash execution state
+- 6082b393 strategy: verify live supervision and push cash-progress discipline
+- 84e703ff supervise live runtime and promote execution goals
+- 972081d4 strategy: record heartbeat-to-Codex supervision wake requirement
+- ababa962 strategy: make heartbeat an explicit Codex supervision trigger
+- e3a16c86 strategy: record runtime recovery and economic idle defect
+- 9bc6c945 strategy: challenge healthy-idle runtime and require revenue goal activation
+- 12272431 bridge state: seq10 persistent transport recovery
+- a147d4cb strategy: seq10 timebox persistent bridge transport repair
+- 5e96fd9f bridge state: seq9 persistent transport defect
+- 0cdc37f1 strategy: seq9 persistent bridge recovery
+- cdf63dd4 bridge state: seq8 and stale canonical status defect
+- 5381f41a strategy: seq8 escalate remote bridge and stale canonical status
+- 2451477d bridge: mark telegram mirror unproven and seq7 strategy state
+- 09b7b153 strategy: correct mirror proof and require remote execution evidence
+- 31a3f5df Mark Telegram mirror proven and advance strategy seq 6
+- 9099ef80 Strategy seq 6: acknowledge mirror proof and target remaining runtime defects
+- 7e367e7a Advance bridge state after strategy review
+- cddf283f Strategy seq 5: reliability, remote evidence and budget-aware execution
+- 7f1a9994 Mirror 04:09 Telegram supervision report
+- 9e2c6c17 Mirror material Telegram runtime report and flag delivery gap
+- 37bfcbf8 Expand strategy bridge with multi-model council and agent collaboration frontier
+- b2a757ee Expand revenue frontier and autonomous money priorities
+- ec979ba1 Initialize strategy bridge state
+- 23cabe95 Initialize ChatGPT to Codex strategy outbox
+- 9ce79a12 Initialize Codex to ChatGPT bridge inbox
+- 23f2a67e Forbid Codex-owned Moza sessions and false autonomy evidence
+- fec6b7ee Require runtime provenance for Moza autonomy certification
+- 6c8f5dae Make manager-agent-subagent hierarchy explicit
+- 34d044b2 Define Moza manager-agent-subagent orchestration hierarchy
+- 88f90312 Harden personal WhatsApp inbound policy documentation
+- 32050a33 Make Codex supervisory role explicit in Moza handoff
+- 5eba7f66 Define Codex as Moza supervisor not business executor
+- 5d8ba74f Make OpenClaw-owned account integrations authoritative over ChatGPT app connectors
+- c9506cb1 Integrate recovery, persona language, and email-first operations
+- acbf32d3 Expand durable economic mission and proactive opportunity discovery
+- 8610adfd Register persona language protocol and skill
+- cfa1b1da Register recovery resilience and progressive persona readiness
+- 55af2d82 Make persona onboarding action-specific and non-blocking
+- 72d9c44c Allow persona work to start before KYC/payout completion
+- be4f4a06 Persist recovery-first and background GPT supervision doctrine
+- 40006577 Make task recovery and premium background supervision binding
+- 2a46e517 Record strict free-first and GPT-conservation policy
+- 61b24a01 Make OpenClaw-native and token-efficient resource routing explicit
+- 3cabc20c Install approved Moza brand identity
+- ed9c5954 Register planner economics and final audit as canonical
+- d522ce22 Persist planner economics and mandatory QA doctrine
+- 691c4941 Bind planner economics and final audit capability
+- 651e8f1c Register opportunity discovery expansion as canonical
+- e87d3bd3 Make opportunity expansion a standing Moza economic behavior
+- 626386a9 Register Capital and Funding Engine as canonical
+- d4f0e8a0 Expand funding capability into project capital pipeline
+- cbdb49c1 Enforce modernization audit in legacy opportunity skill
+- 972406b8 Require modernization audit before legacy project launch
+- 7da8388d Rebuild Moza as OpenClaw-native main agent workspace
+- e3b066e2 Browser lifecycle: REUSE → WORK → CLEAN UP (generic, all sites)
+- 6c4a42ee Hardening: need-specific resourcefulness, thinking doctrine, startup bootstrap
+- 41faf6f7 Planner guard: safety constraint only, no goal inference
+- 52de7276 Moza foundational principles hardening: ontology, identity, browser priority, inheritance
+- 37096447 Persistent operator foundation: owner context, bootstrap, identity alias, capability lifecycle, secret hygiene
+- 83fe4a8a Dynamic executive brain: tiers, selection, experience v8, Go state
+- 1143f106 Launch baseline V1: experience registry, economic routing, launch report
+- 55c13c7f Fail-closed env isolation guard + honest verify_isolation + CLI retry hardening
+- a80bd178 Sync supervised mission report 20260904 (live audit, hardening, activation)
+- 4a70965b Harden workflow execution: fail-closed params, CLI retry, timeout alignment
+- 8da9a9cc Catalog sync + burn-in hardening: Router canonical sync, dev isolation, observability
+- cc0c8633 doc: correct skill-count comment
+- 4277fc9b browser_task deterministic URL verification + verify_claim quality gate
+- 500e1842 Trade intelligence + authoritative sources: trade_query skill via UN Comtrade
+- 5ab76ec3 Self-expansion E2E: pdf_extract capability via native macOS PDFKit
+- 52118d44 Computer-use reference-frame automation + HTTP-first research chain + verify harness
+- ea679e54 Truth-first workflow status + plugin failure surfacing + compaction config
+- fb13f922 Phase 2 deterministic skill layer: ActionResult contract, path normalization, 8 skills, workflow orchestrator, capability registry
+- 401bc03d Moza Mac Day-One build: isolated envs, typed execution, ledger, OI-1, augmented humans, acceptance A-F
+- 4d5e634b docs: strengthen automation-first augmented human model
+- cd35f056 Finalize master architecture, continuous development and Mac build handoff

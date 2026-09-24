@@ -1,53 +1,47 @@
-# Claude Builders Bounty 🤖
+# Changelog Generator
 
-> A community bounty board for Claude Code builders.
+Generate a structured `CHANGELOG.md` from git commit history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup (3 steps)
 
----
+1. **Clone or copy files**: Copy `generate_changelog.py` and `SKILL.md` to your repository root.
+2. **Make executable** (optional): `chmod +x generate_changelog.py`
+3. **Run**: `python3 generate_changelog.py` or use `/generate-changelog` in Claude Code
 
-## How it works
+## Usage
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+```bash
+# Default output to CHANGELOG.md
+python3 generate_changelog.py
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+# Custom output file
+python3 generate_changelog.py my_changelog.md
+```
 
----
+## Features
 
-## Active Bounties
+- Fetches commits since last git tag (or all commits if no tags)
+- Auto-categorizes into: Added / Fixed / Changed / Removed / Other
+- Outputs properly formatted Markdown
+- Includes commit hashes for traceability
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+## Sample Output
 
----
+```markdown
+# Changelog
 
-## Rules
+## [2026-09-25]
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+### Added
+- c6ea084 implement: complete WP1-WP9 remediation
 
----
+### Fixed
+- 33d69e8 fix: skip catalog-toolkit PDF/DOCX tests
 
-## Community
+### Changed
+- 0a54c51 canonical: update submodule pointers
+```
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+## Tested
 
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+Tested on real GitHub repository with 1,739+ commits. See `test_output.md` for sample.
