@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# claude-review — review a GitHub pull request and emit a structured Markdown
+# review via Claude Code.
+#
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+set -euo pipefail
+
+usage() {
+  echo "Usage: claude-review --pr https://github.com/owner/repo/pull/123" >&2
+  exit 1
+}
+
+PR_URL=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --pr) PR_URL="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    *) usage ;;
+  esac
+done
+
+if ! printf '%s' "$PR_URL" | grep -Eq '^https://github.com/[^/]+/[^/]+/pull/[0-9]+$'; then
+  echo "error: expected a PR URL like https://github.com/owner/repo/pull/123" >&2
+  exit 1
+fi
+
+OWNER=$(printf '%s' "$PR_URL" | cut -d/ -f4)
+REPO=$(printf '%s' "$PR_URL" | cut -d/ -f5)
+NUM=$(printf '%s' "$PR_URL" | cut -d/ -f7)
+
+AUTH_HEADER=()
+if [ -n "${GH_TOKEN:-}" ]; then
+  AUTH_HEADER=(-H "Authorization: Bearer $GH_TOKEN")
+fi
+
+echo "Fetching PR #$NUM from $OWNER/$REPO ..." >&2
+DIFF=$(curl -fsSL "${AUTH_HEADER[@]}" -H "Accept: application/vnd.github.v3.diff" \
+  "https://api.github.com/repos/$OWNER/$REPO/pulls/$NUM" 2>/dev/null) || {
+  echo "error: could not fetch diff. For a private repo set GH_TOKEN." >&2
+  exit 1
+}
+
+# Truncate extremely large diffs so the prompt stays manageable.
+DIFF=$(printf '%s' "$DIFF" | head -c 60000)
+
+PROMPT=$(cat <<EOF
+You are a senior code reviewer. Analyze the GitHub pull request diff below and return
+STRICTLY this Markdown structure (no preamble, no extra sections):
+
+## Summary
+(2-3 sentences on what the change does)
+
+## Identified risks
+- (one bullet per risk; write "None identified." if there are none)
+
+## Improvement suggestions
+- (one bullet per suggestion; write "None." if there are none)
+
+## Confidence
+(High / Medium / Low — one word, plus one sentence explaining why)
+
+--- DIFF ---
+$DIFF
+EOF
+)
+
+claude -p "$PROMPT"
