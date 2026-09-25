@@ -75,5 +75,29 @@ class TestCallLlmKeyGate(unittest.TestCase):
             self.assertIn("ANTHROPIC_API_KEY", str(ctx.exception))
 
 
+class TestValidateReview(unittest.TestCase):
+    VALID = ("## Summary\nA bounded change.\n\n## Risks\n- None identified.\n\n"
+             "## Suggestions\n- None.\n\n## Confidence\nHigh — tests cover the change.")
+
+    def test_valid_review(self):
+        self.assertEqual(cr.validate_review(self.VALID), self.VALID)
+
+    def test_missing_section_rejected(self):
+        with self.assertRaises(cr.ReviewError):
+            cr.validate_review("## Summary\nA change.\n")
+
+    def test_unsafe_markup_rejected(self):
+        with self.assertRaises(cr.ReviewError):
+            cr.validate_review(self.VALID + "\n<script>alert(1)</script>")
+
+    def test_environment_delimiter_rejected(self):
+        with self.assertRaises(cr.ReviewError):
+            cr.validate_review(self.VALID + "\nCLAUDE_REVIEW_EOF")
+
+    def test_length_limit_rejected(self):
+        with self.assertRaises(cr.ReviewError):
+            cr.validate_review(self.VALID + "x" * cr.MAX_REVIEW_CHARS)
+
+
 if __name__ == "__main__":
     unittest.main()
