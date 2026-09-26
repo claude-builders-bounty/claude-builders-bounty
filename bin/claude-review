@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# claude-review — CLI entrypoint for the PR review sub-agent.
+#
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --diff-file /path/to.diff
+#   curl -sL "https://github.com/o/r/pull/1.diff" | claude-review
+#
+# The structured output is produced by Claude Code (the `claude` CLI). The
+# review rubric is embedded below so the tool works standalone; the same rubric
+# lives in agent/SKILL.md for use as a Claude Code sub-agent skill.
+
+set -euo pipefail
+
+RUBRIC='
+You are a senior engineering reviewer (staff level). Analyze the git diff that
+follows and produce EXACTLY this markdown structure:
+
+## Review of PR #<NUMBER>
+### Summary
+<2-3 sentences>
+### Risks
+- <concrete risk, failure mode, regression, security issue>
+### Improvement suggestions
+- **<Area>** — <actionable suggestion> (`<file>:<line>`)
+### Confidence
+**<High|Medium|Low>**
+
+Rules: never invent paths/line numbers — use only what is visible in the diff.
+One risk per bullet, one suggestion per bullet. No praise padding. If a change
+deletes tests or loosens safety checks, call it out explicitly.
+'
+
+usage() {
+  echo "Usage: claude-review --pr <url> | --diff-file <path> | (stdin diff)" >&2
+  exit 2
+}
+
+main() {
+  local pr_url="" diff_file="" num=""
+  local tmp=""
+
+  if [[ $# -eq 0 ]]; then
+    # stdin mode
+    tmp="$(mktemp)"
+    cat > "$tmp"
+    diff_file="$tmp"
+    num="local"
+  else
+    case "$1" in
+      --pr)
+        [[ $# -ge 2 ]] || usage
+        pr_url="$2"
+        if [[ "$pr_url" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+          local owner="${BASH_REMATCH[1]}" repo="${BASH_REMATCH[2]}"
+          num="${BASH_REMATCH[3]}"
+        else
+          echo "error: could not parse PR URL: $pr_url" >&2
+          exit 2
+        fi
+        tmp="$(mktemp)"
+        if ! curl -fsSL "https://github.com/${owner}/${repo}/pull/${num}.diff" -o "$tmp"; then
+          echo "error: failed to fetch diff for ${pr_url}" >&2
+          exit 1
+        fi
+        diff_file="$tmp"
+        ;;
+      --diff-file)
+        [[ $# -ge 2 ]] || usage
+        diff_file="$2"
+        [[ -f "$diff_file" ]] || { echo "error: diff file not found: $diff_file" >&2; exit 2; }
+        num="local"
+        ;;
+      *)
+        usage
+        ;;
+    esac
+  fi
+
+  # Review the diff with Claude Code (or any compatible `claude` CLI).
+  if command -v claude >/dev/null 2>&1; then
+    claude -p "Review this pull request (#${num}). ${RUBRIC} DIFF:\n$(cat "$diff_file")"
+  else
+    echo "error: 'claude' CLI not found. Install Claude Code (see README) or use the GitHub Action." >&2
+    exit 3
+  fi
+}
+
+main "$@"
