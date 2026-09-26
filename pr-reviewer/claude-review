@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""claude-review - CLI review PR thành Markdown có cấu trúc (stdlib only).
+
+  claude-review --pr https://github.com/owner/repo/pull/123 [--format md]
+
+Output: Summary (2-3 câu) + Risks + Suggestions + Confidence (Low/Medium/High).
+Đọc diff qua `gh` CLI (cần `gh auth login` 1 lần). Không gửi code đi đâu.
+"""
+import argparse
+import json
+import re
+import subprocess
+import sys
+from urllib.parse import urlparse
+
+
+RISKY = [
+    (r"\beval\s*\(", "eval() thực thi string — nguy cơ injection"),
+    (r"\bexec\s*\(", "exec() thực thi string — nguy cơ injection"),
+    (r"os\.system\s*\(", "os.system() — nên dùng subprocess list-args"),
+    (r"subprocess\.\w+\(.*shell\s*=\s*True", "shell=True — nguy cơ injection"),
+    (r"rm\s+-rf\s+/", "rm -rf đường dẫn tuyệt đối — nguy hiểm"),
+    (r"curl[^\n]*\|\s*(bash|sh)", "curl|bash — chạy code remote không verify"),
+    (r"sk-[A-Za-z0-9]{10,}", "có thể là API key OpenAI lộ trong diff"),
+    (r"ghp_[A-Za-z0-9]{10,}", "có thể là GitHub token lộ trong diff"),
+    (r"-----BEGIN [A-Z ]*PRIVATE KEY", "private key lộ trong diff"),
+    (r"(?i)(password|passwd|secret)\s*[:=]\s*['\"][^'\"]{3,}", "credential hardcode?"),
+    (r"--force\b", "force flag — kiểm tra kỹ trước khi merge"),
+]
+
+TEST_HINT = re.compile(r"(test_|_test\.|tests?/|spec/)", re.I)
+
+
+def sh(*args: str) -> str:
+    p = subprocess.run(list(args), capture_output=True, text=True, timeout=60)
+    if p.returncode != 0:
+        raise SystemExit(f"Lỗi chạy {' '.join(args[:3])}: {(p.stderr or '')[:200]}")
+    return p.stdout
+
+
+def parse_pr_url(url: str) -> tuple:
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url.strip())
+    if not m:
+        raise SystemExit("URL phải dạng https://github.com/owner/repo/pull/123")
+    return m.group(1), m.group(2), m.group(3)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--pr", required=True)
+    a = ap.parse_args()
+    owner, repo, num = parse_pr_url(a.pr)
+
+    meta = json.loads(sh("gh", "pr", "view", num, "--repo", f"{owner}/{repo}",
+                         "--json", "title,body,additions,deletions,files"))
+    diff = sh("gh", "pr", "diff", num, "--repo", f"{owner}/{repo}")
+    added = "\n".join(l[1:] for l in diff.splitlines()
+                      if l.startswith("+") and not l.startswith("+++"))
+
+    files = [f.get("path", "") for f in meta.get("files", [])]
+    n_add, n_del = meta.get("additions", 0), meta.get("deletions", 0)
+    dirs = sorted({f.split("/")[0] for f in files if "/" in f})
+
+    risks, suggests = [], []
+    for pat, msg in RISKY:
+        if re.search(pat, added):
+            risks.append(msg)
+    size = n_add + n_del
+    if size > 1000:
+        risks.append(f"Diff lớn ({size} dòng) — khó review kỹ, nên tách PR")
+        suggests.append("Tách PR >1000 dòng thành nhiều PR nhỏ theo feature")
+    has_tests = any(TEST_HINT.search(f) for f in files)
+    if not has_tests:
+        suggests.append("Chưa thấy file test đi kèm — thêm test cho logic mới")
+    if re.search(r"(?i)\bTODO\b|\bFIXME\b", added):
+        suggests.append("Còn TODO/FIXME mới — tạo issue theo dõi hoặc xử lý trước merge")
+    if not risks:
+        suggests.append("Không phát hiện pattern nguy hiểm bằng quét tĩnh — vẫn nên đọc logic tay")
+
+    if any("lộ" in r or "key" in r or "token" in r for r in risks):
+        conf = "High"
+    elif risks:
+        conf = "Medium"
+    elif size > 500 or not has_tests:
+        conf = "Medium"
+    else:
+        conf = "Low"
+
+    scope = f"{len(files)} files ({', '.join(dirs[:5]) or 'root'})" if files else "không đọc được files"
+    summary = (f"PR **{meta.get('title', '')}** thay đổi {scope}, "
+               f"+{n_add}/-{n_del}. "
+               f"{'Có test đi kèm.' if has_tests else 'Không thấy test đi kèm.'} "
+               f"{'Phát hiện ' + str(len(risks)) + ' rủi ro cần xem.' if risks else 'Quét tĩnh sạch.'}")
+
+    L = [f"## Review: {meta.get('title', '')}",
+         f"PR: {a.pr}", "",
+         "### Summary", summary, "",
+         "### Risks"]
+    L += [f"- ⚠️ {r}" for r in risks] or ["- (không phát hiện rủi ro từ quét tĩnh)"]
+    L += ["", "### Suggestions"]
+    L += [f"- {s}" for s in suggests]
+    L += ["", f"### Confidence: **{conf}**",
+          "", "_Quét tĩnh + heuristics (không chạy code). Đọc tay trước khi merge._"]
+    print("\n".join(L))
+
+
+if __name__ == "__main__":
+    main()
