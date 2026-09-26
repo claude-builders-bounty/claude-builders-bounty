@@ -50,4 +50,14 @@ You're in the right place.
 
 ---
 
+## Generate Changelog Skill
+
+Generate a structured `CHANGELOG.md` from git commit history:
+
+1. **Setup**: Clone repository (zero external dependencies required).
+2. **Run**: Execute `python3 skills/generate-changelog/generate_changelog.py`
+3. **Verify**: Check generated `CHANGELOG.md` for categorized (`Added`, `Fixed`, `Changed`, `Removed`) commits.
+
+---
+
 *Started by the Claude builder community · March 2026 · MIT License*
