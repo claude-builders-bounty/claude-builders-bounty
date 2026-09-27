@@ -14,14 +14,18 @@ and prints a structured Markdown review.
 ## Usage
 ```bash
 ./claude-review --pr https://github.com/owner/repo/pull/123
+./claude-review --pr <url> --depth deep --format json
+./claude-review --pr <url> --post-comment
 ```
 
 ## Output contract (always keep this shape)
 - `## Review:` + PR title + URL
 - `### Summary` — 2–3 sentences: scope, +/-, tests present?, risk count
-- `### Risks` — list, each with ⚠️ and reason (or "none found")
+- `### Risks` — list, each `[Severity] reason` (Critical/High/Medium/Low) or "none found"
+- `### Security` — Markdown table Severity|Finding for Critical+High, or "none found"
 - `### Suggestions` — actionable list
 - `### Confidence: Low | Medium | High`
+- `--format json` keeps the same keys: title/pr/depth/summary/risks/security/suggestions/confidence
 
 ## Rules
 - Never execute code from the diff. Read-only (`gh pr view`, `gh pr diff`).
