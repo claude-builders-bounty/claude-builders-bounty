@@ -1,26 +1,27 @@
 # Changelog Skill — Opire $50 bounty entry (issue #1)
 
-![bash](https://img.shields.io/badge/bash-changelog.sh-blue) ![skill](https://img.shields.io/badge/Claude-SKILL.md-purple) ![deps](https://img.shields.io/badge/deps-none-lightgrey)
+![bash](https://img.shields.io/badge/bash-changelog.sh-blue) ![tests](https://img.shields.io/badge/tests-10%2F10-green) ![deps](https://img.shields.io/badge/deps-none-lightgrey)
 
-Bash-only skill: commits từ tag gần nhất vào `CHANGELOG.md` có cấu trúc
-(Added / Fixed / Changed / Removed). Không dependency, chạy được trên bash 3.2+ (macOS).
+Bash-only skill (works on bash 3.2+): commits since last tag into structured
+`CHANGELOG.md` (Breaking / Added / Fixed / Changed / Removed). No dependencies.
 
-## Chạy (3 bước)
+## Run (3 steps)
 
 ```bash
-git clone <repo-này> && cd changelog-skill
+git clone <this-repo> && cd changelog-skill
 bash changelog.sh --repo /path/to/project
 cat CHANGELOG.md
 ```
 
-| Flag | Mặc định | Ý nghĩa |
+| Flag | Default | Meaning |
 |---|---|---|
-| `--since <tag>` | tag gần nhất (tự tìm) | Chỉ lấy commit sau tag |
-| `--out <file>` | `CHANGELOG.md` | File output |
-| `--repo <dir>` | `.` | Repo cần sinh changelog |
+| `--since TAG` | latest tag (auto) | Commits after TAG; unknown ref exits 1, writes nothing |
+| `--version VER` | `Unreleased` | Release header + UTC date |
+| `--out FILE` | `CHANGELOG.md` | Output file |
+| `--repo DIR` | `.` | Repo to summarize |
+| `--preview` | off | Print to stdout, write nothing |
+| `--append` | off | Prepend to existing CHANGELOG, keep old entries |
 
-## Sample thật
-`samples/CHANGELOG.harness-sample.md` — chạy trên repo harness (13 commits, phân loại C:12).
-
-## Nộp bounty
-Comment `/opire try` vào issue #1 → mở PR gồm script + SKILL.md + sample → merge là auto-pay.
+## Proof
+`samples/CHANGELOG.homelab-sample.md` — 6 real commits, short-SHAs.
+`PROOF.md` + `tests/test_changelog.sh` (10/10) + CI workflow.

@@ -1,6 +1,6 @@
 ---
-name: changelog-generator
-description: Generate a structured CHANGELOG.md (Added/Fixed/Changed/Removed) from git history since the last tag. Use when asked to write a changelog or summarize recent commits.
+name: generate-changelog
+description: Generate a structured CHANGELOG.md (Breaking/Added/Fixed/Changed/Removed) from git history since the last tag. Use when asked to write a changelog or summarize recent commits.
 allowed-tools: Bash
 ---
 
