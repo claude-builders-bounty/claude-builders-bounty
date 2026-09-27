@@ -13,7 +13,7 @@ Bounty resolution for **Issue #5 ($200)**: `WORKFLOW: n8n + Claude Code — auto
   - Merged Pull Requests (last 7 days)
   - Closed Issues (excluding PR stubs)
   - Pushed Commits (with author & SHA hash)
-- 🧠 **Claude 3.5 Sonnet Intelligence:** Synthesizes structured data into an engaging 4-part developer narrative:
+- 🧠 **Claude Sonnet Intelligence:** Powered by `claude-sonnet-4-20250514` (or `claude-3-5-sonnet-20241022`), synthesizes structured data into an engaging 4-part developer narrative:
   1. 🚀 Key Highlights & Big Wins
   2. 🛠️ Engineering & Bug Fixes
   3. 🤝 Community & Contributor Shoutouts
@@ -43,6 +43,7 @@ Open the node named **`Configuration Variables`** and adjust the values:
 - `GITHUB_REPO_NAME`: Target repository name (e.g. `claude-builders-bounty`)
 - `SUMMARY_LANGUAGE`: Set to `EN` (English) or `FR` (French)
 - `DISCORD_WEBHOOK_URL`: Your destination Discord or Slack incoming webhook URL
+- `CLAUDE_MODEL`: Default is `claude-sonnet-4-20250514` (can also use `claude-3-5-sonnet-20241022`)
 
 ### Step 4: Verify or Adjust Execution Schedule
 - The **`Weekly Trigger (Friday 5PM)`** node is pre-set with cron `0 17 * * 5` (every Friday at 17:00).

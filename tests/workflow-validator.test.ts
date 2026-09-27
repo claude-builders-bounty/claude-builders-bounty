@@ -36,6 +36,7 @@ describe("n8n Workflow Validator — Issue #5 Weekly Dev Summary", () => {
     expect(vars).toContain("GITHUB_REPO_NAME");
     expect(vars).toContain("SUMMARY_LANGUAGE");
     expect(vars).toContain("DISCORD_WEBHOOK_URL");
+    expect(vars).toContain("CLAUDE_MODEL");
   });
 
   it("verifies Claude API node parameters adhere to Anthropic specification", () => {
@@ -45,7 +46,8 @@ describe("n8n Workflow Validator — Issue #5 Weekly Dev Summary", () => {
     expect(claudeNode).toBeDefined();
     expect(claudeNode.parameters.url).toBe("https://api.anthropic.com/v1/messages");
     expect(claudeNode.parameters.method).toBe("POST");
-    expect(claudeNode.parameters.jsonBody).toContain("claude-3-5-sonnet-20241022");
+    expect(claudeNode.parameters.jsonBody).toContain("CLAUDE_MODEL");
+    expect(claudeNode.parameters.jsonBody).toContain("claude-sonnet-4-20250514");
     expect(claudeNode.parameters.jsonBody).toContain('"max_tokens": 2500');
   });
 
