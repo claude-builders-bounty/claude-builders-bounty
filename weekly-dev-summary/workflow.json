@@ -6,7 +6,7 @@
       "name": "Weekly Cron (Fri 17:00)",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [200, 300]
+      "position": [180, 300]
     },
     {
       "parameters": {
@@ -14,39 +14,49 @@
           "assignments": [
             { "name": "repo", "value": "={{ $env.GITHUB_REPO }}", "type": "string" },
             { "name": "language", "value": "={{ $env.SUMMARY_LANG }}", "type": "string" },
-            { "name": "since", "value": "={{ $now.minus(7, 'days').toISO() }}", "type": "string" }
+            { "name": "delivery", "value": "={{ $env.DELIVERY }}", "type": "string" },
+            { "name": "model", "value": "={{ $env.CLAUDE_MODEL }}", "type": "string" }
           ]
         }
       },
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [400, 300]
+      "position": [380, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const until = new Date();\nconst since = new Date(until.getTime() - 7*24*3600*1000);\nreturn [{ json: {\n  repo: $('Config').first().json.repo,\n  language: $('Config').first().json.language,\n  delivery: $('Config').first().json.delivery || 'discord',\n  model: $('Config').first().json.model || 'claude-sonnet-4-20250514',\n  since: since.toISOString(),\n  until: until.toISOString()\n}}];"
+      },
+      "name": "Calculate Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 300]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits",
+        "url": "=https://api.github.com/repos/{{ $('Calculate Date Range').first().json.repo }}/commits",
         "sendQuery": true,
         "queryParameters": {
-          "parameters": [{ "name": "since", "value": "={{ $json.since }}" }, { "name": "per_page", "value": "100" }]
+          "parameters": [{ "name": "since", "value": "={{ $('Calculate Date Range').first().json.since }}" }, { "name": "per_page", "value": "100" }]
         },
         "options": {}
       },
       "name": "GitHub Commits",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [600, 200]
+      "position": [800, 140]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://api.github.com/repos/{{ $('Config').item.json.repo }}/issues",
+        "url": "=https://api.github.com/repos/{{ $('Calculate Date Range').first().json.repo }}/issues",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
             { "name": "state", "value": "closed" },
-            { "name": "since", "value": "={{ $('Config').item.json.since }}" },
+            { "name": "since", "value": "={{ $('Calculate Date Range').first().json.since }}" },
             { "name": "per_page", "value": "100" }
           ]
         },
@@ -55,12 +65,12 @@
       "name": "GitHub Closed Issues",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [600, 400]
+      "position": [800, 320]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://api.github.com/repos/{{ $('Config').item.json.repo }}/pulls",
+        "url": "=https://api.github.com/repos/{{ $('Calculate Date Range').first().json.repo }}/pulls",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
@@ -73,16 +83,16 @@
       "name": "GitHub PRs",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [600, 550]
+      "position": [800, 500]
     },
     {
       "parameters": {
-        "jsCode": "const commits = $('GitHub Commits').all().map(i => '- ' + (i.json.commit?.message || '').split('\\n')[0]);\nconst issues = $('GitHub Closed Issues').all().filter(i => !i.json.pull_request).map(i => '- #' + i.json.number + ' ' + i.json.title);\nconst prs = $('GitHub PRs').all().filter(i => i.json.merged_at).map(i => '- #' + i.json.number + ' ' + i.json.title + ' (merged)');\nreturn [{ json: {\n  repo: $('Config').first().json.repo,\n  language: $('Config').first().json.language,\n  commits: commits.slice(0, 50), nCommits: commits.length,\n  issues: issues.slice(0, 50), nIssues: issues.length,\n  prs: prs.slice(0, 50), nPRs: prs.length\n}}];"
+        "jsCode": "const since = new Date($('Calculate Date Range').first().json.since);\nconst commits = $('GitHub Commits').all().map(i => '- ' + (i.json.commit?.message || '').split('\\n')[0]);\nconst issues = $('GitHub Closed Issues').all()\n  .filter(i => !i.json.pull_request)\n  .map(i => '- #' + i.json.number + ' ' + i.json.title);\nconst prs = $('GitHub PRs').all()\n  .filter(i => i.json.merged_at && new Date(i.json.merged_at) >= since)\n  .map(i => '- #' + i.json.number + ' ' + i.json.title + ' (merged)');\nreturn [{ json: {\n  repo: $('Calculate Date Range').first().json.repo,\n  language: $('Calculate Date Range').first().json.language,\n  delivery: $('Calculate Date Range').first().json.delivery,\n  model: $('Calculate Date Range').first().json.model,\n  commits: commits.slice(0, 30), nCommits: commits.length,\n  issues: issues.slice(0, 20), nIssues: issues.length,\n  prs: prs.slice(0, 20), nPRs: prs.length\n}}];"
       },
       "name": "Aggregate Week",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [820, 300]
+      "position": [1020, 300]
     },
     {
       "parameters": {
@@ -99,13 +109,32 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"model\": \"claude-sonnet-4-20250514\", \"max_tokens\": 1024, \"messages\": [{\"role\": \"user\", \"content\": \"Write a weekly narrative dev summary ({{ $json.language }}) for repo {{ $json.repo }}. Commits ({{ $json.nCommits }}): {{ $json.commits.join('\\n') }}. Closed issues ({{ $json.nIssues }}): {{ $json.issues.join('\\n') }}. Merged PRs ({{ $json.nPRs }}): {{ $json.prs.join('\\n') }}. Sections: Highlights, Merged work, Closed issues, Next-week signals. Keep it under 400 words.\"}]}",
-        "options": {}
+        "jsonBody": "={\"model\": \"{{ $('Aggregate Week').first().json.model }}\", \"max_tokens\": 1024, \"messages\": [{\"role\": \"user\", \"content\": \"Write a weekly narrative dev summary ({{ $('Aggregate Week').first().json.language }}) for repo {{ $('Aggregate Week').first().json.repo }}. Commits ({{ $('Aggregate Week').first().json.nCommits }}): {{ $('Aggregate Week').first().json.commits.join('\\n') }}. Closed issues ({{ $('Aggregate Week').first().json.nIssues }}): {{ $('Aggregate Week').first().json.issues.join('\\n') }}. Merged PRs ({{ $('Aggregate Week').first().json.nPRs }}): {{ $('Aggregate Week').first().json.prs.join('\\n') }}. Sections: Highlights, Merged work, Closed issues, Next-week signals. Keep it under 400 words.\"}]}",
+        "options": { "timeout": 60000 }
       },
       "name": "Claude Summary",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1020, 300]
+      "position": [1220, 300],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            { "id": "email-path", "leftValue": "={{ $('Aggregate Week').first().json.delivery }}", "rightValue": "email", "operator": { "type": "string", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "IF Email or Discord",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1420, 300]
     },
     {
       "parameters": {
@@ -119,12 +148,27 @@
       "name": "Deliver (Discord)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1220, 300]
+      "position": [1620, 200]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "=Weekly dev summary — {{ $('Aggregate Week').first().json.repo }}",
+        "emailType": "text",
+        "message": "={{ $json.content[0].text }}",
+        "options": {}
+      },
+      "name": "Deliver (Email)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1620, 400]
     }
   ],
   "connections": {
     "Weekly Cron (Fri 17:00)": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
-    "Config": {
+    "Config": { "main": [[{ "node": "Calculate Date Range", "type": "main", "index": 0 }]] },
+    "Calculate Date Range": {
       "main": [[
         { "node": "GitHub Commits", "type": "main", "index": 0 },
         { "node": "GitHub Closed Issues", "type": "main", "index": 0 },
@@ -135,7 +179,13 @@
     "GitHub Closed Issues": { "main": [[{ "node": "Aggregate Week", "type": "main", "index": 0 }]] },
     "GitHub PRs": { "main": [[{ "node": "Aggregate Week", "type": "main", "index": 0 }]] },
     "Aggregate Week": { "main": [[{ "node": "Claude Summary", "type": "main", "index": 0 }]] },
-    "Claude Summary": { "main": [[{ "node": "Deliver (Discord)", "type": "main", "index": 0 }]] }
+    "Claude Summary": { "main": [[{ "node": "IF Email or Discord", "type": "main", "index": 0 }]] },
+    "IF Email or Discord": {
+      "main": [
+        [{ "node": "Deliver (Email)", "type": "main", "index": 0 }],
+        [{ "node": "Deliver (Discord)", "type": "main", "index": 0 }]
+      ]
+    }
   },
   "settings": {},
   "staticData": null,
