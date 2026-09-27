@@ -90,6 +90,9 @@ def build_review(pr_url, meta, diff, depth):
     if size > 1000:
         risks.append(("Medium", f"Diff lớn ({size} dòng) — khó review kỹ, nên tách PR"))
         suggests.append("Tách PR >1000 dòng thành nhiều PR nhỏ theo feature")
+    if meta.get("_truncated"):
+        risks.append(("Medium", f"Chỉ quét {len(files)} files đầu (coverage-gap) — phần còn lại chưa review"))
+        suggests.append("Chạy lại với --max-files cao hơn hoặc review tay phần còn lại")
     has_tests = any(TEST_HINT.search(f) for f in files)
     if not has_tests:
         suggests.append("Chưa thấy file test đi kèm — thêm test cho logic mới")
@@ -154,16 +157,27 @@ def main():
     ap.add_argument("--depth", choices=["quick", "standard", "deep"], default="standard")
     ap.add_argument("--post-comment", action="store_true",
                     help="Đăng review thành comment vào PR (cần gh auth có quyền)")
+    ap.add_argument("--output", default="",
+                    help="Ghi review ra file thay vì stdout")
+    ap.add_argument("--max-files", type=int, default=200,
+                    help="Quét tối đa N files (vượt thì báo coverage-gap)")
     a = ap.parse_args()
     owner, repo, num = parse_pr_url(a.pr)
 
     meta = json.loads(sh("gh", "pr", "view", num, "--repo", f"{owner}/{repo}",
                          "--json", "title,body,additions,deletions,files"))
     diff = sh("gh", "pr", "diff", num, "--repo", f"{owner}/{repo}")
+    if len(meta.get("files", [])) > a.max_files:
+        meta["files"] = meta["files"][:a.max_files]
+        meta["_truncated"] = True
     r = build_review(a.pr, meta, diff, a.depth)
 
     out = json.dumps(r, ensure_ascii=False, indent=2) if a.format == "json" else to_markdown(r)
-    if a.post_comment:
+    if a.output:
+        with open(a.output, "w", encoding="utf-8") as f:
+            f.write(out + "\n")
+        print(f"Đã ghi review vào {a.output}")
+    elif a.post_comment:
         p = subprocess.run(["gh", "pr", "comment", num, "--repo", f"{owner}/{repo}",
                             "--body", out], capture_output=True, text=True, timeout=60)
         if p.returncode != 0:

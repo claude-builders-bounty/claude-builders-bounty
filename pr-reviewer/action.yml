@@ -1,5 +1,5 @@
 name: "PR Review"
-description: "Post a structured review comment on a PR using claude-review"
+description: "Post a structured review comment on a PR using claude-review (idempotent: updates own comment)"
 inputs:
   pr-url:
     description: "Full PR URL, e.g. https://github.com/owner/repo/pull/123"
@@ -19,6 +19,8 @@ runs:
       id: review
       shell: bash
       run: |
+        python3 -c "import re,sys; sys.exit(0 if re.match(r'https://github\.com/[^/]+/[^/]+/pull/\d+$', '${{ inputs.pr-url }}') else 1)" \
+          || { echo "pr-url phải dạng https://github.com/owner/repo/pull/123" >&2; exit 1; }
         "${{ github.action_path }}/claude-review" --pr "${{ inputs.pr-url }}" --depth "${{ inputs.depth }}" --format "${{ inputs.format }}" > review.md
         cat review.md
         PR="${{ inputs.pr-url }}"
@@ -28,14 +30,18 @@ runs:
         echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
         echo "repo=$REPO" >> "$GITHUB_OUTPUT"
         echo "num=$NUM" >> "$GITHUB_OUTPUT"
-    - name: Comment review
+    - name: Comment review (update if exists)
       uses: actions/github-script@v7
       with:
         script: |
           const fs = require('fs');
-          github.rest.issues.createComment({
-            owner: '${{ steps.review.outputs.owner }}',
-            repo: '${{ steps.review.outputs.repo }}',
-            issue_number: Number('${{ steps.review.outputs.num }}'),
-            body: fs.readFileSync('review.md', 'utf8'),
-          });
+          const marker = '<!-- claude-pr-review -->';
+          const body = marker + '\n' + fs.readFileSync('review.md', 'utf8');
+          const { owner, repo, num } = { owner: '${{ steps.review.outputs.owner }}', repo: '${{ steps.review.outputs.repo }}', num: '${{ steps.review.outputs.num }}' };
+          const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number: Number(num), per_page: 100 });
+          const mine = comments.find(c => c.body && c.body.includes(marker));
+          if (mine) {
+            await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+          } else {
+            await github.rest.issues.createComment({ owner, repo, issue_number: Number(num), body });
+          }

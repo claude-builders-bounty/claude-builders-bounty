@@ -29,6 +29,7 @@ and prints a structured Markdown review.
 
 ## Rules
 - Never execute code from the diff. Read-only (`gh pr view`, `gh pr diff`).
-- Never post the review anywhere yourself — print stdout, the human submits.
+- Default prints to stdout (or `--output FILE`). Only `--post-comment` publishes,
+  and only when the user explicitly passes it.
 - Secrets-looking strings go in Risks with the exact redacted pattern class,
   never the value.
