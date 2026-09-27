@@ -1,0 +1,327 @@
+{
+  "name": "Automated Weekly Dev Summary (GitHub + Claude API)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "1d4e21a8-8b9a-4e6f-9988-111111111111",
+      "name": "Weekly Trigger (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_REPO_OWNER",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "GITHUB_REPO_NAME",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "SUMMARY_LANGUAGE",
+              "value": "EN"
+            },
+            {
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/your-channel-webhook"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2e5f32b9-9c0b-4f70-aa99-222222222222",
+      "name": "Configuration Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nreturn [\n  {\n    json: {\n      ...$json,\n      sinceIsoDate: sevenDaysAgo.toISOString(),\n      todayIsoDate: now.toISOString(),\n      formattedDateRange: `${sevenDaysAgo.toISOString().slice(0, 10)} to ${now.toISOString().slice(0, 10)}`\n    }\n  }\n];"
+      },
+      "id": "3f6a43ca-ad1c-4081-bb00-333333333333",
+      "name": "Calculate Date Range (7 Days)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_REPO_OWNER }}/{{ $json.GITHUB_REPO_NAME }}/commits?since={{ $json.sinceIsoDate }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": false
+        }
+      },
+      "id": "4a7b54db-be2d-4192-cc11-444444444444",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Configuration Variables').item.json.GITHUB_REPO_OWNER }}/{{ $('Configuration Variables').item.json.GITHUB_REPO_NAME }}/issues?state=closed&since={{ $('Calculate Date Range (7 Days)').item.json.sinceIsoDate }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5b8c65ec-cf3e-4203-dd22-555555555555",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Configuration Variables').item.json.GITHUB_REPO_OWNER }}/{{ $('Configuration Variables').item.json.GITHUB_REPO_NAME }}/pulls?state=closed&sort=updated&direction=desc&per_page=30",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6c9d76fd-d04f-4314-ee33-666666666666",
+      "name": "Fetch Closed PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Configuration Variables').item.json;\nconst dateRange = $('Calculate Date Range (7 Days)').item.json.formattedDateRange;\nconst sinceDate = new Date($('Calculate Date Range (7 Days)').item.json.sinceIsoDate);\n\n// 1. Process Commits\nconst rawCommits = $('Fetch Weekly Commits').all() || [];\nconst commitSummaries = rawCommits.map(item => {\n  const c = item.json;\n  const author = c.commit?.author?.name || c.author?.login || 'contributor';\n  const message = (c.commit?.message || '').split('\\n')[0];\n  return `- [${c.sha ? c.sha.slice(0, 7) : 'commit'}] ${message} (@${author})`;\n}).slice(0, 20);\n\n// 2. Process Closed Issues (filter out PRs)\nconst rawIssues = $('Fetch Closed Issues').all() || [];\nconst closedIssues = rawIssues\n  .filter(item => !item.json.pull_request)\n  .map(item => {\n    const iss = item.json;\n    return `- #${iss.number}: ${iss.title} (${(iss.labels || []).map(l => l.name).join(', ') || 'unlabeled'})`;\n  }).slice(0, 15);\n\n// 3. Process Merged PRs\nconst rawPulls = $('Fetch Closed PRs').all() || [];\nconst mergedPulls = rawPulls\n  .filter(item => item.json.merged_at && new Date(item.json.merged_at) >= sinceDate)\n  .map(item => {\n    const pr = item.json;\n    return `- PR #${pr.number}: ${pr.title} by @${pr.user?.login || 'unknown'}`;\n  }).slice(0, 15);\n\nconst language = (config.SUMMARY_LANGUAGE || 'EN').toUpperCase() === 'FR' ? 'French (Français)' : 'English';\n\nconst prompt = `You are an expert technical writer and developer advocate for the open-source repository ${config.GITHUB_REPO_OWNER}/${config.GITHUB_REPO_NAME}.\n\nYour task is to write an engaging, insightful, and comprehensive weekly developer narrative summary for the period ${dateRange}.\n\nLanguage requirement: Write the entire summary in ${language}.\n\nHere is the raw activity data from GitHub:\n\n### Merged Pull Requests (${mergedPulls.length}):\n${mergedPulls.join('\\n') || 'None this week'}\n\n### Closed Issues (${closedIssues.length}):\n${closedIssues.join('\\n') || 'None this week'}\n\n### Recent Commits (${commitSummaries.length}):\n${commitSummaries.join('\\n') || 'None this week'}\n\n### Structure of Your Summary:\n1. 🚀 **Key Highlights & Big Wins** (Top accomplishments and features shipped)\n2. 🛠️ **Engineering & Bug Fixes** (Key stability improvements and fixes)\n3. 🤝 **Community & Contributors** (Shoutouts to active contributors)\n4. 🔮 **What to Watch Next Week** (Looking ahead)\n\nKeep the tone professional, upbeat, clear, and well-formatted with GitHub Flavored Markdown and emoji. Avoid fluff.`;\n\nreturn [{\n  json: {\n    prompt,\n    repoOwner: config.GITHUB_REPO_OWNER,\n    repoName: config.GITHUB_REPO_NAME,\n    language,\n    dateRange,\n    stats: {\n      commitsCount: commitSummaries.length,\n      closedIssuesCount: closedIssues.length,\n      mergedPRsCount: mergedPulls.length\n    }\n  }\n}];"
+      },
+      "id": "7dae87ae-e150-4425-ff44-777777777777",
+      "name": "Aggregate GitHub Digest Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 2500,\n  \"temperature\": 0.4,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "8ebf98bf-f261-4536-0055-888888888888",
+      "name": "Call Claude API (Sonnet)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuration Variables').item.json.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"username\": \"Claude Dev Digest Bot\",\n  \"avatar_url\": \"https://anthropic.com/favicon.ico\",\n  \"content\": `📢 **Weekly Developer Summary: ${$('Aggregate GitHub Digest Payload').item.json.repoOwner}/${$('Aggregate GitHub Digest Payload').item.json.repoName}** (${$('Aggregate GitHub Digest Payload').item.json.dateRange})\\n\\n${$json.content[0].text.slice(0, 1850)}`,\n  \"embeds\": [\n    {\n      \"title\": \"📊 Activity Overview\",\n      \"color\": 3447003,\n      \"fields\": [\n        {\n          \"name\": \"Merged PRs\",\n          \"value\": `${$('Aggregate GitHub Digest Payload').item.json.stats.mergedPRsCount}`,\n          \"inline\": true\n        },\n        {\n          \"name\": \"Closed Issues\",\n          \"value\": `${$('Aggregate GitHub Digest Payload').item.json.stats.closedIssuesCount}`,\n          \"inline\": true\n        },\n        {\n          \"name\": \"Commits\",\n          \"value\": `${$('Aggregate GitHub Digest Payload').item.json.stats.commitsCount}`,\n          \"inline\": true\n        }\n      ],\n      \"footer\": {\n        \"text\": \"Powered by n8n + Anthropic Claude Code Builders\"\n      }\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "9fc0a9c0-0372-4647-1166-999999999999",
+      "name": "Deliver via Discord / Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Configuration Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration Variables": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Range (7 Days)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Range (7 Days)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Digest Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Digest Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate GitHub Digest Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate GitHub Digest Payload": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API (Sonnet)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API (Sonnet)": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Discord / Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
