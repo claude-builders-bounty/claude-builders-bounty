@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""claude-review - CLI review PR thành Markdown/JSON có cấu trúc (stdlib only).
+
+  claude-review --pr https://github.com/owner/repo/pull/123 [--format md|json]
+                [--depth quick|standard|deep] [--post-comment]
+
+Output Markdown: Summary (2-3 câu) + Risks (kèm severity) + Security +
+Suggestions + Confidence (Low/Medium/High).
+Đọc diff qua `gh` CLI (cần `gh auth login` 1 lần). Không gửi code đi đâu,
+không chạy code trong diff (read-only).
+"""
+import argparse
+import json
+import re
+import subprocess
+import sys
+from urllib.parse import urlparse
+
+
+# (pattern, message, severity)
+RISKY = [
+    (r"\beval\s*\(", "eval() thực thi string — nguy cơ injection", "High"),
+    (r"\bexec\s*\(", "exec() thực thi string — nguy cơ injection", "High"),
+    (r"os\.system\s*\(", "os.system() — nên dùng subprocess list-args", "High"),
+    (r"subprocess\.\w+\(.*shell\s*=\s*True", "shell=True — nguy cơ injection", "High"),
+    (r"rm\s+-rf\s+/", "rm -rf đường dẫn tuyệt đối — nguy hiểm", "Critical"),
+    (r"curl[^\n]*\|\s*(bash|sh)", "curl|bash — chạy code remote không verify", "Critical"),
+    (r"sk-[A-Za-z0-9]{10,}", "có thể là API key OpenAI lộ trong diff", "Critical"),
+    (r"ghp_[A-Za-z0-9]{10,}", "có thể là GitHub token lộ trong diff", "Critical"),
+    (r"github_pat_[A-Za-z0-9_]{10,}", "có thể là fine-grained PAT lộ trong diff", "Critical"),
+    (r"xox[bap]-[A-Za-z0-9-]{10,}", "có thể là Slack token lộ trong diff", "Critical"),
+    (r"-----BEGIN [A-Z ]*PRIVATE KEY", "private key lộ trong diff", "Critical"),
+    (r"(?i)(password|passwd|secret)\s*[:=]\s*['\"][^'\"]{3,}", "credential hardcode?", "High"),
+    (r"(?i)aws_access_key_id\s*[:=]", "AWS key hardcode?", "Critical"),
+    (r"--force\b", "force flag — kiểm tra kỹ trước khi merge", "Medium"),
+    (r"(?i)\b(auth|verify|check_signature|authenticate)\b.{0,40}(skip|bypass|disable|none|false)",
+     "có dấu hiệu bypass auth/verify — đọc tay bắt buộc", "High"),
+    (r"(?i)(md5\s*\(|sha1\s*\()", "hash yếu (MD5/SHA1) cho bảo mật — nên dùng SHA-256+", "Medium"),
+    (r"(?i)innerHTML\s*=", "innerHTML — nguy cơ XSS nếu dữ liệu chưa escape", "Medium"),
+]
+
+# Chỉ bật ở depth deep (giảm noise cho quick/standard)
+DEEP_ONLY = {
+    r"(?i)\b(auth|verify|check_signature|authenticate)\b.{0,40}(skip|bypass|disable|none|false)",
+    r"(?i)(md5\s*\(|sha1\s*\()",
+    r"(?i)innerHTML\s*=",
+}
+
+TEST_HINT = re.compile(r"(test_|_test\.|tests?/|spec/)", re.I)
+SEV_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+
+
+def sh(*args: str) -> str:
+    p = subprocess.run(list(args), capture_output=True, text=True, timeout=60)
+    if p.returncode != 0:
+        raise SystemExit(f"Lỗi chạy {' '.join(args[:3])}: {(p.stderr or '')[:200]}")
+    return p.stdout
+
+
+def parse_pr_url(url: str) -> tuple:
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url.strip())
+    if not m:
+        raise SystemExit("URL phải dạng https://github.com/owner/repo/pull/123")
+    return m.group(1), m.group(2), m.group(3)
+
+
+def scan(added: str, depth: str):
+    risks = []  # (severity, message)
+    for pat, msg, sev in RISKY:
+        if depth == "quick" and sev not in ("Critical", "High"):
+            continue
+        if depth != "deep" and pat in DEEP_ONLY:
+            continue
+        if re.search(pat, added):
+            risks.append((sev, msg))
+    risks.sort(key=lambda r: SEV_ORDER.get(r[0], 9))
+    return risks
+
+
+def build_review(pr_url, meta, diff, depth):
+    added = "\n".join(l[1:] for l in diff.splitlines()
+                      if l.startswith("+") and not l.startswith("+++"))
+    files = [f.get("path", "") for f in meta.get("files", [])]
+    n_add, n_del = meta.get("additions", 0), meta.get("deletions", 0)
+    dirs = sorted({f.split("/")[0] for f in files if "/" in f})
+
+    risks = scan(added, depth)
+    suggests = []
+    size = n_add + n_del
+    if size > 1000:
+        risks.append(("Medium", f"Diff lớn ({size} dòng) — khó review kỹ, nên tách PR"))
+        suggests.append("Tách PR >1000 dòng thành nhiều PR nhỏ theo feature")
+    if meta.get("_truncated"):
+        risks.append(("Medium", f"Chỉ quét {len(files)} files đầu (coverage-gap) — phần còn lại chưa review"))
+        suggests.append("Chạy lại với --max-files cao hơn hoặc review tay phần còn lại")
+    has_tests = any(TEST_HINT.search(f) for f in files)
+    if not has_tests:
+        suggests.append("Chưa thấy file test đi kèm — thêm test cho logic mới")
+    if re.search(r"(?i)\bTODO\b|\bFIXME\b", added):
+        suggests.append("Còn TODO/FIXME mới — tạo issue theo dõi hoặc xử lý trước merge")
+    if not risks:
+        suggests.append("Không phát hiện pattern nguy hiểm bằng quét tĩnh — vẫn nên đọc logic tay")
+
+    sec = [r for r in risks if r[0] in ("Critical", "High")]
+    if any(s == "Critical" for s, _ in risks):
+        conf = "High"
+    elif risks:
+        conf = "Medium"
+    elif size > 500 or not has_tests:
+        conf = "Medium"
+    else:
+        conf = "Low"
+
+    scope = f"{len(files)} files ({', '.join(dirs[:5]) or 'root'})" if files else "không đọc được files"
+    summary = (f"PR **{meta.get('title', '')}** thay đổi {scope}, "
+               f"+{n_add}/-{n_del}. "
+               f"{'Có test đi kèm.' if has_tests else 'Không thấy test đi kèm.'} "
+               f"{'Phát hiện ' + str(len(risks)) + ' rủi ro cần xem.' if risks else 'Quét tĩnh sạch.'}")
+    return {
+        "title": meta.get("title", ""), "pr": pr_url, "depth": depth,
+        "summary": summary, "risks": [{"severity": s, "message": m} for s, m in risks],
+        "security": [{"severity": s, "message": m} for s, m in sec],
+        "suggestions": suggests, "confidence": conf,
+        "additions": n_add, "deletions": n_del, "files": len(files),
+        "has_tests": has_tests,
+    }
+
+
+def to_markdown(r):
+    L = [f"## Review: {r['title']}", f"PR: {r['pr']}", "",
+         "### Summary", r["summary"], "",
+         "### Risks"]
+    if r["risks"]:
+        for it in r["risks"]:
+            L.append(f"- [{it['severity']}] {it['message']}")
+    else:
+        L.append("- (không phát hiện rủi ro từ quét tĩnh)")
+    L += ["", "### Security"]
+    if r["security"]:
+        L.append("| Severity | Finding |")
+        L.append("|---|---|")
+        for it in r["security"]:
+            L.append(f"| {it['severity']} | {it['message']} |")
+    else:
+        L.append("- Không phát hiện vấn đề bảo mật từ quét tĩnh.")
+    L += ["", "### Suggestions"]
+    L += [f"- {s}" for s in r["suggestions"]]
+    L += ["", f"### Confidence: **{r['confidence']}**",
+          "", f"_Quét tĩnh depth={r['depth']} + heuristics (không chạy code). Đọc tay trước khi merge._"]
+    return "\n".join(L)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--pr", required=True)
+    ap.add_argument("--format", choices=["md", "json"], default="md")
+    ap.add_argument("--depth", choices=["quick", "standard", "deep"], default="standard")
+    ap.add_argument("--post-comment", action="store_true",
+                    help="Đăng review thành comment vào PR (cần gh auth có quyền)")
+    ap.add_argument("--output", default="",
+                    help="Ghi review ra file thay vì stdout")
+    ap.add_argument("--max-files", type=int, default=200,
+                    help="Quét tối đa N files (vượt thì báo coverage-gap)")
+    a = ap.parse_args()
+    owner, repo, num = parse_pr_url(a.pr)
+
+    meta = json.loads(sh("gh", "pr", "view", num, "--repo", f"{owner}/{repo}",
+                         "--json", "title,body,additions,deletions,files"))
+    diff = sh("gh", "pr", "diff", num, "--repo", f"{owner}/{repo}")
+    if len(meta.get("files", [])) > a.max_files:
+        meta["files"] = meta["files"][:a.max_files]
+        meta["_truncated"] = True
+    r = build_review(a.pr, meta, diff, a.depth)
+
+    out = json.dumps(r, ensure_ascii=False, indent=2) if a.format == "json" else to_markdown(r)
+    if a.output:
+        with open(a.output, "w", encoding="utf-8") as f:
+            f.write(out + "\n")
+        print(f"Đã ghi review vào {a.output}")
+    elif a.post_comment:
+        p = subprocess.run(["gh", "pr", "comment", num, "--repo", f"{owner}/{repo}",
+                            "--body", out], capture_output=True, text=True, timeout=60)
+        if p.returncode != 0:
+            print(out)
+            raise SystemExit(f"Đăng comment thất bại: {(p.stderr or '')[:200]}")
+        print(f"Đã đăng review vào {a.pr}")
+    else:
+        print(out)
+
+
+if __name__ == "__main__":
+    main()
