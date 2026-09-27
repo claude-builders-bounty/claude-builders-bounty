@@ -1,0 +1,143 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "cronExpression": "0 17 * * 5" }] } },
+      "name": "Weekly Cron (Fri 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "repo", "value": "={{ $env.GITHUB_REPO }}", "type": "string" },
+            { "name": "language", "value": "={{ $env.SUMMARY_LANG }}", "type": "string" },
+            { "name": "since", "value": "={{ $now.minus(7, 'days').toISO() }}", "type": "string" }
+          ]
+        }
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [{ "name": "since", "value": "={{ $json.since }}" }, { "name": "per_page", "value": "100" }]
+        },
+        "options": {}
+      },
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Config').item.json.repo }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "since", "value": "={{ $('Config').item.json.since }}" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "GitHub Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Config').item.json.repo }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "state", "value": "closed" },
+            { "name": "per_page", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "GitHub PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 550]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('GitHub Commits').all().map(i => '- ' + (i.json.commit?.message || '').split('\\n')[0]);\nconst issues = $('GitHub Closed Issues').all().filter(i => !i.json.pull_request).map(i => '- #' + i.json.number + ' ' + i.json.title);\nconst prs = $('GitHub PRs').all().filter(i => i.json.merged_at).map(i => '- #' + i.json.number + ' ' + i.json.title + ' (merged)');\nreturn [{ json: {\n  repo: $('Config').first().json.repo,\n  language: $('Config').first().json.language,\n  commits: commits.slice(0, 50), nCommits: commits.length,\n  issues: issues.slice(0, 50), nIssues: issues.length,\n  prs: prs.slice(0, 50), nPRs: prs.length\n}}];"
+      },
+      "name": "Aggregate Week",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.CLAUDE_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": \"claude-sonnet-4-20250514\", \"max_tokens\": 1024, \"messages\": [{\"role\": \"user\", \"content\": \"Write a weekly narrative dev summary ({{ $json.language }}) for repo {{ $json.repo }}. Commits ({{ $json.nCommits }}): {{ $json.commits.join('\\n') }}. Closed issues ({{ $json.nIssues }}): {{ $json.issues.join('\\n') }}. Merged PRs ({{ $json.nPRs }}): {{ $json.prs.join('\\n') }}. Sections: Highlights, Merged work, Closed issues, Next-week signals. Keep it under 400 words.\"}]}",
+        "options": {}
+      },
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1020, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content\": \"**Weekly dev summary — {{ $('Aggregate Week').first().json.repo }}**\\n{{ $json.content[0].text }}\"}",
+        "options": {}
+      },
+      "name": "Deliver (Discord)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1220, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Fri 17:00)": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": {
+      "main": [[
+        { "node": "GitHub Commits", "type": "main", "index": 0 },
+        { "node": "GitHub Closed Issues", "type": "main", "index": 0 },
+        { "node": "GitHub PRs", "type": "main", "index": 0 }
+      ]]
+    },
+    "GitHub Commits": { "main": [[{ "node": "Aggregate Week", "type": "main", "index": 0 }]] },
+    "GitHub Closed Issues": { "main": [[{ "node": "Aggregate Week", "type": "main", "index": 0 }]] },
+    "GitHub PRs": { "main": [[{ "node": "Aggregate Week", "type": "main", "index": 0 }]] },
+    "Aggregate Week": { "main": [[{ "node": "Claude Summary", "type": "main", "index": 0 }]] },
+    "Claude Summary": { "main": [[{ "node": "Deliver (Discord)", "type": "main", "index": 0 }]] }
+  },
+  "settings": {},
+  "staticData": null,
+  "pinData": {}
+}
