@@ -1,29 +1,26 @@
 # Safe Bash Hook — Opire $100 bounty entry (issue #3)
 
-![bash](https://img.shields.io/badge/bash-hook-blue) ![tests](https://img.shields.io/badge/tests-11%2F11-green) ![license](https://img.shields.io/badge/license-MIT-green)
+![bash](https://img.shields.io/badge/bash-hook-blue) ![tests](https://img.shields.io/badge/tests-32%2F32-green) ![license](https://img.shields.io/badge/license-MIT-green)
 
 Claude Code `PreToolUse` hook: chặn lệnh nguy hiểm trước khi chạy, log mọi lần
-chặn, không đụng lệnh thường.
+chặn (timestamp | project path | command | reason), không đụng lệnh thường.
 
 ## Cài (2 lệnh)
 
 ```bash
-mkdir -p ~/.claude/hooks && cp block-dangerous.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/block-dangerous.sh
-echo '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block-dangerous.sh"}]}]}}' > ~/.claude/hooks.json
+./install.sh   # copy hook + merge idempotent vào ~/.claude/settings.json (giữ config cũ)
+bash test-hook.sh
 ```
 
 ## Chặn gì
 
-| Pattern | Lý do |
+| Pattern | Ghi chú |
 |---|---|
-| `rm -rf` (+ `sudo`) | sai 1 ký tự là mất hệ thống |
-| `DROP TABLE` / `TRUNCATE` | xóa dữ liệu không rollback |
-| `git push --force` / `-f` | viết lại lịch sử remote |
-| `DELETE FROM` không `WHERE` | xóa cả bảng |
-
-`DELETE ... WHERE`, `rm file`, `ls`, `git status` cho qua bình thường.
-Mỗi lần chặn: exit 2 + message cho Claude + 1 dòng vào
-`~/.claude/hooks/blocked.log` (timestamp | project path | command).
+| `rm -rf` (mọi biến thể `-r`+`-f`, cả `sudo`, cả trong `bash -c`) | `rm -f` / `rm` thường cho qua |
+| `DROP TABLE` / `TRUNCATE` | ngoài quotes; `grep 'DROP TABLE'` cho qua |
+| `git push --force` / `-f` / refspec `+` / `push.force=true` | `--force-with-lease` cho qua |
+| `DELETE`/`UPDATE` không `WHERE`, `WHERE 1=1`, `id=id`, comment `--` | `WHERE id=1` cho qua |
+| `mkfs`, `dd of=/dev/`, `chmod -R 777 /`, `find -delete`, fork-bomb, `curl\|bash`, shutdown | — |
 
 ## Test thật
-`bash test-hook.sh` → 11/11 xanh (7 case chặn + 4 case cho qua, log đủ timestamp/cwd/command).
+`bash test-hook.sh` → 32/32 xanh (block + allow + chống bypass). Samples: `samples/`.
