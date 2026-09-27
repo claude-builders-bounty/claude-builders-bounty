@@ -1,0 +1,65 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const receipt = JSON.parse(
+  await readFile(resolve(root, 'evidence/pagination-verification.json'), 'utf8'),
+);
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character]);
+}
+
+const rows = [
+  ['commits', 'commits', 'Commits'],
+  ['closedIssues', 'issues', 'Closed issues'],
+  ['mergedPullRequests', 'pulls', 'Merged pull requests'],
+].map(([countKey, coverageKey, label]) => {
+  const coverage = receipt.coverage[coverageKey];
+  const highlights = receipt.highlights[countKey];
+  return `<tr><th scope="row">${label}</th><td>${receipt.counts[countKey]}</td><td>${coverage.fetched}</td><td>${coverage.pages}</td><td>${highlights.shown} shown / ${highlights.omitted} omitted</td></tr>`;
+}).join('\n');
+const checks = Object.entries(receipt.apiChecks).map(([name, result]) => {
+  const passed = name === 'success';
+  return `<li><span class="pill ${passed ? 'pass' : 'guard'}">${passed ? 'PASS' : 'BLOCKED'}</span><div><strong>${escapeHtml(name)}</strong><p>${escapeHtml(result)}</p></div></li>`;
+}).join('\n');
+const report = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local n8n verification receipt</title>
+  <style>
+    :root{color-scheme:light;--ink:#17211c;--muted:#58665e;--line:#dce4de;--paper:#fff;--back:#edf1ee;--green:#126b3b;--green-bg:#e1f2e7;--amber:#7b5200;--amber-bg:#fbf0d5}
+    *{box-sizing:border-box}body{margin:0;background:var(--back);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    main{max-width:1080px;margin:36px auto;padding:0 24px 32px}.sheet{background:var(--paper);border:1px solid var(--line);padding:36px 40px}
+    header{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:22px}.eyebrow{font:700 12px/1.2 ui-monospace,SFMono-Regular,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+    h1{font-size:30px;line-height:1.15;letter-spacing:-.03em;margin:8px 0}.lede{color:var(--muted);margin:0}.status{white-space:nowrap;padding:8px 12px;border:1px solid #b4dac1;background:var(--green-bg);color:var(--green);font:700 12px ui-monospace,monospace}
+    h2{font-size:17px;margin:28px 0 10px}.meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin-top:20px}.meta div{background:var(--paper);padding:12px 14px;min-width:0}.meta dt{font-size:12px;color:var(--muted);margin-bottom:5px}.meta dd{margin:0;overflow-wrap:anywhere;font-weight:600}
+    table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left}thead th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}tbody th{font-weight:600}
+    .checks{list-style:none;padding:0;margin:0;border-top:1px solid var(--line)}.checks li{display:flex;align-items:flex-start;gap:14px;padding:13px 2px;border-bottom:1px solid var(--line)}.checks p{margin:2px 0 0;color:var(--muted)}.pill{font:700 10px ui-monospace,monospace;padding:4px 7px;white-space:nowrap}.pass{color:var(--green);background:var(--green-bg)}.guard{color:var(--amber);background:var(--amber-bg)}
+    .note{margin-top:26px;padding:16px 18px;border-left:3px solid #be8a21;background:#fffaf0;color:#574313}.note strong{display:block;margin-bottom:4px}.foot{border-top:1px solid var(--line);margin-top:24px;padding-top:12px;color:var(--muted);font-size:12px}
+    @media(max-width:680px){main{margin:12px auto;padding:0 10px 16px}.sheet{padding:24px 18px}header{display:block}.status{display:inline-block;margin-top:12px}.meta{grid-template-columns:1fr 1fr}table{font-size:12px}th,td{padding:8px 6px}.hide-mobile{display:none}}
+  </style>
+</head>
+<body><main><article class="sheet">
+  <header><div><div class="eyebrow">n8n CLI · local verification</div><h1>Weekly development summary workflow</h1><p class="lede">Current Messages API request mapping exercised end to end in an isolated n8n instance.</p></div><div class="status">PASS · SYNTHETIC PROVIDER</div></header>
+  <dl class="meta"><div><dt>n8n runtime</dt><dd>2.40.7</dd></div><div><dt>Execution type</dt><dd>Isolated CLI run</dd></div><div><dt>Checked at</dt><dd>${escapeHtml(receipt.checkedAt)}</dd></div><div><dt>GitHub input</dt><dd>Loopback fixture only</dd></div><div><dt>Messages API</dt><dd>Synthetic local response</dd></div><div><dt>External delivery</dt><dd>Disabled</dd></div></dl>
+  <h2>Pagination and output coverage</h2>
+  <table><thead><tr><th>Activity</th><th>Weekly matches</th><th>Fetched</th><th>Pages</th><th>Prompt detail</th></tr></thead><tbody>${rows}</tbody></table>
+  <h2>Messages response handling</h2><ul class="checks">${checks}</ul>
+  <aside class="note"><strong>Scope of this receipt</strong>${escapeHtml(receipt.assertions)}. The successful response is synthetic: no Anthropic credential, paid inference, live provider request, Discord/Slack message, customer data, or editor account was used. This proves the current workflow mapping in n8n; it does not prove live Anthropic authentication or generation.</aside>
+  <footer class="foot">Source: evidence/pagination-verification.json · generated locally from the n8n verification receipt. No outbound webhook was called.</footer>
+</article></main></body></html>
+`;
+
+const output = resolve(root, 'evidence/local-n8n-verification-report.html');
+await writeFile(output, report);
+console.log(`Rendered ${output}`);
