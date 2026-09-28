@@ -1,0 +1,474 @@
+{
+  "name": "Claude Code - Automated Weekly Dev Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "trigger-weekly-cron",
+      "name": "Weekly Trigger (Cron)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        120,
+        240
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "trigger-manual-run",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        120,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// =========================================================================\n// ⚙️ WORKFLOW CONFIGURATION & TIME WINDOW CALCULATION\n// =========================================================================\n// Easily configure repository targets, language, delivery channels, and model.\n\nconst input = $input.first()?.json || {};\n\nconst config = {\n  // Target GitHub repository (owner / repo)\n  githubOwner: input.githubOwner || 'claude-builders-bounty',\n  githubRepo: input.githubRepo || 'claude-builders-bounty',\n\n  // GitHub Personal Access Token (Optional: elevates rate limit from 60 to 5,000 req/hr)\n  githubToken: input.githubToken || '',\n\n  // Language for the summary narrative: 'EN' (English) or 'FR' (French)\n  language: (input.language || 'EN').toUpperCase(),\n\n  // Lookback window in days (default: 7 for a weekly summary)\n  lookbackDays: Number(input.lookbackDays) || 7,\n\n  // Claude API Model (specified in bounty issue: claude-sonnet-4-20250514)\n  claudeModel: input.claudeModel || 'claude-sonnet-4-20250514',\n\n  // Anthropic Claude API Key (sk-ant-...)\n  anthropicApiKey: input.anthropicApiKey || '',\n\n  // Delivery destination channel: 'discord', 'slack', 'both', or 'dry-run'\n  deliveryChannel: (input.deliveryChannel || 'both').toLowerCase(),\n\n  // Webhook URLs (paste your Discord / Slack incoming webhook URLs)\n  discordWebhookUrl: input.discordWebhookUrl || '',\n  slackWebhookUrl: input.slackWebhookUrl || '',\n\n  // Optional email recipient\n  emailRecipient: input.emailRecipient || 'dev-team@example.com'\n};\n\n// Compute dynamic 7-day lookback window in UTC\nconst now = new Date();\nconst sinceDate = new Date(now.getTime() - config.lookbackDays * 24 * 60 * 60 * 1000);\nconst sinceISO = sinceDate.toISOString();\nconst untilISO = now.toISOString();\n\n// Format human-friendly date ranges\nconst dateOptions = { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' };\nconst sinceFormatted = sinceDate.toLocaleDateString(config.language === 'FR' ? 'fr-FR' : 'en-US', dateOptions);\nconst untilFormatted = now.toLocaleDateString(config.language === 'FR' ? 'fr-FR' : 'en-US', dateOptions);\n\nreturn [{\n  json: {\n    ...config,\n    sinceISO,\n    untilISO,\n    sinceFormatted,\n    untilFormatted,\n    repoFullName: `${config.githubOwner}/${config.githubRepo}`\n  }\n}];\n"
+      },
+      "id": "node-workflow-config",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        340,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Workflow Configuration').item.json.githubOwner }}/{{ $('Workflow Configuration').item.json.githubRepo }}/commits",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Dev-Summary"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $('Workflow Configuration').item.json.githubToken ? 'Bearer ' + $('Workflow Configuration').item.json.githubToken : undefined }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $('Workflow Configuration').item.json.sinceISO }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-github-commits",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        160
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Workflow Configuration').item.json.githubOwner }}/{{ $('Workflow Configuration').item.json.githubRepo }}/issues",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Dev-Summary"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $('Workflow Configuration').item.json.githubToken ? 'Bearer ' + $('Workflow Configuration').item.json.githubToken : undefined }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $('Workflow Configuration').item.json.sinceISO }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-github-issues",
+      "name": "GitHub Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        340
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Workflow Configuration').item.json.githubOwner }}/{{ $('Workflow Configuration').item.json.githubRepo }}/pulls",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Dev-Summary"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $('Workflow Configuration').item.json.githubToken ? 'Bearer ' + $('Workflow Configuration').item.json.githubToken : undefined }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-github-prs",
+      "name": "GitHub Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        520
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =========================================================================\n// 📊 AGGREGATE GITHUB ACTIVITY DIGEST & SYNTHESIS\n// =========================================================================\n\n// Safe synchronization check across incoming branches\nlet commitsReady = false;\nlet issuesReady = false;\nlet prsReady = false;\n\ntry { commitsReady = $('GitHub Commits').all().length >= 0; } catch (e) {}\ntry { issuesReady = $('GitHub Issues').all().length >= 0; } catch (e) {}\ntry { prsReady = $('GitHub Merged PRs').all().length >= 0; } catch (e) {}\n\nif (!commitsReady || !issuesReady || !prsReady) {\n  return [];\n}\n\n// Execution deduplication check\nconst runKey = ($execution && $execution.id) ? $execution.id : ('run_' + Date.now());\nconst staticData = getWorkflowStaticData('global');\nif (staticData[runKey]) {\n  return [];\n}\nstaticData[runKey] = true;\n\nconst cfg = $('Workflow Configuration').first().json;\n\n// Safely extract items from n8n nodes\nconst getItems = (nodeName) => {\n  try {\n    const raw = $(nodeName).all();\n    return raw.flatMap(i => {\n      if (!i.json) return [];\n      if (Array.isArray(i.json)) return i.json;\n      if (i.json.message && (i.json.message.includes('API rate limit') || i.json.message.includes('Not Found'))) {\n        return [];\n      }\n      return [i.json];\n    }).filter(item => item && typeof item === 'object' && Object.keys(item).length > 0);\n  } catch (e) {\n    return [];\n  }\n};\n\nconst rawCommits = getItems('GitHub Commits');\nconst rawIssues = getItems('GitHub Issues');\nconst rawPRs = getItems('GitHub Merged PRs');\n\nconst sinceTime = new Date(cfg.sinceISO).getTime();\n\n// 1. Process Commits\nconst validCommits = rawCommits.filter(c => c && c.sha && c.commit);\nconst commitSummaries = validCommits.slice(0, 50).map(c => {\n  const firstLine = (c.commit?.message || '').split('\\n')[0].trim();\n  const author = c.commit?.author?.name || c.author?.login || 'contributor';\n  const shortSha = c.sha ? c.sha.substring(0, 7) : '';\n  return `- [\\`${shortSha}\\`] ${firstLine} (by ${author})`;\n});\n\n// 2. Process Closed Issues (filtering out PRs which GitHub includes in /issues)\nconst realClosedIssues = rawIssues.filter(i => {\n  if (!i || !i.id || i.pull_request) return false;\n  if (i.closed_at) {\n    return new Date(i.closed_at).getTime() >= sinceTime;\n  }\n  return true;\n});\n\nconst issueSummaries = realClosedIssues.slice(0, 30).map(i => {\n  const labels = (i.labels || []).map(l => l.name).filter(Boolean);\n  const labelStr = labels.length > 0 ? ` [${labels.slice(0, 2).join(', ')}]` : '';\n  return `- #${i.number} \"${i.title}\"${labelStr} — closed by ${i.user?.login || 'user'}`;\n});\n\n// 3. Process Merged Pull Requests (filtering for merged_at within lookback window)\nconst mergedPRs = rawPRs.filter(p => {\n  if (!p || !p.id || !p.merged_at) return false;\n  return new Date(p.merged_at).getTime() >= sinceTime;\n});\n\nconst prSummaries = mergedPRs.slice(0, 30).map(p => {\n  const author = p.user?.login || 'contributor';\n  return `- PR #${p.number} \"${p.title}\" — merged by ${author}`;\n});\n\n// Statistics\nconst stats = {\n  totalCommits: validCommits.length,\n  totalClosedIssues: realClosedIssues.length,\n  totalMergedPRs: mergedPRs.length,\n  periodStart: cfg.sinceFormatted,\n  periodEnd: cfg.untilFormatted\n};\n\n// Prepare bilingual prompt for Claude Sonnet 4\nconst isFrench = cfg.language === 'FR';\n\nconst systemPrompt = isFrench\n  ? `Tu es un Lead Software Engineer et Technical Writer de premier ordre chargé de générer un résumé narratif hebdomadaire percutant, fluide et professionnel pour le dépôt GitHub \"${cfg.repoFullName}\". Ton style est soigné, valorise le travail technique accompli, met en avant l'impact des changements et engage les équipes.`\n  : `You are an elite Lead Software Engineer and Technical Writer crafting an engaging, narrative executive weekly summary of engineering activity for the GitHub repository \"${cfg.repoFullName}\". Your tone is clear, insightful, professional, and celebrates the engineering achievements and velocity of the team.`;\n\nconst userPrompt = isFrench\n  ? `Génère une synthèse narrative hebdomadaire complète en FRANÇAIS pour le dépôt **${cfg.repoFullName}** pour la période du **${cfg.sinceFormatted} au ${cfg.untilFormatted}**.\n\nDonnées d'activité de la semaine :\n- **Commits récents (${stats.totalCommits}) :**\n${commitSummaries.length > 0 ? commitSummaries.join('\\n') : 'Aucun commit enregistré sur cette période.'}\n\n- **Pull Requests fusionnées (${stats.totalMergedPRs}) :**\n${prSummaries.length > 0 ? prSummaries.join('\\n') : 'Aucune PR fusionnée sur cette période.'}\n\n- **Issues résolues (${stats.totalClosedIssues}) :**\n${issueSummaries.length > 0 ? issueSummaries.join('\\n') : 'Aucune issue fermée sur cette période.'}\n\nStructure attendue en Markdown propre :\n1. **🌟 Faits Marquants & Vision d'Ensemble** : Résumé narratif en 1-2 paragraphes synthétisant les accomplissements majeurs et le cap du projet cette semaine.\n2. **🚀 Nouvelles Fonctionnalités & Améliorations Clés** : Analyse des PRs fusionnées les plus importantes et de leur apport technique.\n3. **🛠️ Correctifs & Fiabilisation** : Analyse des bugs résolus et de la consolidation de l'infrastructure.\n4. **📊 Dynamique & Vélocité** : Bilan chiffré (${stats.totalCommits} commits, ${stats.totalMergedPRs} PRs fusionnées, ${stats.totalClosedIssues} issues résolues) et remerciements aux contributeurs actifs.\n5. **🎯 Perspectives pour la Semaine Prochaine** : Élan impulsé et points de mire techniques.`\n  : `Generate a comprehensive, narrative weekly engineering summary in ENGLISH for the repository **${cfg.repoFullName}** covering **${cfg.sinceFormatted} to ${cfg.untilFormatted}**.\n\nWeekly Repository Activity Data:\n- **Recent Commits (${stats.totalCommits}):**\n${commitSummaries.length > 0 ? commitSummaries.join('\\n') : 'No commits recorded during this window.'}\n\n- **Merged Pull Requests (${stats.totalMergedPRs}):**\n${prSummaries.length > 0 ? prSummaries.join('\\n') : 'No pull requests merged during this window.'}\n\n- **Closed Issues (${stats.totalClosedIssues}):**\n${issueSummaries.length > 0 ? issueSummaries.join('\\n') : 'No issues closed during this window.'}\n\nRequired Markdown Structure:\n1. **🌟 Executive Overview & Key Highlights**: 1-2 narrative paragraphs capturing the big-picture achievements, momentum, and technical direction of the repository this week.\n2. **🚀 Key Features & Merged Pull Requests**: Narrative breakdown of impactful pull requests and what they contribute to the project.\n3. **🛠️ Bug Fixes & Resolved Issues**: Breakdown of key defects resolved, stability enhancements, and closed tickets.\n4. **📊 Team Velocity & Contributor Spotlight**: Summary of key metrics (${stats.totalCommits} commits, ${stats.totalMergedPRs} merged PRs, ${stats.totalClosedIssues} closed issues) celebrating team progress.\n5. **🎯 Outlook & Focus for Next Week**: Strategic momentum and engineering priorities for the upcoming cycle.`;\n\nreturn [{\n  json: {\n    ...cfg,\n    stats,\n    commitCount: validCommits.length,\n    issueCount: realClosedIssues.length,\n    prCount: mergedPRs.length,\n    systemPrompt,\n    userPrompt\n  }\n}];\n"
+      },
+      "id": "node-aggregate-digest",
+      "name": "Aggregate Activity Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.anthropicApiKey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: $json.claudeModel || 'claude-sonnet-4-20250514',\n  max_tokens: 2500,\n  system: $json.systemPrompt,\n  messages: [\n    { role: 'user', content: $json.userPrompt }\n  ]\n}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-claude-summary",
+      "name": "Claude Sonnet 4 Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        340
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =========================================================================\n// 🎨 FORMAT MULTI-CHANNEL DELIVERY PAYLOADS\n// =========================================================================\n\nconst prev = $('Aggregate Activity Digest').first().json;\nconst claudeResp = $input.first()?.json || {};\n\n// Extract generated text from Claude Messages API response\nlet summaryText = '';\nif (claudeResp.content && Array.isArray(claudeResp.content)) {\n  summaryText = claudeResp.content.map(b => b.text || '').join('\\n').trim();\n} else if (typeof claudeResp === 'string') {\n  summaryText = claudeResp;\n} else if (claudeResp.error) {\n  summaryText = `⚠️ Claude API Notice: ${claudeResp.error.message || JSON.stringify(claudeResp.error)}`;\n}\n\nif (!summaryText) {\n  summaryText = `### Weekly Dev Summary for ${prev.repoFullName}\\n\\n**Activity Highlights (${prev.sinceFormatted} - ${prev.untilFormatted}):**\\n- Merged PRs: ${prev.stats.totalMergedPRs}\\n- Closed Issues: ${prev.stats.totalClosedIssues}\\n- Commits: ${prev.stats.totalCommits}\\n\\n*(Claude API Key was not provided or returned empty content)*`;\n}\n\nconst title = prev.language === 'FR'\n  ? `📦 Synthèse Hebdomadaire Dev — ${prev.repoFullName}`\n  : `📦 Weekly Dev Summary — ${prev.repoFullName}`;\n\nconst subtitle = `📅 ${prev.sinceFormatted} → ${prev.untilFormatted} | 🔀 ${prev.stats.totalMergedPRs} PRs | 🎯 ${prev.stats.totalClosedIssues} Issues | 💻 ${prev.stats.totalCommits} Commits`;\n\n// 1. Build Discord Embed Payload (with character limits safety)\nconst discordDescription = summaryText.length > 3900\n  ? summaryText.substring(0, 3900) + '...\\n\\n*(Truncated due to Discord 4096-character limit)*'\n  : summaryText;\n\nconst discordPayload = {\n  embeds: [\n    {\n      title: title,\n      description: discordDescription,\n      color: 0x6366F1, // Indigo / Claude brand accent\n      fields: [\n        { name: 'Merged PRs', value: String(prev.stats.totalMergedPRs), inline: true },\n        { name: 'Closed Issues', value: String(prev.stats.totalClosedIssues), inline: true },\n        { name: 'Commits', value: String(prev.stats.totalCommits), inline: true }\n      ],\n      footer: {\n        text: `Generated by Claude (${prev.claudeModel}) via n8n`\n      },\n      timestamp: new Date().toISOString()\n    }\n  ]\n};\n\n// 2. Build Slack Block Kit Payload\nconst slackPayload = {\n  blocks: [\n    {\n      type: \"header\",\n      text: {\n        type: \"plain_text\",\n        text: title,\n        emoji: true\n      }\n    },\n    {\n      type: \"context\",\n      elements: [\n        {\n          type: \"mrkdwn\",\n          text: subtitle\n        }\n      ]\n    },\n    {\n      type: \"divider\"\n    },\n    {\n      type: \"section\",\n      text: {\n        type: \"mrkdwn\",\n        text: summaryText.length > 2900 ? summaryText.substring(0, 2900) + '...' : summaryText\n      }\n    },\n    {\n      type: \"divider\"\n    },\n    {\n      type: \"context\",\n      elements: [\n        {\n          type: \"mrkdwn\",\n          text: `*Generated by Claude (${prev.claudeModel}) via n8n* | Model: \\`${prev.claudeModel}\\``\n        }\n      ]\n    }\n  ]\n};\n\n// Determine channel activation\nconst ch = prev.deliveryChannel;\nconst discordActive = (ch === 'discord' || ch === 'both' || ch === 'all') && Boolean(prev.discordWebhookUrl);\nconst slackActive = (ch === 'slack' || ch === 'both' || ch === 'all') && Boolean(prev.slackWebhookUrl);\n\nreturn [{\n  json: {\n    ...prev,\n    title,\n    subtitle,\n    summaryMarkdown: summaryText,\n    discordPayload,\n    slackPayload,\n    discordActive,\n    slackActive\n  }\n}];\n"
+      },
+      "id": "node-format-payload",
+      "name": "Format Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.discordWebhookUrl || 'https://httpbin.org/status/200' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.discordPayload) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-send-discord",
+      "name": "Send Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1620,
+        220
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.slackWebhookUrl || 'https://httpbin.org/status/200' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.slackPayload) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-send-slack",
+      "name": "Send Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1620,
+        460
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Cron)": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Activity Digest": {
+      "main": [
+        [
+          {
+            "node": "Claude Sonnet 4 Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Sonnet 4 Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Payload": {
+      "main": [
+        [
+          {
+            "node": "Send Discord Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "instanceId": "claude-code-weekly-dev-summary"
+  },
+  "tags": [
+    {
+      "name": "Claude Code",
+      "id": "claude-code"
+    },
+    {
+      "name": "GitHub",
+      "id": "github"
+    },
+    {
+      "name": "Weekly Digest",
+      "id": "weekly-digest"
+    }
+  ],
+  "active": false,
+  "versionId": "1.0.0"
+}
