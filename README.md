@@ -43,6 +43,38 @@ You're in the right place.
 
 ---
 
+## Bounty #1: Changelog Generator
+
+This repo includes a small changelog generator for [#1](../../issues/1).
+
+Setup in 3 steps:
+
+1. Clone or copy this repository into a git project.
+2. Run `bash changelog.sh` from the repository root.
+3. Review the generated `CHANGELOG.md`.
+
+Options:
+
+```bash
+python changelog.py --since v1.0.0 --title v1.1.0 --output CHANGELOG.md
+```
+
+The generator:
+
+- reads commits since the latest git tag, or from repository start when no tag exists
+- categorizes commits into `Added`, `Fixed`, `Changed`, and `Removed`
+- writes a formatted `CHANGELOG.md`
+
+Run tests with:
+
+```bash
+python -m unittest discover -s tests
+```
+
+See [sample-output.md](sample-output.md) for output generated against this repository.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
