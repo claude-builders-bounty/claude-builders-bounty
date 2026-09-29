@@ -1,0 +1,231 @@
+{
+  "meta": {
+    "templateCreds": [],
+    "templateId": "weekly-dev-summary"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cron",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const oneWeekAgo = new Date();\noneWeekAgo.setDate(oneWeekAgo.getDate() - 7);\nconst isoDate = oneWeekAgo.toISOString();\nreturn [{ one_week_ago: isoDate }];"
+      },
+      "id": "date-helper",
+      "name": "Date Helper",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $vars.github_repo }}/commits?since={{ $json.one_week_ago }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $vars.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "github-commits",
+      "name": "GitHub API - Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 180]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $vars.github_repo }}/issues?state=closed&since={{ $json.one_week_ago }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $vars.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "github-issues",
+      "name": "GitHub API - Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $vars.github_repo }}/pulls?state=closed&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $vars.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "github-prs",
+      "name": "GitHub API - Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('GitHub API - Commits').all()[0].json || [];\nconst issues = $('GitHub API - Closed Issues').all()[0].json || [];\nconst prsData = $('GitHub API - Merged PRs').all()[0].json || [];\nconst mergedPRs = Array.isArray(prsData) ? prsData.filter(pr => pr.merged_at) : [];\n\nconst filteredCommits = commits.map(c => ({\n  sha: c.sha,\n  message: c.commit.message.split('\\n')[0],\n  author: c.commit.author.name,\n  date: c.commit.author.date\n}));\nconst filteredIssues = issues.map(i => ({\n  number: i.number,\n  title: i.title,\n  labels: i.labels.map(l => l.name)\n}));\nconst filteredPRs = mergedPRs.map(pr => ({\n  number: pr.number,\n  title: pr.title,\n  merged_by: pr.merged_by?.login || 'unknown'\n}));\n\nreturn [{\n  commits: filteredCommits,\n  closed_issues: filteredIssues,\n  merged_prs: filteredPRs\n}];"
+      },
+      "id": "merge-data",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.minimax.chat/v1/text/chatcompletion_v2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.MINIMAX_CN_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"MiniMax-Text-01\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a senior developer writing concise weekly dev summaries in Chinese. Generate a structured summary covering: completed features, bug fixes, notable commits, blockers, and next week's priorities. Keep it under 400 words. Output only the summary, no preamble.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Generate a weekly dev summary in Chinese based on the following data from the past week:\\n\\n**Commits ({{ $json.commits.length }} total):**\\n{{ $json.commits.slice(0, 20).map(c => `- ${c.sha.slice(0,7)}: ${c.message} (${c.author})`).join('\\n') }}\\n\\n**Closed Issues ({{ $json.closed_issues.length }} total):**\\n{{ $json.closed_issues.slice(0, 10).map(i => `- #${i.number}: ${i.title}`).join('\\n') }}\\n\\n**Merged PRs ({{ $json.merged_prs.length }} total):**\\n{{ $json.merged_prs.slice(0, 10).map(p => `- #${p.number}: ${p.title} (by @${p.merged_by})`).join('\\n') }}\"\n    }\n  ],\n  \"temperature\": 0.7,\n  \"max_tokens\": 2000\n}"
+      },
+      "id": "minimax-api",
+      "name": "MiniMax API - Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.minimax.chat/v1/text/chatcompletion_v2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.MINIMAX_CN_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"MiniMax-Text-01\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an expert translator. Output only the translated text, no explanations.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Translate to Chinese:\\n\\n{{ $json.choices[0].message.content }}\"\n    }\n  ],\n  \"max_tokens\": 2000\n}"
+      },
+      "id": "translate-cn",
+      "name": "Translate to Chinese",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 300]
+    },
+    {
+      "parameters": {
+        "server": "smtp-mail.outlook.com",
+        "port": 587,
+        "secure": false,
+        "fromEmail": "{{ $vars.email_from }}",
+        "toEmail": "{{ $vars.email_to }}",
+        "subject": "[Weekly Dev Summary] {{ $vars.github_repo }}",
+        "text": "{{ $json.choices[0].message.content }}",
+        "options": {
+          "debug": false
+        }
+      },
+      "id": "email-node",
+      "name": "Send Email (Outlook SMTP)",
+      "type": "n8n-nodes-base.email",
+      "typeVersion": 2.2,
+      "position": [1360, 300],
+      "credentials": []
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{"node": "Date Helper", "type": "main", "index": 0}]]
+    },
+    "Date Helper": {
+      "main": [
+        [{"node": "GitHub API - Commits", "type": "main", "index": 0}],
+        [{"node": "GitHub API - Closed Issues", "type": "main", "index": 0}],
+        [{"node": "GitHub API - Merged PRs", "type": "main", "index": 0}]
+      ]
+    },
+    "GitHub API - Commits": {
+      "main": [[{"node": "Merge Data", "type": "main", "index": 0}]]
+    },
+    "GitHub API - Closed Issues": {
+      "main": [[{"node": "Merge Data", "type": "main", "index": 0}]]
+    },
+    "GitHub API - Merged PRs": {
+      "main": [[{"node": "Merge Data", "type": "main", "index": 0}]]
+    },
+    "Merge Data": {
+      "main": [[{"node": "MiniMax API - Generate Summary", "type": "main", "index": 0}]]
+    },
+    "MiniMax API - Generate Summary": {
+      "main": [[{"node": "Translate to Chinese", "type": "main", "index": 0}]]
+    },
+    "Translate to Chinese": {
+      "main": [[{"node": "Send Email (Outlook SMTP)", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "variables": {
+    "github_repo": "claude-builders-bounty/claude-builders-bounty",
+    "email_from": "mm1556@msn.com",
+    "email_to": "mm1556@msn.com",
+    "GITHUB_TOKEN": ""
+  },
+  "credentials": {}
+}
