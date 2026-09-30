@@ -43,6 +43,12 @@ You're in the right place.
 
 ---
 
+## Submitted Tooling
+
+- [Claude PR Reviewer Agent](./README-pr-reviewer.md): a dependency-free `claude-review --pr <url>` CLI, Claude Code sub-agent instructions, GitHub Action workflow, tests, and real PR sample outputs for bounty #4.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
