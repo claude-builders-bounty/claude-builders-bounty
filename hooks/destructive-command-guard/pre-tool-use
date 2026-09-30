@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""
+Claude Code PreToolUse Hook: Destructive Command Guard
+Intercepts and blocks dangerous bash commands before execution in Claude Code.
+Bounty: https://github.com/claude-builders-bounty/claude-builders-bounty/issues/3
+"""
+
+import sys
+import os
+import json
+import re
+from datetime import datetime, timezone
+
+# Target log location specified by acceptance criteria
+BLOCKED_LOG_PATH = os.path.expanduser("~/.claude/hooks/blocked.log")
+
+def parse_input(raw_text: str):
+    """
+    Parses input from Claude Code hooks. Claude Code sends JSON via stdin:
+    {"tool": "Bash", "tool_input": {"command": "..."}, "cwd": "..."}
+    Also supports fallback CLI arguments.
+    """
+    cmd = None
+    cwd = os.getcwd()
+    
+    if raw_text and raw_text.strip():
+        try:
+            data = json.loads(raw_text)
+            cwd = data.get("cwd") or data.get("project_path") or os.getcwd()
+            tool = data.get("tool") or data.get("tool_name") or ""
+            tool_input = data.get("tool_input") or {}
+            
+            if isinstance(tool_input, dict):
+                cmd = tool_input.get("command") or tool_input.get("cmd")
+            elif isinstance(tool_input, str):
+                cmd = tool_input
+        except Exception:
+            # Fallback if raw text is passed directly
+            cmd = raw_text.strip()
+
+    if not cmd and len(sys.argv) > 1:
+        cmd = " ".join(sys.argv[1:])
+
+    return cmd, cwd
+
+def split_subcommands(command: str):
+    """Splits command by chain operators ;, &&, ||, | while keeping nested contexts"""
+    # Simple split on shell operators outside quotes
+    parts = re.split(r";|&&|\|\||(?<!\|)\|(?!\|)", command)
+    return [p.strip() for p in parts if p.strip()]
+
+def check_destructive(command: str):
+    """
+    Inspects a command string for destructive patterns:
+    1. rm -rf (recursive force deletion)
+    2. DROP TABLE (database table deletion)
+    3. git push --force / git push -f (git history overwrite)
+    4. TRUNCATE (database table truncate)
+    5. DELETE FROM without WHERE clause (unbounded table deletion)
+    """
+    if not command:
+        return False, None
+
+    subcmds = split_subcommands(command)
+
+    for subcmd in subcmds:
+        # Ignore safe echo / printf / comment commands
+        if re.match(r"^(echo|printf)\s+", subcmd) or subcmd.startswith("#"):
+            continue
+
+        clean = re.sub(r"\s+", " ", subcmd).strip()
+
+        # Rule 1: rm -rf (handles -rf, -fr, -r -f, -f -r, --recursive --force, etc.)
+        rm_pattern = re.compile(
+            r"\brm\s+.*?(?:-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*|--recursive|--force|-r\s+-f|-f\s+-r)",
+            re.IGNORECASE
+        )
+        if re.search(r"\brm\s+.*?(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*|-r\s+-f|-f\s+-r|--recursive\s+--force|--force\s+--recursive)", clean, re.IGNORECASE):
+            return True, "Destructive recursive file deletion (rm -rf)"
+
+        # Rule 2: DROP TABLE
+        drop_pattern = re.compile(r"\bDROP\s+TABLE\b", re.IGNORECASE)
+        if drop_pattern.search(clean):
+            return True, "Destructive SQL operation (DROP TABLE)"
+
+        # Rule 3: git push --force / git push -f / --force-with-lease
+        git_force_pattern = re.compile(
+            r"\bgit\s+push\b.*?(?:\s|^)(--force|-f|--force-with-lease)\b",
+            re.IGNORECASE
+        )
+        if git_force_pattern.search(clean):
+            return True, "Destructive remote git push (history overwrite)"
+
+        # Rule 4: TRUNCATE [TABLE]
+        truncate_pattern = re.compile(
+            r"\bTRUNCATE\s+(TABLE\s+)?[a-zA-Z0-9_`\"\[\]]+",
+            re.IGNORECASE
+        )
+        if truncate_pattern.search(clean):
+            return True, "Destructive SQL table purge (TRUNCATE)"
+
+        # Rule 5: DELETE FROM without WHERE clause
+        del_pattern = re.compile(r"\bDELETE\s+FROM\s+[a-zA-Z0-9_`\"\[\].]+", re.IGNORECASE)
+        for m in del_pattern.finditer(clean):
+            stmt = clean[m.start():].split(";")[0]
+            if not re.search(r"\bWHERE\b", stmt, re.IGNORECASE):
+                return True, "Unbounded SQL table wipe (DELETE FROM without WHERE clause)"
+
+    return False, None
+
+def log_blocked_attempt(cmd: str, cwd: str, reason: str):
+    """
+    Appends audit log to ~/.claude/hooks/blocked.log with:
+    timestamp, attempted command, project path, reason
+    """
+    try:
+        os.makedirs(os.path.dirname(BLOCKED_LOG_PATH), exist_ok=True)
+        ts = datetime.now(timezone.utc).isoformat()
+        log_entry = f"[{ts}] [BLOCKED] cwd={cwd} | reason={reason} | command={cmd}\n"
+        with open(BLOCKED_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(log_entry)
+    except Exception as e:
+        sys.stderr.write(f"[Guard Warning] Failed writing to {BLOCKED_LOG_PATH}: {e}\n")
+
+def main():
+    raw_input = sys.stdin.read().strip() if not sys.stdin.isatty() else ""
+    cmd, cwd = parse_input(raw_input)
+
+    if not cmd:
+        sys.exit(0)
+
+    is_blocked, reason = check_destructive(cmd)
+    if is_blocked:
+        log_blocked_attempt(cmd, cwd, reason)
+        error_msg = (
+            f"\n[SECURITY GUARD] Command Execution Blocked by Policy\n"
+            f"Reason: {reason}\n"
+            f"Command: {cmd}\n"
+            f"Project: {cwd}\n"
+            f"Audit Log: {BLOCKED_LOG_PATH}\n\n"
+            f"Safety Notice: High-risk destructive commands are prohibited. "
+            f"Use safe alternatives or specify target conditions.\n"
+        )
+        sys.stderr.write(error_msg)
+        # Exit code 2 tells Claude Code tool execution was denied
+        sys.exit(2)
+
+    # Safe command allowed
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
