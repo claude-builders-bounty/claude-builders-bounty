@@ -1,0 +1,274 @@
+{
+  "name": "Weekly GitHub Narrative Summary with Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger-weekly",
+      "name": "Weekly Trigger (Fri 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "REPO_OWNER",
+              "value": "lam534410-hub"
+            },
+            {
+              "name": "REPO_NAME",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/your/webhook/url"
+            },
+            {
+              "name": "SUMMARY_LANG",
+              "value": "EN"
+            },
+            {
+              "name": "MODEL_NAME",
+              "value": "claude-sonnet-4-20250514"
+            }
+          ],
+          "number": [
+            {
+              "name": "LOOKBACK_DAYS",
+              "value": 7
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config-vars",
+      "name": "Set Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.REPO_OWNER }}/{{ $json.REPO_NAME }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus({days: $json.LOOKBACK_DAYS}).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Set Config Variables').item.json.REPO_OWNER }}/{{ $('Set Config Variables').item.json.REPO_NAME }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "per_page",
+              "value": "30"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-github-prs",
+      "name": "Fetch Closed PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Set Config Variables').first().json;\nconst commits = $('Fetch Commits').all().map(i => i.json);\nconst prs = $('Fetch Closed PRs').all().map(i => i.json);\n\nconst mergedPRs = prs.filter(p => p.merged_at != null);\nconst commitMessages = commits.slice(0, 25).map(c => `- ${c.commit?.message?.split('\\n')[0]} (${c.author?.login || 'contributor'})`).join('\\n');\nconst prList = mergedPRs.slice(0, 15).map(p => `- #${p.number}: ${p.title} (@${p.user?.login})`).join('\\n');\n\nconst prompt = `You are an executive engineering manager. Synthesize a crisp, inspiring weekly engineering narrative summary for the GitHub repository ${cfg.REPO_OWNER}/${cfg.REPO_NAME}.\nLanguage requested: ${cfg.SUMMARY_LANG}.\n\nMerged Pull Requests this week (${mergedPRs.length}):\n${prList || 'No PRs merged'}\n\nKey Commits (${commits.length}):\n${commitMessages || 'No commits recorded'}\n\nFormat the summary with:\n1. 🚀 Executive Headline\n2. 🌟 Key Milestones & Features Shipped\n3. 🛠️ Technical Fixes & Improvements\n4. 👥 Contributor Shoutouts`;\n\nreturn [{\n  json: {\n    prompt,\n    repo: `${cfg.REPO_OWNER}/${cfg.REPO_NAME}`,\n    webhook_url: cfg.WEBHOOK_URL,\n    model: cfg.MODEL_NAME,\n    stats: {\n      commits_count: commits.length,\n      merged_prs: mergedPRs.length\n    }\n  }\n}];"
+      },
+      "id": "code-synthesize-payload",
+      "name": "Synthesize Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $json.model }}\",\n  \"max_tokens\": 1500,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "call-claude-api",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Synthesize Claude Prompt').item.json.webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"🗞️ **Weekly Dev Narrative Summary: \" + $('Synthesize Claude Prompt').item.json.repo + \"**\\n\\n\" + $json.content[0].text\n}",
+        "options": {}
+      },
+      "id": "deliver-webhook",
+      "name": "Deliver to Discord / Slack / Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Fri 17:00)": {
+      "main": [
+        [
+          {
+            "node": "Set Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Synthesize Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed PRs": {
+      "main": [
+        [
+          {
+            "node": "Synthesize Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Synthesize Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Deliver to Discord / Slack / Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
