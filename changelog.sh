@@ -57,10 +57,12 @@ categorize() {
   esac
 }
 
+# here-string instead of process substitution: works identically on Git-Bash/MSYS (Windows), where '< <(...)' can silently produce nothing
+commits=$(git log "$RANGE" --no-merges --pretty=format:'%h%x09%s' || true)
 while IFS=$'\t' read -r hash subject; do
   [ -n "$hash" ] || continue
   categorize "$hash" "$subject"
-done < <(git log "$RANGE" --no-merges --pretty=format:'%h%x09%s')
+done <<< "$commits"
 
 section() {
   local title="$1"; shift
