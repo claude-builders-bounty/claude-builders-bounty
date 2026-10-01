@@ -1,0 +1,153 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "node-cron-trigger",
+      "name": "Weekly Trigger (Friday 5 PM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "GITHUB_REPO", "value": "owner/repo" },
+            { "name": "TARGET_CHANNEL", "value": "DISCORD" },
+            { "name": "SUMMARY_LANGUAGE", "value": "EN" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config-vars",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/={{$json.GITHUB_REPO}}/commits?since={{new Date(Date.now() - 7*24*60*60*1000).toISOString()}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "headers": {
+            "User-Agent": "n8n-weekly-dev-summary"
+          }
+        }
+      },
+      "id": "node-fetch-commits",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/={{$json.GITHUB_REPO}}/pulls?state=closed&sort=updated&direction=desc",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "headers": {
+            "User-Agent": "n8n-weekly-dev-summary"
+          }
+        }
+      },
+      "id": "node-fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{$node['Workflow Configuration'].json['ANTHROPIC_API_KEY']}}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1500,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Generate a clear, high-level narrative summary of this week's software engineering achievements and merged features for repository '\" + $node['Workflow Configuration'].json['GITHUB_REPO'] + \"' in \" + $node['Workflow Configuration'].json['SUMMARY_LANGUAGE'] + \" language.\\nCommits: \" + JSON.stringify($node['Fetch Weekly Commits'].json).slice(0, 2000) + \"\\nPRs: \" + JSON.stringify($node['Fetch Merged PRs'].json).slice(0, 2000)\n    }\n  ]\n}"
+      },
+      "id": "node-claude-narrative",
+      "name": "Claude Sonnet Summary Generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node['Workflow Configuration'].json['DISCORD_WEBHOOK_URL']}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"🚀 **Weekly Engineering Digest for \" + $node['Workflow Configuration'].json['GITHUB_REPO'] + \"**\\n\\n\" + $json.content[0].text\n}"
+      },
+      "id": "node-webhook-dispatcher",
+      "name": "Webhook Notification Dispatcher",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1160, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5 PM)": {
+      "main": [
+        [
+          { "node": "Workflow Configuration", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          { "node": "Fetch Weekly Commits", "type": "main", "index": 0 },
+          { "node": "Fetch Merged PRs", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [
+          { "node": "Claude Sonnet Summary Generator", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          { "node": "Claude Sonnet Summary Generator", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Claude Sonnet Summary Generator": {
+      "main": [
+        [
+          { "node": "Webhook Dispatcher", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
