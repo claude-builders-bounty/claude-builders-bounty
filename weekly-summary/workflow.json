@@ -1,0 +1,271 @@
+{
+  "name": "Weekly Claude-builders Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "=https://api.github.com/repos/{{$json[\"owner\"]}}/{{$json[\"repo\"]}}/commits?since={{$json[\"since_date\"]}}",
+        "options": {}
+      },
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        600,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github_token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "=https://api.github.com/repos/{{$json[\"owner\"]}}/{{$json[\"repo\"]}}/issues?state=closed&since={{$json[\"since_date\"]}}",
+        "options": {}
+      },
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        600,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github_token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "=https://api.github.com/repos/{{$json[\"owner\"]}}/{{$json[\"repo\"]}}/pulls?state=closed&sort=updated&direction=desc",
+        "options": {}
+      },
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        600,
+        600
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github_token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const owner = 'claude-builders-bounty';\nconst repo = 'claude-builders-bounty';\nconst today = new Date();\nconst lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn { owner, repo, since_date: lastWeek.toISOString() };"
+      },
+      "name": "Set Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $items(\"Fetch Commits\").map(i => i.json);\nconst issues = $items(\"Fetch Closed Issues\").map(i => i.json);\nconst prs = $items(\"Fetch Merged PRs\").map(i => i.json).filter(pr => pr.merged_at && new Date(pr.merged_at) > new Date($items(\"Set Config\")[0].json.since_date));\n\nconst prompt = `Generate a narrative weekly summary of our GitHub repository based on the following data:\\n\\nCommits:\\n${JSON.stringify(commits)}\\n\\nClosed Issues:\\n${JSON.stringify(issues)}\\n\\nMerged PRs:\\n${JSON.stringify(prs)}\\n\\nPlease write it in an engaging style, highlighting major changes, fixes, and community contributions. Format as Markdown. Ensure the language used matches the user's preference if provided, otherwise default to English.`;\n\nreturn { prompt };"
+      },
+      "name": "Aggregate Data & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$credentials.apiKey}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-3-5-sonnet-20241022"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1000
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": {{$json.prompt}}}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1000,
+        300
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic_api",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "webhookUri": "={{$credentials.webhookUrl}}",
+        "text": "={{$json.content[0].text}}",
+        "options": {}
+      },
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "discord_webhook",
+          "name": "Discord Webhook URL"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data & Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
