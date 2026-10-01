@@ -50,4 +50,16 @@ You're in the right place.
 
 ---
 
+## 🛠️ Skills & Tools
+
+### `/generate-changelog` — structured CHANGELOG from git history
+
+1. Copy `changelog.sh` and `SKILL.md` into your repo root.
+2. Run `bash changelog.sh` (or ask Claude `/generate-changelog`).
+3. Get a categorized `CHANGELOG.md` — Added / Fixed / Changed / Removed — since your last tag.
+
+Works with conventional commits (`feat:`, `fix:`, ...) and plain-English subjects. No dependencies beyond `git`.
+
+---
+
 *Started by the Claude builder community · March 2026 · MIT License*
