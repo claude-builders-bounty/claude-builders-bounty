@@ -1,53 +1,27 @@
-# Claude Builders Bounty 🤖
+# Claude Code Safe Bash Hook
 
-> A community bounty board for Claude Code builders.
+This is a `pre-tool-use` hook for Claude Code that prevents the agent from accidentally executing destructive bash or SQL commands. 
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+It intercepts the input to tools like `Bash` or `run_command` and applies regex rules to block:
+- `rm -rf`
+- `DROP TABLE`
+- `git push --force`
+- `TRUNCATE`
+- `DELETE FROM` (without a `WHERE` clause)
 
----
+If a command is blocked, the hook rejects the tool call and logs the attempt (with timestamp, project path, and attempted command) to `~/.claude/hooks/blocked.log`.
 
-## How it works
+## Installation (1 Command)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+Just create the hooks directory and copy the script into place, making it executable:
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+```bash
+mkdir -p ~/.claude/hooks && curl -sSL https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/pre-tool-use.py > ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+```
 
----
+## Requirements
+- Python 3+ 
+- Claude Code (`@anthropic-ai/claude-code`)
 
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+## How it Works
+When Claude attempts to run a bash tool, this script is invoked automatically. The script reads the JSON tool payload from `STDIN`. If the payload contains a `command` or `script` key that matches a destructive pattern, the hook exits with status `1` and prints an error message, which Claude sees and aborts the execution. Safe commands exit with status `0` and run normally.
