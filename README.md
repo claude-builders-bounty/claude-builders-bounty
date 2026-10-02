@@ -43,6 +43,21 @@ You're in the right place.
 
 ---
 
+## Skills & Tools
+
+### Changelog Generator (`changelog.sh` / `SKILL.md`)
+
+Generate structured, Keep-a-Changelog compliant `CHANGELOG.md` directly from Git history.
+
+#### Setup in 3 Steps:
+1. **Make executable**: `chmod +x changelog.sh`
+2. **Run generator**: `bash changelog.sh` (or invoke via Claude Code `/generate-changelog`)
+3. **Inspect output**: `cat CHANGELOG.md`
+
+See [`changelog-generator/README.md`](changelog-generator/README.md) for advanced options (`--since`, `--all`, `--version`, `--output`).
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
