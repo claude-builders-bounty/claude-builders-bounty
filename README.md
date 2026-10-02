@@ -50,4 +50,10 @@ You're in the right place.
 
 ---
 
+## Installation
+
+```bash
+mkdir -p ~/.claude/hooks && curl -s https://raw.githubusercontent.com/claude-builders-bounty/claude-builders-bounty/main/.claude/hooks/pre-tool-use -o ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+```
+
 *Started by the Claude builder community · March 2026 · MIT License*
