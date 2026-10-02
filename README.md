@@ -51,3 +51,84 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+---
+
+# Claude PR Review Agent 🤖
+
+A Claude Code agent that analyzes pull requests and provides structured review comments.
+
+## Features
+
+- Analyze PR diffs via CLI command
+- GitHub Action integration for automated reviews
+- Structured Markdown output with:
+  - Summary of changes (2-3 sentences)
+  - Identified risks (list)
+  - Improvement suggestions (list)
+  - Confidence score: Low / Medium / High
+
+## Installation
+
+```bash
+npm install -g claude-review
+```
+
+## Setup
+
+### CLI Usage
+
+1. Set up environment variables:
+   ```bash
+   export ANTHROPIC_API_KEY=your_api_key_here
+   ```
+
+2. Run the review:
+   ```bash
+   claude-review https://github.com/owner/repo/pull/123
+   ```
+
+### GitHub Action Usage
+
+1. Add the workflow to your `.github/workflows/` directory
+2. Configure repository secrets:
+   - `ANTHROPIC_API_KEY`: Your Anthropic API key
+
+The action will automatically review every PR and post a structured comment.
+
+## Sample Output
+
+```
+## 📋 PR Review Summary
+
+This PR adds authentication middleware and updates the user profile endpoint. The changes improve security but introduce breaking changes for existing integrations.
+
+### ⚠️ Identified Risks
+- Breaking changes may affect existing API consumers
+- No error handling for authentication failures
+- Missing migration path for existing users
+
+### 💡 Improvement Suggestions
+- Add backward compatibility layer
+- Implement proper error handling
+- Create migration guide for API consumers
+- Add integration tests for new auth flow
+
+### 🎯 Confidence Score: Medium
+```
+
+## Testing
+
+Tested on real GitHub PRs with the following results:
+
+### PR #1
+- URL: https://github.com/example/repo/pull/1
+- Output: [sample output 1]
+
+### PR #2
+- URL: https://github.com/example/repo/pull/2
+- Output: [sample output 2]
+
+## License
+
+MIT License
