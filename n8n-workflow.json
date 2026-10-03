@@ -1,0 +1,296 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude + n8n)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cron",
+              "cronExpression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1.1,
+      "position": [-240, 0],
+      "id": "cron-trigger",
+      "name": "Cron"
+    },
+    {
+      "parameters": {
+        "operation": "listCommits",
+        "repo": "={{ $json.repo }}",
+        "branch": "main",
+        "limit": 50
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 2,
+      "position": [-20, 0],
+      "id": "github-commits",
+      "name": "Get Commits",
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "listIssues",
+        "status": "closed",
+        "repo": "={{ $json.repo }}",
+        "limit": 30
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 2,
+      "position": [200, -120],
+      "id": "github-issues",
+      "name": "Get Closed Issues",
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "listPullRequests",
+        "state": "closed",
+        "repo": "={{ $json.repo }}",
+        "limit": 30
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 2,
+      "id": "github-prs",
+      "name": "Get Merged PRs",
+      "credentials": {
+        "githubApi": {
+          "id": "github-creds",
+          "name": "GitHub Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter items from the past week\nconst now = new Date();\nconst weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nconst repo = $input.first().json.repo || \"owner/repo\";\nconst lang = $input.first().json.lang || \"EN\";\n\n// Helper to parse dates from GitHub response\nfunction getDates(items) {\n  return (items || []).map(item => {\n    const date = item.commit?.commit?.author?.date || item.merged_at || item.closed_at || item.created_at;\n    return date ? new Date(date) : null;\n  }).filter(d => d && d >= weekAgo);\n}\n\n// Commits\nconst commits = getDates($node[\"Get Commits\"].json.data || []);\n// Issues\nconst issues = getDates($node[\"Get Closed Issues\"].json.data || []);\n// PRs\nconst prs = getDates($input.all().map(n => n.json.data || []).flat() || []);\n\nconst summary = {\n  repo,\n  lang,\n  weekStart: weekAgo.toISOString().split('T')[0],\n  weekEnd: now.toISOString().split('T')[0],\n  commitCount: commits.length,\n  issueCount: issues.length,\n  prCount: prs.length,\n  commits: (commits || []).slice(0, 10).map(c => c.message || c.commit?.message || 'no message'),\n  issues: (issues || []).slice(0, 10).map(i => i.title || 'no title'),\n  prs: (prs || []).slice(0, 10).map(p => p.title || 'no title')\n};\n\nreturn [{ json: summary }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 0],
+      "id": "code-aggregate",
+      "name": "Aggregate Data"
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "maxTokens": 2000,
+        "messages": [
+          {
+            "role": "user",
+            "content": "={{\n`Generate a weekly development summary for the repo: {{ $json.repo }} (week: {{ $json.weekStart }} to {{ $json.weekEnd }}).\n\nLanguage: {{ $json.lang }} (EN or FR)\n\nStats:\n- Commits this week: {{ $json.commitCount }}\n- Closed issues: {{ $json.issueCount }}\n- Merged PRs: {{ $json.prCount }}\n\nRecent commits:\n{{ $json.commits.join('\\n') }}\n\nClosed issues:\n{{ $json.issues.join('\\n') }}\n\nMerged PRs:\n{{ $json.prs.join('\\n') }}\n\nWrite a professional, engaging narrative summary in the requested language. Include highlights, trends, and key achievements. Keep it concise but informative. Output ONLY the summary text, no headings.`\n"}}
+        ]
+      },
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [900, 0],
+      "id": "claude-summarize",
+      "name": "Claude Summary",
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-creds",
+          "name": "Anthropic Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contentType": "text/plain",
+        "url": "={{ $json.webhookUrl }}",
+        "bodyParameters": [
+          {
+            "name": "text",
+            "value": "={{ $json.summary }}"
+          }
+        ],
+        "options": {
+          "json": false
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1260, 0],
+      "id": "http-webhook",
+      "name": "Send to Webhook"
+    },
+    {
+      "parameters": {
+        "fieldToSplitInput": "json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [-620, 0],
+      "id": "split-params",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "mode": "merge.manual",
+        "conjunction": "first only",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [180, 180],
+      "id": "merge-data",
+      "name": "Merge Data"
+    },
+    {
+      "parameters": {
+        "content": "### 📊 Weekly GitHub Dev Summary\n\nThis workflow automatically fetches GitHub activity and generates an AI-powered weekly summary using Claude.\n\n---\n\n## 🔧 Setup Instructions\n\n### Step 1: Deploy n8n\nRun n8n locally or deploy to a server:\n```bash\nnpx n8n start\n```\nor use Docker:\n```bash\ndocker run -it --rm --name n8n -p 5678:5678 -v ~/.n8n:/home/node/.n8n n8nio/n8n\n```\n\n### Step 2: Import Workflow\nIn n8n editor, click **Menu → Import from File** and select `n8n-workflow.json`.\n\n### Step 3: Configure Credentials\n1. Go to **Settings → Credentials**\n2. Add a **GitHub API** credential with your Personal Access Token (scope: `repo`)\n3. Add an **Anthropic API** credential with your API key\n\n### Step 4: Set Workflow Parameters\nClick the **Cron** node, then edit defaults:\n- `repo` → your GitHub repo (e.g., `owner/repo-name`)\n- `lang` → `EN` or `FR`\n- `webhookUrl` → your Slack/Discord incoming webhook URL\n\n### Step 5: Test\nToggle the workflow ON and click **Execute Workflow** to run a test. Check your channel for the summary.\n\n---\n\n## 📦 What's Included\n\n- Weekly cron trigger (Fridays at 5 PM)\n- GitHub API calls for commits, issues, PRs\n- Claude API summarization\n- Webhook delivery (Slack/Discord compatible)\n\n---\n\n## 🔄 Customization\n\nTo change delivery method, replace the **Send to Webhook** node with:\n- **Slack**: Use `Slack` node with incoming webhook\n- **Discord**: Use `Discord` node with webhook\n- **Email**: Use `Gmail` or `SMTP` node\n\n---\n\n*Built with n8n + Claude API*"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-620, 280],
+      "id": "sticky-instructions",
+      "name": "Instructions Note"
+    }
+  ],
+  "connections": {
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Get Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Commits": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data": {
+      "main": [
+        [
+          {
+            "node": "Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Send to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "github",
+      "color": "#0089FF",
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "updatedAt": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "claude",
+      "color": "#7B68EE",
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "updatedAt": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "weekly-summary",
+      "color": "#28A745",
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "updatedAt": "2025-01-01T00:00:00.000Z"
+    }
+  ],
+  "versionId": "workflow-v1",
+  "meta": {
+    "instanceId": "n8n-workflow-generated"
+  },
+  "id": "weekly-github-dev-summary",
+  "active": false,
+  "updatedAt": "2025-01-15T12:00:00.000Z",
+  "createdAt": "2025-01-15T12:00:00.000Z"
+}
