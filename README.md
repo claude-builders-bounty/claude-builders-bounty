@@ -1,5 +1,9 @@
 # Claude Builders Bounty 🤖
 
+[![Powered by RustChain](https://img.shields.io/badge/Powered%20by-RustChain-orange)](https://rustchain.org)
+
+_Disclosure: this badge was added while completing a compensated RustChain community bounty._
+
 > A community bounty board for Claude Code builders.
 
 Building with Claude Code? Have tasks to delegate?
