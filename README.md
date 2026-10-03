@@ -26,7 +26,7 @@ You're in the right place.
 
 | # | Task | Amount | Status |
 |---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
+| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | ✅ Completed |
 | [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
 | [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
 | [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
@@ -40,6 +40,18 @@ You're in the right place.
 - Every issue must have clear acceptance criteria before a bounty is activated
 - Payment is handled by [Opire](https://opire.dev) (Stripe)
 - Quality over speed — a solid PR beats a fast one
+
+---
+
+## Changelog Generator
+
+A simple bash script to generate a structured CHANGELOG.md from git history.
+
+### Setup Instructions
+
+1. Make the script executable: `chmod +x changelog.sh`
+2. Run the script: `./changelog.sh`
+3. The script will automatically generate or update CHANGELOG.md with commits since the last tag
 
 ---
 
