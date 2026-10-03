@@ -1,53 +1,62 @@
-# Claude Builders Bounty 🤖
+# n8n + Claude Weekly Dev Summary
 
-> A community bounty board for Claude Code builders.
+Automated weekly GitHub activity summary using n8n workflow and Claude API.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Start (5 Steps)
 
----
+### 1. Deploy n8n
+```bash
+docker run -it --rm --name n8n -p 5678:5678 -v ~/.n8n:/home/node/.n8n n8nio/n8n
+```
 
-## How it works
+### 2. Import Workflow
+Import `n8n-workflow.json` via **Menu → Import from File**.
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+### 3. Configure Credentials
+Add credentials in **Settings → Credentials**:
+- **GitHub API**: Personal Access Token (scope: `repo`)
+- **Anthropic API**: Your API key
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+### 4. Set Parameters
+Click the **Cron** node and set:
+- `repo`: Your GitHub repo (e.g., `owner/repo-name`)
+- `lang`: `EN` or `FR`
+- `webhookUrl`: Slack/Discord incoming webhook URL
 
----
+### 5. Test
+Toggle workflow ON → **Execute Workflow**. Check your channel.
 
-## Active Bounties
+## How It Works
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```
+Cron (Friday 5pm) → GitHub API (commits/issues/PRs)
+                 → Claude API (generate summary)
+                 → Webhook (Slack/Discord)
+```
 
----
+## Configurable Variables
 
-## Rules
+| Variable   | Description           | Example            |
+|------------|-----------------------|--------------------|
+| `repo`     | GitHub repository     | `owner/my-project` |
+| `lang`     | Summary language      | `EN` or `FR`       |
+| `webhookUrl` | Delivery webhook    | `https://hooks.slack.com/...` |
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Delivery Options
 
----
+- **Slack**: Use Slack Incoming Webhook URL
+- **Discord**: Use Discord Webhook URL
+- **Email**: Replace webhook node with Gmail/SMTP node
 
-## Community
+## Requirements
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+- n8n v1.0+
+- GitHub Personal Access Token
+- Anthropic API Key
+- Active webhook endpoint (Slack/Discord)
 
----
+## Notes
 
-*Started by the Claude builder community · March 2026 · MIT License*
+- Workflow runs every Friday at 5:00 PM
+- Fetches activity from the past 7 days
+- Claude model: `claude-sonnet-4-20250514`
