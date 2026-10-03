@@ -50,4 +50,12 @@ You're in the right place.
 
 ---
 
+## Weekly Dev Summary Workflow Setup
+
+1. **Import workflow**: Import `weekly-dev-summary.json` into your n8n instance
+2. **Configure credentials**: Add GitHub token and Claude API key to your n8n credentials
+3. **Set variables**: Configure GitHub repo, destination email, and language (EN/FR) in workflow settings
+4. **Test workflow**: Run manually to verify it fetches data and sends email
+5. **Activate schedule**: Set the cron trigger to run weekly (currently configured for Friday at 5pm EST)
+
 *Started by the Claude builder community · March 2026 · MIT License*
