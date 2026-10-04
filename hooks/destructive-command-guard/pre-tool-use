@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""
+Claude Code PreToolUse Hook: Destructive Command Guard
+Intercepts and blocks dangerous bash commands before execution in Claude Code.
+Bounty: https://github.com/claude-builders-bounty/claude-builders-bounty/issues/3
+"""
+
+import sys
+import os
+import json
+import re
+from datetime import datetime, timezone
+
+BLOCKED_LOG_PATH = os.getenv("BLOCKED_LOG_PATH", os.path.expanduser("~/.claude/hooks/blocked.log"))
+
+def parse_input(raw_text: str):
+    cmd = None
+    cwd = os.getcwd()
+    if raw_text and raw_text.strip():
+        try:
+            data = json.loads(raw_text)
+            cwd = data.get("cwd") or data.get("project_path") or os.getcwd()
+            tool = data.get("tool") or data.get("tool_name") or ""
+            tool_input = data.get("tool_input") or {}
+            if isinstance(tool_input, dict):
+                cmd = tool_input.get("command") or tool_input.get("cmd")
+            elif isinstance(tool_input, str):
+                cmd = tool_input
+        except Exception:
+            cmd = raw_text.strip()
+
+    if not cmd and len(sys.argv) > 1:
+        cmd = " ".join(sys.argv[1:])
+    return cmd, cwd
+
+def split_subcommands(command: str):
+    parts = []
+    current = []
+    in_single = False
+    in_double = False
+    escape = False
+    i = 0
+    n = len(command)
+    while i < n:
+        c = command[i]
+        if escape:
+            current.append(c)
+            escape = False
+            i += 1
+            continue
+        if c == '\\':
+            escape = True
+            current.append(c)
+            i += 1
+            continue
+        if c == "'" and not in_double:
+            in_single = not in_single
+            current.append(c)
+            i += 1
+            continue
+        if c == '"' and not in_single:
+            in_double = not in_double
+            current.append(c)
+            i += 1
+            continue
+        if not in_single and not in_double:
+            if c == ';':
+                parts.append("".join(current))
+                current = []
+                i += 1
+                continue
+            elif c == '|':
+                if i + 1 < n and command[i+1] == '|':
+                    parts.append("".join(current))
+                    current = []
+                    i += 2
+                    continue
+                else:
+                    parts.append("".join(current))
+                    current = []
+                    i += 1
+                    continue
+            elif c == '&':
+                if i + 1 < n and command[i+1] == '&':
+                    parts.append("".join(current))
+                    current = []
+                    i += 2
+                    continue
+        current.append(c)
+        i += 1
+    if current:
+        parts.append("".join(current))
+    return [p.strip() for p in parts if p.strip()]
+
+def check_destructive(command: str):
+    if not command:
+        return False, None
+    subcmds = split_subcommands(command)
+    for subcmd in subcmds:
+        if re.match(r"^(echo|printf)\s+", subcmd) or subcmd.startswith("#"):
+            continue
+        bash_match = re.match(r"^bash\s+-c\s+(['\"])(.*?)\1$", subcmd, re.IGNORECASE | re.DOTALL)
+        if bash_match:
+            inner = bash_match.group(2)
+            inner_blocked, inner_reason = check_destructive(inner)
+            if inner_blocked:
+                return True, inner_reason
+        clean = re.sub(r"\s+", " ", subcmd).strip()
+        if re.search(r"\brm\s+.*?(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*|-r\s+-f|-f\s+-r|--recursive\s+--force|--force\s+--recursive)", clean, re.IGNORECASE):
+            return True, "Destructive recursive file deletion (rm -rf)"
+        drop_pattern = re.compile(r"\bDROP\s+TABLE\b", re.IGNORECASE)
+        if drop_pattern.search(clean):
+            return True, "Destructive SQL operation (DROP TABLE)"
+        git_force_pattern = re.compile(r"\bgit\s+push\b.*?(?:\s|^)(--force|-f|--force-with-lease)\b", re.IGNORECASE)
+        if git_force_pattern.search(clean):
+            return True, "Destructive remote git push (history overwrite)"
+        truncate_pattern = re.compile(r"\bTRUNCATE\s+(TABLE\s+)?[a-zA-Z0-9_`\"\[\]]+", re.IGNORECASE)
+        if truncate_pattern.search(clean):
+            return True, "Destructive SQL table purge (TRUNCATE)"
+        del_pattern = re.compile(r"\bDELETE\s+FROM\s+[a-zA-Z0-9_`\"\[\].]+", re.IGNORECASE)
+        for m in del_pattern.finditer(clean):
+            stmt = clean[m.start():].split(";")[0]
+            if not re.search(r"\bWHERE\b", stmt, re.IGNORECASE):
+                return True, "Unbounded SQL table wipe (DELETE FROM without WHERE clause)"
+    return False, None
+
+def log_blocked_attempt(cmd: str, cwd: str, reason: str):
+    try:
+        os.makedirs(os.path.dirname(BLOCKED_LOG_PATH), exist_ok=True)
+        ts = datetime.now(timezone.utc).isoformat()
+        with open(BLOCKED_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] [BLOCKED] cwd={cwd} | reason={reason} | command={cmd}\n")
+    except Exception as e:
+        sys.stderr.write(f"[Guard Warning] Failed writing to {BLOCKED_LOG_PATH}: {e}\n")
+
+def main():
+    raw_input = sys.stdin.read().strip() if not sys.stdin.isatty() else ""
+    cmd, cwd = parse_input(raw_input)
+    if not cmd:
+        sys.exit(0)
+    is_blocked, reason = check_destructive(cmd)
+    if is_blocked:
+        log_blocked_attempt(cmd, cwd, reason)
+        error_msg = (
+            f"\n[SECURITY GUARD] Command Execution Blocked by Policy\n"
+            f"Reason: {reason}\n"
+            f"Command: {cmd}\n"
+            f"Project: {cwd}\n"
+            f"Audit Log: {BLOCKED_LOG_PATH}\n\n"
+            f"Safety Notice: High-risk destructive commands are prohibited. "
+            f"Use safe alternatives or specify target conditions.\n"
+        )
+        sys.stderr.write(error_msg)
+        sys.exit(2)
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
