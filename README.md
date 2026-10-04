@@ -43,6 +43,20 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+Create a structured `CHANGELOG.md` from real commits with no extra dependencies:
+
+```bash
+# Use the latest reachable tag as the starting point
+bash changelog.sh --repo /path/to/project --output /path/to/project/CHANGELOG.md
+
+# Or choose an explicit starting ref and print to stdout
+bash changelog.sh --repo /path/to/project --since v1.2.0 --output -
+```
+
+The script groups conventional commit subjects into Added, Fixed, Changed, and Removed sections, preserves short commit hashes for review, and emits `- None` for empty sections. A Claude Code entrypoint is available at [`skills/generate-changelog/SKILL.md`](skills/generate-changelog/SKILL.md). See [`examples/sample-changelog.md`](examples/sample-changelog.md) for the output shape.
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
