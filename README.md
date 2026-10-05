@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Implemented Agents & Tools
+
+* **[PR Reviewer Agent](agents/pr-reviewer/)** (Closes [#4](../../issues/4)): Claude Code sub-agent & GitHub Action for automated PR reviews with structured risk identification and improvement suggestions.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
