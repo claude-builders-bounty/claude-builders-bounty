@@ -1,0 +1,363 @@
+{
+  "name": "Automated Weekly Dev Summary (GitHub + Claude API)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "Weekly Schedule (Friday 5 PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repo_owner",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "repo_name",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "language",
+              "value": "EN"
+            },
+            {
+              "name": "claude_model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "destination_webhook_url",
+              "value": "https://discord.com/api/webhooks/replace_with_your_webhook"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "name": "Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn {\n  ...$input.first().json,\n  since_iso: oneWeekAgo.toISOString(),\n  start_date: oneWeekAgo.toISOString().split('T')[0],\n  end_date: now.toISOString().split('T')[0]\n};"
+      },
+      "id": "33333333-3333-4333-8333-333333333333",
+      "name": "Calculate Date Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since_iso }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "44444444-4444-4444-8444-444444444444",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Calculate Date Window').first().json.repo_owner }}/{{ $('Calculate Date Window').first().json.repo_name }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $('Calculate Date Window').first().json.since_iso }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55555555-5555-4555-8555-555555555555",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Calculate Date Window').first().json.repo_owner }}/{{ $('Calculate Date Window').first().json.repo_name }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "66666666-6666-4666-8666-666666666666",
+      "name": "Fetch Closed & Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Calculate Date Window').first().json;\n\n// 1. Process Commits\nconst rawCommits = $('Fetch Commits').all().map(i => i.json);\nconst commits = rawCommits.map(c => ({\n  author: c.commit?.author?.name || c.author?.login || 'contributor',\n  message: (c.commit?.message || '').split('\\n')[0],\n  sha: (c.sha || '').substring(0, 7)\n}));\n\n// 2. Process Issues (filter out PRs which GitHub API returns in issues endpoint)\nconst rawIssues = $('Fetch Closed Issues').all().map(i => i.json);\nconst closedIssues = rawIssues\n  .filter(i => !i.pull_request)\n  .map(i => ({\n    number: i.number,\n    title: i.title,\n    closed_at: i.closed_at\n  }));\n\n// 3. Process Merged PRs\nconst sinceDate = new Date(config.since_iso);\nconst rawPRs = $('Fetch Closed & Merged PRs').all().map(i => i.json);\nconst mergedPRs = rawPRs\n  .filter(p => p.merged_at && new Date(p.merged_at) >= sinceDate)\n  .map(p => ({\n    number: p.number,\n    title: p.title,\n    author: p.user?.login || 'contributor'\n  }));\n\n// Unique contributors\nconst contributors = Array.from(new Set(commits.map(c => c.author)));\n\nreturn {\n  repo: `${config.repo_owner}/${config.repo_name}`,\n  language: config.language,\n  start_date: config.start_date,\n  end_date: config.end_date,\n  claude_model: config.claude_model,\n  destination_webhook_url: config.destination_webhook_url,\n  metrics: {\n    commits_count: commits.length,\n    contributors_count: contributors.length,\n    closed_issues_count: closedIssues.length,\n    merged_prs_count: mergedPRs.length\n  },\n  commits: commits.slice(0, 30),\n  closed_issues: closedIssues.slice(0, 20),\n  merged_prs: mergedPRs.slice(0, 20)\n};"
+      },
+      "id": "77777777-7777-4777-8777-777777777777",
+      "name": "Aggregate & Format Repo Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $json.claude_model }}\",\n  \"max_tokens\": 2000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a technical engineering lead writing an executive weekly dev update.\\\\n\\\\nGenerate an engaging, structured weekly narrative summary for the GitHub repository '{{ $json.repo }}' covering activity from {{ $json.start_date }} to {{ $json.end_date }}.\\\\n\\\\nTarget Language: {{ $json.language == 'FR' ? 'French' : 'English' }}\\\\n\\\\nActivity Data:\\\\n- Commits: {{ $json.metrics.commits_count }} by {{ $json.metrics.contributors_count }} contributor(s)\\\\n- Merged PRs ({{ $json.metrics.merged_prs_count }}): {{ JSON.stringify($json.merged_prs) }}\\\\n- Closed Issues ({{ $json.metrics.closed_issues_count }}): {{ JSON.stringify($json.closed_issues) }}\\\\n- Sample Commits: {{ JSON.stringify($json.commits) }}\\\\n\\\\nFormat Requirements in Markdown:\\\\n1. # 🚀 Weekly Engineering Pulse ({{ $json.start_date }} to {{ $json.end_date }})\\\\n2. ## 🌟 Executive Narrative (2-3 compelling paragraphs detailing the narrative arc of the week's development, key engineering milestones, and team momentum)\\\\n3. ## 📦 Key Features & PRs Merged (Categorized bullet points with PR numbers and author mentions)\\\\n4. ## 🐛 Issues Resolved (Highlights of bug fixes and stability improvements)\\\\n5. ## 👥 Team & Community Shoutouts (Recognizing top contributors)\\\\n6. ## 🎯 Focus for Next Week\\\\n\\\\nKeep the tone professional, motivating, and data-backed.\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "88888888-8888-4888-8888-888888888888",
+      "name": "Claude API (Generate Narrative Summary)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Aggregate & Format Repo Activity').first().json.destination_webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": {{ JSON.stringify($json.content[0].text) }},\n  \"text\": {{ JSON.stringify($json.content[0].text) }}\n}",
+        "options": {}
+      },
+      "id": "99999999-9999-4999-8999-999999999999",
+      "name": "Deliver via Webhook (Discord / Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5 PM)": {
+      "main": [
+        [
+          {
+            "node": "Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Window": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed & Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Format Repo Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate & Format Repo Activity": {
+      "main": [
+        [
+          {
+            "node": "Claude API (Generate Narrative Summary)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API (Generate Narrative Summary)": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Webhook (Discord / Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
