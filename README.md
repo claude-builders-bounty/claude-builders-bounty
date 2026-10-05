@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Implemented Workflows & Tools
+
+* **[n8n Weekly Dev Summary Workflow](workflows/n8n-dev-summary/)** (Closes [#5](../../issues/5)): Automated n8n workflow integrating GitHub API and Claude API to generate weekly narrative dev summaries with Discord/Slack webhooks.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
