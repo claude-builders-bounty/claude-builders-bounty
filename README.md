@@ -34,7 +34,13 @@ You're in the right place.
 
 ---
 
-## Rules
+## Changelog generator
+
+Run `bash changelog.sh` (or `python changelog.py` on Windows) to generate a
+structured changelog from local Git history. See [setup and behavior](CHANGELOG_GENERATOR.md)
+and the [public-repository example](examples/README.md).
+
+## Bounty rules
 
 - Tasks must be related to Claude Code or AI tooling
 - Every issue must have clear acceptance criteria before a bounty is activated
