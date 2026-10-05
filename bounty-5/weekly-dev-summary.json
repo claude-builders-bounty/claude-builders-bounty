@@ -1,0 +1,375 @@
+{
+  "name": "Weekly GitHub Dev Summary — Claude + Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "1ab6a93f-80f4-4a4f-aee3-f0b8942104d1",
+      "name": "Friday 17:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -980,
+        -120
+      ],
+      "notes": "Runs every Friday at 17:00 in the workflow timezone."
+    },
+    {
+      "parameters": {},
+      "id": "2a0e5416-6f62-45a0-8344-02f3bcdbfa55",
+      "name": "Manual Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -980,
+        120
+      ],
+      "notes": "Run manually after import to validate credentials and delivery."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "476bdac1-7c81-4566-b95b-1a6e6059e52e",
+              "name": "githubRepo",
+              "value": "n8n-io/n8n",
+              "type": "string"
+            },
+            {
+              "id": "a103c4fa-ff0e-4254-8865-793a9d229777",
+              "name": "slackWebhookUrl",
+              "value": "https://hooks.slack.com/services/REPLACE/ME",
+              "type": "string"
+            },
+            {
+              "id": "f0864b18-db73-4a47-aa3d-cd641208bcf7",
+              "name": "language",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "586ca8f2-7e70-4cff-a7a0-e6c5b256edd7",
+              "name": "claudeModel",
+              "value": "claude-sonnet-5",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1cb1c998-78fc-4db1-9322-63cc00f9a297",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -720,
+        0
+      ],
+      "notes": "Required configurable variables: owner/repo, Slack destination webhook, and EN/FR language."
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $input.first().json;\nconst githubRepo = String(cfg.githubRepo || '').trim();\nif (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\\/[A-Za-z0-9_.-]{1,100}$/.test(githubRepo)) {\n  throw new Error('Config.githubRepo must be owner/repo');\n}\nconst [owner, repo] = githubRepo.split('/');\nconst language = String(cfg.language || 'EN').toUpperCase();\nif (!['EN', 'FR'].includes(language)) throw new Error('Config.language must be EN or FR');\nconst until = new Date();\nconst since = new Date(until.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn [{ json: { ...cfg, githubRepo, language, owner, repo, since: since.toISOString(), until: until.toISOString() } }];\n"
+      },
+      "id": "744ecb25-e1da-4b89-9d93-637dd5a09b9c",
+      "name": "Build 7-Day Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/graphql",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-dev-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  query: \"query WeeklyActivity($owner: String!, $repo: String!, $since: GitTimestamp!, $until: GitTimestamp!, $issueQuery: String!, $prQuery: String!, $commitCursor: String, $issueCursor: String, $prCursor: String, $skipCommits: Boolean!, $skipIssues: Boolean!, $skipPrs: Boolean!) {\\n  repository(owner: $owner, name: $repo) {\\n    defaultBranchRef { target { ... on Commit {\\n      history(first: 100, since: $since, until: $until, after: $commitCursor) @skip(if: $skipCommits) {\\n        nodes { oid messageHeadline committedDate url author { name user { login } } }\\n        pageInfo { endCursor hasNextPage }\\n      }\\n    } } }\\n  }\\n  closedIssues: search(query: $issueQuery, type: ISSUE, first: 100, after: $issueCursor) @skip(if: $skipIssues) {\\n    issueCount pageInfo { endCursor hasNextPage }\\n    nodes { ... on Issue { number title url closedAt author { login } } }\\n  }\\n  mergedPullRequests: search(query: $prQuery, type: ISSUE, first: 100, after: $prCursor) @skip(if: $skipPrs) {\\n    issueCount pageInfo { endCursor hasNextPage }\\n    nodes { ... on PullRequest { number title url mergedAt author { login } } }\\n  }\\n}\",\n  variables: {\n    owner: $json.owner, repo: $json.repo, since: $json.since, until: $json.until,\n    issueQuery: `repo:${$json.githubRepo} is:issue is:closed closed:${$json.since}..${$json.until}`,\n    prQuery: `repo:${$json.githubRepo} is:pr is:merged merged:${$json.since}..${$json.until}`,\n    commitCursor: null, issueCursor: null, prCursor: null,\n    skipCommits: false, skipIssues: false, skipPrs: false\n  }\n}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "body",
+                    "name": "variables",
+                    "value": "={{ (() => {\n  const v = $request.body.variables;\n  const d = $response.body.data || {};\n  const commits = d.repository?.defaultBranchRef?.target?.history?.pageInfo;\n  const issues = d.closedIssues?.pageInfo;\n  const prs = d.mergedPullRequests?.pageInfo;\n  return { ...v,\n    commitCursor: commits?.endCursor ?? v.commitCursor,\n    issueCursor: issues?.endCursor ?? v.issueCursor,\n    prCursor: prs?.endCursor ?? v.prCursor,\n    skipCommits: v.skipCommits || !commits?.hasNextPage,\n    skipIssues: v.skipIssues || !issues?.hasNextPage,\n    skipPrs: v.skipPrs || !prs?.hasNextPage\n  };\n})() }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ Boolean($response.body.errors?.length) || ![$response.body.data?.repository?.defaultBranchRef?.target?.history, $response.body.data?.closedIssues, $response.body.data?.mergedPullRequests].some(c => c?.pageInfo?.hasNextPage) }}",
+              "limitPagesFetched": true,
+              "maxRequests": 100,
+              "requestInterval": 250
+            }
+          }
+        }
+      },
+      "id": "71a36291-2f8f-490c-9f80-c20e997eaf9f",
+      "name": "Fetch GitHub Weekly Activity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -220,
+        0
+      ],
+      "notes": "Uses GITHUB_TOKEN from the n8n process environment."
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Build 7-Day Window').first().json;\nconst sinceMs = Date.parse(cfg.since), untilMs = Date.parse(cfg.until);\nconst commitsById = new Map(), issuesById = new Map(), prsById = new Map();\nconst pages = $input.all();\nfor (const { json: body } of pages) {\n  if (body.errors?.length) throw new Error(`GitHub GraphQL: ${body.errors.map(e => e.message).join('; ')}`);\n  const d = body.data;\n  if (!d?.repository) throw new Error('GitHub repository was not found or is not accessible');\n  if (d.closedIssues?.issueCount > 1000 || d.mergedPullRequests?.issueCount > 1000) {\n    throw new Error('GitHub search exceeds its 1000-result limit; refusing an incomplete summary');\n  }\n  for (const c of d.repository.defaultBranchRef?.target?.history?.nodes ?? []) commitsById.set(c.oid, c);\n  for (const i of d.closedIssues?.nodes ?? []) if (i.number) issuesById.set(i.number, i);\n  for (const pr of d.mergedPullRequests?.nodes ?? []) if (pr.number) prsById.set(pr.number, pr);\n}\nconst last = pages.at(-1)?.json.data;\nif ([last?.repository?.defaultBranchRef?.target?.history, last?.closedIssues, last?.mergedPullRequests].some(c => c?.pageInfo?.hasNextPage)) {\n  throw new Error('GitHub pagination did not complete; refusing an incomplete summary');\n}\nconst inWindow = value => Number.isFinite(Date.parse(value)) && Date.parse(value) >= sinceMs && Date.parse(value) <= untilMs;\nconst commits = [...commitsById.values()].filter(x => inWindow(x.committedDate));\nconst closedIssues = [...issuesById.values()].filter(x => inWindow(x.closedAt));\nconst mergedPullRequests = [...prsById.values()].filter(x => inWindow(x.mergedAt));\n\nconst author = (x) => x?.author?.login || x?.author?.user?.login || x?.author?.name || 'unknown';\n\nconst activity = {\n  repository: cfg.githubRepo,\n  since: cfg.since,\n  until: cfg.until,\n  commits: commits.map(x => ({ sha: x.oid.slice(0, 8), title: x.messageHeadline, author: author(x), committedAt: x.committedDate, url: x.url })),\n  closedIssues: closedIssues.map(x => ({ number: x.number, title: x.title, author: author(x), closedAt: x.closedAt, url: x.url })),\n  mergedPullRequests: mergedPullRequests.map(x => ({ number: x.number, title: x.title, author: author(x), mergedAt: x.mergedAt, url: x.url })),\n};\n\nconst languageInstruction = cfg.language === 'FR'\n  ? 'Écris le résumé final en français naturel et professionnel.'\n  : 'Write the final summary in natural, professional English.';\n\nconst commitsText = activity.commits.length ? activity.commits.map(x => `- ${x.sha}: ${x.title} — ${x.author}`).join('\\n') : '- None';\nconst issuesText = activity.closedIssues.length ? activity.closedIssues.map(x => `- #${x.number}: ${x.title} — ${x.author}`).join('\\n') : '- None';\nconst prsText = activity.mergedPullRequests.length ? activity.mergedPullRequests.map(x => `- #${x.number}: ${x.title} — ${x.author}`).join('\\n') : '- None';\n\nconst prompt = `${languageInstruction}\n\nCreate a concise weekly engineering narrative for ${cfg.githubRepo}, covering ${cfg.since} through ${cfg.until}.\nDo not invent activity. Explain the main themes, notable progress, maintenance/bug-fix work, and what the mix of commits/issues/PRs suggests.\nStart with a one-sentence executive summary, then use short Markdown sections:\n- Highlights\n- Merged pull requests\n- Closed issues\n- Commit themes\nEnd with a compact activity line containing the exact counts.\n\nCommits (${activity.commits.length}):\n${commitsText}\n\nMerged pull requests (${activity.mergedPullRequests.length}):\n${prsText}\n\nClosed issues (${activity.closedIssues.length}):\n${issuesText}`;\n\nreturn [{ json: { ...cfg, activity, prompt } }];\n"
+      },
+      "id": "721556e3-3cd0-439b-8d22-457659bac49e",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $json.claudeModel, max_tokens: 1800, system: 'You turn raw GitHub activity into accurate, concise weekly engineering summaries. Never invent activity or metrics.', messages: [{ role: 'user', content: $json.prompt }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "f40cdab0-eee0-4361-8415-0d27ea2196ce",
+      "name": "Claude Weekly Narrative",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        0
+      ],
+      "notes": "Uses ANTHROPIC_API_KEY from the n8n process environment. Sponsor-pinned model is configured in Config."
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst cfg = $('Build Claude Prompt').first().json;\nconst summary = response.content?.filter(part => part.type === 'text').map(part => part.text).join('\\n').trim();\n\nif (response.stop_reason === 'max_tokens') throw new Error('Anthropic response was truncated; refusing delivery');\nif (!summary) {\n  throw new Error('Anthropic response contained no text summary');\n}\n\nreturn [{\n  json: {\n    repository: cfg.githubRepo,\n    language: cfg.language,\n    summary,\n    slackText: `*Weekly dev summary — ${cfg.githubRepo}*\\n${summary}`,\n    counts: {\n      commits: cfg.activity.commits.length,\n      mergedPullRequests: cfg.activity.mergedPullRequests.length,\n      closedIssues: cfg.activity.closedIssues.length,\n    },\n  },\n}];\n"
+      },
+      "id": "ebd27753-5645-46e7-aa38-10a9412db9a2",
+      "name": "Extract Narrative",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.slackWebhookUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.slackText }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "aff003b5-4364-4c86-bc6d-8c05098e6cae",
+      "name": "Send Summary to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        820,
+        0
+      ],
+      "notes": "Slack incoming webhook is configured in the Config node."
+    },
+    {
+      "parameters": {
+        "content": "## Weekly GitHub dev summary\n\n1. Edit **Config**: `githubRepo`, `slackWebhookUrl`, `language` (`EN`/`FR`).\n2. Provide `GITHUB_TOKEN` and `ANTHROPIC_API_KEY` to the n8n process environment.\n3. Run **Manual Test** once.\n4. Publish/activate the workflow. Schedule: Friday 17:00.",
+        "height": 220,
+        "width": 420
+      },
+      "id": "f20bfc5f-7ad7-4922-9ebc-56be8a9cf062",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -360
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Friday 17:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Build 7-Day Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build 7-Day Window": {
+      "main": [
+        [
+          {
+            "node": "Fetch GitHub Weekly Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GitHub Weekly Activity": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Weekly Narrative",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Weekly Narrative": {
+      "main": [
+        [
+          {
+            "node": "Extract Narrative",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Narrative": {
+      "main": [
+        [
+          {
+            "node": "Send Summary to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York"
+  },
+  "versionId": "76585fc0-ed59-4de6-90ac-236565352e6b",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
