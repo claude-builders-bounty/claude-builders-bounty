@@ -1,0 +1,390 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude + Discord)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520001",
+      "name": "Every Friday at 17:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "owner",
+              "name": "githubOwner",
+              "type": "string",
+              "value": "={{ $env.GITHUB_OWNER || 'your-github-owner' }}"
+            },
+            {
+              "id": "repo",
+              "name": "githubRepo",
+              "type": "string",
+              "value": "={{ $env.GITHUB_REPO || 'your-repository' }}"
+            },
+            {
+              "id": "language",
+              "name": "language",
+              "type": "string",
+              "value": "={{ ($env.SUMMARY_LANGUAGE || 'EN').toUpperCase() }}"
+            },
+            {
+              "id": "webhook",
+              "name": "discordWebhookUrl",
+              "type": "string",
+              "value": "={{ $env.DISCORD_WEBHOOK_URL || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520002",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const end = new Date();\nconst start = new Date(end);\nstart.setDate(start.getDate() - 7);\nconst since = start.toISOString();\nconst until = end.toISOString();\nconst owner = $json.githubOwner;\nconst repo = $json.githubRepo;\nreturn [{ json: { ...$json, since, until, commitsUrl: `https://api.github.com/repos/${owner}/${repo}/commits?since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}&per_page=25`, issuesUrl: `https://api.github.com/repos/${owner}/${repo}/issues?state=closed&since=${encodeURIComponent(since)}&per_page=25`, pullsUrl: `https://api.github.com/repos/${owner}/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=25` } }];"
+      },
+      "id": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520003",
+      "name": "Build weekly date range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.commitsUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "money-hunter-readonly"
+            },
+            {
+              "name": "Accept-Encoding",
+              "value": "identity"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GITHUB_TOKEN }}"
+            }
+          ]
+        },
+        "options": {"timeout": 120000}
+      },
+      "id": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520004",
+      "name": "GitHub commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Build weekly date range').first().json.issuesUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "money-hunter-readonly"
+            },
+            {
+              "name": "Accept-Encoding",
+              "value": "identity"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GITHUB_TOKEN }}"
+            }
+          ]
+        },
+        "options": {"timeout": 120000}
+      },
+      "id": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520005",
+      "name": "GitHub closed issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/graphql",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "money-hunter-readonly"
+            },
+            {
+              "name": "Accept-Encoding",
+              "value": "identity"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GITHUB_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ query: 'query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ pullRequests(states:MERGED, first:25, orderBy:{field:UPDATED_AT,direction:DESC}) { nodes { number title url mergedAt closedAt author { login } } } } }', variables: { owner: $('Build weekly date range').first().json.githubOwner, repo: $('Build weekly date range').first().json.githubRepo } }) }}",
+        "options": {"timeout": 120000}
+      },
+      "id": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520006",
+      "name": "GitHub pull requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = (name) => { try { return $items(name).map((item) => item.json); } catch { return []; } };\nconst commits = source('GitHub commits');\nconst issues = source('GitHub closed issues');\nconst pullResponse = source('GitHub pull requests');\nconst pullCandidates = pullResponse[0]?.data?.repository?.pullRequests?.nodes || pullResponse;\nconst since = $('Build weekly date range').first().json.since;\nconst until = $('Build weekly date range').first().json.until;\nconst pulls = Array.isArray(pullCandidates) ? pullCandidates.filter((pr) => (pr.merged_at || pr.mergedAt) && (pr.merged_at || pr.mergedAt) >= since && (pr.merged_at || pr.mergedAt) <= until) : [];\nconst compact = (item) => ({ number: item.number, title: item.title || item.commit?.message?.split('\\n')[0], author: item.user?.login || item.author?.login, url: item.html_url || item.url, mergedAt: item.merged_at || item.mergedAt, closedAt: item.closed_at || item.closedAt });\nconst data = { repository: `${$('Build weekly date range').first().json.githubOwner}/${$('Build weekly date range').first().json.githubRepo}`, period: { since, until }, commits: commits.map(compact), closedIssues: issues.filter((issue) => !issue.pull_request).map(compact), mergedPullRequests: pulls.map(compact) };\nconst language = $('Configuration').first().json.language === 'FR' ? 'French' : 'English';\nconst prompt = `Write a concise, engaging weekly engineering update for ${data.repository}. Cover notable commits, closed issues, and merged pull requests. Mention contributors where useful, identify themes and impact, and do not invent details. Use ${language}. Include a short heading and bullet points.\n\nActivity data (JSON):\n${JSON.stringify(data, null, 2)}`;\nreturn [{ json: { body: { model: 'claude-sonnet-4-6', max_tokens: 1200, messages: [{ role: 'user', content: prompt }] } } }];"
+      },
+      "id": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520007",
+      "name": "Build Claude request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520008",
+      "name": "Claude Sonnet 4",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $json.content?.map((part) => part.text || '').join('\\n').trim() || 'No summary was returned by Claude.';\nconst max = 1900;\nconst chunks = [];\nfor (let i = 0; i < text.length; i += max) chunks.push(text.slice(i, i + max));\nreturn chunks.map((content, index) => ({ json: { content, webhookUrl: $('Configuration').first().json.discordWebhookUrl, part: index + 1, total: chunks.length } }));"
+      },
+      "id": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520009",
+      "name": "Format Discord message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhookUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.content }) }}",
+        "options": {}
+      },
+      "id": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520010",
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        300
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every Friday at 17:00": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Build weekly date range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build weekly date range": {
+      "main": [
+        [
+          {
+            "node": "GitHub commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub commits": {
+      "main": [
+        [
+          {
+            "node": "GitHub closed issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub closed issues": {
+      "main": [
+        [
+          {
+            "node": "GitHub pull requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub pull requests": {
+      "main": [
+        [
+          {
+            "node": "Build Claude request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude request": {
+      "main": [
+        [
+          {
+            "node": "Claude Sonnet 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Sonnet 4": {
+      "main": [
+        [
+          {
+            "node": "Format Discord message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Discord message": {
+      "main": [
+        [
+          {
+            "node": "Post to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Paris"
+  },
+  "versionId": "7c3fd3c6-79a4-4f43-a0d7-6fbd3a520011",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
