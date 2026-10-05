@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+# claude-review — fetch a GitHub PR diff and emit a structured Markdown review.
+#
+# Usage:
+#   claude-review --pr https://github.com/owner/repo/pull/123 [--output review.md]
+#   claude-review --diff-file path/to.diff --title "my change"   # offline / testing
+#
+# Env: GITHUB_TOKEN (optional; raises the API rate limit for --pr)
+# Requires: curl, python3 (both preinstalled on dev machines and GH runners)
+#
+# The review is heuristic and deterministic: no LLM API key needed, fully
+# auditable, and every rule is covered by tests. It complements — not
+# replaces — human review.
+set -uo pipefail
+
+PR_URL=""
+OUTPUT=""
+DIFF_FILE=""
+TITLE_OVERRIDE=""
+
+usage() {
+    cat <<'EOF'
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123 [--output review.md]
+  claude-review --diff-file path/to.diff --title "my change" [--output review.md]
+
+Options:
+  --pr URL        GitHub PR URL to review
+  --diff-file F   review a local unified diff instead (for testing/offline)
+  --title T       title to use with --diff-file
+  --output F      write Markdown review to F (default: stdout)
+  -h, --help      show this help
+
+Env:
+  GITHUB_TOKEN    optional; authenticates GitHub API calls
+EOF
+}
+
+need_value() {
+    if [[ "$3" -lt 2 || -z "$2" || "$2" == -* ]]; then
+        echo "error: $1 requires a value" >&2; exit 1
+    fi
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --pr)        need_value "$1" "${2-}" "$#"; PR_URL="$2"; shift 2 ;;
+        --diff-file) need_value "$1" "${2-}" "$#"; DIFF_FILE="$2"; shift 2 ;;
+        --title)     need_value "$1" "${2-}" "$#"; TITLE_OVERRIDE="$2"; shift 2 ;;
+        --output)    need_value "$1" "${2-}" "$#"; OUTPUT="$2"; shift 2 ;;
+        -h|--help)   usage; exit 0 ;;
+        *) echo "error: unknown argument: $1" >&2; usage; exit 1 ;;
+    esac
+done
+
+[[ -n "$PR_URL" || -n "$DIFF_FILE" ]] || { echo "error: need --pr or --diff-file" >&2; exit 1; }
+
+API="https://api.github.com"
+AUTH=()
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN")
+fi
+
+# --- fetch diff + metadata -------------------------------------------------
+if [[ -n "$DIFF_FILE" ]]; then
+    [[ -f "$DIFF_FILE" ]] || { echo "error: no such file: $DIFF_FILE" >&2; exit 1; }
+    DIFF="$(cat "$DIFF_FILE")"
+    PR_TITLE="${TITLE_OVERRIDE:-local diff}"
+    PR_IDENT="local diff"
+else
+    pr_re='^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)'
+    [[ "$PR_URL" =~ $pr_re ]] || { echo "error: bad --pr URL (want .../owner/repo/pull/N)" >&2; exit 1; }
+    OWNER="${BASH_REMATCH[1]}"; REPO="${BASH_REMATCH[2]}"; NUM="${BASH_REMATCH[3]}"
+    PR_IDENT="$OWNER/$REPO#$NUM"
+    PR_JSON="$(curl -sL "${AUTH[@]+"${AUTH[@]}"}" "$API/repos/$OWNER/$REPO/pulls/$NUM")" || exit 1
+    if command -v python3 >/dev/null 2>&1; then
+        PR_TITLE="$(printf '%s' "$PR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("title",""))' 2>/dev/null)"
+    else
+        PR_TITLE="$(printf '%s' "$PR_JSON" | grep -o '"title":"[^"]*"' | head -1 | cut -d'"' -f4)"
+    fi
+    [[ -n "$PR_TITLE" ]] || { echo "error: could not fetch PR (bad URL or API limit)" >&2; exit 1; }
+    DIFF="$(curl -sL "${AUTH[@]+"${AUTH[@]}"}" -H "Accept: application/vnd.github.diff" \
+        "$API/repos/$OWNER/$REPO/pulls/$NUM")"
+fi
+[[ -n "$DIFF" ]] || { echo "error: empty diff" >&2; exit 1; }
+
+# --- analyze -----------------------------------------------------------------
+# added lines only (exclude the +++ file headers)
+ADDED="$(printf '%s\n' "$DIFF" | grep -E '^\+' | grep -vE '^\+\+\+')"
+DELETED="$(printf '%s\n' "$DIFF" | grep -E '^-' | grep -vE '^---')"
+FILES="$(printf '%s\n' "$DIFF" | grep -E '^\+\+\+ ' | sed -E 's|^\+\+\+ (b/)?||' | grep -v '^/dev/null$' || true)"
+N_FILES="$(printf '%s\n' "$FILES" | grep -c . || true)"
+N_ADD="$(printf '%s\n' "$ADDED" | grep -c . || true)"
+N_DEL="$(printf '%s\n' "$DELETED" | grep -c . || true)"
+N_NEW="$(printf '%s\n' "$DIFF" | grep -c '^new file mode' || true)"
+HAS_BINARY="$(printf '%s\n' "$DIFF" | grep -c 'Binary files .* differ' || true)"
+
+RISK_HIGH=()
+RISK_MED=()
+SUGGEST=()
+risk_high() { RISK_HIGH+=("$1"); }
+risk_med()  { RISK_MED+=("$1"); }
+suggest()   { SUGGEST+=("$1"); }
+
+# short location tag: first file whose added lines contain the pattern
+locate() {
+    # $1 = ERE pattern; prints "path" of first matching added hunk
+    local pat="$1" cur="" line
+    while IFS= read -r line; do
+        case "$line" in
+            '+++ '*) cur="${line#+++ }"; cur="${cur#b/}" ;;
+            '+'*)
+                if [[ "${line#+}" =~ $pat ]]; then printf '%s' "$cur"; return 0; fi
+                ;;
+        esac
+    done <<< "$DIFF"
+    return 1
+}
+
+# --- 1. secrets (HIGH) ---
+check_secret() {
+    # $1 = ERE, $2 = label
+    local re="$1" label="$2" f
+    local hits
+    hits="$(printf '%s\n' "$ADDED" | grep -E -c -- "$1" || true)"
+    if [[ "$hits" -gt 0 ]]; then
+        f="$(locate "$1" || true)"
+        risk_high "Possible $label in added lines (${hits}x${f:+, $f}) — verify no real credential is committed."
+    fi
+}
+check_secret 'AKIA[0-9A-Z]{16}' "AWS access key"
+check_secret '(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}' "GitHub token"
+check_secret 'sk-[A-Za-z0-9]{20,}' "secret API key (sk-…)"
+check_secret 'xox[bap]-' "Slack token"
+check_secret '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' "private key material"
+# password assignments, case-insensitive via lowercased copy
+LOWER_ADDED="$(printf '%s\n' "$ADDED" | tr '[:upper:]' '[:lower:]')"
+pw_hits="$(printf '%s\n' "$LOWER_ADDED" | grep -E -c '(password|passwd|pwd)[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"']+["'"'"']' || true)"
+if [[ "$pw_hits" -gt 0 ]]; then
+    pw_f="$(locate '(password|passwd|pwd)' || true)"
+    risk_high "Possible hardcoded password (${pw_hits}x${pw_f:+, $pw_f}) — use a secret manager instead."
+fi
+
+# --- 2. dangerous shell / code patterns (HIGH) ---
+dang() {
+    # $1 = ERE on added lines, $2 = message
+    local hits f
+    hits="$(printf '%s\n' "$ADDED" | grep -E -c -- "$1" || true)"
+    if [[ "$hits" -gt 0 ]]; then
+        f="$(locate "$1" || true)"
+        risk_high "$2 (${hits}x${f:+, $f})."
+    fi
+}
+dang 'rm[[:space:]]+.*-[a-zA-Z]*r[a-zA-Z]*f' "Destructive 'rm -rf' cluster — verify intentional (e.g. inside a safety tool's own detection logic)"
+dang 'rm[[:space:]]+.*-[a-zA-Z]*f[a-zA-Z]*r' "Destructive 'rm -fr' cluster — verify intentional"
+dang 'rm[[:space:]]+.*-[a-zA-Z]*r[[:space:]]+-[a-zA-Z]*f' "Destructive 'rm -r -f' (split flags) — verify intentional"
+dang 'rm[[:space:]]+.*-[a-zA-Z]*f[[:space:]]+-[a-zA-Z]*r' "Destructive 'rm -f -r' (split flags) — verify intentional"
+dang 'rm[[:space:]]+.*--(recursive|force)' "Destructive 'rm --recursive/--force' — verify intentional"
+dang 'curl[[:space:]]+[^|]*\|[[:space:]]*(ba)?sh' "curl piped to shell — remote code execution risk; pin a checksum or vendor the script"
+dang 'wget[[:space:]]+[^|]*\|[[:space:]]*(ba)?sh' "wget piped to shell — same as above"
+dang 'eval[[:space:]]*[$`(]' "eval on dynamic input — injection risk"
+dang 'eval[[:space:]]+["'"'"']' "eval on quoted string — injection risk"
+dang 'chmod[[:space:]]+(-R[[:space:]]+)?777' "chmod 777 — overly broad permissions"
+dang 'chmod[[:space:]]*[(].*777' "chmod(…, 777) — overly broad permissions; verify the mode"
+
+# --- 3. size / shape signals ---
+if [[ "$N_ADD" -gt 500 ]]; then
+    risk_med "Large diff (+$N_ADD lines) — heuristic review may miss context; consider splitting."
+elif [[ "$N_ADD" -gt 200 ]]; then
+    suggest "Diff is sizable (+$N_ADD lines); a focused re-read of the core logic is worthwhile."
+fi
+[[ "$HAS_BINARY" -gt 0 ]] && risk_med "Binary files changed — cannot be reviewed as text; verify provenance."
+lock_hits="$(printf '%s\n' "$FILES" | grep -E -c '(package-lock\.json|Cargo\.lock|poetry\.lock|Gemfile\.lock|pnpm-lock\.yaml)$' || true)"
+[[ "$lock_hits" -gt 0 ]] && suggest "Lockfile(s) changed — confirm dependency diffs are intentional."
+
+# --- 4. hygiene (suggestions) ---
+todo_hits="$(printf '%s\n' "$ADDED" | grep -E -c 'TODO|FIXME|XXX|HACK' || true)"
+[[ "$todo_hits" -gt 0 ]] && suggest "Found $todo_hits TODO/FIXME marker(s) in added lines — ticket them or resolve before merge."
+if ! printf '%s\n' "$FILES" | grep -E -qi '(test|spec)' ; then
+    suggest "No test files touched — consider adding tests for the changed behavior."
+fi
+
+# --- summary + confidence ------------------------------------------------------
+# dominant file extensions
+TOP_EXTS="$(printf '%s\n' "$FILES" | sed -E 's/.*\.([a-zA-Z0-9]+)$/\1/' | sort | uniq -c | sort -rn | head -3 | awk '{print $2}' | paste -sd',' -)"
+TOP_DIRS="$(printf '%s\n' "$FILES" | grep / | sed 's|/[^/]*$||' | sort | uniq -c | sort -rn | head -2 | awk '{print $2}' | paste -sd',' -)"
+[[ -z "$TOP_EXTS" ]] && TOP_EXTS="mixed"
+SUMMARY="This PR changes $N_FILES file(s) (+$N_ADD/-$N_DEL lines"
+[[ "$N_NEW" -gt 0 ]] && SUMMARY="$SUMMARY, including $N_NEW new file(s)"
+SUMMARY="$SUMMARY), mostly $TOP_EXTS files"
+[[ -n "$TOP_DIRS" ]] && SUMMARY="$SUMMARY under $TOP_DIRS"
+SUMMARY="$SUMMARY."
+N_HI="${#RISK_HIGH[@]}"
+if [[ "$N_HI" -gt 0 ]]; then
+    SUMMARY="$SUMMARY It introduces $N_HI high-severity finding(s) that need attention before merge."
+else
+    SUMMARY="$SUMMARY No high-severity findings from static checks."
+fi
+
+if [[ "$N_ADD" -gt 500 ]]; then
+    CONF="Low"; CONF_WHY="large diff (+$N_ADD lines) — heuristic review may miss context"
+elif [[ "$N_HI" -gt 0 ]]; then
+    CONF="Medium"; CONF_WHY="$N_HI high-severity finding(s) need human verification"
+elif [[ "$N_ADD" -gt 200 ]]; then
+    CONF="Medium"; CONF_WHY="sizable diff (+$N_ADD lines)"
+else
+    CONF="High"; CONF_WHY="small, focused diff with no high-severity findings"
+fi
+
+# --- emit ----------------------------------------------------------------------
+emit_review() {
+    echo "## PR Review: \`$PR_IDENT\` — $PR_TITLE"
+    echo
+    echo "### Summary"
+    echo
+    echo "$SUMMARY"
+    echo
+    echo "### Risks"
+    echo
+    if [[ "${#RISK_HIGH[@]}" -eq 0 && "${#RISK_MED[@]}" -eq 0 ]]; then
+        echo "- None found by static checks."
+    else
+        for r in "${RISK_HIGH[@]+"${RISK_HIGH[@]}"}"; do echo "- [HIGH] $r"; done
+        for r in "${RISK_MED[@]+"${RISK_MED[@]}"}"; do echo "- [MED] $r"; done
+    fi
+    echo
+    echo "### Suggestions"
+    echo
+    if [[ "${#SUGGEST[@]}" -eq 0 ]]; then
+        echo "- None."
+    else
+        for s in "${SUGGEST[@]+"${SUGGEST[@]}"}"; do echo "- $s"; done
+    fi
+    echo
+    echo "### Confidence: $CONF"
+    echo "_$CONF_WHY._"
+    echo
+    echo "---"
+    echo "_Generated by claude-review (heuristic, zero-dependency). Human review still recommended._"
+}
+
+if [[ -n "${OUTPUT:-}" ]]; then
+    if ! emit_review > "$OUTPUT"; then
+        echo "error: cannot write to $OUTPUT" >&2
+        exit 1
+    fi
+    echo "wrote $OUTPUT"
+else
+    emit_review
+fi
+exit 0
