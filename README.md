@@ -36,6 +36,9 @@ You're in the right place.
 
 ## Rules
 
+The destructive Bash command hook and its two-command installer are documented
+in [hooks/README.md](hooks/README.md).
+
 - Tasks must be related to Claude Code or AI tooling
 - Every issue must have clear acceptance criteria before a bounty is activated
 - Payment is handled by [Opire](https://opire.dev) (Stripe)
