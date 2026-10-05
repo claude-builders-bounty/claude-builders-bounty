@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Implemented Templates & Tools
+
+* **[Next.js 15 + SQLite SaaS CLAUDE.md](templates/nextjs-sqlite-saas/)** (Closes [#2](../../issues/2)): Production-ready `CLAUDE.md` specification with Next.js 15 App Router, SQLite WAL/foreign-key pragmas, Drizzle ORM, Server Actions, and architectural anti-pattern rationale.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
