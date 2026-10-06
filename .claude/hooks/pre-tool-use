@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# pre-tool-use hook: blocks destructive bash commands before execution
+# Installation:
+#   1. mkdir -p ~/.claude/hooks
+#   2. cp .claude/hooks/pre-tool-use ~/.claude/hooks/pre-tool-use && chmod +x ~/.claude/hooks/pre-tool-use
+
+HOOK_DIR="$(dirname "$0")"
+BLOCKED_LOG="${HOME}/.claude/hooks/blocked.log"
+mkdir -p "$(dirname "$BLOCKED_LOG")"
+
+TS=$(date -u +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')
+PROJECT="${CLAUDE_PROJECT_PATH:-$(pwd)}"
+
+log_block() {
+    local cmd="$1"
+    echo "[${TS}] BLOCKED | command: ${cmd} | project: ${PROJECT}" >> "${BLOCKED_LOG}"
+}
+
+send_block() {
+    local cmd="$1"
+    local reason="$2"
+    # Output a markdown comment that Claude Code surfaces in the chat
+    echo "<antThinking>"
+    echo "SECURITY HOOK ALERT: Your command was BLOCKED by the pre-tool-use hook."
+    echo ""
+    echo "**Attempted command:**\`\`\`\`bash"
+    echo "${cmd}"
+    echo "\`\`\`\`"
+    echo ""
+    echo "**Reason:** ${reason}"
+    echo ""
+    echo "This command has been logged to \`${BLOCKED_LOG}\`."
+    echo "Please revise your approach — use safer alternatives or narrow the scope."
+    echo "</antThinking>"
+    log_block "${cmd}"
+    exit 1
+}
+
+# Only inspect bash_tool exec commands
+if [[ "${CLAUDE_TOOL:-}" != "Bash" ]]; then
+    exit 0
+fi
+
+INPUT=$(cat)
+CMD=$(echo "${INPUT}" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | head -1)
+
+if [[ -z "${CMD}" ]]; then
+    # If we can't parse the JSON properly, be conservative and allow
+    exit 0
+fi
+
+# Normalise whitespace for matching
+CMD_NORM=$(echo "${CMD}" | tr -s '[:space:]' ' ')
+
+# 1. rm -rf /   or   rm -rf <anything>
+if [[ "${CMD_NORM}" =~ ^[[:space:]]*(rm[[:space:]]+-[[:space:]]+-rf([[:space:]]+[^\"]*)?)$ ]] ||
+   [[ "${CMD_NORM}" =~ ^[[:space:]]*(rm[[:space:]]+--no-preserve-root([[:space:]].+)?)$ ]]; then
+    send_block "${CMD}" "Blocked: \`rm -rf\` is a destructive recursive force-delete. Use targeted file removal or back up first."
+fi
+
+# 2. DROP TABLE
+if echo "${CMD_NORM}" | grep -qiE '(^|[[:space:]])DROP[[:space:]]+TABLE'; then
+    send_block "${CMD}" "Blocked: \`DROP TABLE\` permanently deletes a database table. Verify the table name and use \`ALTER TABLE\` or soft-delete instead."
+fi
+
+# 3. git push --force (any variant)
+if echo "${CMD_NORM}" | grep -qiE 'git[[:space:]]+push[[:space:]]+.*(--force|-f)[[:space:]]'; then
+    send_block "${CMD}" "Blocked: \`git push --force\` overwrites remote history and can destroy collaborators' work. Use a regular push or \`git push --force-with-lease\`."
+fi
+
+# 4. TRUNCATE (SQL)
+if echo "${CMD_NORM}" | grep -qiE '(^|[[:space:]])(TRUNCATE[[:space:]]+(TABLE[[:space:]]+)?[A-Za-z_][A-Za-z0-9_.]*)'; then
+    send_block "${CMD}" "Blocked: \`TRUNCATE\` instantly removes all rows from a table with no undo. Use \`DELETE FROM ... WHERE ...\` with a specific condition instead."
+fi
+
+# 5. DELETE FROM without WHERE
+if echo "${CMD_NORM}" | grep -qiE '(^|[[:space:]])(DELETE[[:space:]]+FROM[[:space:]]+[A-Za-z_][A-Za-z0-9_.]*)([[:space:]]|$)'; then
+    # Reject if there is NO WHERE clause anywhere in the command
+    if ! echo "${CMD_NORM}" | grep -qiE 'WHERE'; then
+        send_block "${CMD}" "Blocked: \`DELETE FROM ... \`(no WHERE clause) deletes every row in the table. Always include a WHERE condition to limit the scope."
+    fi
+fi
+
+exit 0
