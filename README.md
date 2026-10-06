@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Implemented Skills & Solutions
+
+* **[Generate Changelog Skill](skills/generate-changelog/)** (Closes [#1](../../issues/1)): Automated `CHANGELOG.md` generator from git history with tag detection and Keep-a-Changelog formatting.
+
+### Generate a changelog in 3 steps
+
+1. Clone this repository (or copy `skills/generate-changelog/`) so the skill directory is available locally.
+2. From the target git repository root, preview the generated entry: `bash /path/to/generate-changelog/changelog.sh --dry-run`.
+3. Write `CHANGELOG.md` by rerunning without `--dry-run`; optionally add `--version "v1.2.0"` for a release heading.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
