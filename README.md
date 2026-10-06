@@ -1,53 +1,71 @@
-# Claude Builders Bounty 🤖
+# Claude Builders Bounty - Automated Claim System
 
-> A community bounty board for Claude Code builders.
+An automated system for processing bounty claims on GitHub issues.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Features
 
----
+- Automated claim processing via GitHub issues
+- On-chain claim execution on Base network
+- Comment-based validation and feedback
+- Persistent claim state tracking
+- Cron job support for batch processing
 
-## How it works
+## Setup
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+1. Install dependencies:
+```bash
+npm install
+```
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+2. Create a `.env` file:
+```env
+RPC_URL=https://mainnet.base.org
+WALLET_PRIVATE_KEY=your_wallet_private_key
+CLAIM_CONTRACT_ADDRESS=0x96eE7904BdCd8a82c71B4FFc3362C96b1Aae03e0
+GITHUB_TOKEN=your_github_token
+BOUNTY_REPO_OWNER=claude-builders-bounty
+BOUNTY_REPO_NAME=claude-builders-bounty
+MIN_CONFIRMATION_BLOCKS=1
+CLAIMS_FILE=./claims.json
+```
 
----
+3. Build and run:
+```bash
+npm run build
+npm start
+```
 
-## Active Bounties
+## Usage
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+### Process a specific issue:
+```bash
+npm run claim 2
+```
 
----
+### Run cron job (process all open issues):
+```bash
+npm start
+```
 
-## Rules
+### Development mode:
+```bash
+npm run dev
+```
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## How It Works
 
----
+1. The system scans GitHub issues for `/claim <wallet_address>` commands
+2. Validates the claim request against repository rules
+3. Executes the claim transaction on-chain
+4. Posts a comment with the transaction details
+5. Saves the claim status to prevent duplicate claims
 
-## Community
+## Bounty Reward Wallet
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+```
+0x96eE7904BdCd8a82c71B4FFc3362C96b1Aae03e0
+```
 
----
+## License
 
-*Started by the Claude builder community · March 2026 · MIT License*
+MIT
