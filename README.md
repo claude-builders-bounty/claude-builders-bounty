@@ -34,6 +34,40 @@ You're in the right place.
 
 ---
 
+## Implemented Tools & Hooks
+
+### Destructive Bash interceptor (issue #3)
+
+The hook is the root-level `pre-tool-use` wrapper plus `pre-tool-use.py`. It blocks the destructive command patterns listed in issue #3, writes blocked attempts to `~/.claude/hooks/blocked.log`, and exits with status 2 so Claude Code treats the decision as blocking.
+
+Install the hook files in one shell command:
+
+```bash
+mkdir -p ~/.claude/hooks && cp pre-tool-use pre-tool-use.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/pre-tool-use
+```
+
+Then merge this registration into `~/.claude/settings.json` (preserve any existing settings/hooks):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pre-tool-use"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
