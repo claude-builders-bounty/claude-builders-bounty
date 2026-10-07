@@ -1,0 +1,515 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+claude-review — PR review sub-agent CLI.
+
+Fetches a GitHub pull request via the public REST API and produces a
+structured Markdown review (summary, risks with severity levels,
+suggestions, confidence score) using purely local static analysis.
+No AI, no third-party dependencies: Python 3.7+ standard library only.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr owner/repo#123
+    claude-review --pr owner/repo#123 --output review.md
+
+Optional environment:
+    GITHUB_TOKEN   GitHub token to raise the API rate limit (recommended).
+"""
+
+import argparse
+import base64
+import json
+import os
+import re
+import sys
+from urllib import request as _urlrequest
+from urllib.error import HTTPError, URLError
+
+API_BASE = "https://api.github.com"
+USER_AGENT = "claude-review/1.0 (static PR review agent)"
+MAX_PATCH_PER_FILE = 20000  # chars; larger patches are summarised, not scanned
+
+# ---------------------------------------------------------------------------
+# GitHub API client (stdlib only)
+# ---------------------------------------------------------------------------
+
+
+class GitHubClient(object):
+    """Minimal read-only GitHub REST client."""
+
+    def __init__(self, token=None):
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": USER_AGENT,
+        }
+        if token:
+            headers["Authorization"] = "Bearer %s" % token
+        self._headers = headers
+        self._cache = {}
+
+    def get_json(self, path, cache=True):
+        if cache and path in self._cache:
+            return self._cache[path]
+        url = path if path.startswith("http") else API_BASE + path
+        req = _urlrequest.Request(url, headers=self._headers)
+        try:
+            with _urlrequest.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        except HTTPError as exc:
+            if exc.code == 403:
+                raise RuntimeError(
+                    "GitHub API rate limit or access denied (HTTP 403). "
+                    "Set the GITHUB_TOKEN environment variable and retry."
+                )
+            if exc.code == 404:
+                raise RuntimeError("Not found (HTTP 404): %s" % url)
+            raise RuntimeError("GitHub API error (HTTP %s): %s" % (exc.code, url))
+        except URLError as exc:
+            raise RuntimeError("Network error reaching %s: %s" % (url, exc.reason))
+        if cache:
+            self._cache[path] = data
+        return data
+
+    def get_pull(self, owner, repo, number):
+        return self.get_json("/repos/%s/%s/pulls/%d" % (owner, repo, number))
+
+    def get_files(self, owner, repo, number):
+        """Return every changed file (follow pagination)."""
+        files = []
+        page = 1
+        while True:
+            batch = self.get_json(
+                "/repos/%s/%s/pulls/%d/files?per_page=100&page=%d"
+                % (owner, repo, number, page),
+                cache=False,
+            )
+            if not batch:
+                break
+            files.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        return files
+
+
+def parse_pr_ref(ref):
+    """Accept a full URL or an 'owner/repo#number' shorthand."""
+    m = re.search(r"github\.com/([^/]+)/([^/]+)/(?:pull/|issues/)?(\d+)", ref)
+    if m:
+        return m.group(1), m.group(2), int(m.group(3))
+    m = re.match(r"^([\w.\-]+)/([\w.\-]+)#(\d+)$", ref)
+    if m:
+        return m.group(1), m.group(2), int(m.group(3))
+    raise ValueError(
+        "Unrecognised PR reference: %r\nExpected a GitHub URL or owner/repo#123." % ref
+    )
+
+
+# ---------------------------------------------------------------------------
+# Static analysis rules (heuristics, no AI)
+# ---------------------------------------------------------------------------
+
+HIGH_RISK_PATH_PARTS = (
+    "auth", "authentication", "login", "session", "payment", "billing",
+    "checkout", "migration", "migrations", "deploy", "deployment",
+    "infra", "terraform", "security", "permission", "crypto", "secret",
+)
+
+HIGH_RISK_FILENAMES = (
+    "dockerfile", "makefile", ".env", ".env.example",
+    "requirements.txt", "package.json", "package-lock.json",
+    "yarn.lock", "poetry.lock", "go.mod", "go.sum", "pom.xml",
+)
+
+CI_PATH_PREFIXES = (".github/", ".gitlab-ci", ".circleci/")
+
+SECRET_PATTERNS = (
+    (re.compile(r"sk-[A-Za-z0-9]{20,}"), "OpenAI-style API key"),
+    (re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"), "GitHub token"),
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "AWS access key id"),
+    (re.compile(r"-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"), "private key block"),
+    (re.compile(r"(?i)(password|passwd|secret|api[_-]?key|access[_-]?key)\s*[:=]\s*[\"'][^\"']{8,}[\"']"),
+     "hardcoded credential assignment"),
+    (re.compile(r"(?i)authorization:\s*bearer\s+[A-Za-z0-9._\-]{15,}"), "hardcoded bearer token"),
+)
+
+DANGEROUS_CODE_PATTERNS = (
+    (re.compile(r"subprocess\.[a-zA-Z_]+\(.*shell\s*=\s*True"), "subprocess with shell=True"),
+    (re.compile(r"(?<![.\w])os\.system\("), "os.system call"),
+    (re.compile(r"(?<![.\w])(eval|exec)\("), "eval/exec usage"),
+    (re.compile(r"pickle\.loads?\("), "pickle deserialisation"),
+    (re.compile(r"yaml\.load\((?![^)]*Loader)"), "yaml.load without safe Loader"),
+    (re.compile(r"(?<![.\w])except\s*:\s*(pass)?\s*(#.*)?$"), "bare except"),
+    (re.compile(r"(?i)(md5|sha1)\s*\("), "weak hash (md5/sha1)"),
+    (re.compile(r"(?i)random\.(random|randint|choice|randrange)\s*\("),
+     "non-cryptographic randomness (unsafe for secrets/tokens)"),
+    (re.compile(r"(?i)(requests|httpx)\.(get|post|put|delete|patch)\((?![^)]*timeout)[^)]*\)"),
+     "HTTP call without timeout"),
+    (re.compile(r"(?i)\bchmod\s+[0-7]{3,4}\s+/?$"), "permissive chmod on path"),
+    (re.compile(r"(?i)\beval\(|new\s+Function\("), "dynamic code evaluation (JS)"),
+    (re.compile(r"(?i)child_process\.exec\("), "child_process.exec (JS)"),
+    (re.compile(r"(?i)dangerouslySetInnerHTML"), "dangerouslySetInnerHTML (XSS surface)"),
+    (re.compile(r"(?i)\.innerHTML\s*="), "innerHTML assignment (XSS surface)"),
+)
+
+# SQL-destructive statements: severity depends on context. Inside a security
+# tool (guard/hook) they usually appear as quoted pattern definitions, which is
+# not the same as executing them — handled separately below.
+SQL_DESTRUCTIVE_PATTERNS = (
+    (re.compile(r"(?i)\b(dm|drop)\s+table\b"), "DROP TABLE statement"),
+    (re.compile(r"(?i)\btruncate\s+table\b"), "TRUNCATE TABLE statement"),
+    (re.compile(r"(?i)\bdelete\s+from\b(?![^;\n]*\bwhere\b)"), "DELETE without WHERE"),
+)
+
+SQL_INJECTION_PATTERNS = (
+    # f-string SQL: f"SELECT ... {var}" — allow quotes inside the SQL text
+    re.compile(r"(?i)f[\"'][^\n]*\b(?:SELECT|INSERT|UPDATE|DELETE)\b[^\n]*\{"),
+    re.compile(r"(?i)[\"'](SELECT|INSERT|UPDATE|DELETE)[^\"']*[\s]%\s*[sS][\"']?\s*(%|\+)"),
+    re.compile(r"(?i)[\"'](SELECT|INSERT|UPDATE|DELETE)[^\"'\n]*[\"']\s*\+"),
+)
+
+DEBUG_PATTERNS = (
+    re.compile(r"(?<![.\w])print\s*\("),
+    re.compile(r"\bconsole\.(log|debug)\s*\("),
+    re.compile(r"\bdebugger\b"),
+)
+
+TODO_PATTERN = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b")
+
+DEPENDENCY_FILES = (
+    "requirements.txt", "package.json", "package-lock.json",
+    "go.mod", "go.sum", "pom.xml", "yarn.lock", "poetry.lock",
+)
+
+TEST_PATH_HINTS = ("test", "tests", "spec", "__tests__")
+
+SEVERITY_ORDER = ("critical", "high", "medium", "low")
+
+
+class Finding(object):
+    __slots__ = ("severity", "file", "line", "title", "detail")
+
+    def __init__(self, severity, file, line, title, detail):
+        self.severity = severity
+        self.file = file
+        self.line = line
+        self.title = title
+        self.detail = detail
+
+    def row(self):
+        loc = "%s:%s" % (self.file, self.line) if self.line else self.file
+        return (self.severity, "| `%s` | %s | %s |" % (loc, self.severity.upper(), self.title))
+
+
+def analyse_file(fd):
+    """Run all heuristics against one changed-file record. Returns (findings, scanned_ok)."""
+    filename = fd.get("filename", "")
+    patch = fd.get("patch") or ""
+    findings = []
+    scanned = False
+    if not patch or len(patch) > MAX_PATCH_PER_FILE:
+        return findings, scanned
+
+    scanned = True
+    low = filename.lower()
+    is_test = any(h in low for h in TEST_PATH_HINTS)
+    is_dep = os.path.basename(low) in DEPENDENCY_FILES
+
+    added = []  # (line_number_in_new_file, text)
+    new_ln = 0
+    removed_count = 0
+    for raw in patch.splitlines():
+        if raw.startswith("@@"):
+            m = re.search(r"\+(\d+)", raw)
+            new_ln = int(m.group(1)) - 1 if m else new_ln
+            continue
+        if raw.startswith("+"):
+            new_ln += 1
+            added.append((new_ln, raw[1:]))
+        elif raw.startswith("-"):
+            removed_count += 1
+            if is_test:
+                # deleting test assertions is suspicious in non-doc test files
+                text = raw[1:].strip()
+                if text and not text.startswith("#"):
+                    findings.append(Finding(
+                        "medium", filename, None,
+                        "Test code removed (-%d lines in test file)" % removed_count,
+                        "Removed: %s" % text[:110],
+                    ))
+
+    # de-duplicate repeated "test removed" notes
+    if is_test:
+        seen = set()
+        deduped = []
+        for f in findings:
+            if f.title in seen:
+                continue
+            seen.add(f.title)
+            deduped.append(f)
+        findings = deduped
+
+    # --- high-risk location -------------------------------------------------
+    if any(part in low for part in HIGH_RISK_PATH_PARTS):
+        findings.append(Finding(
+            "high", filename, None,
+            "Change touches a security-sensitive area (%s)" % os.path.dirname(filename) or "sensitive path",
+            "Changes to auth/payment/migration/infra code deserve explicit human review.",
+        ))
+    if low.endswith(HIGH_RISK_FILENAMES) or os.path.basename(low) in HIGH_RISK_FILENAMES:
+        findings.append(Finding(
+            "medium", filename, None,
+            "Build/dependency or environment file modified",
+            "Verify the change is intentional and minimal.",
+        ))
+    if any(low.startswith(p) for p in CI_PATH_PREFIXES):
+        findings.append(Finding(
+            "high", filename, None,
+            "CI pipeline modified",
+            "Workflow changes can execute code in privileged contexts.",
+        ))
+
+    # --- per-line pattern scans on added lines ------------------------------
+    secret_hits = set()
+    danger_hits = set()
+    sql_hits = 0
+    debug_hits = 0
+    todo_hits = 0
+
+    is_doc = low.endswith((".md", ".txt", ".rst", ".adoc"))
+    is_sql_file = low.endswith((".sql",))
+
+    for ln, text in added:
+        for pat, label in SECRET_PATTERNS:
+            if pat.search(text):
+                key = label
+                if key not in secret_hits:
+                    secret_hits.add(key)
+                    findings.append(Finding("critical", filename, ln, label, text.strip()[:110]))
+        for pat, label in DANGEROUS_CODE_PATTERNS:
+            if pat.search(text):
+                if label not in danger_hits:
+                    danger_hits.add(label)
+                    findings.append(Finding("high", filename, ln, label, text.strip()[:110]))
+        for pat, label in SQL_DESTRUCTIVE_PATTERNS:
+            if pat.search(text):
+                sql_hits += 1
+                if sql_hits > 1:
+                    continue
+                quoted = bool(re.search(r"[\"'`]", text))
+                is_comment = text.lstrip().startswith(("#", "//", "/*", "*", "<!--"))
+                if is_doc or is_comment:
+                    findings.append(Finding(
+                        "low", filename, ln,
+                        "%s (pattern reference in %s)" % (label, "docs" if is_doc else "comment"),
+                        text.strip()[:110]))
+                elif is_sql_file or not quoted:
+                    findings.append(Finding("high", filename, ln, label, text.strip()[:110]))
+                else:
+                    findings.append(Finding(
+                        "medium", filename, ln,
+                        "%s (likely pattern definition, not execution)" % label,
+                        text.strip()[:110]))
+        for pat in SQL_INJECTION_PATTERNS:
+            if pat.search(text) and not is_doc:
+                findings.append(Finding("high", filename, ln,
+                                        "SQL built via string concatenation",
+                                        text.strip()[:110]))
+                break
+        if DEBUG_PATTERNS[0].search(text) or DEBUG_PATTERNS[1].search(text) or DEBUG_PATTERNS[2].search(text):
+            debug_hits += 1
+        if TODO_PATTERN.search(text):
+            todo_hits += 1
+
+    if debug_hits >= 5 and not is_test:
+        findings.append(Finding("low", filename, None,
+                                "Debug output added (%d lines)" % debug_hits,
+                                "Consider a logging framework instead of print/console.log."))
+    if todo_hits >= 3:
+        findings.append(Finding("low", filename, None,
+                                "TODO/FIXME markers added (%d)" % todo_hits,
+                                "Unresolved work items committed alongside the change."))
+    if is_dep:
+        findings.append(Finding("medium", filename, None,
+                                "Dependency manifest changed",
+                                "Confirm new/updated dependencies are pinned and expected (supply-chain check)."))
+    return findings, scanned
+
+
+def profile_pr(pr, files):
+    langs = {}
+    for fd in files:
+        name = fd.get("filename", "")
+        ext = os.path.splitext(name)[1].lower() or "(no ext)"
+        langs[ext] = langs.get(ext, 0) + 1
+    top = sorted(langs.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    return top
+
+
+def build_review(pr, files, repo_slug):
+    findings = []
+    scanned_files = 0
+    unscanned = []
+    for fd in files:
+        fs, ok = analyse_file(fd)
+        findings.extend(fs)
+        if ok:
+            scanned_files += 1
+        else:
+            unscanned.append(fd.get("filename", "?"))
+
+    severity_map = {s: [] for s in SEVERITY_ORDER}
+    for f in findings:
+        severity_map[f.severity].append(f)
+
+    additions = pr.get("additions", 0)
+    deletions = pr.get("deletions", 0)
+    changed = pr.get("changed_files", len(files))
+    top_langs = profile_pr(pr, files)
+
+    # confidence: how much of the change we could actually inspect
+    if changed:
+        coverage = scanned_files / float(changed)
+    else:
+        coverage = 0.0
+    confidence = int(round(coverage * 80))  # up to 80 from coverage alone
+    confidence += 10 if unscanned == [] else 5
+    confidence = min(confidence, 98)
+    if confidence < 40:
+        confidence = max(confidence, 30)
+
+    lines = []
+    ap = lines.append
+    ap("# PR Review: %s" % pr.get("title", "(untitled)"))
+    ap("")
+    ap("- **PR:** [%s#%d](%s)" % (repo_slug, pr.get("number", 0), pr.get("html_url", "")))
+    ap("- **Author:** @%s" % pr.get("user", {}).get("login", "unknown"))
+    ap("- **Change profile:** %d file(s), +%d/-%d lines — %s" % (
+        changed, additions, deletions,
+        ", ".join("%s×%d" % (ext, n) for ext, n in top_langs) or "mixed"))
+    ap("- **Reviewed by:** claude-review 1.0 (static heuristics, no AI, %s)" % (
+        "full patch coverage" if not unscanned else "partial patch coverage"))
+    ap("")
+    ap("## Summary")
+    ap("")
+    body = (pr.get("body") or "").strip()
+    first_para = ""
+    for block in body.split("\n"):
+        block = block.strip()
+        if block and not block.startswith(("#", ">", "-", "|", "![", "<!--")):
+            first_para = block
+            break
+    if first_para:
+        ap("Stated intent: %s" % (first_para[:300]))
+    else:
+        ap("The PR description is empty; intent inferred from the diff only.")
+    ap("")
+    verdict = "All changes are additions to files under tests/ or docs." if (
+        all(("test" in f.get("filename", "").lower() or f.get("filename", "").lower().endswith(".md"))
+            for f in files) and files) else None
+    ap("The diff %s." % (
+        "touches %d files across %s" % (changed, ", ".join(ext for ext, _ in top_langs) or "multiple areas")))
+    if verdict:
+        ap("")
+        ap(verdict)
+    ap("")
+
+    ap("## Risk Assessment")
+    ap("")
+    total = len(findings)
+    if total == 0:
+        ap("No heuristic risk patterns matched. The diff is small/benign or mostly "
+           "non-executable content — still read it before approving.")
+    else:
+        ap("| Location | Severity | Finding |")
+        ap("|---|---|---|")
+        for sev in SEVERITY_ORDER:
+            for f in sorted(severity_map[sev], key=lambda x: (x.file, x.line or 0)):
+                ap(f.row()[1])
+    ap("")
+
+    ap("## Suggestions")
+    ap("")
+    suggestions = []
+    if any(f.severity == "critical" for f in findings):
+        suggestions.append("Rotate any credential that ever appeared in a commit, then move it to "
+                           "environment/secret storage before this PR can be considered.")
+    if any("without timeout" in f.title for f in findings):
+        suggestions.append("Add explicit timeouts to outbound HTTP calls so failures cannot hang callers.")
+    if any("CI pipeline" in f.title for f in findings):
+        suggestions.append("Re-read the workflow diff line by line; CI changes bypass the usual "
+                           "runtime sandbox for every future job.")
+    if any("Test code removed" in f.title for f in findings):
+        suggestions.append("Justify test removals in the PR description, or restore the deleted assertions.")
+    if unscanned:
+        suggestions.append("%d file(s) could not be scanned (binary or oversized patch): %s. "
+                           "Review these manually." % (len(unscanned), ", ".join(unscanned[:4])))
+    if additions > 600 and not any("test" in f.file.lower() for f in findings):
+        suggestions.append("Large addition without accompanying test changes — consider adding tests "
+                           "for the new behaviour in this PR or a fast follow-up.")
+    if not suggestions:
+        suggestions.append("No blocking concerns from heuristics. Confirm the intent matches the "
+                           "linked issue and that behaviour change is covered by tests.")
+    for s in suggestions:
+        ap("- %s" % s)
+    ap("")
+
+    ap("## Confidence")
+    ap("")
+    ap("**%d/100** — heuristic coverage of %d/%d changed files%s." % (
+        confidence, scanned_files, changed,
+        ("; not scanned: %s" % ", ".join(unscanned[:3])) if unscanned else ""))
+    ap("")
+    ap("*This review is static and rule-based (no AI). It can miss semantic bugs; "
+       "treat it as a pre-review filter, not a replacement for human review.*")
+    ap("")
+    return "\n".join(lines), findings, confidence, unscanned
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="claude-review",
+        description="Static PR review agent — structured Markdown, no AI, stdlib only.",
+    )
+    parser.add_argument("--pr", required=True,
+                        help="GitHub PR URL or owner/repo#123")
+    parser.add_argument("--output", "-o", default=None,
+                        help="Write review to this file instead of stdout")
+    args = parser.parse_args(argv)
+
+    try:
+        owner, repo, number = parse_pr_ref(args.pr)
+    except ValueError as exc:
+        sys.stderr.write("error: %s\n" % exc)
+        return 2
+
+    client = GitHubClient(token=os.environ.get("GITHUB_TOKEN"))
+    try:
+        pr = client.get_pull(owner, repo, number)
+        files = client.get_files(owner, repo, number)
+    except RuntimeError as exc:
+        sys.stderr.write("error: %s\n" % exc)
+        return 3
+
+    markdown, findings, confidence, unscanned = build_review(pr, files, "%s/%s" % (owner, repo))
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as fh:
+            fh.write(markdown)
+        sys.stderr.write("review written to %s (findings=%d, confidence=%d/100)\n"
+                         % (args.output, len(findings), confidence))
+    else:
+        sys.stdout.write(markdown)
+
+    # exit code: 0 ok; 1 when critical findings (CI-friendly)
+    return 1 if any(f.severity == "critical" for f in findings) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
