@@ -22,6 +22,17 @@ You're in the right place.
 
 ---
 
+## Generate a CHANGELOG
+
+Run `bash changelog.sh` from the root of a Git repository. It reads commits after the newest tag, categorizes commit subjects into Added / Fixed / Changed / Removed, and writes `CHANGELOG.md`.
+
+Setup in 3 steps:
+1. Copy `changelog.sh` into your repository.
+2. Make it executable with `chmod +x changelog.sh`.
+3. Run `bash changelog.sh`.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
