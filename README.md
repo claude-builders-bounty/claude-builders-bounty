@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Implemented Skills & Solutions
+
+* **[Generate Changelog Skill](skills/generate-changelog/)** (Closes [#1](../../issues/1)): Automated `CHANGELOG.md` generator from git history with tag detection and Keep-a-Changelog formatting.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
