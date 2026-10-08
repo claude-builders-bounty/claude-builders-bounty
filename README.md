@@ -1,53 +1,35 @@
-# Claude Builders Bounty 🤖
+# Structured Git Changelog Generator
 
-> A community bounty board for Claude Code builders.
+Automatically parses git commits since the last release tag and compiles a clean, categorized `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/) guidelines.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Quick Setup (3 Steps)
 
----
-
-## How it works
-
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+1. **Clone or Copy**: Place `generate_changelog.py` and `changelog.sh` in your project root or scripts directory.
+2. **Execute**: Run `bash changelog.sh` (or `python generate_changelog.py`).
+3. **Done**: Inspect your updated `CHANGELOG.md` ready for release!
 
 ---
 
-## Active Bounties
+## Sample Output
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```markdown
+# Changelog
 
----
+All notable changes to this project will be documented in this file.
 
-## Rules
+## [Unreleased] - 2026-10-08
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+### Added
+- **auth**: Add OAuth2 Google and GitHub login providers ([a1b2c3d])
+- Support export to CSV and Excel format ([e4f5g6h])
 
----
+### Fixed
+- Resolve memory leak in background worker task ([789abc0])
+- Correct date parsing for ISO-8601 timestamps ([def1234])
 
-## Community
+### Changed
+- Refactor API client with retry backoff ([567890a])
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+### Removed
+- Deprecate legacy XML endpoints ([bcdef01])
+```
