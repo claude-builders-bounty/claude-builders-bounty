@@ -34,6 +34,12 @@ You're in the right place.
 
 ---
 
+## Implemented Tools & Hooks
+
+* **[Destructive Bash Interceptor Hook](hooks/)** (Closes [#3](../../issues/3)): Claude Code `pre-tool-use` hook blocking `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and unbounded `DELETE FROM`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
