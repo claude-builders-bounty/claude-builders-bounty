@@ -1,53 +1,53 @@
-# Claude Builders Bounty 🤖
+# Changelog Generator
 
-> A community bounty board for Claude Code builders.
+Automatically generate a structured `CHANGELOG.md` from your git history.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Setup
 
----
+1. **Clone or download** this repository
+2. **Navigate** to your project directory (must be a git repository)
+3. **Run** the script:
+   ```bash
+   bash /path/to/changelog.sh
+   ```
 
-## How it works
+## Features
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+- 📋 Fetches commits since the last git tag
+- 🏷️ Auto-categorizes into: `Added` / `Fixed` / `Changed` / `Removed`
+- 📝 Outputs a properly formatted `CHANGELOG.md`
+- 🎯 Supports conventional commit prefixes (feat:, fix:, etc.)
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Categories
 
----
+Commits are categorized based on:
+- **Added**: New features, additions (feat:, add:, new:)
+- **Fixed**: Bug fixes (fix:, bugfix:, hotfix:)
+- **Changed**: Updates, improvements (change:, update:, refactor:)
+- **Removed**: Deletions, deprecations (remove:, delete:, drop:)
 
-## Active Bounties
+## Example Output
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+```markdown
+# Changelog
 
----
+All notable changes to this project will be documented in this file.
 
-## Rules
+## [v1.0.0] - 2025-05-22
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+### Added
+- New user authentication system (a1b2c3d)
+- Dark mode support (e4f5g6h)
 
----
+### Fixed
+- Login page redirect bug (i7j8k9l)
+```
 
-## Community
+## Requirements
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+- Python 3.x or Python 2.7
+- Git repository with commit history
 
----
+## License
 
-*Started by the Claude builder community · March 2026 · MIT License*
+MIT
