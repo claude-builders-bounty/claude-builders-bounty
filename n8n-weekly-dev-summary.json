@@ -1,0 +1,274 @@
+{
+  "name": "Weekly Dev Summary — n8n + Claude (Opire bounty #5)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "50cb0907-5cde-432c-a58d-60e8febec44f",
+      "name": "Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "75728e0a-a6fb-4ad9-b4c3-c1dc028216c2",
+              "name": "repo_owner",
+              "type": "string",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "id": "4107bf2d-2c22-47fd-8e2a-1e881cf8d4af",
+              "name": "repo_name",
+              "type": "string",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "id": "1cb4868e-48a0-4d2f-aee0-f364266d0a1b",
+              "name": "language",
+              "type": "string",
+              "value": "EN"
+            },
+            {
+              "id": "72aaf575-3aea-4a8c-a459-cacc584bcdd0",
+              "name": "anthropic_model",
+              "type": "string",
+              "value": "claude-sonnet-4-6"
+            },
+            {
+              "id": "2f7fad14-de82-4a09-b816-325a8b3db51e",
+              "name": "anthropic_api_key",
+              "type": "string",
+              "value": "PASTE_YOUR_ANTHROPIC_API_KEY_HERE"
+            },
+            {
+              "id": "9c0d2ab5-ba93-4b2d-8e6c-457282ec1527",
+              "name": "slack_webhook_url",
+              "type": "string",
+              "value": "PASTE_YOUR_SLACK_INCOMING_WEBHOOK_URL_HERE"
+            },
+            {
+              "id": "72b88fda-85f5-41cf-a98d-889794543fc6",
+              "name": "github_token",
+              "type": "string",
+              "value": ""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "10b236fd-98bf-4bbb-8918-5052acef345b",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect GitHub activity — n8n Code node (Run Once for All Items).\n// Reads config from the \"Config\" Set node. Paginates the GitHub REST API\n// (Link-header following), filters to the trailing 7-day window, dedupes.\nconst cfg = $('Config').first().json;\nconst owner = (cfg.repo_owner || '').trim();\nconst repo = (cfg.repo_name || '').trim();\nif (!owner || !repo) throw new Error('Config: repo_owner and repo_name are required.');\n\nconst now = new Date();\nconst since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst sinceIso = since.toISOString();\n\nconst headers = {\n  'Accept': 'application/vnd.github+json',\n  'User-Agent': 'n8n-weekly-dev-summary'\n};\nif (cfg.github_token && String(cfg.github_token).trim() && !String(cfg.github_token).includes('PASTE')) {\n  headers['Authorization'] = 'Bearer ' + String(cfg.github_token).trim();\n}\n\nasync function getAll(path) {\n  let url = 'https://api.github.com' + path + (path.includes('?') ? '&' : '?') + 'per_page=100';\n  const out = [];\n  let guard = 0;\n  while (url) {\n    if (++guard > 50) throw new Error('Pagination guard tripped (>50 pages).');\n    const res = await fetch(url, { headers });\n    if (!res.ok) {\n      const body = await res.text().catch(() => '');\n      throw new Error('GitHub API ' + res.status + ' on ' + url + ' :: ' + body.slice(0, 200));\n    }\n    const data = await res.json();\n    out.push(...(Array.isArray(data) ? data : [data]));\n    const link = res.headers.get('link') || '';\n    const m = link.match(/<([^>]+)>;\\s*rel=\"next\"/);\n    url = m ? m[1] : null;\n  }\n  return out;\n}\n\nconst commitsRaw = await getAll(`/repos/${owner}/${repo}/commits?since=${sinceIso}`);\nconst issuesRaw = await getAll(`/repos/${owner}/${repo}/issues?state=closed&since=${sinceIso}`);\n// Pulls have no server-side merged-since filter, so page with early exit:\n// sorted by updated desc, and updated_at >= merged_at always, so once a full\n// page is older than the window, no later page can hold a merged PR in-window.\nconst pullsRaw = [];\n{\n  let url = `https://api.github.com/repos/${owner}/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`;\n  let guard = 0;\n  while (url) {\n    if (++guard > 50) throw new Error('Pulls pagination guard tripped (>50 pages).');\n    const res = await fetch(url, { headers });\n    if (!res.ok) throw new Error('GitHub API ' + res.status + ' on pulls');\n    const page = await res.json();\n    pullsRaw.push(...page);\n    const fresh = page.filter(p => p.updated_at && new Date(p.updated_at) >= since);\n    const link = res.headers.get('link') || '';\n    const m = link.match(/<([^>]+)>;\\s*rel=\"next\"/);\n    url = (fresh.length > 0 && m) ? m[1] : null;\n  }\n}\n\nconst commits = [];\nconst seenSha = new Set();\nfor (const c of commitsRaw) {\n  if (!c.sha || seenSha.has(c.sha)) continue;\n  seenSha.add(c.sha);\n  const ca = c.commit && c.commit.author ? c.commit.author : {};\n  commits.push({\n    sha: c.sha.slice(0, 7),\n    message: String((c.commit && c.commit.message) || '').split('\\n')[0],\n    author: ca.name || '',\n    date: ca.date || ''\n  });\n}\n\nconst closed_issues = [];\nfor (const i of issuesRaw) {\n  if (i.pull_request) continue; // the issues endpoint also returns PRs\n  if (!i.closed_at || new Date(i.closed_at) < since) continue;\n  closed_issues.push({ number: i.number, title: i.title, closed_at: i.closed_at });\n}\n\nconst merged_prs = [];\nfor (const p of pullsRaw) {\n  if (!p.merged_at || new Date(p.merged_at) < since) continue;\n  merged_prs.push({\n    number: p.number,\n    title: p.title,\n    merged_at: p.merged_at,\n    author: (p.user && p.user.login) || ''\n  });\n}\n\nreturn [{\n  json: {\n    repo: owner + '/' + repo,\n    window: { since: since.toISOString(), until: now.toISOString() },\n    commits,\n    closed_issues,\n    merged_prs,\n    counts: {\n      commits: commits.length,\n      closed_issues: closed_issues.length,\n      merged_prs: merged_prs.length\n    }\n  }\n}];\n",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "36d71ea2-b8b7-4354-b18b-6492da39b4c1",
+      "name": "Collect GitHub activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build prompt — n8n Code node (Run Once for All Items).\n// Turns the collected activity into a Claude prompt in EN or FR (per Config).\n// Quiet weeks get an explicit \"quiet week\" brief instead of an empty summary.\nconst d = $input.first().json;\nconst cfg = $('Config').first().json;\nconst lang = String(cfg.language || 'EN').toUpperCase() === 'FR' ? 'FR' : 'EN';\nconst { commits, closed_issues, merged_prs, counts, window, repo } = d;\n\nfunction section(title, items, fmt) {\n  if (!items.length) return title + '\\n(none this week)';\n  const shown = items.slice(0, 60).map(fmt).join('\\n');\n  const more = items.length > 60 ? `\\n...and ${items.length - 60} more` : '';\n  return title + '\\n' + shown + more;\n}\n\nconst dataBlock =\n  section('COMMITS (' + counts.commits + ')', commits,\n    c => `- ${c.sha} | ${c.message} | ${c.author} | ${c.date}`) +\n  '\\n\\n' +\n  section('CLOSED ISSUES (' + counts.closed_issues + ')', closed_issues,\n    i => `- #${i.number} | ${i.title} | closed ${i.closed_at}`) +\n  '\\n\\n' +\n  section('MERGED PULL REQUESTS (' + counts.merged_prs + ')', merged_prs,\n    p => `- #${p.number} | ${p.title} | by ${p.author} | merged ${p.merged_at}`);\n\nlet prompt;\nif (lang === 'FR') {\n  prompt =\n    'Tu es un rédacteur technique qui résume l’activité hebdomadaire d’un dépôt GitHub. ' +\n    'Rédige un résumé narratif clair et concis en français, structuré en trois parties : « Temps forts », « Détail par catégorie », « À surveiller la semaine prochaine ». ' +\n    'Ton : professionnel, factuel, sans jargon inutile. 250 mots maximum.\\n\\n' +\n    'DÉPÔT : ' + repo + '\\n' +\n    'SEMAINE : ' + window.since.slice(0, 10) + ' → ' + window.until.slice(0, 10) + '\\n\\n' +\n    'DONNÉES D’ACTIVITÉ :\\n' + dataBlock +\n    (counts.commits + counts.closed_issues + counts.merged_prs === 0\n      ? '\\n\\nNote : aucune activité cette semaine. Rédige une brève note « semaine calme » en une phrase.'\n      : '');\n} else {\n  prompt =\n    'You are a technical writer summarizing one week of GitHub repository activity. ' +\n    'Write a clear, concise narrative summary in English with three sections: \"Highlights\", \"By category\", \"Watch next week\". ' +\n    'Tone: professional, factual, no fluff. 250 words max.\\n\\n' +\n    'REPO: ' + repo + '\\n' +\n    'WEEK: ' + window.since.slice(0, 10) + ' → ' + window.until.slice(0, 10) + '\\n\\n' +\n    'ACTIVITY DATA:\\n' + dataBlock +\n    (counts.commits + counts.closed_issues + counts.merged_prs === 0\n      ? '\\n\\nNote: zero activity this week. Write a one-sentence \"quiet week\" note instead.'\n      : '');\n}\n\nreturn [{ json: { prompt, counts, window, repo, language: lang } }];\n",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "9e2231f9-134d-4830-bd6d-652a3e3a96d9",
+      "name": "Build prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $('Config').first().json.anthropic_api_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Config').first().json.anthropic_model, max_tokens: 1024, messages: [{ role: 'user', content: $json.prompt }] }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "8609ffe2-dce6-46c7-b24e-139d59a5788a",
+      "name": "Ask Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.slack_webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.content[0].text }) }}",
+        "options": {}
+      },
+      "id": "4f8ebfed-cc1b-4b73-ae85-f5f5214c41aa",
+      "name": "Deliver to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Setup (see README.md)\n1. Fill the Config node: repo, language EN/FR, Anthropic key, model, Slack webhook URL.\n2. Activate the workflow — the Friday 17:00 schedule is already set.\n3. Optional: press \"Execute workflow\" to run it immediately.",
+        "height": 220,
+        "width": 300,
+        "color": 4
+      },
+      "id": "de8cb4dc-51c9-4ec2-ad2c-2e16302a86d6",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        420,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Notes\n- GitHub collection paginates via Link headers (up to 50 pages) and filters to the trailing 7 days.\n- Closed issues exclude PRs; merged PRs come from the pulls endpoint filtered on merged_at.\n- The bounty spec named claude-sonnet-4-20250514, retired June 2026; the Config default is claude-sonnet-4-6 (current, configurable).\n- Empty weeks produce a one-sentence quiet-week note, never an empty post.",
+        "height": 260,
+        "width": 340,
+        "color": 5
+      },
+      "id": "0bbcf54c-19ac-49ef-acf8-356ef8ff129d",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        880,
+        80
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Friday 5pm": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Collect GitHub activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect GitHub activity": {
+      "main": [
+        [
+          {
+            "node": "Build prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build prompt": {
+      "main": [
+        [
+          {
+            "node": "Ask Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Claude": {
+      "main": [
+        [
+          {
+            "node": "Deliver to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
