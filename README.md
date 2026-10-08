@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Skills & Utilities
+
+### 1. Structured Git CHANGELOG Generator (`/generate-changelog`)
+Automatically creates Keep a Changelog formatted markdown from commits since the last git tag, categorized into `Added`, `Fixed`, `Changed`, and `Removed`.
+
+**Setup in 3 steps:**
+1. Copy `changelog.sh` into your project root or place `.claude/skills/generate-changelog/SKILL.md` in your workspace.
+2. Grant execution permissions: `chmod +x changelog.sh`
+3. Generate changelog: run `bash changelog.sh` or ask Claude Code `/generate-changelog`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
