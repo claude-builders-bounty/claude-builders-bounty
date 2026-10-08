@@ -34,6 +34,19 @@ You're in the right place.
 
 ---
 
+## Hooks & Safety
+
+### Pre-Tool-Use Security Hook (`hooks/pre-tool-use`)
+Intercepts and blocks destructive terminal and database commands before execution (`rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, `DELETE FROM` without WHERE clause), logging blocked attempts to `~/.claude/hooks/blocked.log`.
+
+**Installation in 2 commands:**
+```bash
+mkdir -p ~/.claude/hooks && cp hooks/pre-tool-use ~/.claude/hooks/pre-tool-use
+chmod +x ~/.claude/hooks/pre-tool-use
+```
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling

@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""
+Claude Code Pre-Tool-Use Security Hook
+Blocks destructive bash and database commands:
+- rm -rf
+- DROP TABLE
+- git push --force / git push -f
+- TRUNCATE
+- DELETE FROM without WHERE clause
+
+Logs blocked attempts to ~/.claude/hooks/blocked.log
+"""
+
+import sys
+import os
+import re
+import json
+from datetime import datetime
+
+LOG_DIR = os.path.expanduser("~/.claude/hooks")
+LOG_FILE = os.path.join(LOG_DIR, "blocked.log")
+
+# Destructive command patterns
+PATTERNS = [
+    (re.compile(r"\brm\s+.*(-[a-zA-Z]*r[a-zA-Z]*\s+-[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*\s+-[a-zA-Z]*r[a-zA-Z]*|-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r|--recursive.*--force|--force.*--recursive)\b", re.IGNORECASE), "Recursive forceful deletion ('rm -rf') is forbidden"),
+    (re.compile(r"\bDROP\s+TABLE\b", re.IGNORECASE), "Destructive SQL 'DROP TABLE' is forbidden"),
+    (re.compile(r"\bTRUNCATE(\s+TABLE)?\b", re.IGNORECASE), "Destructive SQL 'TRUNCATE' is forbidden"),
+    (re.compile(r"\bgit\s+push\b.*(--force|-f\b|--force-with-lease)", re.IGNORECASE), "Force pushing to remote git repository is forbidden"),
+]
+
+def check_delete_without_where(cmd: str) -> bool:
+    """Check if command contains DELETE FROM without a WHERE clause."""
+    delete_matches = re.finditer(r"\bDELETE\s+FROM\s+([`\"'\w]+)", cmd, re.IGNORECASE)
+    for m in delete_matches:
+        start_idx = m.end()
+        # Look forward to end of statement or command (until ; or end)
+        after_stmt = cmd[start_idx:]
+        end_stmt = re.split(r"[;&|]", after_stmt)[0]
+        if not re.search(r"\bWHERE\b", end_stmt, re.IGNORECASE):
+            return True
+    return False
+
+def log_blocked(cmd: str, reason: str, cwd: str):
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] PATH: {cwd} | REASON: {reason} | COMMAND: {cmd}\n"
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(log_entry)
+    except Exception as e:
+        sys.stderr.write(f"Warning: Failed to write to {LOG_FILE}: {e}\n")
+
+def inspect_command(command_str: str, cwd: str = None) -> bool:
+    """Returns True if command is safe, False if command is blocked."""
+    if not cwd:
+        cwd = os.getcwd()
+    
+    # 1. Regex patterns
+    for pattern, reason in PATTERNS:
+        if pattern.search(command_str):
+            log_blocked(command_str, reason, cwd)
+            sys.stderr.write(f"\n🚨 [BLOCKED BY SECURITY HOOK]\nCommand: {command_str}\nReason: {reason}\nPath: {cwd}\nLogged to: {LOG_FILE}\n\n")
+            return False
+
+    # 2. DELETE FROM without WHERE
+    if check_delete_without_where(command_str):
+        reason = "SQL 'DELETE FROM' without a WHERE clause will wipe entire table"
+        log_blocked(command_str, reason, cwd)
+        sys.stderr.write(f"\n🚨 [BLOCKED BY SECURITY HOOK]\nCommand: {command_str}\nReason: {reason}\nPath: {cwd}\nLogged to: {LOG_FILE}\n\n")
+        return False
+
+    return True
+
+def main():
+    command_to_check = ""
+    cwd = os.getcwd()
+
+    # 1. Check if argument passed directly
+    if len(sys.argv) > 1:
+        command_to_check = " ".join(sys.argv[1:])
+    # 2. Check if JSON passed via stdin (Claude Code hook standard)
+    elif not sys.stdin.isatty():
+        try:
+            stdin_data = sys.stdin.read().strip()
+            if stdin_data:
+                try:
+                    payload = json.loads(stdin_data)
+                    # Claude Code hook payload format
+                    tool_name = payload.get("tool_name", "")
+                    tool_input = payload.get("tool_input", {})
+                    cwd = payload.get("cwd", os.getcwd())
+                    
+                    if tool_name.lower() in ("bash", "sh", "terminal", "execute_command"):
+                        command_to_check = tool_input.get("command", "") or tool_input.get("cmd", "")
+                    elif isinstance(tool_input, dict) and "command" in tool_input:
+                        command_to_check = tool_input["command"]
+                    else:
+                        command_to_check = stdin_data
+                except json.JSONDecodeError:
+                    command_to_check = stdin_data
+        except Exception:
+            pass
+
+    if command_to_check:
+        if not inspect_command(command_to_check, cwd):
+            sys.exit(1)
+
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
