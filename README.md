@@ -51,3 +51,11 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Generate a changelog
+
+1. Copy `changelog.sh` into any Git repository.
+2. Run `bash changelog.sh`.
+3. Open the generated `CHANGELOG.md`.
+
+The script reads commits since the latest Git tag and automatically groups them into **Added**, **Fixed**, **Changed**, and **Removed**.
