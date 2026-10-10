@@ -34,6 +34,18 @@ You're in the right place.
 
 ---
 
+## Generate a CHANGELOG (3 steps)
+
+1. Copy `changelog.sh` into any git repository and run `bash changelog.sh`
+2. (Optional) tag a release (`git tag v1.0.0`) — commits since the last tag are used
+3. Open the generated `CHANGELOG.md`
+
+Commits are grouped into **Added / Fixed / Changed / Removed** based on their
+conventional-commit type (`feat:`, `fix:`, `refactor:`, `remove:` …), and any
+previously released sections are preserved on re-runs.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
