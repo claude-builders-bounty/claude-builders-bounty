@@ -159,8 +159,8 @@ this command was prevented from executing. If this action is strictly required,
 please execute it manually in your shell with explicit human confirmation.
 """
         sys.stderr.write(error_msg.strip() + "\n")
-        # Exit with non-zero exit code to block tool execution
-        sys.exit(1)
+        # Exit with code 2 to strictly block tool execution in Claude Code PreToolUse contract
+        sys.exit(2)
 
     # Safe command: exit 0 to allow execution
     sys.exit(0)
