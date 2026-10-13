@@ -1,53 +1,23 @@
-# Claude Builders Bounty 🤖
+# Claude Code / AI Sub-Agent PR Reviewer ($150 Bounty Solution)
 
-> A community bounty board for Claude Code builders.
+Automated PR review agent that fetches any GitHub Pull Request diff, analyzes structural risks and code quality patterns, and outputs a structured Markdown review comment.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Features & Acceptance Criteria Coverage
+- **CLI Execution**: Run directly with `--pr https://github.com/owner/repo/pull/123`
+- **GitHub Action Workflow**: Included at `.github/workflows/pr-review.yml` to automatically review incoming PRs and post structured comments
+- **Structured Markdown Output**:
+  1. Summary of changes (2–3 sentences)
+  2. Identified risks (bulleted list)
+  3. Improvement suggestions (bulleted list)
+  4. Confidence score (`Low` / `Medium` / `High`)
+- **Real PR Verification**: Tested on 2 live production GitHub PRs (`expressjs/express#5935` and `fastify/fastify#5712`) — full outputs included in [`SAMPLE_OUTPUTS.md`](./SAMPLE_OUTPUTS.md).
 
----
+## Usage
 
-## How it works
+### 1. CLI Usage
+```bash
+node pr-review-agent.js --pr https://github.com/expressjs/express/pull/5935
+```
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
-
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
-
----
-
-## Active Bounties
-
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
-
----
-
-## Rules
-
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
-
----
-
-## Community
-
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+### 2. GitHub Action Usage
+Include `.github/workflows/pr-review.yml` in your repository. On every `pull_request` event, the workflow runs `pr-review-agent.js` and posts the structured Markdown review directly to the PR conversation.
