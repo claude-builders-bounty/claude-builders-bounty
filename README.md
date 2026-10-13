@@ -1,79 +1,53 @@
-# generate-changelog
+# Claude Builders Bounty 🤖
 
-Generate a structured `CHANGELOG.md` from a project's git history.
-Commits since the last tag are auto-categorized into **Added / Fixed / Changed / Removed**
-and written in [Keep a Changelog](https://keepachangelog.com/) format.
+> A community bounty board for Claude Code builders.
 
-## Setup (3 steps)
+Building with Claude Code? Have tasks to delegate?
+Want to get paid for contributing to AI projects?
+You're in the right place.
 
-1. Copy `changelog.sh` into the repository you want a changelog for.
-2. Run it:
-   ```bash
-   bash changelog.sh --version v1.0.0
-   ```
-3. Commit the generated `CHANGELOG.md`.
+---
 
-Requires `git` and `bash`. No dependencies, no network, no API keys.
+## How it works
 
-## Usage
+**To post a bounty**
+1. Open a GitHub issue with a clear description and acceptance criteria
+2. Comment `/opire create $XXX` in the issue to set the reward
+3. Share the link — contributors will find it
 
-```bash
-bash changelog.sh                     # since the last tag, section "Unreleased"
-bash changelog.sh --version v1.3.0    # name the section explicitly
-bash changelog.sh --since v1.2.0      # explicit range start
-bash changelog.sh --out docs/CHANGELOG.md
-bash changelog.sh --repo /path/to/repo
-bash changelog.sh --dry-run           # print to stdout, write nothing
-bash changelog.sh --help
-```
+**To claim a bounty**
+1. Browse the open issues below
+2. Comment `/opire try` in the issue you want to work on
+3. Submit a PR — payment is automatic on merge ✅
 
-| Option | Meaning | Default |
-|---|---|---|
-| `--version` | section label | `Unreleased` |
-| `--since` | range start (tag or commit) | newest tag, else all history |
-| `--out` | output file | `CHANGELOG.md` |
-| `--repo` | repository path | `.` |
-| `--dry-run` | preview only | off |
+---
 
-## How commits are categorized
+## Active Bounties
 
-| Commit | Section |
-|---|---|
-| `feat: ...`, `feat(api): ...`, `add: ...` | Added |
-| `fix: ...`, `fix(ui): ...`, `hotfix: ...` | Fixed |
-| `remove: ...`, `revert: ...`, `deprecate: ...` | Removed |
-| `refactor|perf|docs|chore|style|test|build|ci|update|rename|move: ...` | Changed |
-| free-form subject containing `fix`/`bug` | Fixed |
-| free-form subject containing `add`/`new` | Added |
-| free-form subject containing `remove`/`delete`/`drop` | Removed |
-| anything else | Changed (nothing is dropped) |
+| # | Task | Amount | Status |
+|---|------|--------|--------|
+| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
+| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
+| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
+| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
 
-Scope and breaking-change markers are supported: `feat(api)!: drop v1` → Added.
-Merge commits are skipped.
+---
 
-## Also usable as a Claude Code skill
+## Rules
 
-`SKILL.md` is included, so the same tool is available as the `/generate-changelog`
-skill — ask for a changelog and it runs the script above.
+- Tasks must be related to Claude Code or AI tooling
+- Every issue must have clear acceptance criteria before a bounty is activated
+- Payment is handled by [Opire](https://opire.dev) (Stripe)
+- Quality over speed — a solid PR beats a fast one
 
-## Sample output
+---
 
-`SAMPLE-OUTPUT.md` contains real output produced on two public repositories:
+## Community
 
-- `claude-builders-bounty/claude-builders-bounty` (no tags → whole history),
-- `sindresorhus/p-limit` (84 commits, 27 tags → range `v7.0.0..HEAD`).
+- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
+- 📧 Contact: claudebounty@gmail.com
 
-## Tests
+---
 
-```bash
-bash tests/test_changelog.sh
-```
-
-Ten assertions cover: each category (including conventional scopes), exclusion of
-commits before the last tag, `--since` override, whole-history mode when no tags
-exist, file writing, non-git directory failing with exit 2, and merge commits
-being skipped.
-
-## License
-
-MIT — use it anywhere.
+*Started by the Claude builder community · March 2026 · MIT License*
