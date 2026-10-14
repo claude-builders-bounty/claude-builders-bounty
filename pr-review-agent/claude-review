@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""
+claude-review — fetch a GitHub PR diff, analyze it with an LLM, and produce a
+structured Markdown review (Summary / Risks / Suggestions / Confidence).
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr https://github.com/owner/repo/pull/123 --post   # comment on the PR
+
+Configuration (env):
+    LLM_BASE_URL   OpenAI-compatible base URL   (default https://api.openai.com/v1)
+    LLM_API_KEY    API key for that endpoint    (required)
+    LLM_MODEL      Model id                     (default anthropic/claude-sonnet-4)
+    GITHUB_TOKEN   Optional; raises API rate limits, enables private repos
+    MAX_DIFF_CHARS Diff budget before truncation (default 60000)
+
+Works with any OpenAI-compatible chat-completions endpoint: OpenRouter,
+Anthropic's compatibility endpoint, local routers, etc.
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+PR_RE = re.compile(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)")
+
+SYSTEM_PROMPT = """You are a senior code reviewer. You receive a pull request diff.
+Produce a review in EXACTLY this Markdown structure, nothing before or after:
+
+## Summary
+(2-3 sentences describing what the change does)
+
+## Risks
+(- one bullet per risk, each tagged [high], [medium], or [low]; if none, write "- none identified")
+
+## Suggestions
+(- one bullet per concrete improvement; if none, write "- none")
+
+**Confidence:** Low | Medium | High
+
+Rules:
+- Judge only what the diff shows; do not speculate about unseen code.
+- Prefer specific, actionable feedback over generic advice.
+- Confidence reflects how sure you are of your assessment (Low if the diff is truncated or the context is thin)."""
+
+
+def fail(msg, code=1):
+    print(f"claude-review: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def parse_pr_url(url):
+    m = PR_RE.search(url)
+    if not m:
+        fail(f"not a GitHub PR URL: {url}")
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def fetch_diff(owner, repo, number):
+    """Return (diff_text, title). gh CLI first; API fallback."""
+    slug = f"{owner}/{repo}"
+    title = ""
+    try:
+        meta = json.loads(subprocess.run(
+            ["gh", "pr", "view", str(number), "--repo", slug, "--json", "title"],
+            capture_output=True, text=True, check=True, timeout=60).stdout)
+        title = meta.get("title", "")
+        diff = subprocess.run(
+            ["gh", "pr", "diff", str(number), "--repo", slug],
+            capture_output=True, text=True, check=True, timeout=120).stdout
+        if diff.strip():
+            return diff, title
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # fallback: raw diff endpoint (public repos)
+    req = urllib.request.Request(
+        f"https://github.com/{slug}/pull/{number}.diff",
+        headers={"User-Agent": "claude-review/1.0",
+                 **({"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}"}
+                    if os.environ.get("GITHUB_TOKEN") else {})})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        diff = r.read().decode("utf-8", "replace")
+    if not diff.strip():
+        fail(f"could not fetch diff for {slug}#{number} (private repo? set GITHUB_TOKEN)")
+    return diff, title
+
+
+def call_llm(prompt):
+    base = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    key = os.environ.get("LLM_API_KEY", "")
+    model = os.environ.get("LLM_MODEL", "anthropic/claude-sonnet-4")
+    body = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+    }).encode()
+    # Authorization only when a key is provided: local routers (zen-router,
+    # OmniRoute, llama.cpp servers) substitute their own upstream key when the
+    # caller sends none.
+    headers = {"Content-Type": "application/json",
+               "User-Agent": "claude-review/1.0"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    req = urllib.request.Request(
+        f"{base}/chat/completions", data=body, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            data = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        fail(f"LLM endpoint returned HTTP {e.code}: {e.read().decode()[:300]}")
+    except urllib.error.URLError as e:
+        fail(f"LLM endpoint unreachable ({base}): {e}")
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError):
+        fail(f"unexpected LLM response shape: {json.dumps(data)[:300]}")
+
+
+def validate_review(text):
+    """The LLM must have produced every required section."""
+    problems = []
+    for section in ("## Summary", "## Risks", "## Suggestions"):
+        if section not in text:
+            problems.append(f"missing {section}")
+    if not re.search(r"\*\*Confidence:\*\*\s*(Low|Medium|High)", text):
+        problems.append("missing Confidence line")
+    return problems
+
+
+def post_comment(owner, repo, number, body):
+    slug = f"{owner}/{repo}"
+    try:
+        subprocess.run(
+            ["gh", "pr", "comment", str(number), "--repo", slug, "--body-file", "-"],
+            input=body, capture_output=True, text=True, check=True, timeout=60)
+        return f"posted review to {slug}#{number}"
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+        token = os.environ.get("GITHUB_TOKEN")
+        if not token:
+            fail(f"could not post comment (gh failed, no GITHUB_TOKEN): {e}")
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{slug}/issues/{number}/comments",
+            data=json.dumps({"body": body}).encode(),
+            headers={"Authorization": f"Bearer {token}",
+                     "Accept": "application/vnd.github+json",
+                     "User-Agent": "claude-review/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                json.loads(r.read().decode())
+            return f"posted review to {slug}#{number}"
+        except urllib.error.HTTPError as e2:
+            fail(f"GitHub API returned HTTP {e2.code}: {e2.read().decode()[:300]}")
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="claude-review",
+                                 description="LLM-powered structured PR review")
+    ap.add_argument("--pr", required=True, help="PR URL, e.g. https://github.com/owner/repo/pull/123")
+    ap.add_argument("--post", action="store_true", help="post the review as a PR comment")
+    ap.add_argument("--max-diff-chars", type=int,
+                    default=int(os.environ.get("MAX_DIFF_CHARS", "60000")))
+    args = ap.parse_args()
+
+    owner, repo, number = parse_pr_url(args.pr)
+    diff, title = fetch_diff(owner, repo, number)
+
+    truncated = len(diff) > args.max_diff_chars
+    shown = diff[:args.max_diff_chars]
+    header = f"Repository: {owner}/{repo}\nPR #{number}: {title}\n"
+    if truncated:
+        header += f"NOTE: diff truncated to {args.max_diff_chars} of {len(diff)} chars.\n"
+
+    review = call_llm(f"{header}\n--- DIFF ---\n{shown}")
+
+    problems = validate_review(review)
+    if problems:
+        print(f"claude-review: WARNING — output missing: {', '.join(problems)}",
+              file=sys.stderr)
+
+    print(review)
+
+    if args.post:
+        print(f"\n[{post_comment(owner, repo, number, review)}]", file=sys.stderr)
+
+    # non-zero exit if the contract was violated, so CI can catch it
+    sys.exit(1 if problems else 0)
+
+
+if __name__ == "__main__":
+    main()

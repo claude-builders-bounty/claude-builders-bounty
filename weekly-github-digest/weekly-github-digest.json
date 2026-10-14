@@ -1,0 +1,299 @@
+{
+  "name": "Weekly GitHub Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "name": "Weekly Trigger (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-repo",
+              "name": "repo",
+              "value": "NousResearch/hermes-agent",
+              "type": "string"
+            },
+            {
+              "id": "cfg-lang",
+              "name": "language",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "cfg-webhook",
+              "name": "webhookUrl",
+              "value": "https://hooks.slack.com/services/XXX/YYY/ZZZ",
+              "type": "string"
+            },
+            {
+              "id": "cfg-week",
+              "name": "weekStart",
+              "value": "={{ new Date(new Date(new Date().setDate(new Date().getDate() - ((new Date().getDay() + 6) % 7))).setHours(0, 0, 0, 0)).toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $('Config').item.json.repo + '/commits?since=' + $('Config').item.json.weekStart + '&per_page=100' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "weekly-digest-workflow"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "name": "Fetch commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        160
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $('Config').item.json.repo + '/issues?state=closed?since=' + $('Config').item.json.weekStart + '&per_page=100' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "weekly-digest-workflow"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-4000-8000-000000000004",
+      "name": "Fetch closed issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -740,
+        160
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $('Config').item.json.repo + '/pulls?state=closed&sort=updated&direction=desc?since=' + $('Config').item.json.weekStart + '&per_page=100' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "weekly-digest-workflow"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-4000-8000-000000000005",
+      "name": "Fetch merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -520,
+        160
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine the three GitHub fetches into one digest for the LLM.\n// Issues endpoint returns issues AND pull requests mixed; keep only real\n// issues (no `pull_request` key). The pulls endpoint returns closed PRs;\n// keep only those actually merged (merged_at set) within the week.\nconst cfg = $('Config').item.json;\nconst commits = $('Fetch commits').all().map(i => i.json);\nconst rawIssues = $('Fetch closed issues').all().map(i => i.json);\nconst issues = rawIssues.filter(i => !i.pull_request);\nconst rawPrs = $('Fetch merged PRs').all().map(i => i.json);\nconst weekStart = new Date(cfg.weekStart).getTime();\nconst prs = rawPrs.filter(p => p.merged_at && new Date(p.merged_at).getTime() >= weekStart);\n\nconst commitLines = commits\n  .slice(0, 30)\n  .map(c => `- ${c.commit.message.split('\\n')[0]} (${c.commit.author?.name || 'unknown'})`)\n  .join('\\n') || '- no commits this week';\n\nconst issueLines = issues\n  .slice(0, 20)\n  .map(i => `- #${i.number} ${i.title}`)\n  .join('\\n') || '- no issues closed this week';\n\nconst prLines = prs\n  .slice(0, 20)\n  .map(p => `- #${p.number} ${p.title} (${p.user?.login || 'unknown'})`)\n  .join('\\n') || '- no PRs merged this week';\n\nconst lang = (cfg.language || 'EN').toUpperCase();\nconst langRule = lang === 'FR'\n  ? 'R\u00e9ponds int\u00e9gralement en fran\u00e7ais.'\n  : 'Respond entirely in English.';\n\nconst prompt = `You are summarizing one week of activity for the GitHub repository ${cfg.repo}.\\n\\n${langRule}\\n\\nWrite a narrative summary (150-250 words) covering:\\n1. What shipped (merged PRs)\\n2. What was fixed (closed issues)\\n3. Notable commits\\n4. Overall momentum (one honest sentence)\\n\\nUse short paragraphs, no bullet lists, no preamble.\\n\\n--- COMMITS (${commits.length}) ---\\n${commitLines}\\n\\n--- CLOSED ISSUES (${issues.length}) ---\\n${issueLines}\\n\\n--- MERGED PRS (${prs.length}) ---\\n${prLines}`;\n\nreturn [{ json: { repo: cfg.repo, language: cfg.language, webhookUrl: cfg.webhookUrl, prompt, counts: { commits: commits.length, issues: issues.length, prs: prs.length } } }];"
+      },
+      "id": "a1b2c3d4-0006-4000-8000-000000000006",
+      "name": "Build digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        300
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1500, messages: [{ role: 'user', content: $json.prompt }] }) }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-4000-8000-000000000007",
+      "name": "Claude summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -60,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api-key",
+          "name": "Anthropic API Key"
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Build digest').item.json.webhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $('Claude summary').item.json.content[0].text, repo: $('Build digest').item.json.repo, counts: $('Build digest').item.json.counts }) }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0008-4000-8000-000000000008",
+      "name": "Deliver to webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        180,
+        300
+      ],
+      "executeOnce": true
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Fri 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch commits": {
+      "main": [
+        [
+          {
+            "node": "Fetch closed issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch closed issues": {
+      "main": [
+        [
+          {
+            "node": "Fetch merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Build digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build digest": {
+      "main": [
+        [
+          {
+            "node": "Claude summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude summary": {
+      "main": [
+        [
+          {
+            "node": "Deliver to webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
