@@ -1,0 +1,218 @@
+{
+  "name": "Weekly GitHub Activity Narrative Summary with Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [5],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "trigger-cron",
+      "name": "Weekly Trigger (Friday 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "REPO_OWNER",
+              "value": "your-github-org"
+            },
+            {
+              "name": "REPO_NAME",
+              "value": "your-repo"
+            },
+            {
+              "name": "LANGUAGE",
+              "value": "FR"
+            },
+            {
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/YOUR/WEBHOOK"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-vars",
+      "name": "Configurable Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$node[\"Configurable Variables\"].json[\"REPO_OWNER\"]}}/{{$node[\"Configurable Variables\"].json[\"REPO_NAME\"]}}/commits?since={{new Date(Date.now() - 7*24*60*60*1000).toISOString()}}",
+        "authentication": "none",
+        "options": {
+          "headers": {
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits (Past 7 Days)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [620, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$node[\"Configurable Variables\"].json[\"REPO_OWNER\"]}}/{{$node[\"Configurable Variables\"].json[\"REPO_NAME\"]}}/issues?state=closed&since={{new Date(Date.now() - 7*24*60*60*1000).toISOString()}}",
+        "authentication": "none",
+        "options": {
+          "headers": {
+            "User-Agent": "n8n-weekly-summary"
+          }
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues (Past 7 Days)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [620, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $items('Fetch Commits (Past 7 Days)').map(i => i.json.commit?.message || '').filter(Boolean);\nconst issues = $items('Fetch Closed Issues (Past 7 Days)').map(i => i.json.title || '').filter(Boolean);\nconst lang = $('Configurable Variables').first().json.LANGUAGE || 'FR';\n\nconst prompt = `Voici l'activité du dépôt cette semaine :\\n\\nCommits récents :\\n- ${commits.slice(0, 15).join('\\n- ')}\\n\\nIssues résolues :\\n- ${issues.slice(0, 10).join('\\n- ')}\\n\\nRédige un résumé narratif et professionnel de ces développements en langue : ${lang}. Mets en valeur les progrès techniques majeurs et les corrections.`;\n\nreturn [{ json: { prompt, lang } }];"
+      },
+      "id": "aggregate-data",
+      "name": "Aggregate Activity Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$env.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"{{$json.prompt}}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude-narrative",
+      "name": "Claude API Narrative Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('Configurable Variables').first().json.DISCORD_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"📢 **Résumé hebdomadaire des développements (Claude AI)** :\\n\\n\" + $json.content[0].text\n}",
+        "options": {}
+      },
+      "id": "deliver-summary",
+      "name": "Deliver via Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1300, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 17:00)": {
+      "main": [
+        [
+          {
+            "node": "Configurable Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configurable Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits (Past 7 Days)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues (Past 7 Days)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits (Past 7 Days)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues (Past 7 Days)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Activity Data": {
+      "main": [
+        [
+          {
+            "node": "Claude API Narrative Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API Narrative Summary": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
