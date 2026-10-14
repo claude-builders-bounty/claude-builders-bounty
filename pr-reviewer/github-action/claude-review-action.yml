@@ -1,0 +1,65 @@
+# Claude PR Review — GitHub Action
+#
+# Posts a structured Markdown review (Summary / Identified risks /
+# Improvement suggestions / Confidence) as a comment on every pull request.
+#
+# The analysis runs through the reviewer's own Claude Code: the workflow
+# uses the official `anthropics/claude-code-action` with a Claude Code
+# OAuth token (Claude subscription) — no pay-per-token API key is required.
+# To use an Anthropic API key instead, replace `claude_code_oauth_token`
+# with `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}`.
+#
+# Setup:
+#   1. Copy this file to `.github/workflows/claude-review.yml` in your repo.
+#   2. Copy `.claude/agents/pr-reviewer.md` from this package into your repo
+#      (same relative path). No other files are needed in CI.
+#   3. Add the secret CLAUDE_CODE_OAUTH_TOKEN (Claude Code subscription
+#      token; generate locally with `claude setup-token`).
+#
+# The `claude-review` CLI is not needed in CI — the runner's `gh` provides
+# the diff and the agent applies the same rubric the CLI enforces locally.
+
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run the pr-reviewer agent
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            Review pull request #${{ github.event.pull_request.number }} in this
+            repository. Get its diff with:
+              gh pr diff ${{ github.event.pull_request.number }} --patch > /tmp/pr.diff
+            Then follow the agent definition in .claude/agents/pr-reviewer.md
+            exactly: read the full diff, apply the rubric, and write ONLY the
+            structured Markdown review (## Summary, ## Identified risks,
+            ## Improvement suggestions, ## Confidence) to a file named
+            review.md in the workspace root. Do not post anything yourself.
+
+      - name: Post the review as a PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -s review.md ]; then
+            gh pr comment ${{ github.event.pull_request.number }} --body-file review.md
+          else
+            echo "No review.md produced; skipping comment."
+          fi
