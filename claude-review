@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""
+claude-review — Fetch a GitHub PR, analyze it with an LLM, post/print a
+structured Markdown review.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr owner/repo#123 --post            # post review as PR comment
+    claude-review --pr 123                              # current repo via git remote
+
+Environment (OpenAI-compatible endpoint, works with Anthropic via base-url
+https://api.anthropic.com/v1/ and --format anthropic; any OpenAI-compatible
+gateway such as Kilo, OpenRouter, vLLM, Ollama, LM Studio works too):
+
+    CLAUDE_REVIEW_API_KEY   API key (required unless --dry-run)
+    CLAUDE_REVIEW_BASE_URL  default: https://api.anthropic.com/v1/
+    CLAUDE_REVIEW_MODEL     default: claude-sonnet-4-20250514
+    GITHUB_TOKEN            optional, raises GitHub API rate limits / private repos
+
+Stdlib only. No dependencies.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+UA = {"User-Agent": "claude-review/1.0", "Accept": "application/vnd.github+json"}
+PROMPT = """You are a senior staff engineer reviewing a GitHub pull request.
+Review the diff below and answer in STRICT markdown with exactly these sections:
+
+## Summary
+(2-3 sentences: what changed and why)
+
+## Risks
+(bullet list; write "- None identified" if genuinely none)
+
+## Suggestions
+(bullet list of concrete, actionable improvements)
+
+## Confidence
+(one of: Low | Medium | High — how confident you are the PR is correct and complete)
+
+Be specific: cite files and line numbers. Prioritize correctness bugs over style.
+"""
+
+
+def gh_get(url):
+    headers = dict(UA)
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def parse_pr(arg):
+    """Return (owner, repo, number). Accepts URL, owner/repo#N, or bare N."""
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", arg)
+    if m:
+        return m.group(1), m.group(2).removesuffix(".git"), int(m.group(3))
+    m = re.match(r"([\w.-]+)/([\w.-]+)#(\d+)", arg)
+    if m:
+        return m.group(1), m.group(2), int(m.group(3))
+    if arg.isdigit():
+        try:
+            url = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                capture_output=True, text=True, timeout=10,
+            ).stdout.strip()
+            m = re.search(r"github\.com[:/](.+?)/(.+?)(?:\.git)?/?$", url)
+            return m.group(1), m.group(2), int(arg)
+        except Exception:
+            sys.exit("error: bare PR number needs a GitHub 'origin' remote in cwd")
+    sys.exit(f"error: cannot parse PR reference: {arg}")
+
+
+def fetch_pr(owner, repo, num):
+    meta = json.loads(gh_get(f"https://api.github.com/repos/{owner}/{repo}/pulls/{num}"))
+    try:
+        diff = gh_get(f"https://github.com/{owner}/{repo}/pull/{num}.diff")
+    except Exception:
+        diff = ""
+    if not diff:
+        diff = "\n".join(
+            f"--- {f['filename']}\n{p.get('patch', '(binary or too large)')}"
+            for f in json.loads(gh_get(
+                f"https://api.github.com/repos/{owner}/{repo}/pulls/{num}/files?per_page=100"))
+            for p in [f]
+        )
+    return meta, diff
+
+
+def heuristic_review(meta, diff):
+    """Offline fallback: file stats + obvious smells. Used by --dry-run."""
+    files = [l.split(" b/")[-1] for l in diff.splitlines() if l.startswith("diff --git")]
+    red = [
+        "hard delete" if re.search(r"^\+\s*(rm -rf|DROP TABLE)", diff, re.M) else None,
+        "force push" if "--force" in diff and "git push" in diff else None,
+        "possible secret" if re.search(r"(api[_-]?key|token|secret)\s*=\s*['\"][^'\"]{8,}", diff, re.I) else None,
+        "todo left" if re.search(r"^\+\s*.*(TODO|FIXME|XXX)", diff, re.M) else None,
+        "debug prints" if re.search(r"^\+\s*(print\(|console\.log|dd\()", diff, re.M) and diff.count("console.log") > 3 else None,
+    ]
+    risks = [r for r in red if r] or ["None identified"]
+    return (f"## Summary\nHeuristic scan of {meta['title']} "
+            f"({meta['head']['repo']['full_name']} -> {meta['base']['repo']['full_name']}). "
+            f"{len(files)} file(s) touched: {', '.join(files[:8]) or 'none'}.\n\n"
+            "## Risks\n" + "\n".join(f"- {r}" for r in risks) + "\n\n"
+            "## Suggestions\n- Review the diff manually; run tests before merging.\n\n"
+            "## Confidence\nLow")
+
+
+def llm_review(meta, diff, base_url, model, api_key, fmt="openai"):
+    body = {
+        "model": model,
+        "max_tokens": 1500,
+        "messages": [
+            {"role": "system", "content": PROMPT},
+            {"role": "user", "content":
+                f"PR: {meta['title']}\nRepo: {meta['base']['repo']['full_name']}\n\n"
+                f"```diff\n{diff[:60000]}\n```"},
+        ],
+    }
+    headers = {"Content-Type": "application/json"}
+    if fmt == "anthropic":
+        headers["x-api-key"] = api_key
+        headers["anthropic-version"] = "2023-06-01"
+        body["system"] = PROMPT
+        body["messages"] = [{"role": "user", "content": body["messages"][1]["content"]}]
+    else:
+        headers["Authorization"] = f"Bearer {api_key}"
+    req = urllib.request.Request(base_url.rstrip("/") + "/chat/completions",
+                                 data=json.dumps(body).encode(),
+                                 headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=180) as r:
+        data = json.loads(r.read().decode())
+    if fmt == "anthropic":
+        return "".join(b.get("text", "") for b in data["content"])
+    return data["choices"][0]["message"]["content"]
+
+
+def post_comment(owner, repo, num, text):
+    headers = dict(UA, **{"Content-Type": "application/json"})
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        sys.exit("error: posting needs GITHUB_TOKEN")
+    headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{owner}/{repo}/issues/{num}/comments",
+        data=json.dumps({"body": text}).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=30) as r:
+        print("posted:", json.loads(r.read())["html_url"])
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="claude-review", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--pr", required=True, help="PR URL, owner/repo#N, or bare number")
+    ap.add_argument("--post", action="store_true", help="post the review as a PR comment")
+    ap.add_argument("--out", help="also write the review to this file")
+    ap.add_argument("--dry-run", action="store_true", help="offline heuristic review, no LLM")
+    ap.add_argument("--format", choices=["openai", "anthropic"], default="openai")
+    ap.add_argument("--base-url", default=os.environ.get("CLAUDE_REVIEW_BASE_URL",
+                    "https://api.anthropic.com/v1/"))
+    ap.add_argument("--model", default=os.environ.get("CLAUDE_REVIEW_MODEL",
+                    "claude-sonnet-4-20250514"))
+    ap.add_argument("--api-key", default=os.environ.get("CLAUDE_REVIEW_API_KEY", ""))
+    a = ap.parse_args()
+
+    owner, repo, num = parse_pr(a.pr)
+    meta, diff = fetch_pr(owner, repo, num)
+    print(f"# Review of {owner}/{repo}#{num}: {meta['title']}\n", file=sys.stderr)
+
+    if a.dry_run or not a.api_key:
+        if not a.dry_run and not a.api_key:
+            print("warning: no API key, falling back to --dry-run heuristics", file=sys.stderr)
+        review = heuristic_review(meta, diff)
+    else:
+        review = llm_review(meta, diff, a.base_url, a.model, a.api_key, a.format)
+
+    print(review)
+    if a.out:
+        open(a.out, "w").write(review)
+        print(f"written: {a.out}", file=sys.stderr)
+    if a.post:
+        post_comment(owner, repo, num, review)
+
+
+if __name__ == "__main__":
+    main()
