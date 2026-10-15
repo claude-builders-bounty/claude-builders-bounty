@@ -1,0 +1,382 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude Code & n8n)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-cron",
+      "name": "Weekly Schedule Trigger (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_REPO",
+              "value": "claude-builders-bounty/claude-builders-bounty"
+            },
+            {
+              "name": "LANGUAGE",
+              "value": "EN"
+            },
+            {
+              "name": "DELIVERY_CHANNEL",
+              "value": "discord"
+            },
+            {
+              "name": "WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL"
+            },
+            {
+              "name": "EMAIL_RECIPIENT",
+              "value": "engineering@example.com"
+            },
+            {
+              "name": "CLAUDE_MODEL",
+              "value": "claude-sonnet-4-20250514"
+            }
+          ]
+        }
+      },
+      "id": "node-set-config",
+      "name": "Workflow Configuration (Repo, Lang, Channel)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.GITHUB_REPO + '/commits?since=' + new Date(Date.now() - 7*24*60*60*1000).toISOString() }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-commits",
+      "name": "Fetch Weekly Commits (GitHub API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        640,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.GITHUB_REPO + '/issues?state=closed&since=' + new Date(Date.now() - 7*24*60*60*1000).toISOString() }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-issues",
+      "name": "Fetch Closed Issues (GitHub API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.GITHUB_REPO + '/pulls?state=closed&per_page=50' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Dev-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-prs",
+      "name": "Fetch Merged PRs (GitHub API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        640,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst config = $('Workflow Configuration (Repo, Lang, Channel)').first().json;\nconst commits = $('Fetch Weekly Commits (GitHub API)').all().map(i => i.json);\nconst issues = $('Fetch Closed Issues (GitHub API)').all().map(i => i.json).filter(i => !i.pull_request);\nconst prs = $('Fetch Merged PRs (GitHub API)').all().map(i => i.json).filter(p => p.merged_at && new Date(p.merged_at) > new Date(Date.now() - 7*24*60*60*1000));\n\nreturn [{\n    json: {\n        repo: config.GITHUB_REPO,\n        language: config.LANGUAGE,\n        channel: config.DELIVERY_CHANNEL,\n        webhookUrl: config.WEBHOOK_URL,\n        emailRecipient: config.EMAIL_RECIPIENT,\n        model: config.CLAUDE_MODEL,\n        stats: {\n            commitCount: commits.length,\n            closedIssueCount: issues.length,\n            mergedPrCount: prs.length\n        },\n        payloadForPrompt: JSON.stringify({\n            repo: config.GITHUB_REPO,\n            commits: commits.slice(0, 15).map(c => ({ msg: c.commit?.message, author: c.commit?.author?.name })),\n            closedIssues: issues.slice(0, 15).map(i => ({ title: i.title, number: i.number })),\n            mergedPRs: prs.slice(0, 15).map(p => ({ title: p.title, number: p.number, author: p.user?.login }))\n        }, null, 2)\n    }\n}];"
+      },
+      "id": "node-aggregate-data",
+      "name": "Aggregate Weekly Activity Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "={{ $json.model }}"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2000
+            },
+            {
+              "name": "system",
+              "value": "={{ 'You are an engineering narrative scribe. Generate a polished, engaging weekly dev summary in ' + ($json.language === 'FR' ? 'French' : 'English') + '. Include Key Milestones, Shipped Features, Bug Fixes, and Team Velocity.' }}"
+            },
+            {
+              "name": "messages",
+              "value": "={{ [ { role: 'user', content: 'Generate a narrative weekly developer update from this GitHub repository activity:\\n' + $json.payloadForPrompt } ] }}"
+            }
+          ]
+        }
+      },
+      "id": "node-claude-api",
+      "name": "Claude AI Narrative Generation (claude-sonnet-4-20250514)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('Aggregate Weekly Activity Payload').first().json.channel }}",
+              "value2": "discord"
+            }
+          ]
+        }
+      },
+      "id": "node-switch-channel",
+      "name": "Route to Discord vs Email",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Aggregate Weekly Activity Payload').first().json.webhookUrl }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ '🚀 **Weekly Engineering Narrative for ' + $('Aggregate Weekly Activity Payload').first().json.repo + '**\\n\\n' + $json.content[0].text.substring(0, 1900) }}"
+            }
+          ]
+        }
+      },
+      "id": "node-send-discord",
+      "name": "Deliver via Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1560,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{ $('Aggregate Weekly Activity Payload').first().json.emailRecipient }}",
+        "subject": "={{ 'Weekly Engineering Narrative Summary: ' + $('Aggregate Weekly Activity Payload').first().json.repo }}",
+        "text": "={{ $json.content[0].text }}"
+      },
+      "id": "node-send-email",
+      "name": "Deliver via Email Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule Trigger (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration (Repo, Lang, Channel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration (Repo, Lang, Channel)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Commits (GitHub API)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Closed Issues (GitHub API)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Merged PRs (GitHub API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits (GitHub API)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Weekly Activity Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues (GitHub API)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Weekly Activity Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs (GitHub API)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Weekly Activity Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Weekly Activity Payload": {
+      "main": [
+        [
+          {
+            "node": "Claude AI Narrative Generation (claude-sonnet-4-20250514)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude AI Narrative Generation (claude-sonnet-4-20250514)": {
+      "main": [
+        [
+          {
+            "node": "Route to Discord vs Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route to Discord vs Email": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Discord Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Deliver via Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true
+}
