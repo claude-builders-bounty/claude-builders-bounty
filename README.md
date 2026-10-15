@@ -22,6 +22,24 @@ You're in the right place.
 
 ---
 
+## Destructive Bash command hook
+
+Install in two commands:
+
+```bash
+mkdir -p ~/.claude/hooks && cp block_destructive_commands.py ~/.claude/hooks/ && chmod +x ~/.claude/hooks/block_destructive_commands.py
+```
+
+Add this entry to `~/.claude/settings.json` (merge it with existing settings):
+
+```json
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"~/.claude/hooks/block_destructive_commands.py"}]}]}}
+```
+
+The hook blocks `rm -rf`, `DROP TABLE`, `git push --force`, `TRUNCATE`, and `DELETE FROM` without a `WHERE` clause. Blocked attempts are recorded in `~/.claude/hooks/blocked.log`.
+
+---
+
 ## Active Bounties
 
 | # | Task | Amount | Status |
