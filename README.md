@@ -20,6 +20,18 @@ You're in the right place.
 2. Comment `/opire try` in the issue you want to work on
 3. Submit a PR — payment is automatic on merge ✅
 
+## CHANGELOG generator
+
+`changelog.sh` generates a structured `CHANGELOG.md` from git commits since the latest tag and groups entries into **Added**, **Fixed**, **Changed**, and **Removed**.
+
+Setup in 3 steps:
+
+1. Copy `changelog.sh` into the Git repository you want to document.
+2. Run `chmod +x changelog.sh`.
+3. Run `./changelog.sh` (or `./changelog.sh path/to/CHANGELOG.md` for a custom output path).
+
+Commit prefixes such as `feat:`, `fix:`, and `remove:` are categorized automatically; other commit messages fall back to **Changed**.
+
 ---
 
 ## Active Bounties
