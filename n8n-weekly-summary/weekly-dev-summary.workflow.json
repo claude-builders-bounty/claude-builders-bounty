@@ -1,0 +1,250 @@
+{
+  "name": "Weekly Dev Summary — GitHub + Claude",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [5],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "name": "Weekly Trigger (Friday 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-1",
+              "name": "github_repo",
+              "value": "owner/repo",
+              "type": "string"
+            },
+            {
+              "id": "cfg-2",
+              "name": "slack_webhook_url",
+              "value": "https://hooks.slack.com/services/XXX/YYY/ZZZ",
+              "type": "string"
+            },
+            {
+              "id": "cfg-3",
+              "name": "claude_api_key",
+              "value": "sk-ant-...",
+              "type": "string"
+            },
+            {
+              "id": "cfg-4",
+              "name": "language",
+              "value": "en",
+              "type": "string"
+            },
+            {
+              "id": "cfg-5",
+              "name": "claude_model",
+              "value": "claude-sonnet-4-20250514",
+              "type": "string"
+            },
+            {
+              "id": "cfg-6",
+              "name": "github_token",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "name": "Config (edit me)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.github_repo }}/commits?since={{ $now.minus(7, 'days').toISO() }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.github_token || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 180]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config (edit me)').item.json.github_repo }}/issues?state=closed&since={{ $now.minus(7, 'days').toISO() }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Config (edit me)').item.json.github_token || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-4000-8000-000000000004",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config (edit me)').item.json.github_repo }}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Config (edit me)').item.json.github_token || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-4000-8000-000000000005",
+      "name": "Fetch Closed PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Config (edit me)').item.json;\nconst weekAgo = new Date(Date.now() - 7 * 864e5);\n\nconst commits = ($('Fetch Commits').all().map(i => i.json)[0] || [])\n  .filter(c => new Date(c.commit.committer.date) >= weekAgo)\n  .map(c => ({ sha: c.sha.slice(0,7), author: c.commit.author.name, msg: c.commit.message.split('\\n')[0], url: c.html_url }));\n\nconst issues = ($('Fetch Closed Issues').all().map(i => i.json)[0] || [])\n  .filter(i => !i.pull_request && i.state === 'closed' && new Date(i.closed_at) >= weekAgo)\n  .map(i => ({ n: i.number, title: i.title, url: i.html_url }));\n\nconst prs = ($('Fetch Closed PRs').all().map(i => i.json)[0] || [])\n  .filter(p => p.merged_at && new Date(p.merged_at) >= weekAgo)\n  .map(p => ({ n: p.number, title: p.title, author: p.user.login, url: p.html_url }));\n\nreturn [{ json: {\n  github_repo: cfg.github_repo,\n  language: cfg.language,\n  claude_api_key: cfg.claude_api_key,\n  slack_webhook_url: cfg.slack_webhook_url,\n  claude_model: cfg.claude_model,\n  stats: { commits: commits.length, issues: issues.length, prs: prs.length },\n  week: { from: weekAgo.toISOString().slice(0,10), to: new Date().toISOString().slice(0,10) },\n  data: { commits, issues, prs },\n} }];"
+      },
+      "id": "a1b2c3d4-0006-4000-8000-000000000006",
+      "name": "Aggregate Week Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.claude_api_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $json.claude_model }}\",\n  \"max_tokens\": 1500,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"Write an engaging weekly development summary for the repo {{ $json.github_repo }} covering {{ $json.week.from }} → {{ $json.week.to }}. Language: {{ $json.language === 'fr' ? 'French' : 'English' }}. Tone: clear, concise, human — like a teammate reporting to the team. Format with markdown: a one-line headline, a Highlights section (3-6 bullets), Ship log (commits/PRs merged), Issues closed, and a Look-ahead asking what deserves attention next week. Stats: {{ $json.stats.commits }} commits, {{ $json.stats.prs }} PRs merged, {{ $json.stats.issues }} issues closed.\\n\\nData:\\n{{ JSON.stringify($json.data) }}\"\n  }]\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-4000-8000-000000000007",
+      "name": "Claude: Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = $input.first().json;\nlet text = '';\nif (Array.isArray(out.content)) text = out.content.filter(c => c.type === 'text').map(c => c.text).join('\\n');\nreturn [{ json: { slack_webhook_url: $('Aggregate Week Data').item.json.slack_webhook_url, repo: $('Aggregate Week Data').item.json.github_repo, summary: text } }];"
+      },
+      "id": "a1b2c3d4-0008-4000-8000-000000000008",
+      "name": "Extract Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.slack_webhook_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"text\": \"*Weekly Dev Summary — {{ $json.repo }}*\\n{{ $json.summary }}\" }",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0009-4000-8000-000000000009",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 17:00)": {
+      "main": [[{ "node": "Config (edit me)", "type": "main", "index": 0 }]]
+    },
+    "Config (edit me)": {
+      "main": [[
+        { "node": "Fetch Commits", "type": "main", "index": 0 },
+        { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+        { "node": "Fetch Closed PRs", "type": "main", "index": 0 }
+      ]]
+    },
+    "Fetch Commits": {
+      "main": [[{ "node": "Aggregate Week Data", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{ "node": "Aggregate Week Data", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed PRs": {
+      "main": [[{ "node": "Aggregate Week Data", "type": "main", "index": 0 }]]
+    },
+    "Aggregate Week Data": {
+      "main": [[{ "node": "Claude: Generate Summary", "type": "main", "index": 0 }]]
+    },
+    "Claude: Generate Summary": {
+      "main": [[{ "node": "Extract Text", "type": "main", "index": 0 }]]
+    },
+    "Extract Text": {
+      "main": [[{ "node": "Send to Slack", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "tags": []
+}
