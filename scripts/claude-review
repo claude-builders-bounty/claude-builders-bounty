@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# claude-review — AI-powered PR review using Claude Code
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123
+# 
+# Requirements: gh CLI, Claude Code CLI, jq
+# 
+# This tool takes a GitHub PR URL, fetches the diff, sends it to Claude AI,
+# and posts a structured Markdown review as a PR comment.
+
+set -euo pipefail
+
+PR_URL=""
+REVIEWER="claude-review"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --pr) PR_URL="$2"; shift 2 ;;
+        --reviewer) REVIEWER="$2"; shift 2 ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+done
+
+if [[ -z "$PR_URL" ]]; then
+    echo "Usage: claude-review --pr https://github.com/owner/repo/pull/123"
+    exit 1
+fi
+
+# Extract owner/repo/pr_number from URL
+if [[ "$PR_URL" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    OWNER="${BASH_REMATCH[1]}"
+    REPO="${BASH_REMATCH[2]}"
+    PR_NUMBER="${BASH_REMATCH[3]}"
+else
+    echo "Error: Invalid PR URL format"
+    exit 1
+fi
+
+echo "🔍 Fetching PR #${PR_NUMBER} from ${OWNER}/${REPO}..."
+
+# Get PR details
+PR_JSON=$(gh pr view "$PR_NUMBER" --repo "$OWNER/$REPO" --json body,title,additions,deletions,changedFiles,url 2>/dev/null)
+PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
+PR_BODY=$(echo "$PR_JSON" | jq -r '.body')
+PR_ADDITIONS=$(echo "$PR_JSON" | jq -r '.additions')
+PR_DELETIONS=$(echo "$PR_JSON" | jq -r '.deletions')
+PR_FILES=$(echo "$PR_JSON" | jq -r '.changedFiles')
+PR_HTML_URL=$(echo "$PR_JSON" | jq -r '.url')
+
+# Get the actual diff
+PATCH=$(gh pr diff "$PR_NUMBER" --repo "$OWNER/$REPO" 2>/dev/null)
+
+echo "📊 PR Stats: +${PR_ADDITIONS} -${PR_DELETIONS} (${PR_FILES} files)"
+
+# Build the review prompt
+REVIEW_PROMPT="You are an expert code reviewer. Review the following pull request and provide a structured review.
+
+## PR: ${PR_TITLE}
+## Body: ${PR_BODY}
+## Changes: +${PR_ADDITIONS} -${PR_DELETIONS} (${PR_FILES} files)
+
+## Diff:
+${PATCH}
+
+Provide your review in the following EXACT Markdown format:
+
+## 🤖 AI Review by ${REVIEWER}
+
+### Summary
+[2-3 sentences summarizing the changes]
+
+### 🔴 Identified Risks
+- [risk 1]
+- [risk 2]
+...
+
+### 💡 Improvement Suggestions
+- [suggestion 1]
+- [suggestion 2]
+...
+
+### Confidence Score: [Low/Medium/High]
+
+Output ONLY the Markdown review, no other text."
+
+# Run Claude Code to generate review
+echo "🤖 Running AI review..."
+REVIEW=$(claude -p "$REVIEW_PROMPT" --output-format text 2>/dev/null)
+
+if [[ -z "$REVIEW" ]]; then
+    echo "Error: Claude Code returned empty review"
+    exit 1
+fi
+
+# Post the review as a PR comment
+echo "📝 Posting review to PR..."
+gh pr comment "$PR_NUMBER" --repo "$OWNER/$REPO" --body "$REVIEW"
+
+echo "✅ Review posted to ${PR_HTML_URL}"
