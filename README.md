@@ -43,6 +43,30 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+1. Download `changelog.sh` into any Git repository.
+2. Run `chmod +x changelog.sh`.
+3. Run `./changelog.sh` to update `CHANGELOG.md` with commits since the latest tag.
+
+Commit subjects are grouped by prefix: `feat` → Added, `fix` → Fixed, `remove`/`delete` → Removed, and everything else → Changed.
+
+### Sample output
+
+```markdown
+# Changelog
+
+## Unreleased
+
+### Added
+- Add changelog generator (`a1b2c3d`)
+
+### Fixed
+- Fix tag range handling (`d4e5f6a`)
+```
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
