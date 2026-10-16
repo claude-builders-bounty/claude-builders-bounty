@@ -1,0 +1,382 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude Sonnet 4)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-trigger",
+      "name": "Weekly Friday 5PM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-repo",
+              "name": "github_repo",
+              "value": "={{ $env.GITHUB_REPO || 'Parabola-org/parabola' }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-channel",
+              "name": "destination_channel",
+              "value": "={{ $env.DESTINATION_CHANNEL || '#eng-weekly-digest' }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-webhook",
+              "name": "webhook_url",
+              "value": "={{ $env.SUMMARY_WEBHOOK_URL || 'https://hooks.slack.com/services/T000/B000/XXXX' }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-lang",
+              "name": "language",
+              "value": "={{ $env.SUMMARY_LANGUAGE || 'EN' }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-since",
+              "name": "since_iso",
+              "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-workflow-config",
+      "name": "Workflow Config (Repo, Channel, EN/FR)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.github_repo }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since_iso }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-commits",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $node['Workflow Config (Repo, Channel, EN/FR)'].json.github_repo }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $node['Workflow Config (Repo, Channel, EN/FR)'].json.since_iso }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $node['Workflow Config (Repo, Channel, EN/FR)'].json.github_repo }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $node['Workflow Config (Repo, Channel, EN/FR)'].json;\nconst sinceMs = new Date(cfg.since_iso).getTime();\n\nconst rawCommits = $items('Fetch Weekly Commits').map(i => i.json).filter(c => c && c.sha);\nconst rawIssues = $items('Fetch Closed Issues').map(i => i.json).filter(x => x && x.number && !x.pull_request);\nconst rawPrs = $items('Fetch Merged PRs').map(i => i.json).filter(p => p && p.merged_at && new Date(p.merged_at).getTime() >= sinceMs);\n\nconst commitsList = rawCommits.slice(0, 30).map(c => `- ${c.sha.slice(0, 7)}: ${(c.commit?.message || '').split('\\n')[0]} (@${c.author?.login || c.commit?.author?.name || 'dev'})`).join('\\n') || '- No commits recorded this week.';\nconst issuesList = rawIssues.slice(0, 30).map(i => `- #${i.number}: ${i.title} (closed by @${i.user?.login || 'maintainer'})`).join('\\n') || '- No issues closed this week.';\nconst prsList = rawPrs.slice(0, 30).map(p => `- PR #${p.number}: ${p.title} (by @${p.user?.login || 'contributor'})`).join('\\n') || '- No PRs merged this week.';\n\nconst langInstruction = (cfg.language || 'EN').toUpperCase() === 'FR'\n  ? 'Redige le resume narratif hebdomadaire entierement en francais clair et professionnel.'\n  : 'Write the weekly narrative engineering summary in clear, engaging English.';\n\nconst prompt = `${langInstruction}\\n\\nRepository: ${cfg.github_repo}\\nWindow: ${cfg.since_iso} to ${new Date().toISOString()}\\nTarget Channel: ${cfg.destination_channel}\\n\\n### Merged Pull Requests (${rawPrs.length})\\n${prsList}\\n\\n### Closed Issues (${rawIssues.length})\\n${issuesList}\\n\\n### Commits (${rawCommits.length})\\n${commitsList}\\n\\nStructure the output with: 1) Executive Narrative (1 short paragraph), 2) Key Shipped Features & Fixes, 3) Contributors & Velocity Metrics, and 4) Focus Areas for Next Week.`;\n\nreturn [{\n  json: {\n    github_repo: cfg.github_repo,\n    destination_channel: cfg.destination_channel,\n    webhook_url: cfg.webhook_url,\n    language: (cfg.language || 'EN').toUpperCase(),\n    stats: {\n      commits: rawCommits.length,\n      closed_issues: rawIssues.length,\n      merged_prs: rawPrs.length\n    },\n    claude_prompt: prompt\n  }\n}];"
+      },
+      "id": "node-aggregate-activity",
+      "name": "Aggregate Activity & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1500,\n  \"temperature\": 0.3,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.claude_prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "node-claude-sonnet",
+      "name": "Generate Narrative Summary (claude-sonnet-4-20250514)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1700,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Aggregate Activity & Build Prompt'].json.webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"channel\": {{ JSON.stringify($node['Aggregate Activity & Build Prompt'].json.destination_channel) }},\n  \"username\": \"Claude Weekly Dev Digest\",\n  \"text\": {{ JSON.stringify($json.content?.[0]?.text || 'Weekly summary generated.') }},\n  \"content\": {{ JSON.stringify($json.content?.[0]?.text || 'Weekly summary generated.') }}\n}",
+        "options": {}
+      },
+      "id": "node-deliver-webhook",
+      "name": "Deliver Summary (Slack / Discord Webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        340
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Friday 5PM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Workflow Config (Repo, Channel, EN/FR)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Config (Repo, Channel, EN/FR)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Activity & Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Narrative Summary (claude-sonnet-4-20250514)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Narrative Summary (claude-sonnet-4-20250514)": {
+      "main": [
+        [
+          {
+            "node": "Deliver Summary (Slack / Discord Webhook)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC"
+  },
+  "active": true,
+  "versionId": "c8f42b70-9c1d-4e5a-8a30-71f92a31c901",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
