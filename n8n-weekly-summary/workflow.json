@@ -1,0 +1,146 @@
+{
+  "name": "Weekly Dev Summary — GitHub → Claude → Discord",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 17 * * 5" }
+          ]
+        }
+      },
+      "id": "cron-weekly",
+      "name": "Friday 5pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "v1", "name": "repo", "value": "owner/repo", "type": "string" },
+            { "id": "v2", "name": "webhook_url", "value": "https://discord.com/api/webhooks/XXXX/YYYY", "type": "string" },
+            { "id": "v3", "name": "language", "value": "EN", "type": "string" },
+            { "id": "v4", "name": "since", "value": "={{ new Date(Date.now() - 7*24*3600*1000).toISOString() }}", "type": "string" }
+          ]
+        }
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits?since={{ $json.since }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      },
+      "id": "gh-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 180],
+      "credentials": { "httpHeaderAuth": { "id": "", "name": "GitHub Token" } }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config').item.json.repo }}/issues?state=closed&since={{ $('Config').item.json.since }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      },
+      "id": "gh-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "credentials": { "httpHeaderAuth": { "id": "", "name": "GitHub Token" } }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config').item.json.repo }}/pulls?state=closed&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      },
+      "id": "gh-prs",
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 420],
+      "credentials": { "httpHeaderAuth": { "id": "", "name": "GitHub Token" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const since = new Date($('Config').item.json.since);\nconst commits = $items('Fetch Commits').map(i => i.json).flat();\nconst issues = $items('Fetch Closed Issues').map(i => i.json).flat().filter(x => !x.pull_request);\nconst prs = $items('Fetch PRs').map(i => i.json).flat().filter(p => p.merged_at && new Date(p.merged_at) >= since);\nconst cfg = $('Config').item.json;\nconst payload = {\n  repo: cfg.repo,\n  language: cfg.language,\n  webhook_url: cfg.webhook_url,\n  commits: commits.map(c => ({ msg: c.commit.message.split('\\n')[0], author: c.commit.author.name })),\n  closed_issues: issues.map(i => i.title),\n  merged_prs: prs.map(p => p.title)\n};\nreturn [{ json: payload }];"
+      },
+      "id": "assemble",
+      "name": "Assemble Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"model\": \"claude-sonnet-4-20250514\", \"max_tokens\": 1200, \"messages\": [{ \"role\": \"user\", \"content\": \"Write a weekly development summary for the repository \" + $json.repo + \". Language: \" + $json.language + \" (EN=English, FR=French). Keep it under 300 words, narrative but concrete, grouped into: shipped, fixed, in-review. Data — commits: \" + JSON.stringify($json.commits) + \" closed issues: \" + JSON.stringify($json.closed_issues) + \" merged PRs: \" + JSON.stringify($json.merged_prs) }] }",
+        "options": {}
+      },
+      "id": "claude",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 300],
+      "credentials": { "httpHeaderAuth": { "id": "", "name": "Anthropic API Key" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Assemble Context').item.json.webhook_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"content\": \"**Weekly dev summary — \" + $('Assemble Context').item.json.repo + \"**\\n\\n\" + $json.content[0].text }",
+        "options": {}
+      },
+      "id": "deliver",
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 300]
+    }
+  ],
+  "connections": {
+    "Friday 5pm": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": {
+      "main": [[
+        { "node": "Fetch Commits", "type": "main", "index": 0 },
+        { "node": "Fetch Closed Issues", "type": "main", "index": 0 },
+        { "node": "Fetch PRs", "type": "main", "index": 0 }
+      ]]
+    },
+    "Fetch Commits": { "main": [[{ "node": "Assemble Context", "type": "main", "index": 0 }]] },
+    "Fetch Closed Issues": { "main": [[{ "node": "Assemble Context", "type": "main", "index": 0 }]] },
+    "Fetch PRs": { "main": [[{ "node": "Assemble Context", "type": "main", "index": 0 }]] },
+    "Assemble Context": { "main": [[{ "node": "Claude Summary", "type": "main", "index": 0 }]] },
+    "Claude Summary": { "main": [[{ "node": "Post to Discord", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}
