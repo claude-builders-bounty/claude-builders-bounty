@@ -1,0 +1,120 @@
+{
+  "id": "claudeWeeklyDigest1",
+  "name": "Claude Weekly Dev Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 17 * * 5" }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "Weekly Trigger (Fri 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [ 220, 300 ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "c1", "name": "repo_owner", "value": "n8n-io", "type": "string" },
+            { "id": "c2", "name": "repo_name", "value": "n8n", "type": "string" },
+            { "id": "c3", "name": "language", "value": "en", "type": "string" },
+            { "id": "c4", "name": "days", "value": 7, "type": "number" },
+            { "id": "c5", "name": "discord_webhook", "value": "https://discord.com/api/webhooks/REPLACE_ME/REPLACE_ME", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [ 460, 300 ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cfg = $input.first().json;\nconst owner = cfg.repo_owner;\nconst repo = cfg.repo_name;\nconst days = Number(cfg.days) || 7;\nconst lang = String(cfg.language || 'en').toLowerCase();\nconst since = new Date(Date.now() - days * 86400000).toISOString();\nconst base = 'https://api.github.com/repos/' + owner + '/' + repo;\nconst headers = { 'User-Agent': 'n8n-claude-weekly-digest', 'Accept': 'application/vnd.github+json' };\nif ($env.GITHUB_TOKEN) headers.Authorization = 'Bearer ' + $env.GITHUB_TOKEN;\nconst get = async (path) => { try { return await this.helpers.httpRequest({ method: 'GET', url: base + path, headers, json: true }); } catch (e) { return []; } };\nconst commits = await get('/commits?since=' + since + '&per_page=100');\nconst issues = await get('/issues?state=closed&since=' + since + '&per_page=100');\nconst prs = await get('/pulls?state=closed&sort=updated&direction=desc&per_page=100');\nconst closedIssues = (issues || []).filter(i => !i.pull_request);\nconst mergedPrs = (prs || []).filter(p => p.merged_at && new Date(p.merged_at).toISOString() >= since);\nconst oneline = (s) => String(s || '').split('\\n')[0].slice(0, 80);\nconst cLine = (c) => '- ' + String(c.sha || '').slice(0, 7) + ' ' + oneline(c.commit && c.commit.message);\nconst iLine = (i) => '- #' + i.number + ' ' + oneline(i.title);\nconst pLine = (p) => '- #' + p.number + ' ' + oneline(p.title) + ' (@' + ((p.user && p.user.login) || '?') + ')';\nconst digest = ['Repo: ' + owner + '/' + repo, 'Window: last ' + days + ' days', 'Commits: ' + commits.length, commits.slice(0, 30).map(cLine).join('\\n'), 'Closed issues: ' + closedIssues.length, closedIssues.slice(0, 30).map(iLine).join('\\n'), 'Merged PRs: ' + mergedPrs.length, mergedPrs.slice(0, 30).map(pLine).join('\\n')].join('\\n');\nconst langLine = lang === 'fr' ? 'Write the summary in French.' : 'Write the summary in English.';\nconst prompt = 'You are a developer writing a friendly weekly project digest for a team. ' + langLine + ' Turn the raw activity below into a short narrative: highlight shipped work, notable fixes and momentum. Be concrete, use markdown, 150-250 words, invent nothing.\\n\\n' + digest;\nreturn [{ json: { repo: owner + '/' + repo, language: lang, counts: { commits: commits.length, issues: closedIssues.length, prs: mergedPrs.length }, prompt } }];"
+      },
+      "id": "collect",
+      "name": "Collect GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 700, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1200, messages: [{ role: 'user', content: $json.prompt }] }) }}",
+        "options": {}
+      },
+      "id": "claude",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 940, 300 ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const r = $input.first().json;\nconst text = (r && r.content && r.content[0] && r.content[0].text) ? r.content[0].text : '(no summary produced)';\nreturn [{ json: { summary: text } }];"
+      },
+      "id": "extract",
+      "name": "Extract Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 1180, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.discord_webhook }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.summary, text: $json.summary }) }}",
+        "options": {}
+      },
+      "id": "deliver",
+      "name": "Deliver (Discord or Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 1420, 300 ]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Fri 17:00)": {
+      "main": [ [ { "node": "Config", "type": "main", "index": 0 } ] ]
+    },
+    "Config": {
+      "main": [ [ { "node": "Collect GitHub Activity", "type": "main", "index": 0 } ] ]
+    },
+    "Collect GitHub Activity": {
+      "main": [ [ { "node": "Claude Summary", "type": "main", "index": 0 } ] ]
+    },
+    "Claude Summary": {
+      "main": [ [ { "node": "Extract Text", "type": "main", "index": 0 } ] ]
+    },
+    "Extract Text": {
+      "main": [ [ { "node": "Deliver (Discord or Slack)", "type": "main", "index": 0 } ] ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "bounty": "claude-builders-bounty #5 — $200",
+    "acceptance": "cron weekly trigger; GitHub commits/closed issues/merged PRs for the week; Claude API summary; deliver via webhook; configurable repo/destination/language(EN/FR); README <=5 steps"
+  }
+}
