@@ -1,0 +1,50 @@
+# Standalone workflow — copy to .github/workflows/claude-review.yml
+# No third-party actions beyond actions/checkout + setup-node.
+name: claude-review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Generate review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node bin/claude-review.mjs \
+            --repo "${{ github.repository }}" \
+            --number "${{ github.event.pull_request.number }}" \
+            --out review.md
+
+      - name: Post as a sticky comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR="${{ github.event.pull_request.number }}"
+          BODY=$(cat review.md)
+          # update the previous bot comment if there is one, else create it
+          ID=$(gh api "repos/${{ github.repository }}/issues/$PR/comments" \
+                --jq '.[] | select(.user.login=="github-actions[bot]") | select(.body | startswith("## Review:")) | .id' | tail -1)
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$ID" -f body="$BODY" --jq .id
+          else
+            gh pr comment "$PR" --body-file review.md
+          fi

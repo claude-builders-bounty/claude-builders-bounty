@@ -1,0 +1,66 @@
+name: "claude-review"
+description: "Analyze a pull request diff and post a structured review comment (summary, risks, suggestions, confidence)."
+author: "claude-builders-bounty"
+
+inputs:
+  pr-number:
+    description: "Pull request number. Defaults to the PR that triggered the run."
+    required: false
+    default: ${{ github.event.pull_request.number }}
+  github-token:
+    description: "Token used to read the PR and post the comment. Needs pull-requests: write."
+    required: true
+  fail-on:
+    description: "Fail the check when confidence is at or below this level (low|medium|high). Empty disables the gate."
+    required: false
+    default: ""
+
+outputs:
+  review-path:
+    description: "Path to the generated markdown review."
+    value: ${{ steps.review.outputs.path }}
+  confidence:
+    description: "High, Medium or Low."
+    value: ${{ steps.review.outputs.confidence }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Generate the review
+      id: review
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -uo pipefail
+        OUT="$RUNNER_TEMP/claude-review.md"
+        GATE=""
+        if [ -n "${{ inputs.fail-on }}" ]; then GATE="--fail-on ${{ inputs.fail-on }}"; fi
+        STATUS=0
+        node "${{ github.action_path }}/bin/claude-review.mjs" \
+          --repo "${{ github.repository }}" \
+          --number "${{ inputs.pr-number }}" \
+          --out "$OUT" $GATE || STATUS=$?
+        CONF="$(grep -oE '\*\*(High|Medium|Low)\*\*' "$OUT" | head -1 | tr -d '*' || true)"
+        echo "path=$OUT" >> "$GITHUB_OUTPUT"
+        echo "confidence=$CONF" >> "$GITHUB_OUTPUT"
+        echo "gate=$STATUS" >> "$GITHUB_OUTPUT"
+
+    - name: Post the comment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -uo pipefail
+        # post first so a failing gate still leaves the review visible, then honour it
+        if [ -f "${{ steps.review.outputs.path }}" ]; then
+          gh pr comment "${{ inputs.pr-number }}" \
+            --repo "${{ github.repository }}" \
+            --body-file "${{ steps.review.outputs.path }}"
+        fi
+        exit "${{ steps.review.outputs.gate }}"
