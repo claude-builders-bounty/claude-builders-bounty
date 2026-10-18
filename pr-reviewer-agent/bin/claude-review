@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""claude-review — CLI wrapper that reviews a GitHub PR via the pr-reviewer
+Claude Code agent and prints a structured Markdown review.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --diff path/to/change.diff
+
+Requires the `claude` CLI (Claude Code) on PATH, or ANTHROPIC_API_KEY set.
+"""
+import argparse
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+
+AGENT_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "agents", "pr-reviewer.md"
+)
+
+PROMPT_TEMPLATE = """You are the pr-reviewer agent defined below.
+
+--- AGENT DEFINITION ---
+{agent}
+--- DIFF ---
+{diff}
+
+Produce the structured Markdown review now: Summary / Risks / Suggestions /
+Confidence, exactly as the agent definition specifies.
+"""
+
+
+def fetch_pr_diff(url: str) -> str:
+    m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    if not m:
+        sys.exit(f"error: not a GitHub PR URL: {url}")
+    owner, repo, num = m.groups()
+    api = f"https://api.github.com/repos/{owner}/{repo}/pulls/{num}"
+    headers = {
+        "User-Agent": "claude-review",
+        "Accept": "application/vnd.github.diff",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(api, headers=headers)
+    return urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
+
+
+def run_claude(prompt: str) -> str:
+    # Claude Code headless mode: claude -p reads the prompt from stdin/argv.
+    cmd = ["claude", "-p", prompt]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    except FileNotFoundError:
+        sys.exit("error: `claude` CLI not found on PATH. Install Claude Code first.")
+    if out.returncode != 0:
+        sys.exit(f"error: claude exited {out.returncode}\n{out.stderr}")
+    return out.stdout
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(prog="claude-review")
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--pr", help="GitHub PR URL")
+    src.add_argument("--diff", help="path to a unified .diff/.patch file")
+    args = ap.parse_args()
+
+    diff = fetch_pr_diff(args.pr) if args.pr else open(args.diff, encoding="utf-8").read()
+    agent = open(AGENT_PATH, encoding="utf-8").read()
+    print(run_claude(PROMPT_TEMPLATE.format(agent=agent, diff=diff)))
+
+
+if __name__ == "__main__":
+    main()
