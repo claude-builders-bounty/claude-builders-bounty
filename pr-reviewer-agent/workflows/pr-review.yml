@@ -1,0 +1,43 @@
+# GitHub Action: post a structured pr-reviewer review on every pull request.
+# Requires an ANTHROPIC_API_KEY repository secret.
+name: PR Reviewer Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch PR diff
+        run: |
+          curl -sL -H "Accept: application/vnd.github.diff" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" \
+            -o /tmp/pr.diff
+
+      - name: Run Claude Code pr-reviewer agent
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are the pr-reviewer agent. The agent definition is in
+            pr-reviewer-agent/agents/pr-reviewer.md — read it and follow its
+            output format exactly. The diff to review is at /tmp/pr.diff.
+            Write the structured Markdown review to /tmp/review.md.
+          allowed_tools: "Read,Write"
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" --body-file /tmp/review.md
