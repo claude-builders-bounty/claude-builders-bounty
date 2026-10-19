@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# claude-review: review a GitHub PR with Claude and print a structured Markdown review.
+# Usage: claude-review --pr https://github.com/owner/repo/pull/123 [--model <model>] [--out <file>]
+set -euo pipefail
+
+PR_URL=""
+MODEL=""
+OUT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pr) PR_URL="$2"; shift 2 ;;
+    --model) MODEL="$2"; shift 2 ;;
+    --out) OUT="$2"; shift 2 ;;
+    -h|--help) echo "usage: claude-review --pr <github-pr-url> [--model <model>] [--out <file>]" >&2; exit 0 ;;
+    *) echo "unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+[[ -z "$PR_URL" ]] && { echo "error: --pr is required" >&2; exit 1; }
+
+if [[ "$PR_URL" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+  OWNER="${BASH_REMATCH[1]}"; REPO="${BASH_REMATCH[2]}"; NUM="${BASH_REMATCH[3]}"
+else
+  echo "error: could not parse PR URL: $PR_URL" >&2
+  exit 1
+fi
+
+command -v gh >/dev/null || { echo "error: gh CLI not found" >&2; exit 1; }
+command -v claude >/dev/null || { echo "error: claude CLI not found" >&2; exit 1; }
+
+META=$(gh pr view --repo "$OWNER/$REPO" "$NUM" --json title,body,files --jq '{title:.title, body:(.body|.[0:1500]), files:[.files[].path]}')
+DIFF=$(gh pr diff --repo "$OWNER/$REPO" "$NUM")
+
+if [[ -z "$DIFF" ]]; then
+  echo "error: empty diff (is the PR merged/closed?)" >&2
+  exit 1
+fi
+
+DIFF_FILE=$(mktemp)
+printf '%s' "$DIFF" > "$DIFF_FILE"
+META_FILE=$(mktemp)
+printf '%s' "$META" > "$META_FILE"
+
+PROMPT="You are a senior code reviewer. Review the pull request below and reply with ONLY a Markdown review comment, no preamble, no code fences around the whole answer.
+
+Required structure (exactly these four sections):
+## Summary
+2-3 sentences on what the PR changes and why it matters.
+## Risks
+A bullet list of concrete risks (bugs, security, perf, breaking changes). Empty list allowed if truly none.
+## Suggestions
+A bullet list of concrete, actionable improvements. Empty list allowed.
+## Confidence
+One line: Low / Medium / High, with a one-phrase justification.
+
+PR metadata:
+$(cat "$META_FILE")
+
+Full diff:
+$(cat "$DIFF_FILE")"
+
+MODEL_ARGS=()
+[[ -n "$MODEL" ]] && MODEL_ARGS=(--model "$MODEL")
+
+REVIEW=$(claude -p "$PROMPT" "${MODEL_ARGS[@]}" < /dev/null)
+
+if [[ -n "$OUT" ]]; then
+  printf '%s\n' "$REVIEW" > "$OUT"
+  echo "written: $OUT" >&2
+else
+  printf '%s\n' "$REVIEW"
+fi
+
+rm -f "$DIFF_FILE" "$META_FILE"

@@ -1,0 +1,35 @@
+name: claude-review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Review PR with Claude
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          DIFF=$(gh pr diff --repo "$GITHUB_REPOSITORY" "$PR_NUM")
+          META=$(gh pr view --repo "$GITHUB_REPOSITORY" "$PR_NUM" --json title,body --jq '{title:.title, body:(.body|.[0:1500])}')
+          PROMPT=$(printf '%s\n' "You are a senior code reviewer. Reply with ONLY a Markdown review comment, no preamble. Sections exactly: ## Summary (2-3 sentences), ## Risks (bullet list), ## Suggestions (bullet list), ## Confidence (Low/Medium/High + one phrase). PR metadata: $META" "Full diff:" "$DIFF")
+          JSON=$(python3 - "$PROMPT" <<'EOF'
+          import json, sys
+          print(json.dumps({"model": "claude-sonnet-4-20250514", "max_tokens": 2048,
+                            "messages": [{"role": "user", "content": sys.argv[1]}]}))
+          EOF
+          )
+          BODY=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['content'][0]['text'])")
+          gh pr comment --repo "$GITHUB_REPOSITORY" "$PR_NUM" --body "$BODY"
