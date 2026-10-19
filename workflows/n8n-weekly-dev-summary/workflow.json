@@ -1,0 +1,263 @@
+{
+  "name": "Automated Weekly Dev Summary (Claude Code + GitHub)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0,
+              "triggerAtDay": [5]
+            }
+          ]
+        }
+      },
+      "id": "trigger-cron",
+      "name": "Weekly Schedule (Friday 5 PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repo_owner",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "repo_name",
+              "value": "claude-builders-bounty"
+            },
+            {
+              "name": "summary_language",
+              "value": "EN"
+            },
+            {
+              "name": "notification_channel",
+              "value": "discord"
+            },
+            {
+              "name": "destination_webhook_url",
+              "value": "https://discord.com/api/webhooks/your-webhook-id/your-token"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-vars",
+      "name": "Configurable Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "30"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/search/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "=repo:{{ $('Configurable Variables').item.json.repo_owner }}/{{ $('Configurable Variables').item.json.repo_name }} is:pr is:merged merged:>={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Fetch Weekly Commits').all().map(c => c.json.commit?.message?.split('\\n')[0]).filter(Boolean);\nconst prs = $('Fetch Merged PRs').first().json.items?.map(p => `#${p.number} ${p.title} (@${p.user?.login})`) || [];\nconst config = $('Configurable Variables').first().json;\n\nconst prompt = `You are a Principal Software Architect writing an engaging, high-impact weekly engineering digest for the repository ${config.repo_owner}/${config.repo_name}.\nLanguage requirement: ${config.summary_language === 'FR' ? 'French' : 'English'}.\n\nHere is the raw activity from the past 7 days:\n### Merged PRs (${prs.length}):\n${prs.map(p => '- ' + p).join('\\n') || 'None this week.'}\n\n### Commits (${commits.length}):\n${commits.slice(0, 15).map(c => '- ' + c).join('\\n') || 'No direct commits.'}\n\nDeliverables:\n1. 🚀 Executive Narrative (2-3 sentences on main themes & architectural progress)\n2. 💎 Key Highlights & Shipped Features\n3. 🛠️ Bug Fixes & Refactoring\n4. 👏 Contributor Shoutouts\n\nKeep it concise, professional, and formatted in clean Markdown with emojis.`;\n\nreturn [{ json: { prompt, config, stats: { commits_count: commits.length, prs_count: prs.length } } }];"
+      },
+      "id": "prepare-prompt",
+      "name": "Aggregate & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "call-claude",
+      "name": "Claude Sonnet API (Narrative Engine)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Prepare Prompt & Aggregator').first().json.config.destination_webhook_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"username\": \"Claude Dev Digest Bot\",\n  \"avatar_url\": \"https://upload.wikimedia.org/wikipedia/commons/7/78/Anthropic_logo.svg\",\n  \"content\": {{ JSON.stringify($json.content[0].text) }}\n}",
+        "options": {}
+      },
+      "id": "dispatch-notification",
+      "name": "Deliver via Webhook (Discord / Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5 PM)": {
+      "main": [
+        [
+          {
+            "node": "Configurable Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configurable Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate & Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Sonnet API (Narrative Engine)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Sonnet API (Narrative Engine)": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Webhook (Discord / Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
