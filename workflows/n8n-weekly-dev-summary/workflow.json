@@ -1,0 +1,71 @@
+﻿{
+  "name": "Weekly Dev Summary (n8n + Claude)",
+  "nodes": [
+    {
+      "parameters": {"rule": {"interval": [{"field": "weeks", "weeksInterval": 1, "triggerAtDay": [5], "triggerAtHour": 17}]}},
+      "id": "cron",
+      "name": "Weekly Cron (Fri 5pm)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {"resource": "commit", "operation": "getAll", "owner": "={{$json.repoOwner}}", "repository": "={{$json.repoName}}", "limit": 100},
+      "id": "github-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [470, 200]
+    },
+    {
+      "parameters": {"resource": "issue", "operation": "getAll", "owner": "={{$json.repoOwner}}", "repository": "={{$json.repoName}}", "filters": {"state": "closed"}, "limit": 50},
+      "id": "github-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [470, 320]
+    },
+    {
+      "parameters": {"resource": "pullRequest", "operation": "getAll", "owner": "={{$json.repoOwner}}", "repository": "={{$json.repoName}}", "filters": {"state": "merged"}, "limit": 50},
+      "id": "github-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [470, 440]
+    },
+    {
+      "parameters": {"functionCode": "const commits = $items('Fetch Commits').map(i=>i.json.commit.message).join('\\n');\nconst issues = $items('Fetch Closed Issues').map(i=>i.json.title).join('\\n');\nconst prs = $items('Fetch Merged PRs').map(i=>i.json.title).join('\\n');\nreturn [{json:{prompt:`Summarize this week's GitHub activity in ${$json.language}:\n\nCommits:\\n${commits}\n\nClosed issues:\\n${issues}\n\nMerged PRs:\\n${prs}`}}];"},
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [700, 320]
+    },
+    {
+      "parameters": {"method": "POST", "url": "https://api.anthropic.com/v1/messages", "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth", "sendHeaders": true, "headerParameters": {"parameters": [{"name": "anthropic-version", "value": "2023-06-01"}]}, "sendBody": true, "bodyParameters": {"parameters": [{"name": "model", "value": "claude-sonnet-4-20250514"}, {"name": "max_tokens", "value": 1024}, {"name": "messages", "value": "[{\"role\":\"user\",\"content\":\"={{$json.prompt}}\"}]"}]}, "options": {}},
+      "id": "claude-api",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [920, 320]
+    },
+    {
+      "parameters": {"channel": "={{$json.slackChannel}}", "text": "={{$json.content[0].text}}", "otherOptions": {}},
+      "id": "slack",
+      "name": "Slack Webhook",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1140, 320]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Fri 5pm)": {"main": [[{"node": "Fetch Commits", "type": "main", "index": 0}, {"node": "Fetch Closed Issues", "type": "main", "index": 0}, {"node": "Fetch Merged PRs", "type": "main", "index": 0}]]},
+    "Fetch Commits": {"main": [[{"node": "Build Prompt", "type": "main", "index": 0}]]},
+    "Fetch Closed Issues": {"main": [[{"node": "Build Prompt", "type": "main", "index": 0}]]},
+    "Fetch Merged PRs": {"main": [[{"node": "Build Prompt", "type": "main", "index": 0}]]},
+    "Build Prompt": {"main": [[{"node": "Claude API", "type": "main", "index": 0}]]},
+    "Claude API": {"main": [[{"node": "Slack Webhook", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"}
+}
