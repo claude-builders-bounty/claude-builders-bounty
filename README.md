@@ -51,3 +51,34 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Hook bounty implementation
+
+`hooks/block-destructive-bash.sh` is a dependency-light `PreToolUse` hook for Claude Code's Bash tool. It reads hook JSON from stdin, allows ordinary commands, and blocks recursive force deletion, hard resets, discarded Git changes, world-writable permission changes, destructive schema commands, and `DELETE FROM` statements without a `WHERE` clause. Blocked attempts are written to `~/.claude/hooks/blocked.log` (or `CLAUDE_HOOK_LOG` when set).
+
+Install it with:
+
+```sh
+mkdir -p ~/.claude/hooks
+cp hooks/block-destructive-bash.sh ~/.claude/hooks/
+chmod +x ~/.claude/hooks/block-destructive-bash.sh
+```
+
+Add this matcher to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/block-destructive-bash.sh" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Run `./test_hook.sh` to verify blocked and allowed cases.
