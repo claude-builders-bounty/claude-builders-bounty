@@ -52,33 +52,21 @@ You're in the right place.
 
 *Started by the Claude builder community · March 2026 · MIT License*
 
-## Hook bounty implementation
 
-`hooks/block-destructive-bash.sh` is a dependency-light `PreToolUse` hook for Claude Code's Bash tool. It reads hook JSON from stdin, allows ordinary commands, and blocks recursive force deletion, hard resets, discarded Git changes, world-writable permission changes, destructive schema commands, and `DELETE FROM` statements without a `WHERE` clause. Blocked attempts are written to `~/.claude/hooks/blocked.log` (or `CLAUDE_HOOK_LOG` when set).
+## Hook bounty implementation (#3)
 
-Install it with:
+The Python 3 standard-library safety hook handles Claude Code `PreToolUse` events for the Bash tool. It blocks representative destructive `rm -rf`, `git push --force`, `DROP TABLE`, `TRUNCATE`, and unbounded `DELETE FROM` commands, and also certain destructive Git resets and unsafe chmod commands. Benign commands are allowed.
+
+**Install from this checkout (one command):**
 
 ```sh
-mkdir -p ~/.claude/hooks
-cp hooks/block-destructive-bash.sh ~/.claude/hooks/
-chmod +x ~/.claude/hooks/block-destructive-bash.sh
+bash install.sh
 ```
 
-Add this matcher to `~/.claude/settings.json`:
+The installer copies the Python hook to `~/.claude/hooks/` and registers it in `~/.claude/settings.json` without replacing existing settings. Repeat installation is safe. Python 3 is required.
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          { "type": "command", "command": "~/.claude/hooks/block-destructive-bash.sh" }
-        ]
-      }
-    ]
-  }
-}
-```
+Blocked commands return exit code 2 and a clear error on stderr. A JSON-lines audit is appended to `~/.claude/hooks/blocked.log`; each record contains a UTC timestamp, attempted command, project path, and reason. For testing, set `CLAUDE_HOOK_LOG` to an alternate path.
 
-Run `./test_hook.sh` to verify blocked and allowed cases.
+**Run regression tests:** `python3 test_hook.py` (or `bash test_hook.sh`).
+
+This is a command-pattern safeguard, not a complete sandbox or a shell/SQL interpreter. Arbitrary obfuscation, script contents, indirect evaluation and some database pipelines require separate defenses. Do not rely on this hook as a sole security boundary.
