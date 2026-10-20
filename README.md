@@ -43,6 +43,29 @@ You're in the right place.
 
 ---
 
+## Changelog generator
+
+Generate a structured `CHANGELOG.md` from commit subjects since the latest tag.
+Commits prefixed with `feat:`, `fix:`, `remove:`, and related forms are grouped
+under Added, Fixed, Removed, or Changed. Python 3 and Git are the only
+requirements.
+
+### Setup (3 steps)
+
+1. Clone this repository.
+2. Run `bash changelog.sh --repo /path/to/your/repository`.
+3. Open `/path/to/your/repository/CHANGELOG.md`.
+
+Use `--stdout` to preview without writing a file. See
+[`examples/CHANGELOG.sample.md`](examples/CHANGELOG.sample.md) for output
+generated from this GitHub repository. Run the regression suite with
+`python3 -m unittest discover -s tests -v`.
+
+The Bash entrypoint forwards all arguments and exit codes to the Python CLI.
+You can also run `python3 changelog.py` directly with the same options.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
