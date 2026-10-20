@@ -1,0 +1,302 @@
+{
+  "name": "Automated Weekly Dev Summary - GitHub & AI",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "node-cron-trigger",
+      "name": "Weekly Schedule (Friday 5 PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_OWNER",
+              "value": "your-org"
+            },
+            {
+              "name": "GITHUB_REPO",
+              "value": "your-repo"
+            },
+            {
+              "name": "LANGUAGE",
+              "value": "EN"
+            },
+            {
+              "name": "DISCORD_SLACK_WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/your/webhook"
+            }
+          ],
+          "number": [
+            {
+              "name": "DAYS_BACK",
+              "value": 7
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config",
+      "name": "Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const daysBack = $input.item.json.DAYS_BACK || 7;\nconst sinceDate = new Date();\nsinceDate.setDate(sinceDate.getDate() - daysBack);\n\nreturn {\n  json: {\n    ...$input.item.json,\n    SINCE_ISO: sinceDate.toISOString()\n  }\n};"
+      },
+      "id": "node-date-calc",
+      "name": "Calculate Since Date",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/commits?since={{ $json.SINCE_ISO }}&per_page=100",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config Variables').first().json.GITHUB_OWNER }}/{{ $('Config Variables').first().json.GITHUB_REPO }}/issues?state=closed&since={{ $('Calculate Since Date').first().json.SINCE_ISO }}&per_page=50",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-weekly-summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Config Variables').first().json;\nconst commits = $('Fetch Commits').all().map(i => i.json.commit ? `${i.json.commit.author.name}: ${i.json.commit.message.split('\\n')[0]}` : '').filter(Boolean);\nconst issues = $('Fetch Closed Issues').all().map(i => i.json.title ? `#${i.json.number}: ${i.json.title}` : '').filter(Boolean);\n\nconst prompt = `You are a Principal Engineering Lead. Generate a crisp, executive weekly engineering summary based on the following GitHub activity from the past 7 days for repository ${cfg.GITHUB_OWNER}/${cfg.GITHUB_REPO}.\n\nLanguage: ${cfg.LANGUAGE} (EN = English, FR = French, ES = Spanish)\n\nActivity Data:\n- Total Commits: ${commits.length}\n- Commits List: ${commits.slice(0, 30).join('; ')}\n- Closed Issues: ${issues.slice(0, 20).join('; ')}\n\nFormat the output in Discord/Slack markdown:\n1. 🚀 **Weekly Highlights & Major Milestones**\n2. 🛠 **Key Features & Enhancements**\n3. 🐛 **Resolved Issues & Bug Fixes**\n4. 📊 **Activity Velocity & Health Metric**`;\n\nreturn {\n  json: {\n    prompt,\n    owner: cfg.GITHUB_OWNER,\n    repo: cfg.GITHUB_REPO,\n    webhookUrl: cfg.DISCORD_SLACK_WEBHOOK_URL\n  }\n};"
+      },
+      "id": "node-consolidate",
+      "name": "Consolidate Activity & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "node-claude-api",
+      "name": "Generate Summary with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Consolidate Activity & Build Prompt').first().json.webhookUrl }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": {{ JSON.stringify($json.content[0].text) }}\n}",
+        "options": {}
+      },
+      "id": "node-dispatch-webhook",
+      "name": "Deliver to Discord / Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5 PM)": {
+      "main": [
+        [
+          {
+            "node": "Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Calculate Since Date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Since Date": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Activity & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Activity & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidate Activity & Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary with Claude": {
+      "main": [
+        [
+          {
+            "node": "Deliver to Discord / Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
