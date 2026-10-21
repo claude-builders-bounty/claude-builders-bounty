@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+"""Generate a structured Keep a Changelog Markdown document from git commit history."""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import re
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+
+CONVENTIONAL_PATTERN = re.compile(
+    r"^(?P<type>[a-zA-Z]+)(?:\((?P<scope>[^)]+)\))?(?P<breaking>!)?:\s*(?P<desc>.+)$"
+)
+
+CATEGORY_MAPPING = {
+    "feat": "Added",
+    "feature": "Added",
+    "fix": "Fixed",
+    "bugfix": "Fixed",
+    "hotfix": "Fixed",
+    "perf": "Changed",
+    "refactor": "Changed",
+    "style": "Changed",
+    "revert": "Removed",
+    "remove": "Removed",
+    "deprecate": "Removed",
+    "docs": "Documentation",
+    "doc": "Documentation",
+    "chore": "Maintenance",
+    "ci": "Maintenance",
+    "build": "Maintenance",
+    "test": "Maintenance",
+    "tests": "Maintenance",
+}
+
+SECTION_ORDER = [
+    "Breaking Changes",
+    "Added",
+    "Fixed",
+    "Changed",
+    "Removed",
+    "Documentation",
+    "Maintenance",
+    "Other Changes",
+]
+
+
+def run_git(args: list[str], cwd: Path | None = None) -> str:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("git executable not found in PATH") from exc
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout).strip()
+        raise RuntimeError(f"git {' '.join(args)} failed: {err}")
+    return result.stdout.strip()
+
+
+def get_latest_tag(cwd: Path | None = None) -> str | None:
+    try:
+        tag = run_git(["describe", "--tags", "--abbrev=0"], cwd=cwd)
+        return tag if tag else None
+    except RuntimeError:
+        return None
+
+
+def get_all_tags(cwd: Path | None = None) -> list[str]:
+    try:
+        raw = run_git(["tag", "--sort=-creatordate"], cwd=cwd)
+        if not raw:
+            return []
+        return [t.strip() for t in raw.splitlines() if t.strip()]
+    except RuntimeError:
+        return []
+
+
+def get_commits(revision_range: str | None = None, cwd: Path | None = None) -> list[dict[str, str]]:
+    args = ["log", "--format=%H%x00%an%x00%ad%x00%s", "--date=short"]
+    if revision_range:
+        args.append(revision_range)
+    raw = run_git(args, cwd=cwd)
+    if not raw:
+        return []
+
+    commits = []
+    for line in raw.splitlines():
+        parts = line.split("\x00")
+        if len(parts) >= 4:
+            commits.append({
+                "hash": parts[0],
+                "short_hash": parts[0][:7],
+                "author": parts[1],
+                "date": parts[2],
+                "subject": parts[3],
+            })
+    return commits
+
+
+def categorize_commit(commit: dict[str, str]) -> tuple[str, str]:
+    subject = commit["subject"].strip()
+    match = CONVENTIONAL_PATTERN.match(subject)
+    if match:
+        ctype = match.group("type").lower()
+        scope = match.group("scope")
+        breaking = match.group("breaking") == "!"
+        desc = match.group("desc").strip()
+
+        if breaking:
+            prefix = f"**[{scope}]** " if scope else ""
+            return "Breaking Changes", f"{prefix}{desc} ({commit['short_hash']})"
+
+        category = CATEGORY_MAPPING.get(ctype, "Other Changes")
+        prefix = f"**[{scope}]** " if scope else ""
+        return category, f"{prefix}{desc} ({commit['short_hash']})"
+
+    lower = subject.lower()
+    if lower.startswith("add ") or lower.startswith("added ") or lower.startswith("feat"):
+        return "Added", f"{subject} ({commit['short_hash']})"
+    if lower.startswith("fix ") or lower.startswith("fixed ") or lower.startswith("bug"):
+        return "Fixed", f"{subject} ({commit['short_hash']})"
+    if lower.startswith("update ") or lower.startswith("refactor ") or lower.startswith("perf"):
+        return "Changed", f"{subject} ({commit['short_hash']})"
+    if lower.startswith("remove ") or lower.startswith("removed ") or lower.startswith("delete"):
+        return "Removed", f"{subject} ({commit['short_hash']})"
+    if lower.startswith("docs") or lower.startswith("readme"):
+        return "Documentation", f"{subject} ({commit['short_hash']})"
+    if lower.startswith("chore") or lower.startswith("ci") or lower.startswith("test"):
+        return "Maintenance", f"{subject} ({commit['short_hash']})"
+
+    return "Other Changes", f"{subject} ({commit['short_hash']})"
+
+
+def build_release_section(
+    title: str,
+    date: str | None,
+    commits: list[dict[str, str]],
+) -> str:
+    sections: dict[str, list[str]] = defaultdict(list)
+    for c in commits:
+        cat, entry = categorize_commit(c)
+        sections[cat].append(entry)
+
+    date_str = f" - {date}" if date else ""
+    lines = [f"## [{title}]{date_str}", ""]
+
+    if not commits:
+        lines.append("_No commits in this release._")
+        lines.append("")
+        return "\n".join(lines)
+
+    for cat in SECTION_ORDER:
+        if sections[cat]:
+            lines.append(f"### {cat}")
+            for item in sections[cat]:
+                lines.append(f"- {item}")
+            lines.append("")
+
+    return "\n".join(lines)
+
+
+def generate_changelog(
+    repo_path: Path | None = None,
+    version: str | None = None,
+    since_tag: str | None = None,
+    all_releases: bool = False,
+) -> str:
+    cwd = repo_path or Path.cwd()
+    header = [
+        "# Changelog",
+        "",
+        "All notable changes to this project will be documented in this file.",
+        "",
+        "The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),",
+        "and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).",
+        "",
+    ]
+
+    today = datetime.date.today().isoformat()
+    tags = get_all_tags(cwd=cwd)
+
+    if all_releases and tags:
+        release_sections = []
+        # Unreleased
+        latest = tags[0]
+        unreleased_commits = get_commits(f"{latest}..HEAD", cwd=cwd)
+        if unreleased_commits or version:
+            vname = version or "Unreleased"
+            release_sections.append(build_release_section(vname, today if version else None, unreleased_commits))
+
+        # Tag-to-tag releases
+        for i, tag in enumerate(tags):
+            if i + 1 < len(tags):
+                prev = tags[i + 1]
+                t_commits = get_commits(f"{prev}..{tag}", cwd=cwd)
+            else:
+                t_commits = get_commits(tag, cwd=cwd)
+            tag_date = t_commits[0]["date"] if t_commits else today
+            release_sections.append(build_release_section(tag, tag_date, t_commits))
+
+        return "\n".join(header + release_sections).strip() + "\n"
+
+    # Single release / delta since tag
+    ref_tag = since_tag or get_latest_tag(cwd=cwd)
+    revision_range = f"{ref_tag}..HEAD" if ref_tag else None
+    commits = get_commits(revision_range, cwd=cwd)
+
+    vtitle = version or (f"Unreleased" if ref_tag else "1.0.0")
+    sec = build_release_section(vtitle, today, commits)
+    return "\n".join(header + [sec]).strip() + "\n"
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate a structured Keep a Changelog Markdown from git commit history."
+    )
+    parser.add_argument("--repo", type=Path, default=None, help="Path to git repository (default: current directory)")
+    parser.add_argument("--version", type=str, default=None, help="Version name/title for the latest changes (e.g. 1.2.0 or Unreleased)")
+    parser.add_argument("--since-tag", type=str, default=None, help="Generate changelog since this specific git tag")
+    parser.add_argument("--all-releases", action="store_true", help="Generate full changelog across all tagged releases")
+    parser.add_argument("--output", "-o", type=Path, default=None, help="Write output to file instead of stdout")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        text = generate_changelog(
+            repo_path=args.repo,
+            version=args.version,
+            since_tag=args.since_tag,
+            all_releases=args.all_releases,
+        )
+    except RuntimeError as exc:
+        print(f"generate-changelog: {exc}", file=sys.stderr)
+        return 1
+
+    if args.output:
+        args.output.write_text(text, encoding="utf-8")
+        print(f"Wrote changelog to {args.output}")
+    else:
+        print(text, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
