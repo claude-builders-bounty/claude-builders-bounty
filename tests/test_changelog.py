@@ -112,6 +112,23 @@ class ChangelogGeneratorTest(unittest.TestCase):
         self.assertIn("release 2 fix", output)
         self.assertIn("release 1 feature", output)
 
+    def test_invalid_tag_preserves_existing_output(self):
+        self.commit("feat: initial feature")
+        output = self.repo / "CHANGELOG.md"
+        original = "# Existing release history\n"
+        output.write_text(original, encoding="utf-8")
+
+        result = subprocess.run(
+            ["python3", str(BIN), "--repo", str(self.repo),
+             "--since-tag", "missing-release", "--output", str(output)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(output.read_text(encoding="utf-8"), original)
+
     def test_wrapper_shell_script(self):
         self.commit("feat: test shell wrapper")
         result = subprocess.run(
