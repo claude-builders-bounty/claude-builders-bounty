@@ -1,5 +1,9 @@
 # Claude Builders Bounty 🤖
 
+## CHANGELOG generator submission
+
+Run `bash changelog.sh` in a Git repository to generate Added / Fixed / Changed / Removed sections from commits since its nearest reachable tag. See [setup, options and classification rules](CHANGELOG-GENERATOR.md), [real GitHub repository sample](examples/README.md), and [integration tests](tests/test_changelog.py).
+
 > A community bounty board for Claude Code builders.
 
 Building with Claude Code? Have tasks to delegate?
