@@ -1,0 +1,265 @@
+{
+  "name": "Weekly GitHub Dev Summary with Claude Sonnet 4",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "1d3f669e-561b-4d43-9824-c8c3e80f2b31",
+      "name": "Weekly Schedule (Friday 5PM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_REPO",
+              "value": "owner/repo"
+            },
+            {
+              "name": "LANGUAGE",
+              "value": "EN"
+            },
+            {
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/your-id/your-token"
+            },
+            {
+              "name": "CLAUDE_MODEL",
+              "value": "claude-sonnet-4-20250514"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e0a2db79-a764-4e48-8df0-b2866676cf47",
+      "name": "Configuration Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_REPO }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus({ days: 7 }).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Summary-Workflow"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "89b52a12-8951-4099-a352-7b194fb89a9c",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Configuration Variables').item.json.GITHUB_REPO }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $now.minus({ days: 7 }).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-Weekly-Summary-Workflow"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "673fbb32-5e82-4161-9db2-f70364f9bf11",
+      "name": "Fetch Closed Issues & PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Configuration Variables').first().json;\nconst commitsData = $('Fetch Commits').all().map(i => i.json);\nconst issuesData = $('Fetch Closed Issues & PRs').all().map(i => i.json);\n\nconst commitsList = commitsData.map(c => {\n  const msg = c.commit ? c.commit.message.split('\\n')[0] : '';\n  const author = c.commit && c.commit.author ? c.commit.author.name : 'Unknown';\n  return `- [${author}] ${msg}`;\n}).slice(0, 30).join('\\n');\n\nconst prs = issuesData.filter(i => i.pull_request);\nconst issues = issuesData.filter(i => !i.pull_request);\n\nconst prsList = prs.map(p => `- #${p.number}: ${p.title} (by @${p.user ? p.user.login : 'unknown'})`).slice(0, 15).join('\\n');\nconst issuesList = issues.map(i => `- #${i.number}: ${i.title}`).slice(0, 15).join('\\n');\n\nconst prompt = `You are a Lead Staff Engineer writing a polished weekly executive dev summary for repository ${config.GITHUB_REPO}.\nLanguage requested: ${config.LANGUAGE || 'EN'}.\n\nHere is the raw activity from the past 7 days:\n\n### COMMITS (${commitsData.length}):\n${commitsList || 'No commits recorded this week.'}\n\n### MERGED PULL REQUESTS (${prs.length}):\n${prsList || 'No PRs merged this week.'}\n\n### CLOSED ISSUES (${issues.length}):\n${issuesList || 'No issues closed this week.'}\n\nPlease generate a concise, engaging narrative summary organized as:\n1. 🌟 Highlights & Major Milestones (2-3 sentences)\n2. 🚀 Key Features Delivered\n3. 🐛 Bug Fixes & Refactoring\n4. 📈 Velocity & Contributor Kudos\nKeep the tone professional yet motivating.`;\n\nreturn [{ json: { prompt, repo: config.GITHUB_REPO, language: config.LANGUAGE, webhook: config.DISCORD_WEBHOOK_URL, model: config.CLAUDE_MODEL } }];"
+      },
+      "id": "c71a39d4-629a-4c28-98e3-54911ba301bc",
+      "name": "Format GitHub Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $json.model }}\",\n  \"max_tokens\": 1500,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "f83a4291-a129-4322-8d76-c21528641eb3",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1140, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Format GitHub Context').item.json.webhook }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"📢 **Weekly Dev Summary for \" + $('Format GitHub Context').item.json.repo + \"**\\n\\n\" + $json.content[0].text\n}",
+        "options": {}
+      },
+      "id": "b3e9447e-4022-4a0b-9993-9c8411d3bf12",
+      "name": "Dispatch to Discord/Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1360, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Configuration Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues & PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Format GitHub Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues & PRs": {
+      "main": [
+        [
+          {
+            "node": "Format GitHub Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format GitHub Context": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Dispatch to Discord/Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
