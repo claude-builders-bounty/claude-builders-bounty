@@ -1,0 +1,343 @@
+{
+  "name": "Weekly Dev Summary (GitHub + Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "name": "Weekly Cron (Fri 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "REPO_OWNER",
+              "value": "={{ $env.GITHUB_OWNER }}",
+              "type": "string"
+            },
+            {
+              "name": "REPO_NAME",
+              "value": "={{ $env.GITHUB_REPO }}",
+              "type": "string"
+            },
+            {
+              "name": "LANG",
+              "value": "={{ $env.SUMMARY_LANG || \"EN\" }}",
+              "type": "string"
+            },
+            {
+              "name": "WEBHOOK_URL",
+              "value": "={{ $env.DELIVERY_WEBHOOK_URL }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = new Date(); d.setDate(d.getDate() - 7);\nreturn [{ since: d.toISOString(), owner: $('Config').first().json.REPO_OWNER, repo: $('Config').first().json.REPO_NAME }];"
+      },
+      "name": "Compute since date",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Compute since date').first().json.owner }}/{{ $('Compute since date').first().json.repo }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        }
+      },
+      "name": "GitHub: commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Compute since date').first().json.owner }}/{{ $('Compute since date').first().json.repo }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $('Compute since date').first().json.since }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        }
+      },
+      "name": "GitHub: closed issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        400
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Compute since date').first().json.owner }}/{{ $('Compute since date').first().json.repo }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        }
+      },
+      "name": "GitHub: closed PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        600
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate: keep merged PRs from last 7d, truncate for LLM\nconst since = new Date($('Compute since date').first().json.since);\nconst commits = $('GitHub: commits').all().flatMap(i => Array.isArray(i.json) ? i.json : [i.json]).slice(0,50).map(c => `- ${c.commit?.message?.split('\\n')[0]} (${c.author?.login||c.commit?.author?.name})`);\nconst issues = $('GitHub: closed issues').all().flatMap(i => Array.isArray(i.json) ? i.json : [i.json]).filter(x => !x.pull_request && new Date(x.closed_at) >= since).slice(0,50).map(x => `- #${x.number} ${x.title}`);\nconst prs = $('GitHub: closed PRs').all().flatMap(i => Array.isArray(i.json) ? i.json : [i.json]).filter(x => x.merged_at && new Date(x.merged_at) >= since).slice(0,50).map(x => `- #${x.number} ${x.title} by ${x.user?.login}`);\nconst lang = $('Config').first().json.LANG || 'EN';\nreturn [{ json: { lang, commits, issues, prs, owner: $('Config').first().json.REPO_OWNER, repo: $('Config').first().json.REPO_NAME } }];"
+      },
+      "name": "Aggregate context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        300
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1500, system: 'You are a developer-relations writer. Write a concise weekly narrative summary with sections: Highlights, Merged PRs, Closed issues, Notable commits, Next focus. Keep under 400 words. Language: ' + $json.lang + '.', messages: [{ role: 'user', content: 'Repo ' + $json.owner + '/' + $json.repo + ' activity:\\nCOMMITS:\\n' + $json.commits.join('\\n') + '\\nISSUES CLOSED:\\n' + $json.issues.join('\\n') + '\\nPRS MERGED:\\n' + $json.prs.join('\\n') }] }) }}"
+      },
+      "name": "Claude: summarize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: 'Weekly dev summary: ' + $('Config').first().json.REPO_OWNER + '/' + $('Config').first().json.REPO_NAME + '\\n\\n' + $json.content[0].text }) }}"
+      },
+      "name": "Deliver: webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1460,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Fri 17:00)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Compute since date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute since date": {
+      "main": [
+        [
+          {
+            "node": "GitHub: commits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub: commits": {
+      "main": [
+        [
+          {
+            "node": "GitHub: closed issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub: closed issues": {
+      "main": [
+        [
+          {
+            "node": "GitHub: closed PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub: closed PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate context": {
+      "main": [
+        [
+          {
+            "node": "Claude: summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude: summarize": {
+      "main": [
+        [
+          {
+            "node": "Deliver: webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
