@@ -51,3 +51,13 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Changelog generator
+
+Requires Git, Bash, and Python 3.9 or later.
+
+1. Clone this repository, or copy `changelog.sh` and `scripts/generate_changelog.py` together.
+2. Run `bash /path/to/changelog.sh` from your project's working tree, or use `bash changelog.sh --repo /path/to/project`.
+3. Review `CHANGELOG.md` in the project's root.
+
+See [behavior and options](docs/changelog.md), the [real Requests sample](examples/requests.CHANGELOG.md), and its [source revision](examples/requests-source.json).
