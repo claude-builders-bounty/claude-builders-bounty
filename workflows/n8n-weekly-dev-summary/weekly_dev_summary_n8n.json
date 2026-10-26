@@ -1,0 +1,337 @@
+{
+  "name": "Automated Weekly Dev Summary with Claude Sonnet 4",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "trigger-schedule",
+      "name": "Weekly Schedule (Friday 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-owner",
+              "name": "GITHUB_OWNER",
+              "value": "claude-builders-bounty",
+              "type": "string"
+            },
+            {
+              "id": "cfg-repo",
+              "name": "GITHUB_REPO",
+              "value": "claude-builders-bounty",
+              "type": "string"
+            },
+            {
+              "id": "cfg-channel",
+              "name": "OUTPUT_CHANNEL",
+              "value": "discord",
+              "type": "string"
+            },
+            {
+              "id": "cfg-lang",
+              "name": "LANGUAGE",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "cfg-webhook",
+              "name": "WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/your-webhook-id/your-token",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "config-vars",
+      "name": "Config Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    SINCE_ISO: sevenDaysAgo.toISOString(),\n    NOW_ISO: now.toISOString(),\n    WINDOW_LABEL: `${sevenDaysAgo.toISOString().slice(0, 10)} to ${now.toISOString().slice(0, 10)}`\n  }\n}];"
+      },
+      "id": "calc-date-window",
+      "name": "Calculate Date Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/={{ $json.GITHUB_OWNER }}/={{ $json.GITHUB_REPO }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.SINCE_ISO }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [860, 160]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/={{ $('Calculate Date Window').first().json.GITHUB_OWNER }}/={{ $('Calculate Date Window').first().json.GITHUB_REPO }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $('Calculate Date Window').first().json.SINCE_ISO }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/={{ $('Calculate Date Window').first().json.GITHUB_OWNER }}/={{ $('Calculate Date Window').first().json.GITHUB_REPO }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [860, 440]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Calculate Date Window').first().json;\nconst commits = $('Fetch Weekly Commits').all().map(i => i.json);\nconst issues = $('Fetch Closed Issues').all().map(i => i.json).filter(iss => !iss.pull_request);\nconst prs = $('Fetch Merged PRs').all().map(i => i.json).filter(pr => pr.merged_at && new Date(pr.merged_at) >= new Date(config.SINCE_ISO));\n\nconst commitsSummary = commits.slice(0, 40).map(c => `- ${c.commit?.message?.split('\\n')[0]} (@${c.author?.login || 'unknown'})`).join('\\n');\nconst issuesSummary = issues.slice(0, 25).map(iss => `- #${iss.number}: ${iss.title}`).join('\\n');\nconst prsSummary = prs.slice(0, 25).map(pr => `- #${pr.number}: ${pr.title} (merged by @${pr.merged_by?.login || 'unknown'})`).join('\\n');\n\nconst lang = (config.LANGUAGE || 'EN').toUpperCase();\nconst langInstruction = lang === 'FR'\n  ? 'Rédige le résumé hebdomadaire en français, avec un ton professionnel et percutant.'\n  : 'Write the weekly summary in English, with a professional and engaging developer tone.';\n\nconst prompt = `You are a Lead Staff Engineer and Technical Writer. Generate a comprehensive weekly developer digest for ${config.GITHUB_OWNER}/${config.GITHUB_REPO} covering the window ${config.WINDOW_LABEL}.\n\n${langInstruction}\n\nActivity Data:\n--- COMMITS (${commits.length} total) ---\n${commitsSummary || 'No commits recorded this week.'}\n\n--- MERGED PULL REQUESTS (${prs.length} total) ---\n${prsSummary || 'No pull requests merged this week.'}\n\n--- RESOLVED ISSUES (${issues.length} total) ---\n${issuesSummary || 'No issues closed this week.'}\n\nFormatting Guidelines:\n1. 🚀 Executive Narrative (3-4 sentences on the team\\'s core engineering accomplishments).\n2. ✨ Key Features & Enhancements (bulleted).\n3. 🐛 Critical Bug Fixes & Hardening (bulleted).\n4. 📊 Vital Metrics: Commits: ${commits.length} | Merged PRs: ${prs.length} | Closed Issues: ${issues.length}.\n5. Keep formatting clean and markdown compatible.`;\n\nreturn [{\n  json: {\n    ...config,\n    prompt,\n    totalCommits: commits.length,\n    totalPRs: prs.length,\n    totalIssues: issues.length\n  }\n}];"
+      },
+      "id": "aggregate-prompt",
+      "name": "Aggregate Activity & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1500,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.prompt) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude-sonnet-call",
+      "name": "Claude Sonnet Dev Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1360, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Aggregate Activity & Build Prompt').first().json;\nconst claudeResponse = $input.first().json;\nconst summaryText = claudeResponse.content?.[0]?.text || 'No summary generated.';\nconst channel = (prev.OUTPUT_CHANNEL || 'discord').toLowerCase();\n\nlet payload = {};\nif (channel === 'discord') {\n  payload = {\n    content: `📢 **Weekly Dev Summary: ${prev.GITHUB_OWNER}/${prev.GITHUB_REPO}** (${prev.WINDOW_LABEL})`,\n    embeds: [{\n      title: `🛠️ Engineering Digest — ${prev.WINDOW_LABEL}`,\n      description: summaryText.slice(0, 4000),\n      color: 5814783,\n      fields: [\n        { name: \"Commits\", value: `${prev.totalCommits}`, inline: true },\n        { name: \"Merged PRs\", value: `${prev.totalPRs}`, inline: true },\n        { name: \"Closed Issues\", value: `${prev.totalIssues}`, inline: true }\n      ],\n      footer: { text: \"Generated by n8n + Claude Sonnet 4\" }\n    }]\n  };\n} else if (channel === 'slack') {\n  payload = {\n    text: `*Weekly Dev Summary: ${prev.GITHUB_OWNER}/${prev.GITHUB_REPO}* (${prev.WINDOW_LABEL})\\n\\n${summaryText}`\n  };\n} else {\n  payload = {\n    subject: `Weekly Dev Summary: ${prev.GITHUB_OWNER}/${prev.GITHUB_REPO} (${prev.WINDOW_LABEL})`,\n    body: summaryText\n  };\n}\n\nreturn [{\n  json: {\n    ...prev,\n    payload,\n    summaryText\n  }\n}];"
+      },
+      "id": "format-payload",
+      "name": "Format Multi-Channel Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      },
+      "id": "deliver-webhook",
+      "name": "Deliver via Webhook (Discord/Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1840, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule (Friday 5pm)": {
+      "main": [
+        [
+          {
+            "node": "Config Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Variables": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Window": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Activity & Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Sonnet Dev Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Sonnet Dev Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Multi-Channel Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Multi-Channel Payload": {
+      "main": [
+        [
+          {
+            "node": "Deliver via Webhook (Discord/Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
