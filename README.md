@@ -34,6 +34,29 @@ You're in the right place.
 
 ---
 
+## Pre-Tool-Use Hook: Block Destructive Bash Commands (`hooks/`)
+
+A Claude Code `PreToolUse` hook (`hooks/block-destructive-bash.py`) that intercepts dangerous `Bash` commands before execution, logs every blocked attempt to `~/.claude/hooks/blocked.log` (with UTC timestamp, project path, matched rule, and attempted command), and returns a clear explanation to Claude.
+
+### Blocked Patterns
+- `rm -rf`, `rm -fr`, `rm -r -f`, `rm --recursive --force`
+- `DROP TABLE`, `DROP DATABASE`, `DROP SCHEMA`
+- `git push --force`, `git push -f`
+- `TRUNCATE TABLE` / SQL `TRUNCATE`
+- `DELETE FROM <table>` without a `WHERE` clause (allows qualified `DELETE FROM ... WHERE ...`)
+- Fork bombs (`:(){ :|:& };:`), `mkfs`, and raw disk writes (`dd of=/dev/...`)
+
+### Installation (2 Commands)
+
+```bash
+git clone https://github.com/claude-builders-bounty/claude-builders-bounty.git && cd claude-builders-bounty
+bash hooks/install.sh
+```
+
+Or copy the hook directly into `~/.claude/hooks/` and merge `hooks/settings.example.json` into `~/.claude/settings.json`.
+
+---
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
