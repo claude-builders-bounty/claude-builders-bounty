@@ -34,20 +34,12 @@ You're in the right place.
 
 ---
 
-## Rules
+## Solutions & Implementations
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+### #4: AGENT — PR Reviewer (`claude-review`)
 
----
+A Claude Code sub-agent that takes a PR diff, analyzes the changes, and generates a structured Markdown review comment.
 
-## Community
+#### Setup & Usage
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
-
----
-
-*Started by the Claude builder community · March 2026 · MIT License*
+1. **Install dependencies:**
