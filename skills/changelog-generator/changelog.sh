@@ -113,10 +113,10 @@ BLOCK="$(
   if [ $(( ${#added[@]} + ${#changed[@]} + ${#fixed[@]} + ${#removed[@]} )) -eq 0 ]; then
     printf -- '- No changes recorded (%s).\n\n' "$PREV_DESC"
   else
-    emit_section "Added"   "${added[@]:-}"
-    emit_section "Changed" "${changed[@]:-}"
-    emit_section "Fixed"   "${fixed[@]:-}"
-    emit_section "Removed" "${removed[@]:-}"
+    emit_section "Added"   ${added[@]+"${added[@]}"}
+    emit_section "Changed" ${changed[@]+"${changed[@]}"}
+    emit_section "Fixed"   ${fixed[@]+"${fixed[@]}"}
+    emit_section "Removed" ${removed[@]+"${removed[@]}"}
   fi
 )"
 
