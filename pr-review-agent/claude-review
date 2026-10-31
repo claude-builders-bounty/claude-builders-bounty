@@ -1,0 +1,370 @@
+#!/usr/bin/env python3
+"""claude-review -- review a GitHub pull request with the pr-reviewer agent.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+    claude-review --pr https://github.com/owner/repo/pull/123 --post
+    claude-review --diff-file change.diff --title "Add invoices"
+    claude-review --pr ... --dry-run          # print the prompt, call nothing
+
+Auth (live mode): GITHUB_TOKEN, or a logged-in `gh` CLI (its token is reused).
+Model call: the `claude` CLI must be on PATH (or pass --claude-bin).
+
+Exit codes: 0 review produced, 1 error, 3 review failed format validation.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+API = "https://api.github.com"
+AGENT_FILE = Path(__file__).resolve().parent / ".claude" / "agents" / "pr-reviewer.md"
+PR_URL = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)(?:[/?#].*)?$")
+REQUIRED_SECTIONS = ("## Summary", "## Risks", "## Suggestions", "## Confidence")
+CONFIDENCE = re.compile(r"\*\*(Low|Medium|High)\*\*", re.IGNORECASE)
+
+
+class ReviewError(RuntimeError):
+    pass
+
+
+def _utf8_stdout() -> None:
+    """Windows consoles default to cp1251/cp437 and crash on arrows, emoji and diffs."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
+# --------------------------------------------------------------------------- input
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    match = PR_URL.match(url.strip())
+    if not match:
+        raise ReviewError(f"Not a GitHub pull request URL: {url}")
+    owner, repo, number = match.groups()
+    return owner, repo, int(number)
+
+
+def github_token() -> str | None:
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        return token.strip()
+    gh = shutil.which("gh")
+    if not gh:
+        return None
+    try:
+        result = subprocess.run([gh, "auth", "token"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def github_get(path: str, token: str | None, accept: str = "application/vnd.github+json") -> bytes:
+    request = urllib.request.Request(f"{API}{path}", headers={"Accept": accept})
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    request.add_header("User-Agent", "claude-review")
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.read()
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", "replace")[:300]
+        hint = " (set GITHUB_TOKEN for private repos or to avoid rate limits)" if error.code == 404 else ""
+        raise ReviewError(f"GitHub API {error.code} for {path}{hint}: {detail}") from error
+    except urllib.error.URLError as error:
+        raise ReviewError(f"Cannot reach the GitHub API: {error.reason}") from error
+
+
+def fetch_pr(owner: str, repo: str, number: int) -> dict:
+    token = github_token()
+    meta = json.loads(github_get(f"/repos/{owner}/{repo}/pulls/{number}", token))
+    files = json.loads(github_get(f"/repos/{owner}/{repo}/pulls/{number}/files?per_page=100", token))
+    diff = github_get(f"/repos/{owner}/{repo}/pulls/{number}", token, "application/vnd.github.v3.diff").decode(
+        "utf-8", "replace"
+    )
+    return {
+        "owner": owner,
+        "repo": repo,
+        "number": number,
+        "title": meta.get("title", ""),
+        "body": meta.get("body") or "",
+        "author": (meta.get("user") or {}).get("login", ""),
+        "base": (meta.get("base") or {}).get("ref", ""),
+        "head": (meta.get("head") or {}).get("ref", ""),
+        "additions": meta.get("additions", 0),
+        "deletions": meta.get("deletions", 0),
+        "changed_files": meta.get("changed_files", len(files)),
+        "files": [
+            {
+                "filename": item.get("filename", ""),
+                "status": item.get("status", ""),
+                "additions": item.get("additions", 0),
+                "deletions": item.get("deletions", 0),
+            }
+            for item in files
+        ],
+        "diff": diff,
+        "token": token,
+    }
+
+
+def truncate_diff(diff: str, max_lines: int) -> tuple[str, int]:
+    """Keep whole file blocks up to max_lines. Returns (diff, omitted_line_count)."""
+    lines = diff.splitlines()
+    if len(lines) <= max_lines:
+        return diff, 0
+
+    kept: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        if line.startswith("diff --git "):
+            if kept and len(kept) + len(current) > max_lines:
+                break
+            kept.extend(current)
+            current = [line]
+        else:
+            current.append(line)
+    if kept and len(kept) + len(current) <= max_lines:
+        kept.extend(current)
+
+    text = "\n".join(kept)
+    if not text:
+        text = "\n".join(lines[:max_lines])
+    text += (
+        f"\n\n---\n[diff truncated: {len(lines) - len(kept)} of {len(lines)} lines omitted. "
+        f"Review only what is shown and say so.]\n"
+    )
+    return text, len(lines) - len(kept)
+
+
+# --------------------------------------------------------------------------- prompt
+
+
+def agent_instructions(path: Path = AGENT_FILE) -> str:
+    text = path.read_text(encoding="utf-8")
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        if len(parts) == 3:
+            return parts[2].strip()
+    return text.strip()
+
+
+def build_prompt(pr: dict, max_diff_lines: int = 3000, agent_file: Path = AGENT_FILE) -> str:
+    diff, omitted = truncate_diff(pr["diff"], max_diff_lines)
+    files = pr.get("files") or []
+    file_list = "\n".join(
+        f"- {item['filename']} ({item['status']}, +{item['additions']}/-{item['deletions']})" for item in files[:60]
+    ) or "- (file list unavailable)"
+
+    body = (pr.get("body") or "").strip()
+    if len(body) > 2000:
+        body = body[:2000] + "\n[description truncated]"
+
+    context = [
+        agent_instructions(agent_file),
+        "",
+        "---",
+        "",
+        "# Pull request under review",
+        "",
+        f"- Repo: {pr.get('owner', '?')}/{pr.get('repo', '?')}",
+        f"- PR: #{pr.get('number', '?')} — {pr.get('title', '(no title)')}",
+        f"- Author: {pr.get('author') or 'unknown'}",
+        f"- Branch: {pr.get('head') or '?'} -> {pr.get('base') or '?'}",
+        f"- Size: +{pr.get('additions', 0)}/-{pr.get('deletions', 0)} across {pr.get('changed_files', 0)} files",
+        "",
+        "## Description",
+        "",
+        body or "(no description provided)",
+        "",
+        "## Changed files",
+        "",
+        file_list,
+        "",
+        "## Diff",
+        "",
+        "```diff",
+        diff,
+        "```",
+    ]
+    if omitted:
+        context.append(f"\nThe diff was truncated: {omitted} lines are not visible.")
+    return "\n".join(context)
+
+
+# --------------------------------------------------------------------------- model
+
+
+def find_claude(explicit: str | None) -> str:
+    for candidate in filter(None, [explicit, os.environ.get("CLAUDE_BIN"), shutil.which("claude")]):
+        if Path(candidate).exists() or shutil.which(candidate):
+            return candidate
+    raise ReviewError(
+        "The `claude` CLI was not found. Install it (`npm i -g @anthropic-ai/claude-code`), "
+        "pass --claude-bin, or use --dry-run to inspect the prompt without a model call."
+    )
+
+
+def run_claude(prompt: str, model: str | None, claude_bin: str, timeout: int) -> str:
+    command = [claude_bin, "-p", "--output-format", "text"]
+    if model:
+        command += ["--model", model]
+    command.append(prompt)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        raise ReviewError(f"claude did not finish within {timeout}s") from error
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()[:500]
+        raise ReviewError(f"claude exited with {result.returncode}: {detail}")
+    review = (result.stdout or "").strip()
+    if not review:
+        raise ReviewError("claude returned an empty review")
+    return review
+
+
+# --------------------------------------------------------------------------- output
+
+
+def clean_review(text: str) -> str:
+    """Drop a wrapping ```markdown fence if the model added one."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+    return stripped
+
+
+def validate_review(review: str) -> list[str]:
+    problems = [f"missing section: {section}" for section in REQUIRED_SECTIONS if section.lower() not in review.lower()]
+    confidence_section = re.search(r"##\s*Confidence\b(.*)", review, re.IGNORECASE | re.DOTALL)
+    if not confidence_section or not CONFIDENCE.search(confidence_section.group(1)):
+        problems.append("the Confidence section must state **Low**, **Medium** or **High**")
+    return problems
+
+
+def post_review(pr: dict, review: str) -> str:
+    token = pr.get("token") or github_token()
+    if not token:
+        raise ReviewError("--post needs GITHUB_TOKEN (or `gh auth login`) with pull-requests: write")
+    payload = json.dumps({"body": review, "event": "COMMENT"}).encode("utf-8")
+    request = urllib.request.Request(
+        f"{API}/repos/{pr['owner']}/{pr['repo']}/pulls/{pr['number']}/reviews",
+        data=payload,
+        method="POST",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": "claude-review",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = json.loads(response.read())
+            return data.get("html_url", "")
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", "replace")[:300]
+        raise ReviewError(f"GitHub rejected the review ({error.code}): {detail}") from error
+
+
+# --------------------------------------------------------------------------- main
+
+
+def main(argv: list[str] | None = None) -> int:
+    _utf8_stdout()
+    parser = argparse.ArgumentParser(
+        prog="claude-review",
+        description="Review a GitHub PR with the pr-reviewer agent and print structured Markdown.",
+    )
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--pr", help="GitHub PR URL, e.g. https://github.com/owner/repo/pull/123")
+    source.add_argument("--diff-file", help="local unified diff to review (offline mode)")
+    parser.add_argument("--title", default="", help="title for offline mode")
+    parser.add_argument("--body", default="", help="description for offline mode")
+    parser.add_argument("--output", "-o", help="write the review to a file instead of stdout")
+    parser.add_argument("--post", action="store_true", help="post the review as a PR comment (needs GITHUB_TOKEN)")
+    parser.add_argument("--dry-run", action="store_true", help="print the prompt and stop")
+    parser.add_argument("--model", help="model passed to the claude CLI (default: agent frontmatter)")
+    parser.add_argument("--max-diff-lines", type=int, default=3000, help="diff lines kept (default 3000)")
+    parser.add_argument("--timeout", type=int, default=600, help="seconds allowed for the model call")
+    parser.add_argument("--claude-bin", help="path to the claude CLI")
+    parser.add_argument("--agent-file", default=str(AGENT_FILE), help="agent definition to use")
+    args = parser.parse_args(argv)
+
+    try:
+        if args.pr:
+            owner, repo, number = parse_pr_url(args.pr)
+            pr = fetch_pr(owner, repo, number)
+            print(f"Fetched {owner}/{repo}#{number}: +{pr['additions']}/-{pr['deletions']}", file=sys.stderr)
+        else:
+            diff_path = Path(args.diff_file)
+            if not diff_path.exists():
+                raise ReviewError(f"Diff file not found: {diff_path}")
+            pr = {
+                "owner": "local",
+                "repo": "local",
+                "number": 0,
+                "title": args.title or diff_path.name,
+                "body": args.body,
+                "author": os.environ.get("USER") or os.environ.get("USERNAME") or "local",
+                "base": "",
+                "head": "",
+                "additions": sum(1 for line in diff_path.read_text(encoding="utf-8", errors="replace").splitlines() if line.startswith("+")),
+                "deletions": sum(1 for line in diff_path.read_text(encoding="utf-8", errors="replace").splitlines() if line.startswith("-")),
+                "changed_files": len(re.findall(r"^diff --git ", diff_path.read_text(encoding="utf-8", errors="replace"), re.M)),
+                "files": [],
+                "diff": diff_path.read_text(encoding="utf-8", errors="replace"),
+            }
+
+        prompt = build_prompt(pr, args.max_diff_lines, Path(args.agent_file))
+
+        if args.dry_run:
+            print(prompt)
+            return 0
+
+        review = clean_review(run_claude(prompt, args.model, find_claude(args.claude_bin), args.timeout))
+        problems = validate_review(review)
+        if problems:
+            print("Review failed validation: " + "; ".join(problems), file=sys.stderr)
+            print(review, file=sys.stderr)
+            return 3
+
+        if args.output:
+            Path(args.output).write_text(review + "\n", encoding="utf-8")
+            print(f"Review written to {args.output}", file=sys.stderr)
+        else:
+            print(review)
+
+        if args.post:
+            if not args.pr:
+                raise ReviewError("--post requires --pr")
+            url = post_review(pr, review)
+            print(f"Posted: {url}", file=sys.stderr)
+
+        return 0
+    except ReviewError as error:
+        print(f"claude-review: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
