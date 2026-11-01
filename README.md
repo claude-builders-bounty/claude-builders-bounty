@@ -51,3 +51,22 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+
+---
+
+## Changelog generator (bounty #1)
+
+Automatically generate a structured changelog from Git commits since the latest reachable tag. Requires Git, Bash, and Python 3.8+; no third-party Python packages.
+
+### Setup (3 steps)
+
+1. Copy `changelog.py` and `changelog.sh` to the root of your Git repository.
+2. From that repository, run `bash changelog.sh`.
+3. Review the generated `CHANGELOG.md` before committing it.
+
+Use `bash changelog.sh --force` to replace an existing changelog or `bash changelog.sh --output docs/CHANGELOG.md` to write to an existing directory. If no reachable tag exists, all commits are included. Unrecognized commit subjects fall under Changed.
+
+Tests: `python3 -m unittest discover -s tests -v`.
+
+Example: [Sample changelog](SAMPLE_CHANGELOG.md), [sample source and limitations](SAMPLE_SOURCE.md).
