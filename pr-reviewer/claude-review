@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""claude-review: review a GitHub pull request with Claude and print a structured Markdown comment."""
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+API = "https://api.github.com"
+MAX_DIFF_CHARS = 120000
+SECTIONS = ["Summary", "Risks", "Suggestions", "Confidence"]
+PR_RE = re.compile(r"^https://github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)/?$")
+
+
+class ReviewError(Exception):
+    def __init__(self, message, code=1):
+        super().__init__(message)
+        self.code = code
+
+
+def parse_pr_url(url):
+    m = PR_RE.match(url.strip())
+    if not m:
+        raise ReviewError("invalid PR URL (expected https://github.com/owner/repo/pull/123): %s" % url, 2)
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def _request(url, accept, data=None, extra_headers=None):
+    headers = {"Accept": accept, "User-Agent": "claude-review"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token and url.startswith(API):
+        headers["Authorization"] = "Bearer " + token
+    headers.update(extra_headers or {})
+    req = urllib.request.Request(url, data=data, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise ReviewError("PR not found (private repo? set GITHUB_TOKEN)")
+        if e.code in (401, 403):
+            raise ReviewError("GitHub denied the request (%d): bad token or rate limit; set GITHUB_TOKEN" % e.code)
+        raise ReviewError("GitHub API error %d" % e.code)
+    except urllib.error.URLError as e:
+        raise ReviewError("network error: %s" % e.reason)
+
+
+def fetch_pr(owner, repo, number):
+    url = "%s/repos/%s/%s/pulls/%d" % (API, owner, repo, number)
+    meta = json.loads(_request(url, "application/vnd.github+json"))
+    diff = _request(url, "application/vnd.github.v3.diff")
+    return {"title": meta.get("title") or "", "body": meta.get("body") or ""}, diff
+
+
+def truncate_diff(diff, max_chars=MAX_DIFF_CHARS):
+    if len(diff) <= max_chars:
+        return diff
+    cut = diff.rfind("\ndiff --git", 0, max_chars)
+    if cut <= 0:
+        cut = max_chars
+    return diff[:cut].rstrip("\n") + "\n[diff truncated]\n"
+
+
+def build_prompt(meta, diff):
+    with open(os.path.join(HERE, "prompt.md"), encoding="utf-8") as f:
+        rubric = f.read()
+    return "%s\n<pr_title>\n%s\n</pr_title>\n<pr_description>\n%s\n</pr_description>\n<pr_diff>\n%s\n</pr_diff>\n" % (
+        rubric, meta.get("title", ""), meta.get("body", ""), truncate_diff(diff))
+
+
+def run_model(prompt):
+    mock = os.environ.get("CLAUDE_REVIEW_MOCK")  # tests only
+    if mock:
+        with open(mock, encoding="utf-8") as f:
+            return f.read()
+    if shutil.which("claude"):
+        cmd = ["claude", "-p", "--output-format", "text"]
+        if os.environ.get("CLAUDE_REVIEW_MODEL"):
+            cmd += ["--model", os.environ["CLAUDE_REVIEW_MODEL"]]
+        if os.environ.get("CLAUDE_REVIEW_EFFORT"):
+            cmd += ["--effort", os.environ["CLAUDE_REVIEW_EFFORT"]]
+        p = subprocess.run(cmd, input=prompt,
+                           capture_output=True, text=True)
+        if p.returncode != 0:
+            raise ReviewError("claude failed: %s" % (p.stderr.strip() or p.stdout.strip()))
+        return p.stdout
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        raise ReviewError("set ANTHROPIC_API_KEY or install Claude Code")
+    body = json.dumps({"model": os.environ.get("CLAUDE_REVIEW_MODEL", "claude-sonnet-5-5"),
+                       "max_tokens": 2000,
+                       "messages": [{"role": "user", "content": prompt}]}).encode()
+    out = _request("https://api.anthropic.com/v1/messages", "application/json", body,
+                   {"x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"})
+    return "".join(b.get("text", "") for b in json.loads(out).get("content", []))
+
+
+def format_review(text, pr_url):
+    text = text.strip()
+    for name in SECTIONS:
+        if not re.search(r"^##\s+%s\s*$" % name, text, re.M | re.I):
+            raise ReviewError("model output is missing the '## %s' section" % name)
+    m = re.search(r"^##\s+Confidence\s*\n+\W*(low|medium|high)\b", text, re.M | re.I)
+    if not m:
+        raise ReviewError("model output has no Low/Medium/High confidence score")
+    return "### 🤖 Claude PR Review\n\n%s\n\n---\n_Automated review of %s by claude-review. Verify before acting._\n" % (
+        text, pr_url)
+
+
+def post_comment(owner, repo, number, body):
+    if not os.environ.get("GITHUB_TOKEN"):
+        raise ReviewError("--post requires GITHUB_TOKEN")
+    _request("%s/repos/%s/%s/issues/%d/comments" % (API, owner, repo, number),
+             "application/vnd.github+json", json.dumps({"body": body}).encode(),
+             {"Content-Type": "application/json"})
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="claude-review", description=__doc__)
+    ap.add_argument("--pr", required=True, help="https://github.com/owner/repo/pull/123")
+    ap.add_argument("--post", action="store_true", help="post the review as a PR comment")
+    ap.add_argument("--output", help="also write the review to this file")
+    ap.add_argument("--dry-run", action="store_true", help="print the prompt, do not call the model")
+    args = ap.parse_args(argv)
+    try:
+        owner, repo, number = parse_pr_url(args.pr)
+        meta, diff = fetch_pr(owner, repo, number)
+        prompt = build_prompt(meta, diff)
+        if args.dry_run:
+            print(prompt)
+            return 0
+        review = format_review(run_model(prompt), args.pr)
+        if args.post:
+            post_comment(owner, repo, number, review)
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(review)
+        print(review)
+        return 0
+    except ReviewError as e:
+        print("claude-review: error: %s" % e, file=sys.stderr)
+        return e.code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
