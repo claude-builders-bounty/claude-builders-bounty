@@ -41,4 +41,6 @@ python3 -m unittest discover -s pr-reviewer/tests -v
 ```
 
 ## Samples
-See `samples/README.md`.
+Two real sample reviews (psf/requests#6767, pallets/click#2800) are in `samples/`; see `samples/README.md`.
+
+Optional env: `CLAUDE_REVIEW_MODEL` (model) and `CLAUDE_REVIEW_EFFORT` (Claude Code effort level).
