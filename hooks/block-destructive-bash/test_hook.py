@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test Suite for block-destructive-bash hook
-Verifies all required acceptance criteria.
+Verifies all required patterns, non-interference, and logging.
 """
 
 import subprocess
@@ -32,11 +32,17 @@ def main():
     blocked_cases = [
         "rm -rf /tmp/test",
         "rm -rf node_modules",
+        "rm -r -f /var/data",
+        "rm --recursive --force ./build",
         "DROP TABLE users;",
+        "drop table orders",
         "git push origin main --force",
         "git push -f origin feature",
+        "git push origin --force-with-lease",
         "TRUNCATE TABLE sessions;",
+        "truncate analytics_events",
         "DELETE FROM users;",
+        "DELETE FROM public.accounts",
     ]
 
     for cmd in blocked_cases:
@@ -48,10 +54,13 @@ def main():
     # Should be ALLOWED (exit code 0)
     allowed_cases = [
         "git status",
+        "git push origin feature",
         "npm install",
         "pnpm build",
         "rm file.txt",
+        "rm -i old_data.csv",
         "DELETE FROM users WHERE id = 42;",
+        "delete from orders where status = 'cancelled';",
         "SELECT * FROM users;",
     ]
 
@@ -65,7 +74,7 @@ def main():
     assert log_file.exists(), "Log file ~/.claude/hooks/blocked.log was not created!"
     print(f"  ✅ Blocked log verified at {log_file}")
 
-    print("\n🎉 All 13 test assertions PASSED successfully!")
+    print(f"\n🎉 All {len(blocked_cases) + len(allowed_cases)} test assertions PASSED successfully!")
 
 if __name__ == "__main__":
     main()

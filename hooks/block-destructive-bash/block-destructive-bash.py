@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Claude Code Pre-Tool-Use Hook: Block Destructive Bash Commands
-Bounty: $100 — claude-builders-bounty #3
+Follows Claude Code hooks format (~/.claude/hooks/)
+Solves Bounty #3 ($100) in claude-builders-bounty.
 """
 
 import sys
@@ -12,17 +13,32 @@ from datetime import datetime
 from pathlib import Path
 
 # Patterns required by acceptance criteria:
-# 1. rm -rf
+# 1. rm -rf (including variants like -fr, -r -f, --force --recursive)
 # 2. DROP TABLE
-# 3. git push --force / -f
+# 3. git push --force / -f / --force-with-lease
 # 4. TRUNCATE
 # 5. DELETE FROM without a WHERE clause
 DANGEROUS_PATTERNS = [
-    (r"\brm\s+-(?:[a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)\b", "Recursive forced file removal (rm -rf)"),
-    (r"\bDROP\s+TABLE\b", "SQL destructive command (DROP TABLE)"),
-    (r"\bgit\s+push\b.*(?:\s+--force\b|\s+-f\b)", "Forced git push (git push --force)"),
-    (r"\bTRUNCATE\s+(?:TABLE\s+)?[a-zA-Z0-9_`\"']+\b", "SQL truncate table (TRUNCATE)"),
-    (r"\bDELETE\s+FROM\s+[a-zA-Z0-9_`\"']+(?!\s+(?:WHERE\b|RETURNING\b.*\bWHERE\b))(?:\s*;|\s*$)", "Unconstrained SQL delete without WHERE clause"),
+    (
+        r"\brm\s+.*(?:-(?:[a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)\b|--force.*--recursive|--recursive.*--force|-r\s+-f|-f\s+-r)",
+        "Recursive forced file removal (rm -rf)"
+    ),
+    (
+        r"\bDROP\s+TABLE\b",
+        "Destructive SQL schema command (DROP TABLE)"
+    ),
+    (
+        r"\bgit\s+push\b.*(?:\s+--force\b|\s+-f\b|\s+--force-with-lease\b)",
+        "Forced git push history overwrite (git push --force)"
+    ),
+    (
+        r"\bTRUNCATE(?:\s+TABLE)?\s+[a-zA-Z0-9_`\"'\.]+\b",
+        "Destructive SQL table wipe (TRUNCATE)"
+    ),
+    (
+        r"\bDELETE\s+FROM\s+[a-zA-Z0-9_`\"'\.]+(?!\s+(?:WHERE\b|RETURNING\b.*\bWHERE\b))(?:\s*;|\s*$)",
+        "Unconstrained SQL delete without WHERE clause"
+    ),
 ]
 
 def log_blocked(command: str, cwd: str, reason: str):
@@ -40,20 +56,20 @@ def log_blocked(command: str, cwd: str, reason: str):
     except Exception as e:
         sys.stderr.write(f"Warning: Could not write to blocked.log: {e}\n")
 
-def check_command(command: str, cwd: str) -> tuple[bool, str]:
+def check_command(command: str) -> tuple[bool, str]:
     for pattern, description in DANGEROUS_PATTERNS:
         if re.search(pattern, command, re.IGNORECASE):
             return True, description
     return False, ""
 
 def main():
-    # Read Claude Code hook payload from stdin
+    # Read Claude Code pre-tool-use payload from stdin
     try:
         raw_input = sys.stdin.read()
         if not raw_input.strip():
             sys.exit(0)
-        
-        # If payload is JSON format from Claude Code
+
+        # Parse JSON payload if sent by Claude Code
         if raw_input.strip().startswith("{"):
             payload = json.loads(raw_input)
             tool_name = payload.get("tool_name", "")
@@ -61,31 +77,31 @@ def main():
             cwd = payload.get("cwd", os.getcwd())
 
             # Only inspect bash / command execution tools
-            if tool_name not in ["bash", "execute_command", "shell"]:
+            if tool_name not in ["bash", "execute_command", "shell", "run_command"]:
                 sys.exit(0)
 
-            command = tool_input.get("command", "") or tool_input.get("cmd", "")
+            command = tool_input.get("command", "") or tool_input.get("cmd", "") or tool_input.get("CommandLine", "")
         else:
-            # Fallback for direct command string piping
+            # Direct string input fallback
             command = raw_input.strip()
             cwd = os.getcwd()
     except Exception:
-        # If input parsing fails, allow standard command execution to avoid disruption
+        # Fallback to allow normal execution if input cannot be parsed
         sys.exit(0)
 
     if not command:
         sys.exit(0)
 
-    is_dangerous, reason = check_command(command, cwd)
+    is_dangerous, reason = check_command(command)
 
     if is_dangerous:
         log_blocked(command, cwd, reason)
         error_message = (
-            f"\n🚨 [BLOCKED BY HOOK] Destructive command intercepted!\n"
+            f"\n🚨 [BLOCKED BY HOOK] Destructive bash command intercepted!\n"
             f"Command: {command}\n"
             f"Detected Hazard: {reason}\n"
-            f"Explanation: For safety, irreversible commands (rm -rf, DROP TABLE, git push --force, TRUNCATE, DELETE without WHERE) "
-            f"are blocked automatically. Please use safe non-destructive flags or targeted queries.\n"
+            f"Explanation: For safety, irreversible commands (rm -rf, DROP TABLE, git push --force, TRUNCATE, and DELETE without WHERE) "
+            f"are blocked automatically. Please use safe non-destructive flags or targeted queries with explicit WHERE clauses.\n"
         )
         sys.stderr.write(error_message)
         sys.exit(1)
