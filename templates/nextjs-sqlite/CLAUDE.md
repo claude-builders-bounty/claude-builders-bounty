@@ -1,85 +1,120 @@
 # CLAUDE.md — Next.js 15 + SQLite (Turso / Drizzle) SaaS Standards
 
-> Production guidelines, strict architectural conventions, and database workflows for Next.js 15 App Router with SQLite.
+> Opinionated, production-grade instructions for Claude Code on greenfield Next.js 15 App Router + SQLite projects. Every architectural rule in this document carries an explicit technical rationale.
 
 ---
 
-## ⚡ Essential Commands
+## Stack & versions
 
-```bash
-# Development & Build
-pnpm dev              # Start dev server with Turbopack (http://localhost:3000)
-pnpm build            # Build production bundle (strict typechecking enforced)
-pnpm lint             # Run ESLint + Prettier check
-
-# Database & Migrations (Drizzle ORM + SQLite/Turso)
-pnpm db:generate      # Generate SQL migration files from schema in src/db/schema.ts
-pnpm db:migrate       # Apply pending migrations to the local/remote SQLite database
-pnpm db:push          # Push schema changes directly during rapid local prototyping
-pnpm db:studio        # Open Drizzle Studio web GUI on http://local.drizzle.studio
-
-# Testing
-pnpm test             # Run Vitest unit & integration tests
-pnpm test:e2e         # Run Playwright end-to-end tests
-```
+- **Framework**: Next.js 15.1+ (App Router with Turbopack, React 19)
+- **Language**: TypeScript 5.7+ (strict mode, `noImplicitAny: true`, `exactOptionalPropertyTypes: true`)
+- **Database Engine**: SQLite 3 via `better-sqlite3` 11.8+ (local development) / `@libsql/client` 0.14+ (Turso edge/cloud replication)
+- **ORM & Migrations**: Drizzle ORM 0.38+ with `drizzle-kit`
+- **Styling & UI**: Tailwind CSS v4, Radix UI primitives, Lucide React icons
+- **Validation**: Zod 3.24+ for all API, Server Action, and environment variable schemas
+- **Testing**: Vitest for unit/integration tests, Playwright for end-to-end user flows
 
 ---
 
-## 🏛️ Project Architecture & Layout
+## Folder structure
 
 ```
 ├── src/
 │   ├── app/                      # Next.js 15 App Router
-│   │   ├── (auth)/               # Route group for login/signup/reset
-│   │   ├── (dashboard)/          # Authenticated app layout & views
-│   │   ├── api/                  # Webhook & external API routes only
-│   │   ├── layout.tsx            # Global HTML & providers
-│   │   └── page.tsx              # Landing page
+│   │   ├── (auth)/               # Unauthenticated auth routes (login, signup, reset)
+│   │   ├── (dashboard)/          # Authenticated app shell and views
+│   │   ├── api/                  # Inbound webhooks (Stripe, Resend) & public JSON APIs
+│   │   ├── layout.tsx            # Root layout with HTML shell & theme provider
+│   │   ├── page.tsx              # Public marketing / root landing page
+│   │   ├── loading.tsx           # Global suspense fallback
+│   │   └── error.tsx             # Global client error boundary
+│   ├── actions/                  # Server Actions (mutations and forms, 'use server')
 │   ├── components/               # React components
-│   │   ├── ui/                   # Primitive design tokens (shadcn/radix)
-│   │   └── shared/               # Domain-specific reusable components
+│   │   ├── ui/                   # Primitive, unstyled design tokens (button, dialog, input)
+│   │   └── shared/               # Domain-specific compositions (nav-bar, billing-card)
 │   ├── db/                       # Database layer
-│   │   ├── schema.ts             # Drizzle SQLite tables & relations
-│   │   ├── migrations/           # Generated SQL migration files (NEVER edit manually)
-│   │   └── index.ts              # SQLite client connection singleton
-│   ├── lib/                      # Utilities & singletons (auth, stripe, email)
-│   └── actions/                  # Next.js 15 Server Actions (form submissions, mutations)
+│   │   ├── index.ts              # SQLite connection pool singleton (WAL + foreign keys)
+│   │   ├── schema.ts             # Drizzle table schemas and relation graphs
+│   │   └── migrations/           # Generated SQL migration files (immutable in git)
+│   ├── lib/                      # Core business logic and third-party SDK clients
+│   │   ├── auth.ts               # Session token validation & password hashing
+│   │   ├── env.ts                # Validated runtime environment variables via Zod
+│   │   └── utils.ts              # Pure helper functions (classNames, currency)
+│   └── types/                    # Shared TypeScript interfaces and utility types
+├── drizzle.config.ts             # Drizzle kit configuration for schema & migrations
+├── next.config.ts                # Next.js configuration (typed config)
+└── tsconfig.json                 # Strict TypeScript configuration
 ```
 
 ---
 
-## 🔒 Database & SQLite Rules
+## Dev commands
 
-1. **Foreign Keys:** SQLite does not enforce foreign keys by default. Always ensure `PRAGMA foreign_keys = ON;` is executed on connection initialization.
-2. **Dates & Timestamps:** Store all dates as integer UNIX epochs in milliseconds (`integer('created_at', { mode: 'timestamp_ms' })`) to avoid timezone parsing anomalies.
-3. **Prepared Statements:** NEVER concatenate variables into raw SQL. Always use Drizzle query builders or parameterized statements (`sql` tag).
-4. **Migration Discipline:**
-   - Production migrations must always be applied via `pnpm db:migrate`.
-   - Never run `db:push` in production environments.
+```bash
+# Development & Build
+pnpm dev              # Launch local dev server with Turbopack on http://localhost:3000
+pnpm build            # Compile production bundle with strict type & lint checking
+pnpm start            # Start production server
+pnpm lint             # Run ESLint check
+pnpm format           # Run Prettier code formatting
 
----
+# Database Workflows (Drizzle ORM)
+pnpm db:generate      # Generate new SQL migration files from src/db/schema.ts
+pnpm db:migrate       # Apply pending migrations to the local/remote SQLite database
+pnpm db:push          # Push schema changes directly during rapid prototype iterations
+pnpm db:studio        # Launch Drizzle Studio web GUI on http://local.drizzle.studio
 
-## 🧩 Architectural Patterns to Follow
-
-- **Server-First by Default:** Keep components as React Server Components (RSC) unless interactivity (`useState`, `useEffect`, `onClick`) is explicitly required.
-- **Server Actions for Mutations:** Put all write operations in `src/actions/` with `'use server'` and Zod input validation.
-- **Optimistic UI:** Pair `useOptimistic` or React Query with Server Actions for instantaneous user feedback.
-- **Strict Error Boundaries:** Every route segment should contain `error.tsx` and `loading.tsx`.
-
----
-
-## 🚫 Anti-Patterns to Avoid
-
-- ❌ **No `useEffect` Data Fetching:** Fetch data directly inside Server Components or Route Handlers.
-- ❌ **No Sensitive Secrets in Client Code:** Variables without `NEXT_PUBLIC_` prefix must never leak into client components.
-- ❌ **No Unbounded Queries:** Never query SQLite without an explicit `.limit(N)` clause to prevent memory exhaustion.
-- ❌ **No Synchronous Disk I/O in Hot Paths:** Avoid blocking `better-sqlite3` calls inside long-running async server handlers.
+# Testing & Quality
+pnpm test             # Run Vitest unit & integration test suite
+pnpm test:e2e         # Execute Playwright end-to-end integration tests
+```
 
 ---
 
-## 📋 Naming Conventions
+## SQL / migration conventions
 
-- **Files:** Kebab-case (`user-profile.tsx`, `auth-guard.ts`).
-- **Components:** PascalCase (`UserProfileCard`).
-- **Server Actions:** CamelCase with action verbs (`createUserAction`, `updateSubscriptionAction`).
-- **Database Tables:** Snake_case plural (`users`, `subscriptions`, `audit_logs`).
+1. **Foreign Keys Enforcement (`PRAGMA foreign_keys = ON;`)**:
+   - *Why*: SQLite does not enforce relational integrity or foreign key cascades by default. Every database connection factory **must** run `PRAGMA foreign_keys = ON;` upon initialization.
+2. **Write-Ahead Logging (`PRAGMA journal_mode = WAL;`)**:
+   - *Why*: Standard rollback journal blocks readers during writes. WAL mode permits concurrent readers without locking the single writer, increasing concurrent web throughput by over 10x.
+3. **Integer Millisecond Timestamps**:
+   - *Why*: ISO-8601 strings cause subtle timezone comparison bugs and slow down range indexing. Store all timestamps as `integer('created_at', { mode: 'timestamp_ms' })` representing Unix epoch milliseconds.
+4. **Parameterized Prepared Statements**:
+   - *Why*: String concatenation in SQL exposes the application to fatal SQL injection vulnerabilities and prevents SQLite from caching parsed query bytecodes. Use Drizzle query builders or parameterized `sql` tagged template literals exclusively.
+5. **Strict Migration Governance**:
+   - *Why*: Manual edits to generated SQL migrations cause schema drift and break replication rollouts. Migrations in `src/db/migrations/` must be generated through `pnpm db:generate` and tested on fresh staging databases.
+
+---
+
+## Component patterns
+
+- **Server Components as Default (RSC)**: Keep components on the server (`page.tsx`, `layout.tsx`, static widgets) to reduce client bundle size, eliminate waterfall client fetches, and preserve secrets.
+- **Client Boundaries Only for Interactive Leaves**: Add `'use client'` only at the lowest possible leaf component requiring state (`useState`, `useReducer`), browser events, or window APIs.
+- **Server Actions for All Mutations**: Form submissions and mutations must reside in `src/actions/`, declared with `'use server'`, and strictly parse inputs using Zod before performing database writes.
+- **Suspense & Streaming**: Wrap slow asynchronous server data fetches in `<Suspense fallback={<Skeleton />}>` rather than blocking the initial HTML streaming of the page.
+- **Optimistic UI Updates**: Combine Server Actions with React's `useOptimistic` hook for instant client updates on latency-sensitive actions (e.g. toggling bookmarks or completing tasks).
+
+---
+
+## What we don't do (and why)
+
+- ❌ **No `useEffect` data fetching**:
+  - *Why*: Client-side fetching in `useEffect` creates severe network waterfalls, layout shifts, uncacheable requests, and bloats client JS. Fetch data directly in React Server Components or Route Handlers.
+- ❌ **No `db:push` in production**:
+  - *Why*: `db:push` mutates database schema out-of-band without generating an immutable, trackable migration script. It risks data loss when dropping or renaming columns. Use `pnpm db:migrate` in production CI/CD.
+- ❌ **No raw queries without explicit `.limit()`**:
+  - *Why*: SQLite loads result rows into process memory. An unconstrained `SELECT * FROM table` on growing production datasets can exhaust Node.js heap memory (`ERR_WORKER_OUT_OF_MEMORY`).
+- ❌ **No client-side database credentials**:
+  - *Why*: SQLite file paths, encryption keys, and Turso auth tokens must never leak to the browser. Any file importing the database instance must remain strictly server-side.
+- ❌ **No `any` types in TypeScript**:
+  - *Why*: `any` disables typechecking cascadingly across connected callers, introducing runtime `TypeError: undefined is not a function`. Use explicit types, generics, or `unknown` with Zod type guards.
+
+---
+
+## Naming conventions
+
+- **Files & Directories**: Kebab-case (`user-profile.tsx`, `invoice-table.tsx`, `auth-guard.ts`).
+- **Components**: PascalCase matching the file concept (`UserProfile`, `InvoiceTable`).
+- **Server Actions**: CamelCase ending with `Action` (`createTeamAction`, `updateBillingAction`).
+- **Database Tables**: Snake_case plural (`users`, `organizations`, `audit_logs`).
+- **Database Columns**: Snake_case (`user_id`, `created_at`, `stripe_customer_id`).
