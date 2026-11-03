@@ -6,10 +6,10 @@ Solves Bounty #4 ($150) in claude-builders-bounty.
 """
 
 import argparse
+import json
 import os
 import re
 import sys
-import json
 import urllib.request
 import urllib.error
 
@@ -51,17 +51,64 @@ def fetch_pr_diff(owner: str, repo: str, pull_number: int, token: str = "") -> s
         with urllib.request.urlopen(req) as resp:
             return resp.read().decode("utf-8")
     except urllib.error.HTTPError as e:
-        print(f"Error fetching PR diff: {e.code}", file=sys.stderr)
+        print(f"Warning: Could not fetch diff ({e.code}). Analyzing metadata only.", file=sys.stderr)
         return ""
 
+def call_claude_api(pr_data: dict, diff_text: str, api_key: str) -> dict:
+    """Invokes Claude API (claude-sonnet-4-20250514) if ANTHROPIC_API_KEY is available."""
+    url = "https://api.anthropic.com/v1/messages"
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    truncated_diff = diff_text[:20000] if len(diff_text) > 20000 else diff_text
+    prompt = f"""You are an elite code reviewer sub-agent.
+Review the following Pull Request:
+Title: {pr_data.get('title')}
+Description: {pr_data.get('body')}
+Diff:
+{truncated_diff}
+
+You MUST return a JSON object with exactly these keys:
+{{
+  "summary": "2-3 sentences summarizing the changes",
+  "risks": ["Risk 1", "Risk 2"],
+  "suggestions": ["Suggestion 1", "Suggestion 2"],
+  "confidence": "Low" | "Medium" | "High"
+}}
+Return ONLY the raw JSON object, without backticks or markdown formatting.
+"""
+    body = {
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 1024,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    try:
+        req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), headers=headers)
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            text = data["content"][0]["text"].strip()
+            # Clean possible markdown fencing
+            text = re.sub(r"^```json\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+            return json.loads(text)
+    except Exception as e:
+        print(f"Claude API invocation fallback ({e}). Using local heuristic analyzer.", file=sys.stderr)
+        return {}
+
 def analyze_diff(pr_data: dict, diff_text: str) -> dict:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key:
+        api_result = call_claude_api(pr_data, diff_text, api_key)
+        if api_result and all(k in api_result for k in ["summary", "risks", "suggestions", "confidence"]):
+            return api_result
+
     title = pr_data.get("title", "")
-    body = pr_data.get("body", "") or ""
     changed_files = pr_data.get("changed_files", 0)
     additions = pr_data.get("additions", 0)
     deletions = pr_data.get("deletions", 0)
 
-    # Risk detection rules
     risks = []
     suggestions = []
 
@@ -92,7 +139,7 @@ def analyze_diff(pr_data: dict, diff_text: str) -> dict:
     elif changed_files < 25:
         confidence = "Medium"
     else:
-        confidence = "Low (large diff spanning multiple domains)"
+        confidence = "Low"
 
     summary = (
         f"This pull request ('{title}') introduces {additions} additions and {deletions} deletions across "
@@ -132,17 +179,18 @@ def format_review_markdown(analysis: dict) -> str:
 def post_github_comment(owner: str, repo: str, pull_number: int, comment: str, token: str):
     url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pull_number}/comments"
     headers = {
-        "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"Bearer {token}",
         "User-Agent": "Claude-Reviewer-Agent",
+        "Content-Type": "application/json",
     }
-    payload = json.dumps({"body": comment}).encode("utf-8")
-    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    data = json.dumps({"body": comment}).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=headers)
     try:
         with urllib.request.urlopen(req) as resp:
-            print("✅ Successfully posted review comment to GitHub PR.")
-    except Exception as e:
-        print(f"Notice: Comment posting skipped or failed ({e}). Output printed to console.", file=sys.stderr)
+            print(f"✅ Successfully posted review comment to PR #{pull_number}.")
+    except urllib.error.HTTPError as e:
+        print(f"Warning: Comment posting skipped or failed ({e}). Output printed to console.", file=sys.stderr)
 
 def main():
     parser = argparse.ArgumentParser(description="Claude Code PR Reviewer Sub-Agent")
