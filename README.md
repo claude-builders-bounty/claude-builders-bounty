@@ -1,53 +1,43 @@
-# Claude Builders Bounty 🤖
+# Generate a structured CHANGELOG from Git history
 
-> A community bounty board for Claude Code builders.
+A dependency-light Bash utility that reads commit subjects since the latest reachable Git tag and writes a categorized `CHANGELOG.md`. Conventional commit prefixes (`feat:`, `fix:`, `refactor:`, `docs:`, `remove:` and related forms) map into **Added**, **Fixed**, **Changed**, and **Removed**. Subjects that do not match a known prefix are retained under **Changed (uncategorized)** rather than silently discarded.
 
-Building with Claude Code? Have tasks to delegate?
-Want to get paid for contributing to AI projects?
-You're in the right place.
+## Requirements
 
----
+- Git
+- Bash 4+
+- Python 3 (used only to safely split Git's NUL-delimited output)
 
-## How it works
+## Setup and use (3 steps)
 
-**To post a bounty**
-1. Open a GitHub issue with a clear description and acceptance criteria
-2. Comment `/opire create $XXX` in the issue to set the reward
-3. Share the link — contributors will find it
+1. Copy `changelog.sh` into your repository, or clone this repository.
+2. Run `bash changelog.sh` from the target repository. To select a tag explicitly, run `bash changelog.sh --since v1.2.3`; use `--repo PATH` and `--output PATH` to target another repository or output file.
+3. Review `CHANGELOG.md` before publishing; commit subjects are heuristically categorized and may need human correction.
 
-**To claim a bounty**
-1. Browse the open issues below
-2. Comment `/opire try` in the issue you want to work on
-3. Submit a PR — payment is automatic on merge ✅
+## Example
 
----
+Given commits `feat: add CSV export`, `fix: handle empty input`, `docs: explain setup`, and `remove: legacy endpoint` since tag `v1.2.0`, the generated file includes:
 
-## Active Bounties
+```markdown
+# Changelog
 
-| # | Task | Amount | Status |
-|---|------|--------|--------|
-| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
-| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
-| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
-| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+Changes since `v1.2.0`.
 
----
+## Added
 
-## Rules
+- feat: add CSV export
 
-- Tasks must be related to Claude Code or AI tooling
-- Every issue must have clear acceptance criteria before a bounty is activated
-- Payment is handled by [Opire](https://opire.dev) (Stripe)
-- Quality over speed — a solid PR beats a fast one
+## Fixed
 
----
+- fix: handle empty input
 
-## Community
+## Changed
 
-- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
-- 📧 Contact: claudebounty@gmail.com
+- docs: explain setup
 
----
+## Removed
 
-*Started by the Claude builder community · March 2026 · MIT License*
+- remove: legacy endpoint
+```
+
+If the repository has no reachable tags, all commits reachable from `HEAD` are considered. Merge commits are excluded by Git's default `git log` behavior only when requested; this script uses the normal log history. The tool does not push, tag, commit, or publish changes.
