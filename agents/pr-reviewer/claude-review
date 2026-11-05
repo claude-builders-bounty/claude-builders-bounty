@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""
+claude-review — review a GitHub PR and emit a structured Markdown review.
+
+Usage:
+  ./claude-review --pr https://github.com/owner/repo/pull/123
+  ./claude-review --pr owner/repo#123 --json
+
+Fetching uses the GitHub CLI (`gh pr diff` / `gh pr view`).
+If ANTHROPIC_API_KEY is set the diff is sent to Claude (claude-sonnet-4-20250514);
+otherwise a deterministic local analyzer produces the same Markdown structure,
+so the tool works with zero configuration.
+"""
+from __future__ import annotations
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+
+MODEL = "claude-sonnet-4-20250514"
+API = "https://api.anthropic.com/v1/messages"
+
+RISK_PATTERNS = [
+    ("Possible hardcoded secret", re.compile(r"(api[_-]?key|secret|token|password)\s*[:=]\s*['\"][^'\"]{8,}", re.I)),
+    ("Use of eval/exec", re.compile(r"\b(eval|exec)\s*\(", re.I)),
+    ("SQL string concatenation", re.compile(r"(execute|query)\s*\(\s*[\"'`].*(\+|%|\.format|f\")", re.I)),
+    ("Debug output left in", re.compile(r"\b(console\.log|print\(|debugger)\b")),
+    ("Broad exception swallow", re.compile(r"except\s*:\s*$|catch\s*\(\s*\w*\s*\)\s*\{\s*\}", re.M)),
+    ("Force push / destructive git", re.compile(r"\bgit\s+push\b.*--force|\brm\s+-rf\b", re.I)),
+    ("TODO/FIXME added", re.compile(r"^\+.*\b(TODO|FIXME|XXX)\b", re.M)),
+    ("Disabled test", re.compile(r"^\+.*(it\.skip|xit\(|@Ignore|\.only\()", re.M)),
+]
+
+
+def sh(*args):
+    r = subprocess.run(list(args), capture_output=True, text=True)
+    return r.stdout, r.stderr, r.returncode
+
+
+def fetch(pr: str):
+    url = pr
+    if "#" in pr and "github.com" not in pr:
+        repo, num = pr.split("#", 1)
+        url = f"https://github.com/{repo}/pull/{num}"
+    diff, err, code = sh("gh", "pr", "diff", url)
+    if code != 0:
+        sys.exit(f"error: gh pr diff failed: {err.strip() or 'unknown'} (is `gh` installed and authed?)")
+    meta, _, _ = sh("gh", "pr", "view", url, "--json", "title,additions,deletions,changedFiles,author")
+    try:
+        info = json.loads(meta)
+    except Exception:
+        info = {}
+    return diff, info, url
+
+
+def parse_diff(diff: str):
+    files, adds, dels = [], 0, 0
+    cur = None
+    for line in diff.splitlines():
+        if line.startswith("+++ b/"):
+            cur = line[6:]
+            files.append(cur)
+        elif line.startswith("+") and not line.startswith("+++"):
+            adds += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            dels += 1
+    return files, adds, dels
+
+
+def local_analysis(diff: str, files, info):
+    risks, suggestions = [], []
+    for label, rx in RISK_PATTERNS:
+        if rx.search(diff):
+            risks.append(label)
+    if not any(f.endswith((".md",)) for f in files) and any("migrat" in f.lower() for f in files):
+        suggestions.append("Schema/migration changed — confirm a rollback path and that it is append-only.")
+    if not any("test" in f.lower() or "spec" in f.lower() for f in files):
+        risks.append("No test files changed")
+        suggestions.append("Add a focused test for the behaviour this PR changes.")
+    if len(files) > 20:
+        suggestions.append(f"Large PR ({len(files)} files) — split for faster review.")
+    big = [f for f in files if f.endswith((".lock", ".min.js", ".generated.ts"))]
+    if big:
+        suggestions.append("Generated/lock files changed — ensure they were regenerated, not hand-edited.")
+    if not risks:
+        risks.append("No high-signal risk patterns detected by static heuristics")
+    if not suggestions:
+        suggestions.append("Looks focused; verify CI passes and the description matches the diff.")
+
+    total = (info.get("additions") or 0) + (info.get("deletions") or 0)
+    conf = "High"
+    if len(files) > 15 or total > 500:
+        conf = "Medium"
+    if any(r in ("Possible hardcoded secret", "Use of eval/exec") for r in risks) or total > 1500:
+        conf = "Low"
+    return risks, suggestions, conf
+
+
+def claude_review(diff: str, info) -> str | None:
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        return None
+    system = ("You are a meticulous senior code reviewer. Return ONLY Markdown with sections: "
+              "## Summary (2-3 sentences), ## Risks (bullets), ## Suggestions (bullets), "
+              "## Confidence (Low/Medium/High) with one-line justification.")
+    body = {"model": MODEL, "max_tokens": 1200, "system": system,
+            "messages": [{"role": "user", "content": f"PR diff:\n\n{diff[:120000]}"}]}
+    req = urllib.request.Request(API, data=json.dumps(body).encode(),
+                                 headers={"x-api-key": key, "anthropic-version": "2023-06-01",
+                                          "content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            data = json.loads(r.read().decode())
+        return "".join(b.get("text", "") for b in data.get("content", []))
+    except Exception as e:
+        sys.stderr.write(f"warning: Claude API call failed ({e}); falling back to local analysis\n")
+        return None
+
+
+def render(url, info, files, adds, dels, risks, suggestions, conf, ai_text=None):
+    title = info.get("title", "")
+    out = [f"# PR Review — [{title}]({url})", ""]
+    if ai_text:
+        out += [ai_text.strip(), ""]
+    else:
+        out += ["## Summary",
+                f"{len(files)} file(s) changed, +{adds} / -{dels} lines. "
+                f"Focus areas: {', '.join(files[:5])}{'…' if len(files) > 5 else ''}.",
+                "", "## Risks", *[f"- {r}" for r in risks],
+                "", "## Suggestions", *[f"- {s}" for s in suggestions],
+                "", "## Confidence",
+                f"**{conf}** — heuristic based on PR size and detected patterns."]
+    out += ["", "---", "_Generated by `claude-review`._"]
+    return "\n".join(out)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Structured PR review.")
+    ap.add_argument("--pr", required=True, help="PR URL or owner/repo#123")
+    ap.add_argument("--json", action="store_true", help="emit JSON instead of Markdown")
+    a = ap.parse_args()
+    diff, info, url = fetch(a.pr)
+    files, adds, dels = parse_diff(diff)
+    risks, suggestions, conf = local_analysis(diff, files, info)
+    ai = claude_review(diff, info)
+    md = render(url, info, files, adds, dels, risks, suggestions, conf, ai)
+    if a.json:
+        print(json.dumps({"url": url, "files": files, "risks": risks,
+                          "suggestions": suggestions, "confidence": conf,
+                          "markdown": md}, indent=2))
+    else:
+        print(md)
+
+
+if __name__ == "__main__":
+    main()
