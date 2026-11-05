@@ -56,3 +56,38 @@ The live harness returned `status: blocked`, `reason: process_failed`, and
 `acceptance_passed: false`; the direct CLI attempt independently reported OAuth
 401 with zero model tokens. Earlier DB/build results above belong to 2026-09-10;
 they were not rerun for this harness-only follow-up.
+
+## 2026-11-05 context-loading correction
+
+Claude Code 2.1.318 returned a successful model response with the original
+harness at PR head `f803c8937d315edb5ba226396c67a0bd5d1b5747`, but explicitly
+reported that no project CLAUDE.md was available. The copied guidance, harness,
+tests and four fresh-project fixture inputs were byte-checked against that
+published commit. Authentication is no longer the observed blocker.
+
+The harness now uses `--setting-sources project` instead of an empty source list.
+The fresh directory contains only the trusted template and fixture inputs;
+user/local sources remain excluded. Tools, strict empty MCP, hooks, auto-memory
+and session persistence remain disabled. This changes only invocation flags,
+not user settings or credentials. The prompt and template are unchanged.
+
+With the corrected flag, a real no-tools response selected `@libsql/client`,
+`file:./data/app.db`, server-only database/auth modules, server-derived tenant
+membership, composite foreign keys, checksummed immutable migrations and
+transaction-owned SQL script execution. It did not invent completed validation.
+This is an AI-assisted semantic inspection, not maintainer acceptance.
+
+**Still incomplete:** the response explicitly requested clarification about
+authentication, membership/roles, project fields and test tooling. Those are
+not suppressed by the test prompt, and the no-clarification bounty criterion is
+not claimed. No fresh database/build/audit, remote Turso, HTTP auth, Windows or
+deployment test was performed in this harness-only change. No award or payment
+is claimed. Historical results above retain their original dates.
+
+The strengthened seven-test harness suite rejects the original empty-source
+invocation (one failed test) and passes with the corrected project-only flag.
+It also checks that hooks, auto-memory and session persistence remain disabled.
+Transport success continues to return `review_required`, never an automatic pass.
+
+References: [Claude Code memory loading](https://code.claude.com/docs/en/memory)
+and [setting-sources CLI reference](https://code.claude.com/docs/en/cli-reference).

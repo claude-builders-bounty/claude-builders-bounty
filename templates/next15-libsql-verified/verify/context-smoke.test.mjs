@@ -44,6 +44,11 @@ test('fresh project copies exact guidance, disables tools/MCP, and is cleaned', 
     assert.equal(args[args.indexOf('--tools') + 1], '');
     assert(args.includes('--strict-mcp-config'));
     assert.equal(args[args.indexOf('--mcp-config') + 1], '{"mcpServers":{}}');
+    assert.equal(args[args.indexOf('--setting-sources') + 1], 'project');
+    const settings = JSON.parse(args[args.indexOf('--settings') + 1]);
+    assert.equal(settings.disableAllHooks, true);
+    assert.equal(settings.autoMemoryEnabled, false);
+    assert(args.includes('--no-session-persistence'));
     assert.equal(options.timeout, 90000);
     assert(!args.includes('--dangerously-skip-permissions'));
     assert(!prompt.includes('Do not ask'));

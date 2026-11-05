@@ -12,12 +12,16 @@ Each rule explains the failure it prevents.
 
 ## Status
 
-**Not acceptance-complete.** The Next.js/SQLite fixture checks passed, but the
-required Claude Code comprehension test did not run successfully: the existing
-Claude Code OAuth session returned HTTP 401 (expired access token), before any
-model tokens were consumed. No credentials or global settings were changed.
-Keep this contribution in draft until an authenticated, isolated context test
-actually passes. A build is not evidence that Claude understood the document.
+**Not acceptance-complete.** The historical Next.js/SQLite fixture checks passed.
+On 2026-11-05 UTC, authentication succeeded, but the original harness omitted
+project instructions by disabling all setting sources. Loading only `project`
+restored the unchanged template context while leaving user/local settings,
+tools, MCP and hooks disabled. The resulting plan followed the database,
+server/tenant and migration conventions, but asked about authentication,
+membership, business fields and test tooling. The bounty's no-clarification
+criterion therefore remains unmet. Keep this contribution in draft; a successful
+model response or build alone is not acceptance. No credentials or global
+settings were edited.
 
 ## Reproduce the fixture
 
@@ -55,7 +59,8 @@ No customer, auth, payment, email, or remote Turso integration is implemented.
 From `verify/`, run `node --test context-smoke.test.mjs` for the harness checks,
 then `node context-smoke.mjs --response-file private-context-response.txt` with an
 already authenticated Claude Code on PATH. This creates a fresh temporary project,
-copies the unchanged guidance and fixture source, disables tools/MCP/hooks for the
+copies the unchanged guidance and fixture source, loads only project setting
+sources, disables tools/MCP/hooks for the
 invocation, and removes that temporary project afterwards. It does not install
 dependencies, edit credentials, log in, or change global settings. The private
 response file is opt-in and never overwritten; review/redact it before sharing.

@@ -34,7 +34,7 @@ export function runSmoke({ execute = spawnSync, responseFile } = {}) {
       copyFileSync(join(here, file), join(project, file));
     }
     const args = ['-p', prompt, '--tools', '', '--strict-mcp-config', '--mcp-config',
-      '{"mcpServers":{}}', '--setting-sources', '', '--settings',
+      '{"mcpServers":{}}', '--setting-sources', 'project', '--settings',
       '{"disableAllHooks":true,"autoMemoryEnabled":false,"disableDeepLinkRegistration":"disable"}',
       '--no-session-persistence', '--no-chrome', '--disable-slash-commands',
       '--permission-mode', 'dontAsk', '--output-format', 'json'];
