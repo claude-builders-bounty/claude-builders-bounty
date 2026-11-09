@@ -1,0 +1,287 @@
+{
+  "name": "Weekly GitHub Repo Narrative Summary (Claude Sonnet 4)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-weekly-friday",
+      "name": "Weekly Cron Trigger (Friday 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-repo",
+              "name": "github_repo",
+              "value": "={{ $env.GITHUB_REPO || 'anthropics/claude-code' }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-lang",
+              "name": "language",
+              "value": "={{ $env.SUMMARY_LANGUAGE || 'EN' }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-webhook",
+              "name": "webhook_url",
+              "value": "={{ $env.DESTINATION_WEBHOOK_URL }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-since",
+              "name": "since_iso",
+              "value": "={{ $now.minus({ days: 7 }).toISO() }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-config-vars",
+      "name": "Configure Variables (Repo, Channel, Language)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $json.github_repo }}/commits?since={{ $json.since_iso }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Weekly Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 140]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Configure Variables (Repo, Channel, Language)').item.json.github_repo }}/issues?state=closed&since={{ $('Configure Variables (Repo, Channel, Language)').item.json.since_iso }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-closed-issues",
+      "name": "Fetch Closed Issues & PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Configure Variables (Repo, Channel, Language)').item.json.github_repo }}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-merged-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Configure Variables (Repo, Channel, Language)').first().json;\nconst since = new Date(cfg.since_iso);\nconst commits = ($('Fetch Weekly Commits').all() || []).map(i => i.json).filter(c => c.sha).map(c => `- ${c.sha.slice(0,7)}: ${(c.commit?.message || '').split('\\n')[0]} (@${c.author?.login || c.commit?.author?.name || 'unknown'})`);\nconst issues = ($('Fetch Closed Issues & PRs').all() || []).map(i => i.json).filter(x => x.number && !x.pull_request && new Date(x.closed_at) >= since).map(x => `- #${x.number}: ${x.title} (@${x.user?.login})`);\nconst prs = ($('Fetch Merged PRs').all() || []).map(i => i.json).filter(p => p.number && p.merged_at && new Date(p.merged_at) >= since).map(p => `- PR #${p.number}: ${p.title} (@${p.user?.login})`);\nconst langInstruction = cfg.language.toUpperCase() === 'FR' ? 'Rédige le résumé narratif hebdomadaire en français.' : 'Write the weekly narrative engineering summary in English.';\nreturn [{ json: { ...cfg, stats: { commits: commits.length, closed_issues: issues.length, merged_prs: prs.length }, prompt: `${langInstruction}\\n\\nRepository: ${cfg.github_repo}\\nWindow: since ${cfg.since_iso}\\n\\nMerged PRs (${prs.length}):\\n${prs.join('\\n') || 'None'}\\n\\nClosed Issues (${issues.length}):\\n${issues.join('\\n') || 'None'}\\n\\nCommits (${commits.length}):\\n${commits.slice(0, 40).join('\\n') || 'None'}\\n\\nProduce a concise, executive-ready weekly narrative summary with sections: Highlights, Merged PRs, Closed Issues, and Key Commits/Contributors.` } }];"
+      },
+      "id": "aggregate-activity",
+      "name": "Aggregate Weekly GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1500, messages: [{ role: 'user', content: $json.prompt }] }) }}"
+      },
+      "id": "claude-sonnet-summary",
+      "name": "Generate Narrative Summary (Claude Sonnet 4)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configure Variables (Repo, Channel, Language)').item.json.webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.content?.[0]?.text || 'No summary generated', text: $json.content?.[0]?.text || 'No summary generated' }) }}"
+      },
+      "id": "deliver-webhook",
+      "name": "Deliver Summary (Discord / Slack Webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1460, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger (Friday 17:00)": {
+      "main": [
+        [
+          {
+            "node": "Configure Variables (Repo, Channel, Language)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure Variables (Repo, Channel, Language)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues & PRs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Merged PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Weekly GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues & PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Weekly GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Weekly GitHub Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Weekly GitHub Activity": {
+      "main": [
+        [
+          {
+            "node": "Generate Narrative Summary (Claude Sonnet 4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Narrative Summary (Claude Sonnet 4)": {
+      "main": [
+        [
+          {
+            "node": "Deliver Summary (Discord / Slack Webhook)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
