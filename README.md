@@ -51,3 +51,8 @@ You're in the right place.
 ---
 
 *Started by the Claude builder community · March 2026 · MIT License*
+
+## Tools
+
+- [Generate CHANGELOG](skills/generate-changelog/README.md): Bash/Python CLI for
+  issue #1, with Git integration tests and a reproducible public-repository sample.
