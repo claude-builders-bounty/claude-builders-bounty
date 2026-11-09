@@ -1,0 +1,51 @@
+name: claude-review
+
+# Posts a structured review comment (summary, risks, suggestions,
+# confidence) on every pull request. Uses only the built-in GITHUB_TOKEN
+# and the public diff; no external services and no code is executed from
+# the PR itself (the script is checked out from the base branch).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the BASE repo (trusted code), not the PR head, so the
+      # reviewer script can never be modified by the PR under review.
+      - name: Check out base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Run claude-review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 claude_review.py \
+            --pr "${{ github.event.pull_request.html_url }}" \
+            --output review.md
+
+      - name: Post or update the review comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # One sticky comment per PR: update it if it already exists.
+          existing=$(gh pr view "${{ github.event.pull_request.number }}" \
+            --json comments \
+            --jq '.comments[] | select(.body | startswith("## PR Review (claude-review)")) | .id' \
+            | head -n 1)
+          if [ -n "$existing" ]; then
+            gh api --method PATCH \
+              "repos/${{ github.repository }}/issues/comments/${existing}" \
+              -F body=@review.md > /dev/null
+          else
+            gh pr comment "${{ github.event.pull_request.number }}" \
+              --body-file review.md
+          fi
