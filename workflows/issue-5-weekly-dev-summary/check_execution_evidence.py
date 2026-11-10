@@ -24,8 +24,19 @@ def check(execution, workflow):
     fields = ("name", "type", "typeVersion", "parameters", "executeOnce",
               "alwaysOutputData", "retryOnFail", "maxTries", "waitBetweenTries")
     def signature(nodes):
-        return sorted([{k: node[k] for k in fields if k in node} for node in nodes],
-                      key=lambda node: node["name"])
+        signatures = []
+        for node in nodes:
+            entry = {k: node[k] for k in fields if k in node}
+            # Exports may explicitly serialize defaults. Compare behavior while
+            # rejecting snapshots that disable a node or continue after errors.
+            for flag in ("disabled", "continueOnFail"):
+                value = node.get(flag, False)
+                if not isinstance(value, bool):
+                    raise ValueError("Invalid execution flag")
+                entry[flag] = value
+            entry["onError"] = node.get("onError", "stopWorkflow")
+            signatures.append(entry)
+        return sorted(signatures, key=lambda node: node["name"])
     if signature(snapshot.get("nodes", [])) != signature(workflow["nodes"]):
         raise ValueError("Execution workflow nodes differ from this submission")
     if snapshot.get("connections") != workflow["connections"]:

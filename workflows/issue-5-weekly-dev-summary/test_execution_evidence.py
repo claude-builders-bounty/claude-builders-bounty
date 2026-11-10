@@ -49,6 +49,20 @@ class EvidenceTests(unittest.TestCase):
         self.execution["data"]["workflowData"]["nodes"][6]["parameters"]["url"] = "http://localhost/mock"
         self.reject()
 
+    def test_changed_execution_flags(self):
+        for field, value in (("disabled", True), ("continueOnFail", True),
+                             ("onError", "continueRegularOutput")):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(self.execution)
+                changed["data"]["workflowData"]["nodes"][-1][field] = value
+                with self.assertRaises(ValueError):
+                    check(changed, self.workflow)
+
+    def test_explicit_default_execution_flags(self):
+        for node in self.execution["data"]["workflowData"]["nodes"]:
+            node.update(disabled=False, continueOnFail=False, onError="stopWorkflow")
+        self.assertIn("owner must attest", check(self.execution, self.workflow))
+
     def test_missing_model_text(self):
         self.execution["data"]["resultData"]["runData"]["Generate Claude Summary"][0]["data"]["main"] = [[]]
         self.reject()
