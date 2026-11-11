@@ -9,7 +9,7 @@
 
 1. **Copy the script or skill into your project:**
    ```bash
-   cp changelog.sh ./changelog.sh && chmod +x ./changelog.sh
+   cp skills/changelog-generator/changelog.sh ./changelog.sh && chmod +x ./changelog.sh
    # or for Python: cp skills/changelog-generator/changelog.py ./changelog.py
    ```
 2. **Run the generator:**

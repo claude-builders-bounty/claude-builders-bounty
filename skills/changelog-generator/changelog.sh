@@ -32,31 +32,40 @@ touch "$ADDED_FILE" "$FIXED_FILE" "$CHANGED_FILE" "$REMOVED_FILE" "$OTHER_FILE"
 
 TOTAL_COMMITS=0
 
-while IFS='|' read -r HASH SUBJECT; do
+format_subject() {
+    local subj="$1"
+    local hash="$2"
+    local clean
+    clean=$(printf '%s\n' "$subj" | sed -E 's/^[^:]*:[[:space:]]*//')
+    if [ -n "$clean" ]; then
+        local first rest
+        first=$(printf '%s' "${clean:0:1}" | tr '[:lower:]' '[:upper:]')
+        rest="${clean:1}"
+        clean="${first}${rest}"
+    else
+        clean="$subj"
+    fi
+    printf -- "- %s (\`%s\`)\n" "$clean" "$hash"
+}
+
+while IFS='|' read -r HASH SUBJECT || [ -n "$HASH" ]; do
+    SUBJECT="${SUBJECT%$'\r'}"
+    HASH="${HASH%$'\r'}"
     [ -z "$HASH" ] && continue
     TOTAL_COMMITS=$((TOTAL_COMMITS + 1))
 
-    # Strip prefixes and categorize
-    if echo "$SUBJECT" | grep -Ei '^(feat|add|new)(\(.*\))?!?:' >/dev/null; then
-        CLEAN=$(echo "$SUBJECT" | sed -E 's/^(feat|add|new)(\(.*\))?!?:[[:space:]]*//I')
-        CLEAN="$(echo "${CLEAN:0:1}" | tr '[:lower:]' '[:upper:]')${CLEAN:1}"
-        echo "- ${CLEAN} (\`${HASH}\`)" >> "$ADDED_FILE"
-    elif echo "$SUBJECT" | grep -Ei '^(fix|bug|patch)(\(.*\))?!?:' >/dev/null; then
-        CLEAN=$(echo "$SUBJECT" | sed -E 's/^(fix|bug|patch)(\(.*\))?!?:[[:space:]]*//I')
-        CLEAN="$(echo "${CLEAN:0:1}" | tr '[:lower:]' '[:upper:]')${CLEAN:1}"
-        echo "- ${CLEAN} (\`${HASH}\`)" >> "$FIXED_FILE"
-    elif echo "$SUBJECT" | grep -Ei '^(refactor|perf|style|chore|build|ci)(\(.*\))?!?:' >/dev/null; then
-        CLEAN=$(echo "$SUBJECT" | sed -E 's/^(refactor|perf|style|chore|build|ci)(\(.*\))?!?:[[:space:]]*//I')
-        CLEAN="$(echo "${CLEAN:0:1}" | tr '[:lower:]' '[:upper:]')${CLEAN:1}"
-        echo "- ${CLEAN} (\`${HASH}\`)" >> "$CHANGED_FILE"
-    elif echo "$SUBJECT" | grep -Ei '^(remove|deprecate|revert)(\(.*\))?!?:' >/dev/null; then
-        CLEAN=$(echo "$SUBJECT" | sed -E 's/^(remove|deprecate|revert)(\(.*\))?!?:[[:space:]]*//I')
-        CLEAN="$(echo "${CLEAN:0:1}" | tr '[:lower:]' '[:upper:]')${CLEAN:1}"
-        echo "- ${CLEAN} (\`${HASH}\`)" >> "$REMOVED_FILE"
+    if printf '%s\n' "$SUBJECT" | grep -Eqi '^(feat|add|new)(\(.*\))?!?:'; then
+        format_subject "$SUBJECT" "$HASH" >> "$ADDED_FILE"
+    elif printf '%s\n' "$SUBJECT" | grep -Eqi '^(fix|bug|patch)(\(.*\))?!?:'; then
+        format_subject "$SUBJECT" "$HASH" >> "$FIXED_FILE"
+    elif printf '%s\n' "$SUBJECT" | grep -Eqi '^(refactor|perf|style|chore|build|ci)(\(.*\))?!?:'; then
+        format_subject "$SUBJECT" "$HASH" >> "$CHANGED_FILE"
+    elif printf '%s\n' "$SUBJECT" | grep -Eqi '^(remove|deprecate|revert)(\(.*\))?!?:'; then
+        format_subject "$SUBJECT" "$HASH" >> "$REMOVED_FILE"
     else
-        echo "- ${SUBJECT} (\`${HASH}\`)" >> "$OTHER_FILE"
+        printf -- "- %s (\`%s\`)\n" "$SUBJECT" "$HASH" >> "$OTHER_FILE"
     fi
-done < <(git log "$RANGE" --no-merges --pretty=format:"%h|%s" 2>/dev/null || true)
+done < <(git log "$RANGE" --no-merges --pretty=tformat:"%h|%s" 2>/dev/null || true)
 
 if [ "$TOTAL_COMMITS" -eq 0 ]; then
     echo "No commits found in range ${RANGE}."
@@ -69,53 +78,49 @@ cat << EOF > "$ENTRY_FILE"
 
 EOF
 
-if [ -s "$ADDED_FILE" ]; then
-    echo "### Added" >> "$ENTRY_FILE"
-    cat "$ADDED_FILE" >> "$ENTRY_FILE"
-    echo "" >> "$ENTRY_FILE"
-fi
+append_section() {
+    local heading="$1"
+    local file="$2"
+    if [ -s "$file" ]; then
+        echo "### ${heading}" >> "$ENTRY_FILE"
+        cat "$file" >> "$ENTRY_FILE"
+        echo "" >> "$ENTRY_FILE"
+    fi
+}
 
-if [ -s "$FIXED_FILE" ]; then
-    echo "### Fixed" >> "$ENTRY_FILE"
-    cat "$FIXED_FILE" >> "$ENTRY_FILE"
-    echo "" >> "$ENTRY_FILE"
-fi
-
-if [ -s "$CHANGED_FILE" ]; then
-    echo "### Changed" >> "$ENTRY_FILE"
-    cat "$CHANGED_FILE" >> "$ENTRY_FILE"
-    echo "" >> "$ENTRY_FILE"
-fi
-
-if [ -s "$REMOVED_FILE" ]; then
-    echo "### Removed" >> "$ENTRY_FILE"
-    cat "$REMOVED_FILE" >> "$ENTRY_FILE"
-    echo "" >> "$ENTRY_FILE"
-fi
-
-if [ -s "$OTHER_FILE" ]; then
-    echo "### Other Changes" >> "$ENTRY_FILE"
-    cat "$OTHER_FILE" >> "$ENTRY_FILE"
-    echo "" >> "$ENTRY_FILE"
-fi
+append_section "Added" "$ADDED_FILE"
+append_section "Fixed" "$FIXED_FILE"
+append_section "Changed" "$CHANGED_FILE"
+append_section "Removed" "$REMOVED_FILE"
+append_section "Other Changes" "$OTHER_FILE"
 
 # Prepend or create CHANGELOG.md
 if [ -f "$CHANGELOG_FILE" ]; then
-    if grep -q "# Changelog" "$CHANGELOG_FILE"; then
-        awk -v r="$(cat "$ENTRY_FILE")" '/# Changelog/{print; print ""; print r; next}1' "$CHANGELOG_FILE" > "$TMP_DIR/new_changelog.md"
+    if grep -q "^# Changelog" "$CHANGELOG_FILE"; then
+        awk -v entry="$ENTRY_FILE" '
+            !inserted && /^# Changelog/ {
+                print
+                print ""
+                while ((getline line < entry) > 0) print line
+                close(entry)
+                inserted = 1
+                next
+            }
+            { print }
+        ' "$CHANGELOG_FILE" > "$TMP_DIR/new_changelog.md"
         mv "$TMP_DIR/new_changelog.md" "$CHANGELOG_FILE"
     else
         cat "$ENTRY_FILE" "$CHANGELOG_FILE" > "$TMP_DIR/new_changelog.md"
         mv "$TMP_DIR/new_changelog.md" "$CHANGELOG_FILE"
     fi
 else
-    cat << EOF > "$CHANGELOG_FILE"
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-$(cat "$ENTRY_FILE")
-EOF
+    {
+        echo "# Changelog"
+        echo ""
+        echo "All notable changes to this project will be documented in this file."
+        echo ""
+        cat "$ENTRY_FILE"
+    } > "$CHANGELOG_FILE"
 fi
 
-echo "✅ Successfully updated ${CHANGELOG_FILE} (${TOTAL_COMMITS} commits processed)."
+echo "Successfully updated ${CHANGELOG_FILE} (${TOTAL_COMMITS} commits processed)."

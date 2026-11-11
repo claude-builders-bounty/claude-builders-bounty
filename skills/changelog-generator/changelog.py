@@ -24,7 +24,9 @@ def get_last_tag() -> str:
         tag = subprocess.check_output(
             ["git", "describe", "--tags", "--abbrev=0"],
             stderr=subprocess.DEVNULL,
-            text=True
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         ).strip()
         return tag
     except Exception:
@@ -35,14 +37,16 @@ def get_commits_since(tag: str = "") -> list[tuple[str, str, str]]:
     revision_range = f"{tag}..HEAD" if tag else "HEAD"
     try:
         raw_log = subprocess.check_output(
-            ["git", "log", revision_range, "--pretty=format:%h|%as|%s"],
-            text=True
+            ["git", "log", revision_range, "--no-merges", "--pretty=tformat:%h|%as|%s"],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         ).strip()
         if not raw_log:
             return []
         
         commits = []
-        for line in raw_log.split("\n"):
+        for line in raw_log.splitlines():
             parts = line.split("|", 2)
             if len(parts) == 3:
                 commits.append((parts[0], parts[1], parts[2]))
@@ -109,15 +113,24 @@ def main():
     changelog_path = Path("CHANGELOG.md")
     if changelog_path.exists():
         existing_content = changelog_path.read_text(encoding="utf-8")
-        if "# Changelog" in existing_content:
-            updated = existing_content.replace("# Changelog\n", f"# Changelog\n\n{new_entry}")
+        if existing_content.lstrip().startswith("# Changelog"):
+            lines = existing_content.splitlines(keepends=True)
+            insert_at = next(
+                (i + 1 for i, line in enumerate(lines) if line.strip() == "# Changelog"),
+                1,
+            )
+            updated = (
+                "".join(lines[:insert_at]).rstrip("\r\n")
+                + f"\n\n{new_entry}\n"
+                + "".join(lines[insert_at:]).lstrip("\r\n")
+            )
         else:
             updated = f"# Changelog\n\n{new_entry}\n" + existing_content
     else:
         updated = f"# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n{new_entry}"
 
-    changelog_path.write_text(updated, encoding="utf-8")
-    print(f"✅ Successfully updated CHANGELOG.md ({len(commits)} commits processed).")
+    changelog_path.write_text(updated, encoding="utf-8", newline="\n")
+    print(f"Successfully updated CHANGELOG.md ({len(commits)} commits processed).")
 
 if __name__ == "__main__":
     main()
