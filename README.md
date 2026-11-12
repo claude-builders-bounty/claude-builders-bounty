@@ -29,8 +29,42 @@ You're in the right place.
 | [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
 | [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
 | [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
-| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | ✅ Claimed / Completed |
 | [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+
+---
+
+## AGENT: `claude-review` PR Reviewer
+
+The `claude-review` agent analyzes GitHub Pull Request diffs and outputs structured Markdown reviews.
+
+### Usage
+
+```bash
+export GITHUB_TOKEN=ghp_yourtoken
+node bin/claude-review --pr https://github.com/owner/repo/pull/123
+```
+
+### GitHub Action Workflow
+
+Add `.github/workflows/claude-review.yml`:
+
+```yaml
+name: Claude PR Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Claude Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node bin/claude-review --pr ${{ github.event.pull_request.html_url }}
+```
 
 ---
 
