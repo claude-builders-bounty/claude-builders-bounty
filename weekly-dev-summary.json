@@ -1,0 +1,124 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 17 * * 5" }
+          ]
+        }
+      },
+      "id": "cron-1",
+      "name": "Weekly Trigger (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits?since={{ $json.since }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "gh-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [200, -120]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues?state=closed&since={{ $json.since }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "gh-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [200, 60]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/pulls?state=closed&sort=updated&since={{ $json.since }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "gh-prs",
+      "name": "Fetch Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [200, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate commits, issues, PRs into a single prompt for Claude\nconst commits = $input.all()[0].json || [];\nconst issues = $input.all()[1].json || [];\nconst prs = $input.all()[2].json || [];\nconst repo = $('Weekly Trigger (Fri 5pm)').item.json.repo;\nconst lang = $('Weekly Trigger (Fri 5pm)').item.json.lang || 'EN';\n\nconst commitMsgs = (Array.isArray(commits) ? commits : []).map(c => c.commit?.message || '').join('\\n');\nconst issueTitles = (Array.isArray(issues) ? issues : []).map(i => i.title || '').join('\\n');\nconst prTitles = (Array.isArray(prs) ? prs : []).map(p => p.title || '').join('\\n');\n\nconst prompt = `Generate a ${lang} weekly development summary for ${repo}.\\n\\nCommits:\\n${commitMsgs}\\n\\nClosed issues:\\n${issueTitles}\\n\\nMerged PRs:\\n${prTitles}\\n\\nWrite a concise narrative summary (5-8 sentences) of what the team accomplished this week.`;\n\nreturn { prompt, repo, lang };\n",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "aggregate",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 60]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $credentials.claudeApiKey }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"claude-sonnet-4-20250514\",\"max_tokens\":800,\"messages\":[{\"role\":\"user\",\"content\":{{ $json.prompt }}}]}",
+        "options": {}
+      },
+      "id": "claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [600, 60],
+      "credentials": {
+        "httpHeaderAuth": { "id": "1", "name": "Claude API Key" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.webhookUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content\":{{ ($json.content || []).map(b => b.text).join('') }}}",
+        "options": {}
+      },
+      "id": "deliver",
+      "name": "Deliver (Discord/Slack webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [800, 60]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Fri 5pm)": {
+      "main": [[{ "node": "Fetch Commits", "type": "main", "index": 0 }, { "node": "Fetch Closed Issues", "type": "main", "index": 0 }, { "node": "Fetch Merged PRs", "type": "main", "index": 0 }]]
+    },
+    "Fetch Commits": { "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]] },
+    "Fetch Closed Issues": { "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]] },
+    "Fetch Merged PRs": { "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]] },
+    "Build Prompt": { "main": [[{ "node": "Call Claude API", "type": "main", "index": 0 }]] },
+    "Call Claude API": { "main": [[{ "node": "Deliver (Discord/Slack webhook)", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
