@@ -34,6 +34,10 @@ Copy .github/workflows/sovereign-pr-review.yml into the target repository. It us
 
 Set ANTHROPIC_API_KEY as an Actions secret to enable optional model review. Without it, deterministic review still runs.
 
+## Sample reviews
+
+Two real public pull requests were inspected and included under samples/: pallets/click#2800 and psf/requests#6767.
+
 ## Limitations
 Static patterns are triage signals, not proof of vulnerabilities. Absence of a finding does not establish safety. Confidence describes the evidence available to this tool, not the correctness of the PR. Human review and CI remain necessary.
 
