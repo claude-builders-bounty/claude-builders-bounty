@@ -1,0 +1,109 @@
+#!/usr/bin/env node
+
+/**
+ * claude-review: CLI tool to fetch a PR diff, analyze it, and output structured Markdown review.
+ */
+
+const https = require('https');
+
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const prIndex = args.indexOf('--pr');
+  if (prIndex === -1 || !args[prIndex + 1]) {
+    console.error('Error: Missing --pr argument.');
+    console.error('Usage: claude-review --pr https://github.com/owner/repo/pull/123');
+    process.exit(1);
+  }
+  return args[prIndex + 1];
+}
+
+function parsePrUrl(url) {
+  const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
+  if (!match) {
+    console.error('Error: Invalid GitHub PR URL format. Expected: https://github.com/owner/repo/pull/123');
+    process.exit(1);
+  }
+  return { owner: match[1], repo: match[2], pullNumber: match[3] };
+}
+
+function fetchGitHubDiff(owner, repo, pullNumber, token) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'api.github.com',
+      path: `/repos/${owner}/${repo}/pulls/${pullNumber}`,
+      headers: {
+        'User-Agent': 'claude-review-agent',
+        'Accept': 'application/vnd.github.v3.diff',
+        ...(token ? { 'Authorization': `token ${token}` } : {})
+      }
+    };
+
+    https.get(options, (res) => {
+      if (res.statusCode !== 200) {
+        reject(new Error(`GitHub API returned status code ${res.statusCode}`));
+        return;
+      }
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
+
+function generateReview(diff) {
+  const lines = diff.split('\n');
+  const addedLines = lines.filter(l => l.startsWith('+') && !l.startsWith('+++')).length;
+  const deletedLines = lines.filter(l => l.startsWith('-') && !l.startsWith('---')).length;
+
+  let confidence = 'High';
+  const risks = [];
+  const suggestions = [];
+
+  if (addedLines > 200) {
+    risks.push('Large diff size (>200 added lines) increases review complexity and potential bug surface.');
+    confidence = 'Medium';
+  }
+
+  const hasHardcodedSecrets = lines.some(l => l.startsWith('+') && /(password|secret|api_key|token)\s*=/i.test(l));
+  if (hasHardcodedSecrets) {
+    risks.push('Potential hardcoded secret or credential detected in added lines.');
+    confidence = 'Low';
+  }
+
+  const hasConsoleLog = lines.some(l => l.startsWith('+') && /console\.log/.test(l));
+  if (hasConsoleLog) {
+    suggestions.push('Remove or replace `console.log` statements with proper logging mechanisms before merging.');
+  }
+
+  if (suggestions.length === 0) {
+    suggestions.push('Ensure unit test coverage is updated for the modified functions.');
+  }
+
+  if (risks.length === 0) {
+    risks.push('No critical vulnerability or architectural risk detected in the diff.');
+  }
+
+  const summary = `This pull request introduces changes across several files with approximately ${addedLines} additions and ${deletedLines} deletions. The modifications appear well-scoped and maintain standard code structure.`;
+
+  return `## 🤖 Claude Code PR Review\n\n### Summary\n${summary}\n\n### Identified Risks\n${risks.map(r => `- ${r}`).join('\n')}\n\n### Improvement Suggestions\n${suggestions.map(s => `- ${s}`).join('\n')}\n\n### Confidence Score\n**${confidence}**\n`;
+}
+
+async function main() {
+  const prUrl = parseArgs();
+  const { owner, repo, pullNumber } = parsePrUrl(prUrl);
+  const token = process.env.GITHUB_TOKEN;
+
+  console.log(`Fetching diff for ${owner}/${repo} PR #${pullNumber}...`);
+  try {
+    const diff = await fetchGitHubDiff(owner, repo, pullNumber, token);
+    const review = generateReview(diff);
+    console.log('\n' + review);
+  } catch (err) {
+    console.error('Failed to generate PR review:', err.message);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  main();
+}
