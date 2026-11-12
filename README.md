@@ -1,20 +1,53 @@
-# changelog.sh
+# Claude Builders Bounty 🤖
 
-Generate a structured `CHANGELOG.md` from git history, categorized by
-conventional-commit prefix into **Added / Fixed / Changed / Removed**.
+> A community bounty board for Claude Code builders.
 
-## Setup (3 steps)
+Building with Claude Code? Have tasks to delegate?
+Want to get paid for contributing to AI projects?
+You're in the right place.
 
-1. Copy `changelog.sh` into your repo root (it needs `git` + bash).
-2. Run `bash changelog.sh` — commits since the last tag land in `CHANGELOG.md`.
-3. Commit the generated file.
+---
 
-## Options
+## How it works
 
-- `--output FILE` — write somewhere other than `CHANGELOG.md`
-- `--from REF` — use an explicit range start instead of last tag
+**To post a bounty**
+1. Open a GitHub issue with a clear description and acceptance criteria
+2. Comment `/opire create $XXX` in the issue to set the reward
+3. Share the link — contributors will find it
 
-## Sample output
+**To claim a bounty**
+1. Browse the open issues below
+2. Comment `/opire try` in the issue you want to work on
+3. Submit a PR — payment is automatic on merge ✅
 
-See `sample_CHANGELOG.md` — generated on a real repository with
-`bash changelog.sh --from HEAD~15`.
+---
+
+## Active Bounties
+
+| # | Task | Amount | Status |
+|---|------|--------|--------|
+| [#1](../../issues/1) | SKILL: Generate a CHANGELOG from git history | $50 | 🟢 Open |
+| [#2](../../issues/2) | TEMPLATE: CLAUDE.md for a Next.js + SQLite project | $75 | 🟢 Open |
+| [#3](../../issues/3) | HOOK: Block destructive bash commands in Claude Code | $100 | 🟢 Open |
+| [#4](../../issues/4) | AGENT: PR reviewer with structured Markdown output | $150 | 🟢 Open |
+| [#5](../../issues/5) | WORKFLOW: n8n + Claude API — automated weekly dev summary | $200 | 🟢 Open |
+
+---
+
+## Rules
+
+- Tasks must be related to Claude Code or AI tooling
+- Every issue must have clear acceptance criteria before a bounty is activated
+- Payment is handled by [Opire](https://opire.dev) (Stripe)
+- Quality over speed — a solid PR beats a fast one
+
+---
+
+## Community
+
+- 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
+- 📧 Contact: claudebounty@gmail.com
+
+---
+
+*Started by the Claude builder community · March 2026 · MIT License*
