@@ -1,0 +1,126 @@
+{
+  "name": "Weekly GitHub Dev Summary (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Weekly GitHub Dev Summary → Claude → Slack\nEvery Friday 5pm this pulls the week's commits, merged PRs and closed issues for a repo, asks Claude (claude-sonnet-4-20250514) to write a narrative summary (EN or FR), and posts it to Slack/Discord.\n\nConfig in the **Config** node. Secrets via env: GITHUB_TOKEN, ANTHROPIC_API_KEY (x-api-key credential), SLACK_WEBHOOK_URL.\n\nBuilt by myn8n-automation.org",
+        "height": 300,
+        "width": 440
+      },
+      "id": "note1",
+      "name": "README",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [120, 80]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 17 * * 5" }
+          ]
+        }
+      },
+      "id": "cron1",
+      "name": "Weekly Trigger (Fri 5pm)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [160, 440]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "c1", "name": "owner", "value": "n8n-io", "type": "string" },
+            { "id": "c2", "name": "repo", "value": "n8n", "type": "string" },
+            { "id": "c3", "name": "language", "value": "en", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg1",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [380, 440]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fetch this week's activity for the configured repo and build the Claude prompt.\n// Secrets come from env vars (set them on your n8n instance): GITHUB_TOKEN.\nconst cfg = $input.first().json;\nconst owner = cfg.owner;\nconst repo = cfg.repo;\nconst language = (cfg.language || 'en').toLowerCase();\nconst token = $env.GITHUB_TOKEN;\nconst sinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();\nconst sinceTs = new Date(sinceIso).getTime();\n\nconst helpers = this.helpers;\nasync function gh(path) {\n  return helpers.httpRequest({\n    method: 'GET',\n    url: `https://api.github.com${path}`,\n    headers: {\n      'User-Agent': 'n8n-weekly-summary',\n      'Accept': 'application/vnd.github+json',\n      ...(token ? { Authorization: `Bearer ${token}` } : {}),\n    },\n    json: true,\n  });\n}\n\nconst commits = await gh(`/repos/${owner}/${repo}/commits?since=${sinceIso}&per_page=100`);\nconst issuesRaw = await gh(`/repos/${owner}/${repo}/issues?state=closed&since=${sinceIso}&per_page=100`);\nconst pullsRaw = await gh(`/repos/${owner}/${repo}/pulls?state=closed&per_page=100&sort=updated&direction=desc`);\n\nconst closedIssues = (issuesRaw || []).filter((i) => !i.pull_request);\nconst mergedPRs = (pullsRaw || []).filter((p) => p.merged_at && new Date(p.merged_at).getTime() >= sinceTs);\n\nconst lines = [];\nlines.push(`Repository: ${owner}/${repo}`);\nlines.push(`Window: last 7 days (since ${sinceIso})`);\nlines.push('');\nlines.push(`Commits (${commits.length}):`);\nlines.push(...commits.slice(0, 40).map((c) => `- ${String(c.commit.message).split('\\n')[0]}`));\nlines.push('');\nlines.push(`Merged PRs (${mergedPRs.length}):`);\nlines.push(...mergedPRs.slice(0, 40).map((p) => `- #${p.number} ${p.title}`));\nlines.push('');\nlines.push(`Closed issues (${closedIssues.length}):`);\nlines.push(...closedIssues.slice(0, 40).map((i) => `- #${i.number} ${i.title}`));\nconst dataBlock = lines.join('\\n');\n\nconst langLine = language === 'fr' ? 'Write the summary in French.' : 'Write the summary in English.';\nconst prompt = `You are a developer-relations writer. Using the raw GitHub activity below, write a concise, upbeat weekly summary of this repository: 2-3 short paragraphs on the themes and impact, then a short bulleted \"Highlights\" list. Do not just restate the raw list. ${langLine}\\n\\n${dataBlock}`;\n\nreturn [{ json: { owner, repo, language, since: sinceIso, counts: { commits: commits.length, mergedPRs: mergedPRs.length, closedIssues: closedIssues.length }, prompt } }];"
+      },
+      "id": "code1",
+      "name": "Fetch GitHub Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 440]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1200, messages: [ { role: 'user', content: $json.prompt } ] }) }}",
+        "options": {}
+      },
+      "id": "claude1",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 440],
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE", "name": "Anthropic x-api-key" }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "s1", "name": "summary", "value": "={{ $json.content[0].text }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set2",
+      "name": "Extract Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1040, 440]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: ':rocket: *Weekly dev summary*\\n\\n' + $json.summary }) }}",
+        "options": {}
+      },
+      "id": "deliver1",
+      "name": "Post to Slack/Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1260, 440]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Fri 5pm)": { "main": [ [ { "node": "Config", "type": "main", "index": 0 } ] ] },
+    "Config": { "main": [ [ { "node": "Fetch GitHub Activity", "type": "main", "index": 0 } ] ] },
+    "Fetch GitHub Activity": { "main": [ [ { "node": "Claude Summary", "type": "main", "index": 0 } ] ] },
+    "Claude Summary": { "main": [ [ { "node": "Extract Summary", "type": "main", "index": 0 } ] ] },
+    "Extract Summary": { "main": [ [ { "node": "Post to Slack/Discord", "type": "main", "index": 0 } ] ] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": { "templateId": "weekly-dev-summary", "description": "Weekly GitHub dev summary via Claude, by myn8n-automation.org" }
+}
