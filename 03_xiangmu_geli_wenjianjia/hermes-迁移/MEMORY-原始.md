@@ -1,0 +1,29 @@
+闲鱼管线已原生化 Windows：`D:\Ai\Agent\xiangmu\xianyu_pipeline`。依赖 `goofish-cli==0.5.3`（**pip 包非 npm**）+ pyxianyu + playwright，venv=Python 3.13。WSL2 版保留且完全隔离。调度用 Windows 计划任务（`scripts/register_tasks_admin.bat` 需管理员提权）。
+§
+pyxianyu 令牌坑：注入的 `_m_h5_tk` 为 host-only 域，与服务器 `.goofish.com` 新令牌并存 → 服务器取到旧的 → `FAIL_SYS_TOKEN_EXOIRED`。修 `src/xianyu_session.py`。自愈仅覆盖签名令牌（EXOIRED/ILLEGAL/EMPTY/缺失皆可），**登录态失效(SESSION_EXPIRED)不可自愈，必须重导 Cookie**；仅作用 Phase 1，Phase 2/3/4 走 goofish-cli 自鉴权。
+§
+Chrome for Playwright `channel="chrome"`: Must be at `%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe` (user-level). System-level `Program Files\Google\Chrome` is NOT detected. Use junction `C:\Users\<user>\AppData\Local\Google\Chrome ==> D:\Ai\Google\Chrome` to keep actual bytes on D:.
+§
+Claude Code 环境（Windows，2026-10-16 建）：Claude Code 2.1.300 为原生二进制 `D:\Ai\claude code\node_modules\@anthropic-ai\claude-code\bin\claude.exe`。CC Switch Portable 版把 Claude Code 配置写到 `D:\Ai\claude code\settings.json`，但 Claude Code 默认只读 `~/.claude/settings.json` → **必须设用户环境变量 `CLAUDE_CONFIG_DIR=D:\Ai\claude code`**（已设）。**agent 目录跟随 CLAUDE_CONFIG_DIR**：权威目录 `D:\Ai\claude code\agents\`，`~/.claude/agents` 不被读取（探针实测）；枚举可用 agent 用 `claude --agent __x__ -p hi` 的报错列表（`claude agents` 是后台会话管理，不是列子员工）。切换 = 写入该 JSON + 置 is_current。用户的 DeepSeek 已于 402 Insufficient Balance 耗尽余额。
+§
+公益站 API（2026-10-16）：AgentRouter = `https://agentrouter.org`（大陆备用域名 `https://ps.air-outer.com`，境内直连唯一可用）；仅 `deepseek-v4-flash` 实测可用，claude-opus-5/claude-opus-4-8 报「无可用渠道」。JustDoWork = `https://api.justwoker.icu`，key 鉴权有效但所有模型报「无可用渠道」（模型名需登录其后台看）。两站均为 Anthropic 协议、ANTHROPIC_BASE_URL **不带 /v1**。AgentRouter 按客户端指纹拦截，裸 curl/python 报 `unauthorized client detected`，须伪装 `User-Agent: claude-cli/<ver> (external, cli)`。密钥存于桌面 `gongyizhan.txt`。
+§
+hermes-wf 工作流（v2.0 手册 install.sh 原版，脚本零改动）：`D:\Ai\Agent\hermes\scripts\hermes-wf\`，看板 xiangmu，仓库 `D:/Ai/Agent/xiangmu/project`，cron `caa798b85865` 每 1 分钟。5 个子员工已建（权威目录 `D:\Ai\claude code\agents\`）：cc-qianduan→frontend、cc-houduan→backend、cc-yunwei→ops、cc-ux→design、cc-ceshi→tests。WF_AGENT_PREFIX 必须为 "cc-"：**空串无效**（wf_common.env() 用 `or` 取值，空值回落默认），且空前缀会让 `startswith("")` 匹配所有卡、抢走 Hermes 自己的卡。⚠️ install.sh 幂等：config.env 已存在则保留旧值、静默忽略 --repo/--board 参数。
+§
+NVIDIA NIM 模型实测（2026-10-18，cc-switch 代理链路）：一个 NIM key 覆盖整本目录，`GET https://integrate.api.nvidia.com/v1/models` 返回 81 个模型。`z-ai/glm-5.3-flash` 601s 超时不可用。铁律：**名字带 flash/lightning ≠ 快，必须实测**；本地 ollama 只有 7B 级（CPU 推理，又慢又弱），不可当主力小模型。
+§
+`D:\Ai\Agent\xiangmu\xianyu_agent_workflow` = 闲鱼多 Agent 工作流新仓库（区别于只读参考版 `xianyu_pipeline`）。迁移约定：**`src/framework/` 扮演原 `xianyu_pipeline/` 根的角色**（所以 `src/framework/scripts/*.py` 的 `parent.parent` 解析是对的，而顶层模块 `src/framework/x.py` 的 `parent.parent` 差一层）；`.env` 的正确位置是 `src/framework/config/.env`（`config/.env` 亦保留同源副本）。已知迁移缺陷：73 处 `from src.X import` 失效（No module named 'src'）、9 个角色目录缺 `xianyu_session.py` 却有 `from .xianyu_session import`、10+ 业务模块未迁入（netdisk_*/legal_gate/listing_copy/cover_designer/phase1-3）。⚠️ 该仓库 `.gitignore` 已补 `*.env.bak*`（此前 cookie 备份会被提交）。
+§
+飞书告警通道（2026-10-18 建成，端到端实测通过）：巡检告警走**直连 IM API**，不走网关适配器。群「Hermes巡检告警」chat_id=`oc_1748f044bac6609850c53dd794185da1`（private，仅用户+bot）；bot=openclaw / app_id `cli_a925f05ba0b8dcd1`（密钥已配好在本机 Hermes 配置中，勿读出勿外泄）；用户在此应用下 open_id=`ou_2e5fb711c1e5f6dbc41e6d23ba74f8b0`（可直接私聊）。脚本 `scripts/healthcheck/feishu_notify.py` + `maintenance_snapshot.py`（健康静默 / FAIL 才推送 / 推送失败不影响快照）。3 小时巡检 job `6e752ae40e0c`（`0 */3 * * *`）。⚠️ 网关 feishu websocket 仍不通（卡在 `_hydrate_bot_identity` 30s），**有意不修** —— 单向推送不需要长连接；若要「在飞书里对话」才需回头修。
+§
+hermes-wf 角色契约（2026-10-18 固化）：Hermes=协调层（拆卡/派单/验收/汇报，不写业务代码），Claude Code cc-*=执行层。契约落在 `D:/Ai/Agent/xiangmu/xianyu_agent_workflow/AGENTS.md`（Hermes 的 coding_context.py 会自动注入，换会话/压缩后不丢）。验收器 `scripts/hermes-wf-xianyu/hermes_acceptance.py`：PASS→complete、FAIL→request-changes、MANUAL→留 review 等人工（不假装通过）。铁律：不采信 worker 自述，只认 git 提交 + 交付物真实存在。⚠️ `hermes kanban edit --body` 写不了多行正文（静默只写最后一行；`---` 开头直接 rc=2），改卡正文必须走 SQLite `D:/Ai/Agent/hermes/kanban/boards/xianyu/kanban.db`，写完用 `kanban show` 读回验证。
+§
+cc-switch 代理改写机制（2026-10-18 实测）：本机 settings.json 无 model 字段（只有 BASE_URL=http://127.0.0.1:15721 + AUTH_TOKEN=PROXY_MANAGED），模型决定权在 cc-switch 代理。代理会把客户端请求的**任何**模型改写成当前 provider 的 `ANTHROPIC_MODEL`（日志铁证：req=nemotron → used=deepseek 43 次；req=claude-sonnet-5 → used=deepseek 1135 次）。所以「客户端 --model 指定了却被换掉」= provider 主档位不是你想要的那个。另有 5 个档位（MODEL/SONNET/OPUS/HAIKU/FABLE），只改主档位不会覆盖降级档位。改 cc-switch.db 后**必须重启进程**才生效（实测：不重启 req=n3u→used=deepseek；重启后立即按 n3u 发）。派单侧已收口为 `WF_CLAUDE_MODEL="auto"`（dispatch_claude.sh 调 ccswitch_model.py 现场读，日志有「模型来源」行），自检脚本 `scripts/hermes-wf-xianyu/verify_model_channel.py`（`--restart` 自动重启）。重启会断代理，在跑 worker 全废，挑空档做。
+§
+wechat_recovery 专用看板：`D:\Ai\Agent\hermes\scripts\hermes-wf\config.env` → `WF_BOARD="wechat_recovery"` / `WF_REPO="D:/Ai/Agent/projects/wechat_recovery"` / `WF_REQUIRE_REVIEW="1"` / `WF_REVIEWER="cc-code-reviewer"`。派单脚本 `dispatch_claude.sh` 含守卫⑦审查闸门：产出校验通过 → request-review 交审查员；审查报告 `docs/REVIEW_{tid}.md` 首行固定 `# 审查结论：APPROVE` 或 `REQUEST_CHANGES`，含后者自动 request-changes 父卡。看门狗 `review_watch.py` 确定性输出（REVIEW/READY/BUSY/NONE + HB 心跳桶），cron `c296db0ca793` 每 5 分钟。兜底 `stuck_task_fixer.py`：running 卡无 worker 进程 → 自动 request-review。
+§
+Stuck task fixer (`stuck_task_fixer.py`) battle-tested: P4 (t_36cbd22c) completed but dispatch parent process didn't capture worker exit → card stuck in `running` without triggering guard ⑦ (request-review). Fix: cron every 5 min detects `running` cards with no claude.exe process → auto request-review. This pattern now codified and working.
+§
+window_tool: EXE at D:/Ai/Agent/projects/window_tool/dist/WindowTool.exe (20.3MB). Tray UI, hotkeys (Ctrl+Shift+W/H/S/T), window capture, hide/show/topmost, settings 3 tabs. 130 tests pass. PyInstaller/pystray/tkinter/win32api.
+§
+Approved: removing xianyu pipeline and Chrome Playwright entries to free space for window_tool bug fixes and llama.cpp GTX1060 build task.

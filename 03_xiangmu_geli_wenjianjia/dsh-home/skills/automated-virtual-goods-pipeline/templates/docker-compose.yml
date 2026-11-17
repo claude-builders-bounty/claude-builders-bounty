@@ -1,0 +1,143 @@
+# Xianyu Pipeline - Production Docker Compose
+# Supports profiles: delivery (default), scheduler, xianyusmart, redis
+
+version: '3.8'
+
+services:
+  # Main application: Auto-delivery service (Phase 4)
+  xianyu-delivery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: delivery
+    container_name: xianyu-delivery
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - PYTHONUNBUFFERED=1
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    env_file:
+      - config/.env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./output:/app/output
+      - ./resources:/app/resources
+      - ./config:/app/config
+    networks:
+      - xianyu-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Scheduler for Phase 1-3 (cron jobs)
+  xianyu-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: scheduler
+    container_name: xianyu-scheduler
+    restart: "no"  # Manual start via profile
+    environment:
+      - TZ=Asia/Shanghai
+      - PYTHONUNBUFFERED=1
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    env_file:
+      - config/.env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./output:/app/output
+      - ./resources:/app/resources
+      - ./config:/app/config
+    networks:
+      - xianyu-net
+    profiles:
+      - scheduler
+
+  # XianYuSmart integration (optional, for full auto-delivery stack)
+  xianyusmart:
+    image: ghcr.io/evvvvvvvan/xianyusmart:v2.0.7
+    container_name: xianyusmart
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+    env_file:
+      - config/.env.xianyusmart  # Separate config file
+    volumes:
+      - ./data/xianyusmart:/app/data
+    ports:
+      - "12400:12400"
+    networks:
+      - xianyu-net
+    profiles:
+      - xianyusmart
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:12400/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MySQL for XianYuSmart
+  mysql:
+    image: mysql:8.0
+    container_name: xianyu-mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=xianyusmart
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_USER=xianyusmart
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    networks:
+      - xianyu-net
+    profiles:
+      - xianyusmart
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for card locks / task queue / caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: xianyu-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - xianyu-net
+    profiles:
+      - redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  xianyu-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
