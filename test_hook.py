@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Test suite for block-destructive.py (37 cases).
+"""Test suite for block-destructive.py (37 hook cases + installer check).
 
 Run:  python3 test_hook.py
-Expects: 37/37 PASS, exit 0.
+Expects: 37/37 hook cases PASS and the installer one-liner from
+hooks/README.md registers exactly one hook entry when run twice.
+Exit 0 when everything passes.
 """
 import json
 import subprocess
@@ -52,6 +54,38 @@ CASES = [
 ]
 
 
+def test_installer_idempotent():
+    """Run the installer one-liner from hooks/README.md twice against a
+    throwaway HOME and assert exactly one hook entry is registered."""
+    import os
+    import re
+    import tempfile
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "hooks", "README.md"),
+              encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(r'python3 -c "([^"]+)"', text)
+    assert m, "installer one-liner not found in hooks/README.md"
+    program = m.group(1)
+    with tempfile.TemporaryDirectory() as home:
+        os.makedirs(os.path.join(home, ".claude"))
+        env = dict(os.environ, HOME=home)
+        for _ in range(2):
+            p = subprocess.run([sys.executable, "-c", program],
+                               env=env, capture_output=True, text=True)
+            assert p.returncode == 0, p.stderr
+        with open(os.path.join(home, ".claude", "settings.json"),
+                  encoding="utf-8") as f:
+            settings = json.load(f)
+    entries = settings["hooks"]["PreToolUse"]
+    assert len(entries) == 1, entries
+    assert entries[0]["hooks"][0]["command"] == (
+        "python3 ~/.claude/hooks/block-destructive.py")
+    print("PASS | installer idempotent (2 runs -> 1 entry)")
+    return True
+
+
 def main():
     fails = 0
     for cmd, should_block, label in CASES:
@@ -75,6 +109,11 @@ def main():
               "BLOCK" if blocked else "ALLOW", "|", label)
     print()
     print("FAILURES: %d / %d" % (fails, len(CASES)))
+    try:
+        test_installer_idempotent()
+    except AssertionError as e:
+        print("FAIL | installer idempotent:", e)
+        fails += 1
     return 1 if fails else 0
 
 
