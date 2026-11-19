@@ -1,59 +1,80 @@
 # CLAUDE.md — Next.js 15 App Router + SQLite SaaS
 
-Conventions for this project. Claude Code should follow these; ask before deviating.
+## Stack & versions
+- Next.js 15.2+ App Router (React Server Components by default, Server Actions enabled)
+- Node ≥ 20 (LTS), pnpm 9
+- SQLite via `better-sqlite3` v11 (sync API, single connection per process). Turso is only used when a replica is needed for read scaling.
+- TypeScript strict mode, `noEmit: true`, ESLint flat config, Prettier 3 with `singleQuote: true`.
 
-## Project anatomy
+## Golden rules
+1. Server Actions are the only mutation path. No `pages/api/*`.
+2. Every direct SQL statement lives in a repository module, never inline in components.
+3. Migrations are append-only. Never edit a committed migration.
+4. No client-side package can import another client bundle. Server code never imports browser-only utilities.
+5. New dependencies require a review note in `docs/decisions/NNN-why-<name>.md`.
 
+## Folder structure
 ```
 src/
-  app/               App Router pages + route handlers (no pages/ dir)
-  components/         Server Components by default; "use client" inside/ leaves to .client.tsx
-  lib/               pure logic, DB access, env parsing — no React imports
-  server/            server-only: auth, cron, external API clients
-  types/              shared TypeScript types across DB <-> API <-> UI
-prisma/                schema + migrations (SQLite)
-public/               static assets
+  app/                  routes (route groups by domain)
+    dashboard/(…)/page.tsx
+    api/                 ONLY: webhooks, health, edge routes
+  components/           shared UI (components/lib for primitive wrappers)
+  lib/
+    db/                  sqlite.ts, schema.ts, migrate.ts
+    repositories/        user.ts, subscription.ts, billing.ts
+    auth/                session.ts, roles.ts
+    logger.ts
+  types/                shared DTOs
+  styles/               global.css, tokens.css
+tests/                  colocated unit + Playwright e2e
+scripts/                maintenance only
+migrations/             NNNN-description.sql, supabase-style names
+docs/decisions/         kebab-case decision notes
 ```
 
-## Commands
+## SQL / migration conventions
+- Files are `NNNN-<verb>-<noun>.sql` (`0001-create-users.sql`), numbered monotonically, never edited.
+- Column types: `INTEGER PRIMARY KEY` for ids, `TEXT` for enums, `INTEGER` for unix epoch, `REAL`/`INTEGER` for money-as-cents (integer cents, never floats).
+- Foreign keys must declare `ON DELETE CASCADE` or `RESTRICT` explicitly — no implicit defaults.
+- Indexes are created in the same migration as the table they cover; never in a later standalone migration unless documented in `docs/decisions/`.
+- Migrations run inside a transaction; the runner refuses to apply if `schema-migrations` hash changes mid-run.
 
-- `npm run dev` — local dev (SQLite file in `prisma/dev.db`, seeded).
-- `npm run db:migrate` — `prisma migrate dev`.
-- `npm run db:push` — prototype branch only; never on staging/prod.
-- `npm run lint` / `npm run typecheck` / `npm test` — must pass before any PR.
-- `npm run build` — production build (catches RSC/client boundary bugs).
+## Development commands
+```
+pnpm dev             # next dev --turbopack
+pnpm validate        # typecheck + lint + unit tests
+pnpm db:migrate      # apply pending migrations
+pnpm db:reset        # drops ./data/dev.sqlite and rebuilds from migrations
+pnpm db:studio       # drizzle-studio if wired, otherwise `sqlite3 data/dev.sqlite`
+pnpm build           # next build
+```
 
-## DB migration rules
+## Component patterns
+- Prefer Server Components by default; `"use client"` only at DOM/behavior boundaries.
+- Data fetching happens in `async` Server Components, not in `useEffect`.
+- Shared hooks live under `src/hooks/`; shared stores (if any) use React Context or Zustand, not Redux.
+- Forms: `react-hook-form` + Zod schema shared between client validation and server action input parsing. One schema module, not duplicated shapes.
 
-- One migration per schema change. SQLite forbids destructive `ALTER`; prefer additive columns, then a backfill step in the same migration.
-- Never `DROP` a column used by a shipped route. Deprecate (soft-delete / nullable) for at least one release, then drop.
-- All tables: `id TEXT PRIMARY KEY` (cuid2), `createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`, `updatedAt DATETIME NOT NULL`.
-- Raw SQL only in `lib/db`; no SQL strings in components or route handlers.
-- Money/quantity columns: INTEGER cents (or DECIMAL strings); never float.
+## What we don't do (and why)
+- **No ORM.** better-sqlite3 with hand-written SQL gives deterministic plans and zero ORM upgrade risk. If you cannot express a query without SQL, ask before writing it.
+- **No global mutable singletons.** Every DB connection goes through the `getDb()` lazy singleton to keep dev hot-reload safe and to make transaction scoping explicit.
+- **No `process.env` reads outside `src/lib/env.ts`.** Untyped env access caused three production outages last quarter.
+- **No `any` in repository return types.** DTOs map 1:1 to tables; if you need a join, make an explicit view.
+- **No floating-point money.** Store cents as integers; format at the edge.
+- **No blocking work inside Server Actions.** Long jobs go to a `queue` table polled by a Worker script; the action returns `202` with a job id.
+- **No feature branches living longer than 3 days.** Squash-merge to keep history reviewable; Rebase only locally before push.
+- **No secrets in git history.** Any accidental commit triggers rotation immediately and is treated as an incident, not a git revert.
 
-## Patterns to follow
+## Claude Code guidance
+- When asked for a new table, sketch the migration SQL first, get confirmation, then write the repository.
+- When asked to “make it faster”, measure with `EXPLAIN QUERY PLAN` before changing indexes.
+- When touching billing, add a unit test covering idempotency and duplicate-webhook safety.
+- Use `pnpm validate` before declaring done.
 
-- **Server Components by default.** Only add `"use client"` when you need hooks/event handlers. Every `"use client"` must be justified by an interactive reason.
-- Fetch in Server Components (or route handlers) and pass data down. No `useEffect` data fetching.
-- Env vars read once, in `server/env.ts`, with `zod` validation.
-- DB client is a singleton in `lib/db` (module-scope instance) — never construct per request.
-- Auth via an edge-compatible session cookie; middleware only redirects, never reaches into the DB.
-- Errors: throw typed errors in server code, map to status codes in route handlers / error.tsx.
-- Filenames, table names, components: kebab-case; types PascalCase; hooks `useXxx`.
-
-## Anti-patterns (do not)
-
-- Using `fetch` client-side when a Server Component could do it.
-- Putting DB access in a component or `use client` file.
-- `any`; use `unknown` + narrowed type. Where Prisma types exist, reuse them.
-- Catching errors and returning `200` anyway — log + rethrow handled layers.
-- CSS-in-JS that breaks RSC streaming (styled-components is out; Tailwind or CSS Modules in).
-- Mutating state during render; effects with no cleanup when subscribed.
-
-## Why these rules (rationale)
-
-- Server-first keeps the whole page tree streaming and reduces client JS. Every `"use client"` boundary doubles as a streaming cutoff.
-- SQLite + Prisma is great for SaaS scale but unforgiving with destructive migrations; additive + backfill protects shipping data.
-- CENT against float prevents money bugs that Vercel/Stripe audits flag.
-- Singleton DB client avoids SQLite `SQLITE_BUSY` / connection leaks under serverless cold starts.
-- Zod-validated env means a missing var fails at boot with a clear message, not at runtime mid-request.
+## Greenfield checklist (paste into a fresh repo)
+- [ ] `data/dev.sqlite` in `.gitignore`
+- [ ] `src/lib/db/schema.ts` exports table types
+- [ ] `scripts/migrate.ts` is executable and idempotent
+- [ ] At least one `docs/decisions/001-init.md` exists
+- [ ] CI runs `pnpm validate && pnpm build`
