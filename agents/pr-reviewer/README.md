@@ -17,6 +17,12 @@ python agents/pr-reviewer/claude_review.py --diff my_feature.diff --output revie
 ## GitHub Action Setup
 Copy `agents/pr-reviewer/pr-review.yml` into your repository's `.github/workflows/` directory. The action will automatically run on every opened or synchronized pull request and post a structured review comment.
 
+## Verification & Unit Testing
+Run the comprehensive test suite verifying risk heuristics, diff parsing, and structured markdown outputs:
+```bash
+python agents/pr-reviewer/test_claude_review.py
+```
+
 ## Sample Reviews
 - [Sample 1: Review of PR #5241](samples/sample_review_1.md)
 - [Sample 2: Review of PR #5242](samples/sample_review_2.md)

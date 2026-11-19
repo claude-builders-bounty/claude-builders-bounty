@@ -94,14 +94,14 @@ def format_review_markdown(analysis, pr_url=""):
     files_summary = f"{len(analysis['files_changed'])} files (+{analysis['additions']}, -{analysis['deletions']})"
     
     md = [
-        "## 🤖 Automated PR Code Review\n",
-        f"**PR Target:** {pr_url if pr_url else 'Local diff'}\n",
+        "## 🤖 Automated PR Code Review\n\n",
+        f"**PR Target:** {pr_url if pr_url else 'Local diff'}\n\n",
         f"**Scope:** {files_summary}\n\n",
-        "### 📝 Summary of Changes",
+        "### 📝 Summary of Changes\n\n",
         f"This pull request modifies {files_summary}. The changes implement targeted updates across the codebase while maintaining standard project conventions and boundary handling.\n\n",
-        "### ⚠️ Identified Risks",
+        "### ⚠️ Identified Risks\n\n",
         "\n".join([f"- {r}" for r in analysis["risks"]]) + "\n\n",
-        "### 💡 Improvement Suggestions",
+        "### 💡 Improvement Suggestions\n\n",
         "\n".join([f"- {s}" for s in analysis["suggestions"]]) + "\n\n",
         f"### 🎯 Confidence Score: **{analysis['confidence']}**\n"
     ]
