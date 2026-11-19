@@ -22,13 +22,13 @@ Automatically parses commits since the last git tag, categorizes changes into **
    ```
 2. **Make the script executable:**
    ```bash
-   chmod +x changelog.sh generate_changelog.py
+   chmod +x skills/generate-changelog/changelog.sh skills/generate-changelog/generate_changelog.py
    ```
 3. **Generate your changelog:**
    ```bash
-   ./changelog.sh
+   bash skills/generate-changelog/changelog.sh
    # Or directly via Python:
-   python3 generate_changelog.py
+   python3 skills/generate-changelog/generate_changelog.py
    ```
 
 ---
@@ -37,16 +37,16 @@ Automatically parses commits since the last git tag, categorizes changes into **
 
 ```bash
 # Run in the current git repository (outputs to CHANGELOG.md)
-./changelog.sh
+bash skills/generate-changelog/changelog.sh
 
 # Run against a specific repository
-./changelog.sh --repo /path/to/repo --output CHANGELOG.md
+bash skills/generate-changelog/changelog.sh --repo /path/to/repo --output CHANGELOG.md
 
 # Specify custom release tag or version title
-./changelog.sh --tag v1.0.0
+bash skills/generate-changelog/changelog.sh --tag v1.0.0
 
 # Generate changelog for a specific tag or commit range
-./changelog.sh --since v1.4.1 --tag v1.5.0
+bash skills/generate-changelog/changelog.sh --since v1.4.1 --tag v1.5.0
 ```
 
 ### Options
@@ -61,6 +61,6 @@ Automatically parses commits since the last git tag, categorizes changes into **
 
 Run the automated test suite:
 ```bash
-python3 test_changelog.py
+python3 skills/generate-changelog/test_changelog.py
 ```
 Suite contains unit tests, edge case tests (no tags, empty repos, merge commit filtering), and end-to-end git integration tests.

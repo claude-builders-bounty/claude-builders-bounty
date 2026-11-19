@@ -142,6 +142,32 @@ class TestGitIntegration(unittest.TestCase):
         self.assertIn("### Added", content)
         self.assertIn("add exciting widget", content)
 
+    def test_prepend_does_not_duplicate_header(self):
+        self.make_commit("feat: initial release")
+        out_file = os.path.join(self.test_dir, "CHANGELOG.md")
+        with open(out_file, "w") as f:
+            f.write("# Changelog\n\nSome older intro text.\n\n## [v0.1.0] - 2026-01-01\n\n### Added\n\n- old entry (abc1234)\n")
+        self.make_commit("feat: brand new thing")
+        generate_changelog.generate_changelog(repo_path=self.test_dir, output_path=out_file)
+        with open(out_file) as f:
+            content = f.read()
+        self.assertEqual(content.count("# Changelog"), 1)
+        self.assertIn("brand new thing", content)
+        self.assertIn("Some older intro text", content)
+        self.assertIn("old entry", content)
+
+    def test_prepend_keeps_exact_header_once(self):
+        self.make_commit("feat: first feature")
+        out_file = os.path.join(self.test_dir, "CHANGELOG.md")
+        generate_changelog.generate_changelog(repo_path=self.test_dir, output_path=out_file)
+        self.make_commit("fix: second fix")
+        generate_changelog.generate_changelog(repo_path=self.test_dir, output_path=out_file)
+        with open(out_file) as f:
+            content = f.read()
+        self.assertEqual(content.count("# Changelog"), 1)
+        self.assertIn("first feature", content)
+        self.assertIn("second fix", content)
+
 
 if __name__ == "__main__":
     unittest.main()

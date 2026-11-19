@@ -179,8 +179,13 @@ def generate_changelog(repo_path: str = ".", output_path: str = "CHANGELOG.md", 
         with open(output_path, "r", encoding="utf-8") as f:
             existing = f.read()
         if existing.startswith("# Changelog"):
-            # Insert after header
-            rest = existing[len(header):] if existing.startswith(header) else existing
+            # Insert after the header. If the old file starts with a
+            # "# Changelog" title but not our exact header text, drop just
+            # that title line so it is not duplicated.
+            if existing.startswith(header):
+                rest = existing[len(header):]
+            else:
+                rest = existing.split("\n", 1)[1] if "\n" in existing else ""
             full_content = header + new_section + "\n" + rest.lstrip()
         else:
             full_content = header + new_section + "\n" + existing
