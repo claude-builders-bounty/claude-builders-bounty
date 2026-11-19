@@ -1,51 +1,55 @@
-# Claude Code Pre-Tool-Use Hook: Block Destructive Bash
+# pre-tool-use — Claude Code destructive-command blocker
 
-A `pre-tool-use` hook that intercepts destructive bash commands **before** they are executed by Claude Code. Blocks `rm -rf`, `DROP TABLE`, `TRUNCATE`, `git push --force`, and un-scoped `DELETE FROM`, logging every blocked attempt.
+Stops Claude from running `rm -rf`, `DROP TABLE`, `git push --force` and other
+irreversible commands before they execute — and tells it why.
 
-## How it works
+## Install in 2 commands
 
-| Pattern | Decision |
+```bash
+mkdir -p ~/.claude/hooks && curl -o ~/.claude/hooks/pre-tool-use.py https://raw.githubusercontent.com/breezesamuel/claude-builders-bounty/bounty-003-helium/pre-tool-use.py && chmod +x ~/.claude/hooks/pre-tool-use.py
+```
+
+## Configure Claude Code
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "pre-tool-use": [
+      { "command": "~/.claude/hooks/pre-tool-use.py" }
+    ]
+  }
+}
+```
+
+## Test locally
+
+```bash
+echo '{"tool":"bash","arguments":{"command":"rm -rf /tmp/test"}}' | ~/.claude/hooks/pre-tool-use.py; echo "exit=$?"
+```
+
+Expected output: stderr explains why; exit code 1; logs to `~/.claude/hooks/blocked.log`.
+
+## What it blocks
+
+| Pattern | Blocked |
 |---|---|
-| `rm -rf <path>` / `rm -fr` | 🔴 **block** |
-| `DROP TABLE <x>` | 🔴 **block** |
-| `TRUNCATE [TABLE] <x>` | 🔴 **block** |
-| `DELETE FROM <x>` without `WHERE` | 🔴 **block** |
-| `git push --force` / `git push -f` | 🔴 **block** |
-| `DELETE FROM ... WHERE ...` (scoped) | 🟢 allow |
-| `git push` (normal) | 🟢 allow |
-| `rm file.log` (no `-r`) | 🟢 allow |
+| `rm -rf <path>` (recursive force delete) | ✅ |
+| `git push --force`, `git push --delete`, `git reset --hard` | ✅ |
+| `DROP TABLE`, `DROP DATABASE`, `TRUNCATE` | ✅ |
+| `DELETE FROM <table>` without WHERE | ✅ |
+| `chmod -R 777`, `mkfs`, `dd if=/dev/zero` | ✅ |
 
-## Install (3 steps)
+## Logs
 
-1. `mkdir -p ~/.claude/hooks/pre_tool_use && cp pre_tool_use.py ~/.claude/hooks/pre_tool_use/ && chmod +x ~/.claude/hooks/pre_tool_use/pre_tool_use.py`
-2. Add the hook to your settings file (`~/.claude/settings.json` or project `.claude/settings.json`):
-   ```json
-   {
-     "hooks": {
-       "PreToolUse": [
-         {
-           "matcher": "Bash",
-           "hooks": [
-             {
-               "type": "command",
-               "command": "~/.claude/hooks/pre_tool_use/pre_tool_use.py"
-             }
-           ]
-         }
-       ]
-     }
-   }
-   ```
-3. Restart Claude Code. Every destructive command is now guarded.
+Every block appends to `~/.claude/hooks/blocked.log`:
 
-## Logging
-
-Every blocked attempt appends a line to `~/.claude/hooks/blocked.log`:
-
-```
-<UTC ISO-8601 timestamp> | reason=<matched pattern> | cwd=<project path> | cmd=<attempted command>
+```json
+{"timestamp":"2026-11-19T11:58:00Z","command":"rm -rf /tmp/test","project_path":"/home/dev/myapp","reason":"rm -rf / recursive force delete"}
 ```
 
-## Verified
+## Behavior
 
-Tested against 11 input cases: 7 destructive patterns blocked (exit 2), 4 safe commands allowed (exit 0). Test harness and full output are included in the PR.
+- Normal bash commands pass through unchanged (exit 0).
+- Blocked commands are NOT executed; the model gets a clear explanation via stderr so it can propose a safer alternative.
