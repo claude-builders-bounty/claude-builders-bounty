@@ -1,0 +1,250 @@
+{
+  "name": "GitHub Weekly Narrative Summary with Claude API",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Weekly Trigger (Friday 5PM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "GITHUB_REPO",
+              "value": "owner/repo"
+            },
+            {
+              "name": "DISCORD_WEBHOOK_URL",
+              "value": "https://discord.com/api/webhooks/YOUR/WEBHOOK"
+            },
+            {
+              "name": "LANGUAGE",
+              "value": "EN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2",
+      "name": "Workflow Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Workflow Variables').item.json.GITHUB_REPO }}/commits?since={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Weekly-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [600, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Workflow Variables').item.json.GITHUB_REPO }}/pulls?state=closed&sort=updated&direction=desc",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-Claude-Weekly-Summary"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4",
+      "name": "Fetch Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [600, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('Fetch Commits').all().map(i => i.json.commit?.message || '').filter(Boolean);\nconst prs = $('Fetch Pull Requests').all().filter(i => i.json.merged_at).map(i => `#${i.json.number} ${i.json.title}`);\nconst repo = $('Workflow Variables').first().json.GITHUB_REPO;\nconst lang = $('Workflow Variables').first().json.LANGUAGE || 'EN';\n\nconst prompt = `Generate a concise, professional weekly engineering narrative summary for repository ${repo} in ${lang}.\\n\\nMerged PRs this week:\\n${prs.slice(0, 15).join('\\n') || 'None'}\\n\\nRecent Commits:\\n${commits.slice(0, 20).join('\\n') || 'None'}\\n\\nStructure into: 1. Executive Summary 2. Key Shipments 3. Notable Fixes.`;\n\nreturn [{ json: { prompt, repo } }];"
+      },
+      "id": "5",
+      "name": "Prepare Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": 1500
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": $json.prompt}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6",
+      "name": "Claude API Narrative Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Workflow Variables').first().json.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=\"**Weekly Engineering Summary for \" + $('Workflow Variables').first().json.GITHUB_REPO + \"**\\n\\n\" + $json.content[0].text"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7",
+      "name": "Dispatch to Discord/Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1350, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Trigger (Friday 5PM)": {
+      "main": [
+        [
+          {
+            "node": "Workflow Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Variables": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Pull Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pull Requests": {
+      "main": [
+        [
+          {
+            "node": "Prepare Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude API Narrative Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API Narrative Generation": {
+      "main": [
+        [
+          {
+            "node": "Dispatch to Discord/Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
