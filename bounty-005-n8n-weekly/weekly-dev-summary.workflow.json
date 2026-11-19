@@ -1,0 +1,163 @@
+{
+  "name": "claude-weekly-dev-summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "weekly-cron",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/commits?since={{ $now.set({'hour': 0,'minute': 0,'second': 0,'millisecond': 0}).minus({ 'days': 7 }).toISO() }}",
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Accept",
+                  "value": "application/vnd.github+json"
+                }
+              ]
+            }
+          }
+        ],
+        "options": {}
+      },
+      "id": "github-commits",
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/issues?state=closed&since={{ $now.set({'hour': 0,'minute': 0,'second': 0,'millisecond': 0}).minus({ 'days': 7 }).toISO() }}",
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth"
+          }
+        ],
+        "options": {}
+      },
+      "id": "github-issues",
+      "name": "GitHub Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 220],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/pulls?state=closed&sort=updated&direction=desc&since={{ $now.set({'hour': 0,'minute': 0,'second': 0,'millisecond': 0}).minus({ 'days': 7 }).toISO() }}",
+            "authentication": "genericCredentialType",
+            "genericAuthType": "httpHeaderAuth"
+          }
+        ],
+        "options": {}
+      },
+      "id": "github-prs",
+      "name": "GitHub Merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 440],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-token",
+          "name": "GitHub Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $('GitHub Commits').all();\nconst issues = $('GitHub Closed Issues').all();\nconst prs = $('GitHub Merged PRs').all();\nconst coalesce = (l, fn) => (l || []).map(fn).join('\\n');\nconst commitLines = coalesce(commits, c => `- ${c.commit.message.split('\\n')[0]}`);\nconst issueLines = coalesce(issues, i => `- ${i.title}`);\nconst prLines = coalesce(prs, p => `- ${p.title}`);\nreturn {\n  owner: $('GitHub Commits').item.json.owner,\n  repo: $('GitHub Commits').item.json.repo,\n  summary: `## Weekly Dev Summary\\n\\n### Commits (${commits.length})\\n${commitLines}\\n\\n### Closed Issues (${issues.length})\\n${issueLines}\\n\\n### PRs (${prs.length})\\n${prLines}`\n};"
+      },
+      "id": "aggregate",
+      "name": "Aggregate Week",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 0]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "content": "={{ $('Aggregate Week').item.json.summary }}",
+        "options": {}
+      },
+      "id": "discord-deliver",
+      "name": "Deliver to Discord",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [700, 0],
+      "credentials": {
+        "webhook": {
+          "id": "discord-webhook",
+          "name": "Discord Webhook"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [
+        [{ "node": "Aggregate Week", "type": "main", "index": 0 }]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [{ "node": "Aggregate Week", "type": "main", "index": 0 }]
+      ]
+    },
+    "GitHub Closed Issues": {
+      "main": [
+        [{ "node": "Aggregate Week", "type": "main", "index": 0 }]
+      ]
+    },
+    "GitHub Merged PRs": {
+      "main": [
+        [{ "node": "Aggregate Week", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate Week": {
+      "main": [
+        [{ "node": "Deliver to Discord", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "executionOrder": "v1"
+  }
+}
