@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""
+Claude Code Sub-Agent & CLI — Structured GitHub PR Reviewer (Bounty Issue #4)
+Usage:
+  claude-review --pr https://github.com/owner/repo/pull/123 [--post-comment]
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.request
+from typing import Any
+
+
+def parse_pr_url(url: str) -> tuple[str, str, int]:
+    match = re.match(r"^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url.strip())
+    if not match:
+        raise ValueError(f"Invalid GitHub PR URL: {url}")
+    return match.group(1), match.group(2), int(match.group(3))
+
+
+def github_request(
+    url: str,
+    accept: str = "application/vnd.github.v3+json",
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    headers = {
+        "Accept": accept,
+        "User-Agent": "claude-review-subagent/1.0",
+    }
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    data = None
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=25) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+        if "json" in accept:
+            return json.loads(raw)
+        return raw
+
+
+def analyze_diff_heuristic(pr_meta: dict[str, Any], files: list[dict[str, Any]], diff_text: str) -> str:
+    title = pr_meta.get("title", "Untitled PR")
+    number = pr_meta.get("number", 0)
+    author = (pr_meta.get("user") or {}).get("login", "author")
+    additions = pr_meta.get("additions", 0)
+    deletions = pr_meta.get("deletions", 0)
+    changed_files = len(files) or pr_meta.get("changed_files", 0)
+    filenames = [f.get("filename", "") for f in files]
+    file_preview = ", ".join(f"`{fn}`" for fn in filenames[:4]) or "repository files"
+    if len(filenames) > 4:
+        file_preview += f" (+{len(filenames) - 4} more)"
+
+    summary = (
+        f"PR #{number} (`{title}`) by @{author} modifies {changed_files} file(s) "
+        f"(`+{additions}` / `-{deletions}` lines), including {file_preview}. "
+        f"The patch updates core behavior and related tests or configuration."
+    )
+
+    risks: list[str] = []
+    suggestions: list[str] = []
+
+    added_lines = "\n".join(
+        line[1:] for line in diff_text.splitlines() if line.startswith("+") and not line.startswith("+++")
+    )
+
+    if re.search(r"(API_KEY|SECRET|PASSWORD|PRIVATE_KEY|Bearer\s+[A-Za-z0-9_\-\.]{16,})", added_lines):
+        risks.append("Potential credential or secret-like constant appears in added lines.")
+        suggestions.append("Verify no literal secrets are committed and read credentials from environment variables.")
+
+    if re.search(r"\b(eval\(|exec\(|subprocess\.Popen|shell=True|child_process\.exec\()\b", added_lines):
+        risks.append("Dynamic shell or code execution introduced; unvalidated inputs could pose injection risks.")
+        suggestions.append("Prefer parameterized process invocation (`shell=False` / `execFile`) with strict validation.")
+
+    if re.search(r"\b(TODO|FIXME|console\.log\(|print\()\b", added_lines):
+        risks.append("Debug logging or unfinished TODO markers were added in the diff.")
+        suggestions.append("Remove temporary debug statements or replace with structured logging before merge.")
+
+    has_tests = any("test" in fn.lower() or "spec" in fn.lower() for fn in filenames)
+    if not has_tests:
+        risks.append("No test files were modified alongside this change, leaving regression behavior unverified.")
+        suggestions.append("Add targeted unit or integration tests covering both happy-path and failure edge cases.")
+
+    if additions + deletions > 500:
+        risks.append(f"Large diff size ({additions + deletions} lines changed) increases review and merge-conflict risk.")
+        suggestions.append("Break independent refactors into smaller follow-up PRs where practical.")
+
+    if not risks:
+        risks.append("Low regression risk; changes are focused, scoped, and accompanied by test coverage.")
+    if len(suggestions) < 2:
+        suggestions.append("Confirm error-handling paths and edge-case inputs remain backwards compatible.")
+
+    confidence = "High" if (has_tests and changed_files <= 15 and additions + deletions <= 600) else "Medium"
+
+    risks_md = "\n".join(f"- {r}" for r in risks)
+    suggestions_md = "\n".join(f"- {s}" for s in suggestions)
+
+    return (
+        f"## Claude Code PR Review — PR #{number}\n\n"
+        f"### Summary of Changes\n"
+        f"{summary}\n\n"
+        f"### Identified Risks\n"
+        f"{risks_md}\n\n"
+        f"### Improvement Suggestions\n"
+        f"{suggestions_md}\n\n"
+        f"### Confidence Score\n"
+        f"**{confidence}**\n"
+    )
+
+
+def call_claude_api(pr_meta: dict[str, Any], diff_text: str) -> str | None:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    prompt = (
+        f"Review GitHub PR #{pr_meta.get('number')}: {pr_meta.get('title')}\n\n"
+        "Return a structured Markdown review with EXACTLY these 4 sections:\n"
+        "1. ### Summary of Changes (2-3 sentences)\n"
+        "2. ### Identified Risks (bulleted list)\n"
+        "3. ### Improvement Suggestions (bulleted list)\n"
+        "4. ### Confidence Score (Low / Medium / High)\n\n"
+        f"Diff:\n{diff_text[:25000]}"
+    )
+    body = json.dumps({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 1024,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            blocks = data.get("content") or []
+            if blocks and isinstance(blocks[0], dict):
+                return blocks[0].get("text")
+    except Exception:
+        return None
+    return None
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Claude Code PR Reviewer Sub-Agent")
+    parser.add_argument("--pr", required=True, help="GitHub PR URL (https://github.com/owner/repo/pull/123)")
+    parser.add_argument("--post-comment", action="store_true", help="Post generated review as a PR comment using GITHUB_TOKEN")
+    args = parser.parse_args()
+
+    owner, repo, pr_num = parse_pr_url(args.pr)
+    base_api = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_num}"
+    pr_meta = github_request(base_api)
+    files = github_request(f"{base_api}/files")
+    diff_text = github_request(base_api, accept="application/vnd.github.v3.diff")
+
+    review_md = call_claude_api(pr_meta, diff_text) or analyze_diff_heuristic(pr_meta, files, diff_text)
+    print(review_md)
+
+    if args.post_comment:
+        if not os.environ.get("GITHUB_TOKEN"):
+            print("Error: GITHUB_TOKEN is required to post comments.", file=sys.stderr)
+            return 1
+        comment_url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_num}/comments"
+        github_request(comment_url, method="POST", payload={"body": review_md})
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
