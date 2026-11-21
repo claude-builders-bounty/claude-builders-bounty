@@ -1,0 +1,227 @@
+{
+  "name": "Weekly Dev Summary (GitHub → Claude → Email/Slack)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "weeks", "triggerAtHour": 17, "triggerAtMinute": 0, "triggerAtDay": [5] }
+          ]
+        }
+      },
+      "id": "cron-weekly-friday-5pm",
+      "name": "Weekly Cron (Fri 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "GITHUB_REPO", "value": "owner/repo" },
+            { "name": "GITHUB_TOKEN", "value": "REPLACE_WITH_GITHUB_PAT" },
+            { "name": "DESTINATION", "value": "email" },
+            { "name": "EMAIL_TO", "value": "you@example.com" },
+            { "name": "SLACK_WEBHOOK_URL", "value": "https://hooks.slack.com/services/REPLACE" },
+            { "name": "LANGUAGE", "value": "EN" },
+            { "name": "ANTHROPIC_API_KEY", "value": "REPLACE_WITH_ANTHROPIC_KEY" }
+          ]
+        }
+      },
+      "id": "config-vars",
+      "name": "Config (edit these)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.GITHUB_REPO }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github+json" }
+          ]
+        },
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              { "name": "since", "value": "={{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}" }
+            ]
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits (last 7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, -120],
+      "notes": "Requires an httpHeaderAuth credential named 'Authorization: Bearer <GITHUB_TOKEN>'"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config (edit these)').item.json.GITHUB_REPO }}/issues",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github+json" }
+          ]
+        },
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              { "name": "state", "value": "closed" },
+              { "name": "since", "value": "={{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}" },
+              { "name": "sort", "value": "updated" }
+            ]
+          }
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues (last 7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config (edit these)').item.json.GITHUB_REPO }}/pulls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github+json" }
+          ]
+        },
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              { "name": "state", "value": "closed" },
+              { "name": "sort", "value": "updated" },
+              { "name": "direction", "value": "desc" }
+            ]
+          }
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Merged PRs (last 7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 120]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge the three GitHub API responses into one compact activity object.\nconst commits = $('Fetch Commits (last 7d)').all().map(i => i.json);\nconst issues = $('Fetch Closed Issues (last 7d)').all().map(i => i.json);\nconst pulls = $('Fetch Merged PRs (last 7d)').all().map(i => i.json);\n\nconst mergedPRs = pulls.filter(p => p.merged_at);\n\nconst fmt = d => new Date(d).toISOString().slice(0,10);\n\nconst summary = {\n  repo: $('Config (edit these)').first().json.GITHUB_REPO,\n  weekEnding: fmt(Date.now()),\n  commits: commits.map(c => ({\n    sha: c.sha ? c.sha.slice(0,7) : '',\n    message: c.commit ? c.commit.message.split('\\n')[0] : '',\n    author: c.commit && c.commit.author ? c.commit.author.name : 'unknown',\n    date: c.commit && c.commit.author ? c.commit.author.date : ''\n  })),\n  closedIssues: issues.map(i => ({ number: i.number, title: i.title })),\n  mergedPRs: mergedPRs.map(p => ({ number: p.number, title: p.title, author: p.user ? p.user.login : 'unknown' }))\n};\n\nreturn [{ json: summary }];"
+      },
+      "id": "aggregate",
+      "name": "Aggregate Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a developer assistant. Write a concise weekly narrative summary ({{ $json.LANGUAGE === 'FR' ? 'in French' : 'in English' }}) of this repo's activity. Group by theme, highlight what shipped, and note anything needing follow-up. Activity JSON: \" + JSON.stringify($json).slice(0, 12000)\n    }\n  ]\n}"
+      },
+      "id": "claude-summarize",
+      "name": "Claude: Generate Narrative",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0],
+      "notes": "Requires httpHeaderAuth credential: 'x-api-key: <ANTHROPIC_API_KEY>'"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Claude's text and shape the delivery payload.\nconst claude = $json;\nconst text = (claude.content && claude.content[0] && claude.content[0].text) || 'No summary generated.';\nconst cfg = $('Config (edit these)').first().json;\nconst agg = $('Aggregate Activity').first().json;\n\nconst subject = `[Weekly Dev Summary] ${agg.repo} — week ending ${agg.weekEnding}`;\n\nreturn [{ json: { subject, text, destination: cfg.DESTINATION, emailTo: cfg.EMAIL_TO, slackWebhook: cfg.SLACK_WEBHOOK_URL } }];"
+      },
+      "id": "shape-delivery",
+      "name": "Shape Delivery Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "dest-email",
+              "leftValue": "={{ $json.destination }}",
+              "rightValue": "email",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-email",
+      "name": "If Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1320, -80]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.emailTo }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.text }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSendMail",
+      "typeVersion": 2.1,
+      "position": [1540, -160]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.slackWebhook }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": \"*{{ $json.subject }}*\\n{{ $json.text }}\"}"
+      },
+      "id": "send-slack",
+      "name": "Send Slack/Discord Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 0]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Fri 17:00)": { "main": [[{ "node": "Config (edit these)", "type": "main", "index": 0 }]] },
+    "Config (edit these)": { "main": [[{ "node": "Fetch Commits (last 7d)", "type": "main", "index": 0 }, { "node": "Fetch Closed Issues (last 7d)", "type": "main", "index": 0 }, { "node": "Fetch Merged PRs (last 7d)", "type": "main", "index": 0 }]] },
+    "Fetch Commits (last 7d)": { "main": [[{ "node": "Aggregate Activity", "type": "main", "index": 0 }]] },
+    "Fetch Closed Issues (last 7d)": { "main": [[{ "node": "Aggregate Activity", "type": "main", "index": 0 }]] },
+    "Fetch Merged PRs (last 7d)": { "main": [[{ "node": "Aggregate Activity", "type": "main", "index": 0 }]] },
+    "Aggregate Activity": { "main": [[{ "node": "Claude: Generate Narrative", "type": "main", "index": 0 }]] },
+    "Claude: Generate Narrative": { "main": [[{ "node": "Shape Delivery Payload", "type": "main", "index": 0 }]] },
+    "Shape Delivery Payload": { "main": [[{ "node": "If Email?", "type": "main", "index": 0 }]] },
+    "If Email?": { "main": [[{ "node": "Send Email", "type": "main", "index": 0 }], [{ "node": "Send Slack/Discord Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "active": false,
+  "tags": []
+}
