@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# claude-review — review a GitHub PR with the pr-reviewer Claude agent.
+#
+#   claude-review --pr https://github.com/owner/repo/pull/123
+#   claude-review --pr 123 --repo owner/repo
+#   claude-review --diff /path/to/change.patch
+#
+# Requires: `claude` CLI (uses the bundled .claude/agents/pr-reviewer.md).
+# Falls back to `gh pr diff`, then to curl + <pr>.patch for the diff.
+set -euo pipefail
+
+PR_URL=""; REPO=""; DIFF_FILE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --pr)   PR_URL="$2"; shift 2 ;;
+    --repo) REPO="$2"; shift 2 ;;
+    --diff) DIFF_FILE="$2"; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 64 ;;
+  esac
+done
+
+DIFF=""
+if [ -n "$DIFF_FILE" ]; then
+  DIFF="$(cat "$DIFF_FILE")"
+elif [ -n "$PR_URL" ]; then
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    DIFF="$(gh pr diff "$PR_URL" 2>/dev/null || true)"
+  fi
+  if [ -z "$DIFF" ]; then
+    DIFF="$(curl -fsSL "${PR_URL}.patch" || curl -fsSL "${PR_URL}.diff")"
+  fi
+elif [ -n "$REPO" ]; then
+  echo "pass --pr with a number too: --repo takes owner/repo, --pr takes the URL or number" >&2; exit 64
+fi
+
+[ -z "$DIFF" ] && { echo "could not fetch a diff" >&2; exit 1; }
+
+AGENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROMPT_FILE="$(mktemp /tmp/pr-review-prompt.XXXXXX.md)"
+trap 'rm -f "$PROMPT_FILE"' EXIT
+
+{
+  cat "$AGENT_DIR/.claude/agents/pr-reviewer.md"
+  echo
+  echo "---"
+  echo
+  echo "Review this diff now:"
+  echo
+  echo '```diff'
+  echo "$DIFF"
+  echo '```'
+} > "$PROMPT_FILE"
+
+if command -v claude >/dev/null 2>&1; then
+  claude -p "$(cat "$PROMPT_FILE")"
+else
+  echo "claude CLI not found; review prompt written to $PROMPT_FILE (kept for debugging)" >&2
+  cat "$PROMPT_FILE"
+  trap - EXIT
+fi
