@@ -43,6 +43,20 @@ You're in the right place.
 
 ---
 
+## Security Features
+
+This repository includes a pre-commit hook that automatically scans for potentially destructive bash commands in staged files. The hook blocks commits containing commands like:
+
+- `rm -rf` (recursive file deletion)
+- `DROP TABLE` (database table deletion)
+- `DELETE FROM` (database record deletion)
+- `TRUNCATE TABLE` (database table truncation)
+- And other potentially destructive commands
+
+This protection is active for all contributors and helps prevent accidental data loss.
+
+---
+
 ## Community
 
 - 🐦 X: [@ClaudeBounty](https://x.com/ClaudeBounty)
