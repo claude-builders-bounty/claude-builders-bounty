@@ -54,6 +54,23 @@ bash skills/generate-changelog/changelog.sh --since v1.4.1 --tag v1.5.0
 - `--output`, `-o`: Path to output file (default: `CHANGELOG.md`)
 - `--tag`, `-t`: Tag / release version label for the changelog header (default: `Unreleased`)
 - `--since`, `-s`: Git tag or revision to start from (default: latest git tag)
+- `--no-tag`: Generate changelog from entire git history, ignoring git tags
+
+---
+
+## Claude Code Slash Command
+
+To use `/generate-changelog` natively inside Claude Code:
+```bash
+mkdir -p .claude/commands
+cp skills/generate-changelog/commands/generate-changelog.md .claude/commands/
+```
+Or symlink it:
+```bash
+mkdir -p .claude/commands
+ln -s ../skills/generate-changelog/commands/generate-changelog.md .claude/commands/generate-changelog.md
+```
+Then run `/generate-changelog` directly in Claude Code.
 
 ---
 

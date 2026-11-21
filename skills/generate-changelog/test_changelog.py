@@ -132,6 +132,17 @@ class TestGitIntegration(unittest.TestCase):
         commits = generate_changelog.get_commits_since_last_tag(repo_path=self.test_dir)
         self.assertEqual(len(commits), 0)
 
+    def test_repo_with_no_tag_flag_returns_all_commits(self):
+        self.make_commit("feat: initial release")
+        self.run_git(["tag", "-a", "v1.0.0", "-m", "v1.0.0"])
+        self.make_commit("fix: post-release bugfix")
+        # With default behavior, only commits after tag v1.0.0 are returned
+        commits_default = generate_changelog.get_commits_since_last_tag(repo_path=self.test_dir)
+        self.assertEqual(len(commits_default), 1)
+        # With no_tag=True, full history is returned regardless of existing tags
+        commits_no_tag = generate_changelog.get_commits_since_last_tag(repo_path=self.test_dir, no_tag=True)
+        self.assertEqual(len(commits_no_tag), 2)
+
     def test_cli_execution_generates_file(self):
         self.make_commit("feat: add exciting widget")
         out_file = os.path.join(self.test_dir, "CHANGELOG.md")

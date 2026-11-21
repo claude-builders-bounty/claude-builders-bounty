@@ -73,14 +73,16 @@ def parse_commit_message(msg: str):
     return CATEGORY_CHANGED, msg
 
 
-def get_commits_since_last_tag(repo_path: str = ".", since: str = None):
+def get_commits_since_last_tag(repo_path: str = ".", since: str = None, no_tag: bool = False):
     """
     Finds commits since the most recent reachable tag, or since a specified revision/tag.
-    If no tags exist and since is None, returns all commits.
+    If no_tag is True or no tags exist (and since is None), returns all commits.
     Returns list of tuples: [(hash, subject), ...]
     """
     if since:
         rev_range = f"{since}..HEAD" if ".." not in since else since
+    elif no_tag:
+        rev_range = "HEAD"
     else:
         tag_proc = subprocess.run(
             ["git", "describe", "--tags", "--abbrev=0"],
@@ -154,11 +156,11 @@ def format_markdown(commits_by_cat: dict, tag_name: str = "Unreleased", date_str
     return "\n".join(lines).strip() + "\n"
 
 
-def generate_changelog(repo_path: str = ".", output_path: str = "CHANGELOG.md", tag_name: str = "Unreleased", since: str = None):
+def generate_changelog(repo_path: str = ".", output_path: str = "CHANGELOG.md", tag_name: str = "Unreleased", since: str = None, no_tag: bool = False):
     """
     Extracts commits and writes or prepends to output_path.
     """
-    raw_commits = get_commits_since_last_tag(repo_path, since=since)
+    raw_commits = get_commits_since_last_tag(repo_path, since=since, no_tag=no_tag)
     commits_by_cat = {
         CATEGORY_ADDED: [],
         CATEGORY_FIXED: [],
@@ -204,10 +206,11 @@ def main():
     parser.add_argument("--output", "-o", default="CHANGELOG.md", help="Output path (default: CHANGELOG.md)")
     parser.add_argument("--tag", "-t", default="Unreleased", help="Tag / Version name for header (default: Unreleased)")
     parser.add_argument("--since", "-s", default=None, help="Tag or commit range to generate changelog from (default: latest tag)")
+    parser.add_argument("--no-tag", action="store_true", help="Generate changelog from entire git history, ignoring tags")
 
     args = parser.parse_args()
     try:
-        generate_changelog(repo_path=args.repo, output_path=args.output, tag_name=args.tag, since=args.since)
+        generate_changelog(repo_path=args.repo, output_path=args.output, tag_name=args.tag, since=args.since, no_tag=args.no_tag)
         print(f"Successfully generated changelog at {args.output}")
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
