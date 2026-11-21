@@ -1,0 +1,327 @@
+{
+  "name": "Weekly Dev Summary (GitHub + Claude API)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "cron-weekly",
+      "name": "Friday 5pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "v-repo",
+              "name": "github_repo",
+              "value": "owner/repo",
+              "type": "string"
+            },
+            {
+              "id": "v-hook",
+              "name": "discord_webhook_url",
+              "value": "https://discord.com/api/webhooks/YOUR_WEBHOOK",
+              "type": "string"
+            },
+            {
+              "id": "v-lang",
+              "name": "language",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "v-key",
+              "name": "anthropic_api_key",
+              "value": "sk-ant-...",
+              "type": "string"
+            },
+            {
+              "id": "v-base",
+              "name": "anthropic_base_url",
+              "value": "https://api.anthropic.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-vars",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config').first().json.github_repo }}/commits",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $now.minus({days: 7}).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "gh-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config').first().json.github_repo }}/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "since",
+              "value": "={{ $now.minus({days: 7}).toISO() }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "gh-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $('Config').first().json.github_repo }}/pulls",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "closed"
+            },
+            {
+              "name": "sort",
+              "value": "updated"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "gh-prs",
+      "name": "Fetch Closed PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Config').first().json;\nconst commits = $('Fetch Commits').all().map(i => i.json);\nconst issues = $('Fetch Closed Issues').all().map(i => i.json).filter(x => !x.pull_request);\nconst prs = $('Fetch Closed PRs').all().map(i => i.json).filter(x => x.merged_at);\n\nconst weekAgo = new Date(Date.now() - 7*24*3600*1000);\nconst recentPrs = prs.filter(p => new Date(p.merged_at) >= weekAgo);\n\nconst commitLines = commits.map(c => `- ${c.sha.slice(0,7)} ${c.commit.message.split('\\n')[0]} (${c.commit.author.name})`).join('\\n') || '- none';\nconst issueLines = issues.map(i => `- #${i.number} ${i.title}`).join('\\n') || '- none';\nconst prLines = recentPrs.map(p => `- #${p.number} ${p.title} (@${p.user.login})`).join('\\n') || '- none';\n\nconst lang = (cfg.language || 'EN').toUpperCase();\nconst langNote = lang === 'FR'\n  ? 'Write the summary in French.'\n  : 'Write the summary in English.';\n\nconst prompt = `You are writing the weekly developer summary for ${cfg.github_repo}.\\n${langNote}\\n\\nWrite a narrative summary of this week's activity in 3 short sections: \"What shipped\", \"In the pipeline\", and \"By the numbers\". Be concrete: name PR numbers and authors where it matters. Keep it under 250 words.\\n\\nCommits (${commits.length}):\\n${commitLines}\\n\\nClosed issues (${issues.length}):\\n${issueLines}\\n\\nMerged PRs (${recentPrs.length}):\\n${prLines}`;\n\nreturn [{ json: { prompt, discord_webhook_url: cfg.discord_webhook_url } }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.anthropic_base_url + '/v1/messages' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $('Config').first().json.anthropic_api_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\"model\": \"claude-sonnet-4-20250514\", \"max_tokens\": 1024, \"messages\": [{\"role\": \"user\", \"content\": $json.prompt}]}) }}"
+      },
+      "id": "claude-call",
+      "name": "Claude Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Build Prompt').first().json.discord_webhook_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content\": {{ JSON.stringify('**Weekly Dev Summary**\\n\\n' + $json.content[0].text) }}}"
+      },
+      "id": "deliver",
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        340
+      ]
+    }
+  ],
+  "connections": {
+    "Friday 5pm Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Closed PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed Issues": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Closed PRs": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summary": {
+      "main": [
+        [
+          {
+            "node": "Post to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
