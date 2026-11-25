@@ -1,0 +1,53 @@
+name: PR Review
+
+# Posts a structured Markdown review on every pull request.
+#
+# Placement: copy this file to the repository root at
+# `.github/workflows/pr-review.yml`, and copy the rest of this project to
+# `pr-reviewer-agent/` at the repository root (so the board's own README
+# is untouched). The workflow below assumes that layout.
+#
+# Two engines:
+#   - If the ANTHROPIC_API_KEY repository secret is set, the review is done
+#     by the Claude API (claude-sonnet-4-20250514).
+#   - Otherwise the rule-based engine runs — no key needed, no data leaves
+#     GitHub except the public API call that fetches the PR itself.
+# The review is posted as a PR comment. Requires no extra permissions
+# beyond the default GITHUB_TOKEN (pull-requests: write).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run claude-review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 pr-reviewer-agent/claude-review \
+            --pr "${{ github.event.pull_request.html_url }}" \
+            --out review.md
+
+      - name: Post the review as a PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body-file review.md
