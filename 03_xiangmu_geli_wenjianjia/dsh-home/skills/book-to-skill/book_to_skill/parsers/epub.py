@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+import html
+import posixpath
+import re
+import sys
+import zipfile
+from urllib.parse import unquote, urlsplit
+
+from book_to_skill.parsers.html import _HTMLTextExtractor
+
+
+_IMAGE_EXTENSIONS = (
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".svg",
+    ".tif",
+    ".tiff",
+    ".webp",
+)
+
+# OPF package elements normally use the default OPF namespace, but XML also
+# permits an explicit namespace prefix (for example ``<opf:item>``). Keep the
+# existing tolerant, regex-based fallback while accepting that equivalent form.
+_OPF_ELEMENT_PREFIX = r"(?:[A-Za-z_][\w.-]*:)?"
+
+
+def _opf_opening_tags(opf_text: str, local_name: str) -> list[str]:
+    """Return opening tags for an OPF element, with or without a prefix."""
+    return re.findall(
+        rf"<{_OPF_ELEMENT_PREFIX}{re.escape(local_name)}\b[^>]*?/?>",
+        opf_text,
+    )
+
+
+def extract_with_ebooklib(epub_path: str) -> str | None:
+    try:
+        import ebooklib
+        from ebooklib import epub
+        from bs4 import BeautifulSoup
+
+        book = epub.read_epub(epub_path)
+        parts = []
+        for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+            soup = BeautifulSoup(item.get_content(), "html.parser")
+            parts.append(soup.get_text(separator="\n"))
+        return "\n\n".join(parts)
+    except ImportError:
+        return None
+    except Exception as e:
+        print(f"  [warn] extract_with_ebooklib failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
+
+def _find_opf_path(zf: zipfile.ZipFile) -> str | None:
+    """Locate the OPF package document inside an EPUB archive.
+
+    First tries ``META-INF/container.xml`` (the spec-defined entry point),
+    then falls back to scanning the archive for any ``.opf`` file.
+    """
+    # Spec-defined: read container.xml for the rootfile path
+    try:
+        container = zf.read("META-INF/container.xml").decode("utf-8", errors="replace")
+        match = re.search(r'full-path=["\']([^"\']+\.opf)["\']', container)
+        if match:
+            return match.group(1)
+    except (KeyError, Exception):
+        pass
+
+    # Fallback: glob for any .opf file
+    opf_files = [n for n in zf.namelist() if n.endswith(".opf")]
+    return opf_files[0] if opf_files else None
+
+
+def _resolve_manifest_href(href: str, opf_dir: str) -> str:
+    """Map an OPF manifest IRI to its ZIP member name."""
+    # Manifest hrefs are IRIs, not literal archive names.  XML entities have
+    # already been decoded by a real XML parser; mirror that here before
+    # discarding query/fragment components and decoding percent escapes.
+    archive_path = unquote(urlsplit(html.unescape(href)).path)
+    if opf_dir:
+        archive_path = posixpath.join(opf_dir, archive_path)
+    return posixpath.normpath(archive_path)
+
+
+def extract_with_zipfile(epub_path: str) -> str | None:
+    """stdlib-only EPUB extractor: unzip → parse HTML files."""
+    try:
+        with zipfile.ZipFile(epub_path) as zf:
+            names = zf.namelist()
+
+            # Locate OPF and determine its directory for resolving relative hrefs
+            opf_path = _find_opf_path(zf)
+            opf_dir = posixpath.dirname(opf_path) if opf_path else ""
+
+            # Build reading order from the OPF spine (not the manifest's href
+            # order), then append any remaining content docs as a safety net.
+            spine_order: list[str] = []
+            seen: set[str] = set()
+            if opf_path:
+                opf_text = zf.read(opf_path).decode("utf-8", errors="replace")
+
+                # Manifest: item id -> resolved href. Parse each <item> opening
+                # tag so attribute order (id before/after href) does not matter;
+                # both self-closing <item .../> and <item ...></item> forms work
+                # because all attributes live in the opening tag.
+                manifest: dict[str, str] = {}
+                for item_tag in _opf_opening_tags(opf_text, "item"):
+                    id_m = re.search(r'\bid=["\']([^"\']+)["\']', item_tag)
+                    href_m = re.search(r'\bhref=["\']([^"\']+)["\']', item_tag)
+                    if id_m and href_m:
+                        resolved = _resolve_manifest_href(href_m.group(1), opf_dir)
+                        manifest[id_m.group(1)] = resolved
+
+                # Spine: ordered idrefs -> hrefs (true reading order).
+                for itemref_tag in _opf_opening_tags(opf_text, "itemref"):
+                    idref_m = re.search(
+                        r'\bidref=["\']([^"\']+)["\']', itemref_tag
+                    )
+                    if not idref_m:
+                        continue
+                    href = manifest.get(idref_m.group(1))
+                    if href and href not in seen:
+                        spine_order.append(href)
+                        seen.add(href)
+
+                # Safety net: append remaining manifest content documents (e.g. a
+                # nav doc not in the spine) in manifest order, so nothing is lost.
+                for href in manifest.values():
+                    if href.endswith((".html", ".xhtml")) and href not in seen:
+                        spine_order.append(href)
+                        seen.add(href)
+
+            html_files = spine_order or sorted(
+                n for n in names if n.endswith((".html", ".xhtml"))
+            )
+            if not html_files:
+                return None
+
+            parts = []
+            for name in html_files:
+                try:
+                    raw = zf.read(name).decode("utf-8", errors="replace")
+                    parser = _HTMLTextExtractor()
+                    parser.feed(raw)
+                    parts.append(parser.get_text())
+                except Exception:
+                    continue
+            return "\n\n".join(parts) if parts else None
+    except Exception as e:
+        print(f"  [warn] extract_with_zipfile failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
+
+def count_epub_chapters(epub_path: str) -> int:
+    """Count spine items (approximate chapter count) without dependencies."""
+    try:
+        with zipfile.ZipFile(epub_path) as zf:
+            opf_path = _find_opf_path(zf)
+            if not opf_path:
+                return 0
+            opf_text = zf.read(opf_path).decode("utf-8", errors="replace")
+            return len(_opf_opening_tags(opf_text, "itemref"))
+    except Exception:
+        return 0
+
+
+def count_epub_images(epub_path: str) -> int:
+    """Count image members whose content the text-only EPUB parsers omit."""
+    try:
+        with zipfile.ZipFile(epub_path) as zf:
+            return sum(
+                not info.is_dir() and info.filename.lower().endswith(_IMAGE_EXTENSIONS)
+                for info in zf.infolist()
+            )
+    except (OSError, zipfile.BadZipFile):
+        return 0
+
