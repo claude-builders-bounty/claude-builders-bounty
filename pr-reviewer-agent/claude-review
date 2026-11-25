@@ -1,0 +1,534 @@
+#!/usr/bin/env python3
+"""claude-review — review a GitHub pull request and print a structured Markdown review.
+
+Usage:
+    claude-review --pr https://github.com/owner/repo/pull/123
+
+Analysis engine:
+  * If ANTHROPIC_API_KEY is set (or --api-key is passed), the PR diff is sent to
+    the Claude API (claude-sonnet-4-20250514) for a full review.
+  * Otherwise a rule-based engine analyses the diff locally — no key, no
+    network beyond GitHub, and no data leaves the machine except the public
+    GitHub API request that fetches the PR itself.
+
+Output is always structured Markdown with exactly these sections:
+  Summary of changes, Identified risks, Improvement suggestions, Confidence score.
+
+Stdlib only (Python 3.9+). No dependencies to install.
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+
+VERSION = "1.0.0"
+CLAUDE_MODEL = "claude-sonnet-4-20250514"
+GITHUB_API = "https://api.github.com"
+MAX_DIFF_CHARS_FOR_AI = 12000
+
+# ---------------------------------------------------------------------------
+# Rule-based analysis patterns
+# ---------------------------------------------------------------------------
+
+# (regex, label, severity) — severity: "high" or "medium"
+SECRET_PATTERNS = [
+    (r"AKIA[0-9A-Z]{16}", "Possible AWS access key (AKIA...)"),
+    (r"ghp_[A-Za-z0-9]{20,}", "Possible GitHub personal access token (ghp_...)"),
+    (r"github_pat_[A-Za-z0-9_]{20,}", "Possible GitHub fine-grained token (github_pat_...)"),
+    (r"sk-[A-Za-z0-9]{20,}", "Possible OpenAI/Anthropic-style secret key (sk-...)"),
+    (r"sk-ant-[A-Za-z0-9\-_]{10,}", "Possible Anthropic API key (sk-ant-...)"),
+    (r"xox[baprs]-[A-Za-z0-9\-]{10,}", "Possible Slack token (xox...)"),
+    (r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", "Private key material in the diff"),
+    (r"(?i)(api[_-]?key|api[_-]?secret|access[_-]?token)\s*[:=]\s*['\"][^'\"]{8,}['\"]",
+     "Hardcoded API key / secret value"),
+    (r"(?i)(password|passwd|pwd)\s*[:=]\s*['\"][^'\"]{4,}['\"]",
+     "Hardcoded password value"),
+    (r"(?i)aws_secret_access_key\s*[:=]\s*['\"][^'\"]{8,}['\"]",
+     "Hardcoded AWS secret access key"),
+]
+
+RISKY_PATTERNS = [
+    (r"\brm\s+-rf\b", "Destructive command: `rm -rf`", "high"),
+    (r"(?i)\bDROP\s+TABLE\b", "Destructive SQL: `DROP TABLE`", "high"),
+    (r"(?i)\bTRUNCATE\s+TABLE\b", "Destructive SQL: `TRUNCATE TABLE`", "high"),
+    (r"(?i)\bDELETE\s+FROM\b(?![^;]*\bWHERE\b)", "SQL `DELETE FROM` without a WHERE clause", "high"),
+    (r"git\s+push\s+--force\b", "`git push --force` rewrites shared history", "high"),
+    (r"\beval\s*\(", "Use of `eval()` — arbitrary code execution", "high"),
+    (r"\bexec\s*\(", "Use of `exec()` — arbitrary code execution", "high"),
+    (r"innerHTML\s*=", "Assigning `innerHTML` — XSS risk if data is untrusted", "medium"),
+    (r"dangerouslySetInnerHTML", "React `dangerouslySetInnerHTML` — XSS risk", "medium"),
+    (r"chmod\s+777\b", "`chmod 777` — overly broad permissions", "medium"),
+    (r"curl\s+[^\n]*\|\s*(?:sh|bash)\b", "Piping a remote script straight into a shell (`curl | sh`)", "high"),
+    (r"wget\s+[^\n]*\|\s*(?:sh|bash)\b", "Piping a remote script straight into a shell (`wget | sh`)", "high"),
+    (r"(?i)os\.system\s*\(", "Shelling out via `os.system()`", "medium"),
+    (r"(?i)subprocess\.(?:call|run|Popen)\s*\([^)]*shell\s*=\s*True", "Subprocess with `shell=True`", "medium"),
+    (r"(?i)SELECT\s+.*\+\s*.*FROM|f['\"]SELECT", "SQL built by string concatenation/interpolation — injection risk", "medium"),
+    (r"(?i)verify\s*=\s*False|CERT_NONE|ssl[^=]*=\s*False", "TLS verification disabled", "medium"),
+]
+
+TEST_PATH_RE = re.compile(r"(^|/)(test|tests|spec|__tests__)/|"
+                          r"\.(test|spec)\.[a-z]+$|"
+                          r"(^|/)conftest\.py$", re.IGNORECASE)
+DEPENDENCY_FILES = {
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "requirements.txt", "Pipfile", "Pipfile.lock", "pyproject.toml",
+    "go.mod", "go.sum", "Gemfile", "Gemfile.lock", "Cargo.toml", "Cargo.lock",
+    "composer.json", "composer.lock",
+}
+LOCK_FILES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "Pipfile.lock",
+              "go.sum", "Gemfile.lock", "Cargo.lock", "composer.lock"}
+
+
+# ---------------------------------------------------------------------------
+# GitHub fetching
+# ---------------------------------------------------------------------------
+
+def parse_pr_url(url):
+    """Return (owner, repo, number) from a GitHub PR URL."""
+    m = re.match(r"^https?://github\.com/([^/]+)/([^/]+)/pulls?/(\d+)/?$", url.strip())
+    if not m:
+        raise ValueError(
+            "Could not parse PR URL %r — expected "
+            "https://github.com/owner/repo/pull/123" % url
+        )
+    return m.group(1), m.group(2), int(m.group(3))
+
+
+def github_get(url, accept, token=None):
+    req = urllib.request.Request(url, headers={
+        "Accept": accept,
+        "User-Agent": "claude-review/%s" % VERSION,
+    })
+    if token:
+        req.add_header("Authorization", "token %s" % token)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise SystemExit("Error: PR not found (404) — check the URL and that the repo is public.")
+        if e.code == 403:
+            raise SystemExit(
+                "Error: GitHub API rate limit hit (403). Unauthenticated requests are "
+                "limited to 60/hour. Set GITHUB_TOKEN to raise the limit."
+            )
+        raise SystemExit("Error: GitHub API returned HTTP %d for %s" % (e.code, url))
+    except urllib.error.URLError as e:
+        raise SystemExit("Error: could not reach GitHub — %s" % e.reason)
+
+
+def fetch_pr(owner, repo, number, token=None):
+    meta = json.loads(github_get(
+        "%s/repos/%s/%s/pulls/%d" % (GITHUB_API, owner, repo, number),
+        "application/vnd.github+json", token))
+    diff = github_get(
+        "%s/repos/%s/%s/pulls/%d" % (GITHUB_API, owner, repo, number),
+        "application/vnd.github.diff", token)
+    return meta, diff
+
+
+# ---------------------------------------------------------------------------
+# Diff parsing
+# ---------------------------------------------------------------------------
+
+def parse_diff(diff_text):
+    """Return a list of files: {path, status, additions, deletions, added_lines}."""
+    files = []
+    current = None
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git "):
+            m = re.match(r"diff --git a/(.*) b/(.*)$", line)
+            path = m.group(2) if m else line[11:]
+            current = {"path": path, "status": "modified",
+                       "additions": 0, "deletions": 0, "added_lines": []}
+            files.append(current)
+        elif current is not None:
+            if line.startswith("new file mode"):
+                current["status"] = "added"
+            elif line.startswith("deleted file mode"):
+                current["status"] = "deleted"
+            elif line.startswith("+++ ") or line.startswith("--- "):
+                continue
+            elif line.startswith("+"):
+                current["additions"] += 1
+                current["added_lines"].append(line[1:])
+            elif line.startswith("-"):
+                current["deletions"] += 1
+    return files
+
+
+# ---------------------------------------------------------------------------
+# Rule-based analysis
+# ---------------------------------------------------------------------------
+
+# Lines that *execute* a command stored in a string: if a line hands a string
+# to a shell/exec sink, the string IS the command and must be scanned raw.
+# Otherwise the line is just describing a pattern (e.g. a hook's block-list)
+# and quoted text must not trigger a match.
+EXEC_SINK_RE = re.compile(
+    r"\bsubprocess\.|\bos\.system\s*\(|\bos\.popen\s*\(|\beval\s*\(|\bexec\s*\(|"
+    r"\bPopen\s*\(|shell\s*=\s*True|child_process|\bcommands\.getoutput\s*\("
+)
+
+
+def split_docstring_line(line, state):
+    """Track triple-quoted strings (docstrings) across lines.
+
+    state is None or the delimiter currently open ('\"\"\"' or \"'''\").
+    Returns (code_text_or_None, new_state): code_text is the portion of the
+    line that is code ('' if the line is entirely a string); None means the
+    whole line sits inside a docstring. Docstring prose is documentation,
+    not code — a hook whose docstring *lists* the commands it blocks must
+    not be flagged for them.
+    """
+    if state is None:
+        for q in ('"""', "'''"):
+            i = line.find(q)
+            if i == -1:
+                continue
+            j = line.find(q, i + 3)
+            if j != -1:
+                # Opens and closes on this line: cut the quoted span out.
+                return line[:i] + '""' + line[j + 3:], None
+            # Opens here and runs on: only the part before it is code.
+            return line[:i], q
+        return line, None
+    j = line.find(state)
+    if j == -1:
+        return None, state
+    return line[j + 3:], None
+
+
+def strip_strings_and_comments(line):
+    """Remove string-literal contents and trailing comments from a code line.
+
+    Used when scanning for *execution* risks (rm -rf, DROP TABLE, eval()...):
+    a security tool that lists dangerous commands as strings it blocks is
+    describing them, not running them, so quoted text must not trigger a
+    match. Secrets are scanned on the raw line instead — a hardcoded
+    credential only exists inside a string literal.
+    """
+    # Triple-quoted strings (rare in single added lines, but cheap to handle).
+    line = re.sub(r"('''|\"\"\").*?\1", '""', line)
+    # Single/double-quoted strings, with optional r/b/f/u prefix.
+    line = re.sub(r"[rbfu]*'(?:[^'\\]|\\.)*'", '""', line)
+    line = re.sub(r'[rbfu]*"(?:[^"\\]|\\.)*"', '""', line)
+    # Trailing comment: '#' preceded by whitespace or at line start
+    # (Python/shell convention). Strings are already gone, so a '#' here
+    # cannot be inside a string literal.
+    line = re.sub(r"(^|\s)#.*$", r"\1", line)
+    # Same for '//' comments (JS/TS/C-family). Strings are already gone, so
+    # a '//' here cannot be part of a URL.
+    line = re.sub(r"(^|\s)//.*$", r"\1", line)
+    return line
+
+
+def rule_based_review(meta, files):
+    title = meta.get("title") or "(no title)"
+    body = (meta.get("body") or "").strip()
+    total_add = sum(f["additions"] for f in files)
+    total_del = sum(f["deletions"] for f in files)
+    n_files = len(files)
+    added = [f for f in files if f["status"] == "added"]
+    deleted = [f for f in files if f["status"] == "deleted"]
+    changed = [f for f in files if f["status"] == "modified"]
+
+    # --- Summary ------------------------------------------------------------
+    top_dirs = {}
+    for f in files:
+        d = f["path"].split("/")[0] if "/" in f["path"] else "(root)"
+        top_dirs[d] = top_dirs.get(d, 0) + 1
+    areas = ", ".join("%s (%d file%s)" % (d, c, "s" if c > 1 else "")
+                      for d, c in sorted(top_dirs.items(), key=lambda kv: -kv[1])[:4])
+    first_sentence = ""
+    if body:
+        first_sentence = re.split(r"(?<=[.!?])\s+", body.replace("\n", " ").strip(), 1)[0]
+        if len(first_sentence) > 240:
+            first_sentence = first_sentence[:237] + "..."
+    summary_bits = [
+        "This PR (%s) touches %d file%s (+%d/-%d lines), mainly in %s."
+        % (title, n_files, "s" if n_files != 1 else "", total_add, total_del, areas or "the repo root"),
+    ]
+    if added:
+        summary_bits.append("It adds %d new file%s (%s)."
+                            % (len(added), "s" if len(added) != 1 else "",
+                               ", ".join("`%s`" % f["path"] for f in added[:5])))
+    if deleted:
+        summary_bits.append("It removes %d file%s (%s)."
+                            % (len(deleted), "s" if len(deleted) != 1 else "",
+                               ", ".join("`%s`" % f["path"] for f in deleted[:5])))
+    if first_sentence:
+        summary_bits.append("The author describes it as: %s" % first_sentence)
+    summary = " ".join(summary_bits)
+    # Keep the summary to 2-3 sentences.
+    sentences = re.split(r"(?<=[.!?])\s+", summary)
+    summary = " ".join(sentences[:3])
+
+    # --- Risks --------------------------------------------------------------
+    risks = []
+    high = 0
+
+    for f in files:
+        in_docstring = None
+        for line in f["added_lines"]:
+            # Secrets live in string literals, so scan the raw line.
+            for pattern, label in SECRET_PATTERNS:
+                if re.search(pattern, line):
+                    risks.append("**Secret/credential exposure** in `%s`: %s — remove it, rotate the credential, and use a secret store or environment variable instead." % (f["path"], label))
+                    high += 1
+                    break
+            # Skip docstring prose entirely: it documents, it doesn't run.
+            code_line, in_docstring = split_docstring_line(line, in_docstring)
+            if code_line is None:
+                continue
+            # Execution risks only count as code, not as quoted text or comments
+            # (a hook/linter that *lists* "rm -rf" to block it is not running
+            # it) — unless the line hands the string to a shell/exec sink,
+            # in which case the string IS the command being run.
+            if EXEC_SINK_RE.search(code_line):
+                scan_line = line
+            else:
+                scan_line = strip_strings_and_comments(code_line)
+            for pattern, label, sev in RISKY_PATTERNS:
+                if re.search(pattern, scan_line):
+                    risks.append("`%s`: %s." % (f["path"], label))
+                    if sev == "high":
+                        high += 1
+                    break
+
+    # TODO/FIXME markers are usually in comments, which the scan above
+    # strips — check them separately on the raw lines, once per file.
+    for f in files:
+        todo = sum(1 for line in f["added_lines"]
+                   if re.search(r"\b(TODO|FIXME|XXX)\b", line))
+        if todo:
+            risks.append("`%s`: %d TODO/FIXME marker(s) added — unfinished work landing in this PR?"
+                         % (f["path"], todo))
+
+    if total_add > 1000:
+        risks.append("Very large diff (+%d lines) — hard to review thoroughly in one pass; consider splitting it." % total_add)
+    biggest = max(files, key=lambda f: f["additions"] + f["deletions"], default=None)
+    if biggest and biggest["additions"] + biggest["deletions"] > 300:
+        risks.append("`%s` changes %d lines in a single file — a large blast radius if something is wrong."
+                     % (biggest["path"], biggest["additions"] + biggest["deletions"]))
+    if not body:
+        risks.append("The PR has no description, so reviewers cannot tell what it is supposed to do or how it was tested.")
+    dep_files = [f for f in files if os.path.basename(f["path"]) in DEPENDENCY_FILES
+                 and os.path.basename(f["path"]) not in LOCK_FILES]
+    if dep_files:
+        risks.append("Dependency changes in %s — check for supply-chain risk (pinned versions, trusted sources) and lockfile updates."
+                     % ", ".join("`%s`" % f["path"] for f in dep_files))
+    if deleted:
+        risks.append("Files deleted: %s — confirm nothing else in the repo still imports or references them."
+                     % ", ".join("`%s`" % f["path"] for f in deleted))
+    test_files = [f for f in files if TEST_PATH_RE.search(f["path"])]
+    source_files = [f for f in files
+                    if not TEST_PATH_RE.search(f["path"])
+                    and os.path.basename(f["path"]) not in DEPENDENCY_FILES
+                    and not f["path"].endswith((".md", ".txt", ".yml", ".yaml", ".json"))]
+    if source_files and not test_files:
+        risks.append("Source code changes with no test changes — no automated check that the new behaviour works or that nothing regressed.")
+
+    # Deduplicate, keep order.
+    seen = set()
+    risks = [r for r in risks if not (r in seen or seen.add(r))]
+
+    # --- Suggestions --------------------------------------------------------
+    suggestions = []
+    if not body:
+        suggestions.append("Add a PR description: what changed, why, and how it was tested.")
+    if source_files and not test_files:
+        suggestions.append("Add or update tests covering the changed behaviour.")
+    if total_add > 500:
+        suggestions.append("Split the PR into smaller, independently reviewable chunks if possible.")
+    if biggest and biggest["additions"] + biggest["deletions"] > 300:
+        suggestions.append("Consider breaking `%s` up — large files are harder to review and to revert safely."
+                           % biggest["path"])
+    if dep_files:
+        suggestions.append("Note in the PR description why each new dependency is needed and confirm its version is pinned.")
+    if any("Secret/credential" in r for r in risks):
+        suggestions.append("Rotate any exposed credential immediately and add the file/pattern to `.gitignore` or a pre-commit secret scanner (e.g. gitleaks).")
+    if not suggestions:
+        suggestions.append("No blocking changes spotted — a second human review of the largest file(s) is still worthwhile before merging.")
+    suggestions.append("Run the project's linter/formatter and full test suite once more before merging.")
+
+    # --- Confidence ---------------------------------------------------------
+    if high > 0 or total_add > 1000:
+        confidence = "Low"
+    elif risks or total_add > 300 or n_files > 10:
+        confidence = "Medium"
+    else:
+        confidence = "High"
+
+    return {
+        "summary": summary,
+        "risks": risks,
+        "suggestions": suggestions,
+        "confidence": confidence,
+        "engine": "rule-based (no ANTHROPIC_API_KEY set)",
+        "stats": {"files": n_files, "additions": total_add, "deletions": total_del},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Claude API analysis
+# ---------------------------------------------------------------------------
+
+CLAUDE_PROMPT = """You are a senior code reviewer reviewing a GitHub pull request.
+Be concrete and specific — quote file names and line content where relevant.
+Do not invent facts that are not in the diff. If the diff is too small to judge
+something, say so instead of guessing.
+
+PR title: {title}
+PR description: {body}
+
+Diff (truncated):
+```
+{diff}
+```
+
+Return ONLY Markdown in exactly this format (no preamble, no extra sections):
+
+## Summary of changes
+2-3 sentences describing what the PR does.
+
+## Identified risks
+- One bullet per risk, naming the file. If none, write "- None identified."
+
+## Improvement suggestions
+- One bullet per suggestion. If none, write "- None."
+
+## Confidence score
+Low / Medium / High — followed by one short sentence explaining why.
+"""
+
+def claude_review(meta, diff_text):
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    payload = json.dumps({
+        "model": CLAUDE_MODEL,
+        "max_tokens": 2048,
+        "messages": [{
+            "role": "user",
+            "content": CLAUDE_PROMPT.format(
+                title=meta.get("title") or "(no title)",
+                body=(meta.get("body") or "(no description)").strip()[:2000],
+                diff=diff_text[:MAX_DIFF_CHARS_FOR_AI],
+            ),
+        }],
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:300]
+        raise SystemExit("Error: Claude API returned HTTP %d — %s" % (e.code, detail))
+    except urllib.error.URLError as e:
+        raise SystemExit("Error: could not reach the Claude API — %s" % e.reason)
+    text = "".join(
+        block.get("text", "") for block in data.get("content", [])
+        if block.get("type") == "text"
+    ).strip()
+    if not text:
+        raise SystemExit("Error: Claude API returned an empty review.")
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+def render_markdown(meta, review, pr_url):
+    lines = [
+        "## PR Review: %s" % (meta.get("title") or ""),
+        "",
+        "PR: %s" % pr_url,
+        "Engine: %s" % review["engine"],
+        "Files changed: %d (+%d/-%d)"
+        % (review["stats"]["files"], review["stats"]["additions"], review["stats"]["deletions"]),
+        "",
+        "## Summary of changes",
+        "",
+        review["summary"],
+        "",
+        "## Identified risks",
+        "",
+    ]
+    if review["risks"]:
+        lines += ["- %s" % r for r in review["risks"]]
+    else:
+        lines.append("- None identified.")
+    lines += ["", "## Improvement suggestions", ""]
+    lines += ["- %s" % s for s in review["suggestions"]]
+    lines += ["", "## Confidence score", "",
+              "**%s**" % review["confidence"], ""]
+    return "\n".join(lines)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="claude-review",
+        description="Review a GitHub pull request and print a structured Markdown review.")
+    parser.add_argument("--pr", required=True,
+                        help="PR URL, e.g. https://github.com/owner/repo/pull/123")
+    parser.add_argument("--out", help="Write the Markdown review to this file as well as stdout")
+    parser.add_argument("--engine", choices=["auto", "claude", "rules"], default="auto",
+                        help="auto (default): use Claude if ANTHROPIC_API_KEY is set, else rule-based; "
+                             "claude: force the Claude API; rules: force the rule-based engine")
+    parser.add_argument("--api-key", help="Anthropic API key (overrides ANTHROPIC_API_KEY)")
+    parser.add_argument("--version", action="version", version="claude-review " + VERSION)
+    args = parser.parse_args(argv)
+
+    if args.api_key:
+        os.environ["ANTHROPIC_API_KEY"] = args.api_key
+
+    owner, repo, number = parse_pr_url(args.pr)
+    token = os.environ.get("GITHUB_TOKEN")
+    meta, diff = fetch_pr(owner, repo, number, token)
+    files = parse_diff(diff)
+
+    has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    if args.engine == "claude" and not has_key:
+        print("Warning: --engine claude requested but no ANTHROPIC_API_KEY set; "
+              "falling back to the rule-based engine.", file=sys.stderr)
+    use_claude = has_key and (args.engine in ("claude", "auto"))
+    if use_claude:
+        print("Reviewing with the Claude API (%s)..." % CLAUDE_MODEL, file=sys.stderr)
+        output = claude_review(meta, diff)
+        # Normalise: make sure the required headings exist; if the model
+        # drifted, prepend a note rather than silently dropping sections.
+        for heading in ("Summary of changes", "Identified risks",
+                        "Improvement suggestions", "Confidence score"):
+            if heading not in output:
+                print("Warning: Claude output is missing the '%s' section." % heading,
+                      file=sys.stderr)
+        header = ("## PR Review: %s\n\nPR: %s\nEngine: Claude API (%s)\n\n"
+                  % (meta.get("title") or "", args.pr, CLAUDE_MODEL))
+        output = header + output
+    else:
+        review = rule_based_review(meta, files)
+        output = render_markdown(meta, review, args.pr)
+
+    print(output)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as fh:
+            fh.write(output + "\n")
+        print("Review written to %s" % args.out, file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
