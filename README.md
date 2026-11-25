@@ -36,6 +36,8 @@ You're in the right place.
 
 ## Rules
 
+For a greenfield SaaS using the Next.js 15 App Router, copy [the SQLite project instructions](templates/next15-sqlite/CLAUDE.md) to the application's root as `CLAUDE.md`. Start Claude Code in that directory so the conventions apply to a new session.
+
 - Tasks must be related to Claude Code or AI tooling
 - Every issue must have clear acceptance criteria before a bounty is activated
 - Payment is handled by [Opire](https://opire.dev) (Stripe)
