@@ -34,6 +34,20 @@ You're in the right place.
 
 ---
 
+## Review a public pull request
+
+Install Python 3.9+ and [Claude Code](https://code.claude.com/docs/en/overview) version 2.1.248 or later. Sign in with `claude auth login` and check `claude auth status`. Put the executable `claude-review` on your PATH. On Windows, run `python claude-review` or use a Bash shell that supports executable scripts.
+
+```bash
+claude-review --pr https://github.com/pallets/click/pull/2581
+```
+
+The command sends only the diff to a named Claude Code review agent. The agent runs in an empty temporary directory in restricted mode, with no built-in tools or MCP servers. It returns an evidence-limited Markdown review on standard output. By default the command only reads GitHub. Use `--post` explicitly to publish one issue comment. Supply a `GH_TOKEN` authorized to comment in the target repository for that step. A token is optional for public reads and is removed from the agent environment. The command checks both base and head revisions before and after fetching the diff and again before posting. Diffs above 96,000 bytes must be divided into smaller PRs or reviewed separately.
+
+`--facts-only` checks GitHub access and prints the same Markdown layout using patch counts. This mode runs without a model and cannot post a comment. The two [Click #2941](examples/click-2941.md) and [Click #2581](examples/click-2581.md) examples came from this mode. In the second PR the code change passes `re.ASCII` as the named `flags` argument to `re.sub`. This is a useful check for a reviewer because the fourth positional argument limits the number of replacements. In the first PR the changed line edits the documented Python entry point. A reviewer should verify it matches the example's module layout.
+
+Run `python3 tests/test_review.py` for local formatting, credential isolation, revision and validation checks.
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
