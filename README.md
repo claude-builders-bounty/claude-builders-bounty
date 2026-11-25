@@ -34,6 +34,16 @@ You're in the right place.
 
 ---
 
+## Generate a changelog
+
+1. Copy `changelog.sh` into a Git working tree with its history and tags. The script uses Bash, Git and Python 3.8 or later.
+2. In that working tree, run `bash changelog.sh --stdout` to preview the Markdown.
+3. Run `bash changelog.sh` to write `CHANGELOG.md` at the repository root.
+
+The script reads non-merge commits since the nearest reachable tag. With no tag, it reads the whole history. Commit types and leading verbs determine the section. Other subjects go under Changed. Review the wording before publishing.
+
+The generator replaces only the region between its two HTML comments. If a changelog already exists, paste the preview's marked block where the Unreleased section belongs. Keep published releases outside that block. See the [sample from Click](examples/click-changelog.md), generated at [6e1f6d3](https://github.com/pallets/click/commit/6e1f6d3052b6459fa3e43392d728376c423a7d4c) after tag `8.1.6`.
+
 ## Rules
 
 - Tasks must be related to Claude Code or AI tooling
