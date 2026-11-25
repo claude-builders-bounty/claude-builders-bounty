@@ -1,0 +1,220 @@
+{
+  "name": "Weekly Dev Summary (n8n + Claude Code)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "interval": 168
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cron-trigger",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $now.format('dddd') }}",
+              "operation": "equal",
+              "value2": "Friday"
+            }
+          ]
+        }
+      },
+      "id": "filter-friday",
+      "name": "Only on Fridays",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const weekAgo = new Date();\nweekAgo.setDate(weekAgo.getDate() - 7);\nconst since = weekAgo.toISOString();\nreturn [{ json: { since, repo: $inputs[0].first().json.repo || 'claude-builders-bounty/claude-builders-bounty', lang: $inputs[0].first().json.lang || 'EN' } }];"
+      },
+      "id": "set-vars",
+      "name": "Set Variables",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits",
+        "queryParameters": {
+          "since": "={{ $json.since }}",
+          "per_page": "100"
+        },
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "n8n-weekly-dev-summary/1.0"
+          }
+        }
+      },
+      "id": "fetch-commits",
+      "name": "Fetch Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 180]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues",
+        "queryParameters": {
+          "state": "closed",
+          "sort": "updated",
+          "direction": "desc",
+          "since": "={{ $json.since }}",
+          "per_page": "100"
+        },
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "n8n-weekly-dev-summary/1.0"
+          }
+        }
+      },
+      "id": "fetch-issues",
+      "name": "Fetch Closed Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/pulls",
+        "queryParameters": {
+          "state": "closed",
+          "sort": "updated",
+          "direction": "desc",
+          "since": "={{ $json.since }}",
+          "per_page": "100"
+        },
+        "options": {
+          "headers": {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "n8n-weekly-dev-summary/1.0"
+          }
+        }
+      },
+      "id": "fetch-prs",
+      "name": "Fetch Pull Requests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "const commits = $input.first().json || [];\nconst issues = ($input.second() || []).json || [];\nconst prs = ($input.third() || []).json || [];\n\nconst mergedPrs = prs.filter(p => p.merged_at != null);\n\nconst summaryData = {\n  repo: '{{ $json.repo }}',\n  period: 'last 7 days',\n  commits_count: commits.length,\n  closed_issues_count: issues.length,\n  merged_prs_count: mergedPrs.length,\n  top_commits: commits.slice(0, 10).map(c => ({ sha: c.sha.slice(0,7), message: c.commit.message, author: c.commit.author.name, url: c.html_url })),\n  top_issues: issues.slice(0, 10).map(i => ({ title: i.title, number: i.number, url: i.html_url })),\n  top_prs: mergedPrs.slice(0, 10).map(p => ({ title: p.title, number: p.number, url: p.html_url }))\n};\nreturn [{ json: summaryData }];"
+      },
+      "id": "aggregate",
+      "name": "Aggregate Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\nconst lang = '{{ $json.lang }}';\nconst isFr = lang === 'FR';\n\nconst header = isFr ? `Résumé hebdomadaire - ${data.repo}` : `Weekly Dev Summary - ${data.repo}`;\nconst period = isFr ? 'Période : 7 derniers jours' : 'Period: last 7 days';\n\nlet md = `## ${header}\n${period}\n\n`;\nmd += `- Commits: ${data.commits_count}\n`;\nmd += `- Closed issues: ${data.closed_issues_count}\n`;\nmd += `- Merged PRs: ${data.merged_prs_count}\n\n`;\n\nif (data.top_commits && data.top_commits.length > 0) {\n  md += `### ${isFr ? 'Commits récents' : 'Recent Commits'}\n`;\n  for (const c of data.top_commits) {\n    md += `- [${c.sha}] ${c.message} by ${c.author} (${c.url})\n`;\n  }\n  md += `\n`;\n}\nif (data.top_prs && data.top_prs.length > 0) {\n  md += `### ${isFr ? 'PRs mergés' : 'Merged PRs'}\n`;\n  for (const p of data.top_prs) {\n    md += `- #${p.number} ${p.title} (${p.url})\n`;\n  }\n  md += `\n`;\n}\nif (data.top_issues && data.top_issues.length > 0) {\n  md += `### ${isFr ? 'Issues fermées' : 'Closed Issues'}\n`;\n  for (const i of data.top_issues) {\n    md += `- #${i.number} ${i.title} (${i.url})\n`;\n  }\n}\n\nreturn [{ json: { markdown: data.lang ? data.markdown : md, lang } }];"
+      },
+      "id": "build-summary",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "jsonParameters": true,
+        "options": {
+          "headers": {
+            "x-api-key": "={{ $env.ANTHROPIC_API_KEY }}",
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+          },
+          "bodyContentJson": {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 1000,
+            "messages": [
+              {
+                "role": "user",
+                "content": "Write a short, friendly weekly narrative development summary from this data. Language: {{ $json.lang }} (EN or FR). Keep it under 200 words. Data: {{ JSON.stringify($json.markdown) }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "claude-summary",
+      "name": "Claude Narrative Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL || $env.DISCORD_WEBHOOK_URL }}",
+        "method": "POST",
+        "jsonParameters": true,
+        "options": {
+          "bodyContentJson": {
+            "text": "={{ $json.content[0].text || $json.markdown }}"
+          }
+        }
+      },
+      "id": "send-notification",
+      "name": "Send to Slack/Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [[{ "node": "Only on Fridays", "type": "main", "index": 0 }]]
+    },
+    "Only on Fridays": {
+      "main": [[{ "node": "Set Variables", "type": "main", "index": 0 }]]
+    },
+    "Set Variables": {
+      "main": [
+        [{ "node": "Fetch Commits", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Closed Issues", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Pull Requests", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Commits": {
+      "main": [[{ "node": "Aggregate Data", "type": "main", "index": 0 }]]
+    },
+    "Fetch Closed Issues": {
+      "main": [[{ "node": "Aggregate Data", "type": "main", "index": 1 }]]
+    },
+    "Fetch Pull Requests": {
+      "main": [[{ "node": "Aggregate Data", "type": "main", "index": 2 }]]
+    },
+    "Aggregate Data": {
+      "main": [[{ "node": "Build Summary", "type": "main", "index": 0 }]]
+    },
+    "Build Summary": {
+      "main": [[{ "node": "Claude Narrative Summary", "type": "main", "index": 0 }]]
+    },
+    "Claude Narrative Summary": {
+      "main": [[{ "node": "Send to Slack/Discord", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "weekly-dev-summary-1",
+  "id": "weekly-dev-summary"
+}
