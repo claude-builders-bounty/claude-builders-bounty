@@ -23,24 +23,25 @@ Claude receives a `permissionDecision: "deny"` with a plain explanation. Safe co
 
 ## Installation (2 commands)
 
-```powershell
-New-Item -ItemType Directory -Force "$HOME/.claude/hooks" | Out-Null; Copy-Item .\block-destructive.ps1 "$HOME/.claude/hooks\"
-Copy-Item .\settings.global.json "$HOME\.claude\settings.json"
+```bash
+mkdir -p ~/.claude/hooks && cp .claude/hooks/block_destructive.py ~/.claude/hooks/block_destructive.py
+cp settings.global.json ~/.claude/settings.json
 ```
 
-For project-only scope, copy `settings.project.json` to `.claude/settings.json` and place the script at `.claude/hooks/block-destructive.ps1` instead.
+Use `python` instead of `python3` in `settings.global.json` on Windows. For project-only scope, copy `settings.project.json` to `.claude/settings.json` and keep the script at `.claude/hooks/block_destructive.py`.
 
 ## Verification
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-tests.ps1
+```bash
+python3 -m unittest discover -s tests -v
 ```
 
-The suite covers 9 blocked commands, 6 safe commands, and log completeness.
+The suite covers 9 blocked commands, 6 safe commands, statement scoping, log fields, and silent pass-through.
 
 ## Design notes
 
-- Uses only PowerShell 5.1; no `jq`, Node, or Python dependency.
+- The hook is Python 3.8+ with no third-party dependencies, as required by the bounty.
+- A PowerShell equivalent (`block-destructive.ps1`) is included for Windows-only setups.
 - Statements are split on newlines, `;`, `&&`, and `||` before matching.
 - `DELETE FROM` is allowed when the same statement contains `WHERE`.
 - `CLAUDE_HOOK_LOG` overrides the log path; `CLAUDE_PROJECT_DIR` / `cwd` supply the project path.
