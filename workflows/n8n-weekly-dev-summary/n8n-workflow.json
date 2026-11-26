@@ -1,0 +1,336 @@
+{
+  "name": "Weekly Dev Summary (GitHub + Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "githubRepo",
+              "value": "n8n-io/n8n",
+              "type": "string"
+            },
+            {
+              "id": "2",
+              "name": "language",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "3",
+              "name": "discordWebhookUrl",
+              "value": "https://discord.com/api/webhooks/XXX/YYY",
+              "type": "string"
+            },
+            {
+              "id": "4",
+              "name": "claudeModel",
+              "value": "claude-sonnet-4-20250514",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        20,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Hitung rentang 7 hari terakhir (ISO)\nconst now = new Date();\nconst since = new Date(now.getTime() - 7*24*60*60*1000);\nreturn [{ json: { since: since.toISOString(), until: now.toISOString() } }];"
+      },
+      "name": "Since 7 Days",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Config').first().json.githubRepo }}/commits?since={{ $json.since }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "GitHub Commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Config').first().json.githubRepo }}/issues?state=closed&sort=updated&direction=desc?since={{ $json.since }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "GitHub Issues Closed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/{{ $('Config').first().json.githubRepo }}/pulls?state=closed&sort=updated&direction=desc?since={{ $json.since }}&per_page=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "GitHub PRs Merged",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gabungkan aktivitas jadi payload ringkas untuk Claude\nconst commits = $('GitHub Commits').all().map(i=>i.json);\nconst issues  = $('GitHub Issues Closed').all().map(i=>i.json).filter(i=>i.pull_request===undefined);\nconst prs     = $('GitHub PRs Merged').all().map(i=>i.json).filter(i=>i.merged_at);\nconst repo    = $('Config').first().json.githubRepo;\nconst lang    = $('Config').first().json.language;\n\nconst data = {\n  repo,\n  language: lang,\n  commitCount: commits.length,\n  commits: commits.slice(0,30).map(c=>c.commit && c.commit.message ? c.commit.message.split('\\n')[0] : ''),\n  issuesClosed: issues.slice(0,20).map(i=>'#'+i.number+' '+i.title),\n  prsMerged: prs.slice(0,20).map(p=>'#'+p.number+' '+p.title)\n};\nreturn [{ json: data }];"
+      },
+      "name": "Aggregate Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $('Config').first().json.claudeModel }}\",\n  \"max_tokens\": 1200,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"You are a developer-relations writer. Write a weekly narrative summary in {{ $('Config').first().json.language === 'FR' ? 'French' : 'English' }} for the repository {{ $json.repo }}. Use this activity data as JSON: {{ JSON.stringify($json) }}. Structure: Introduction, Highlights, Technical Details, Next Steps. Be concise, 200-300 words.\"\n  }]\n}",
+        "options": {}
+      },
+      "name": "Claude Summarise",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $json;\nlet text = '';\ntry { text = resp.content[0].text; } catch(e){ text = JSON.stringify(resp); }\nconst header = '# Weekly Summary: ' + $('Config').first().json.githubRepo + '\\n\\n';\nreturn [{ json: { summary: header + text } }];"
+      },
+      "name": "Format Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.discordWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"content\": {{ JSON.stringify($json.summary) }} }",
+        "options": {}
+      },
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Weekly Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Since 7 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Since 7 Days": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub Issues Closed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GitHub PRs Merged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commits": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Issues Closed": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub PRs Merged": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Activity": {
+      "main": [
+        [
+          {
+            "node": "Claude Summarise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summarise": {
+      "main": [
+        [
+          {
+            "node": "Format Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Summary": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}
