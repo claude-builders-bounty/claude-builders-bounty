@@ -1,0 +1,360 @@
+{
+  "name": "weekly-github-digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Weekly (Fri 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -820,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-repo",
+              "name": "repo",
+              "value": "n8n-io/n8n",
+              "type": "string"
+            },
+            {
+              "id": "cfg-channel",
+              "name": "channel",
+              "value": "#dev-digest",
+              "type": "string"
+            },
+            {
+              "id": "cfg-language",
+              "name": "language",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "cfg-days",
+              "name": "days",
+              "value": 7,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -600,
+        300
+      ],
+      "notes": "改这里：repo / channel / language(EN|FR) / days"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 算出本周窗口：从 now 往前 days 天，ISO 字符串给 GitHub 搜索用\nconst cfg = $input.first().json;\nconst now = new Date();\nconst since = new Date(now.getTime() - Number(cfg.days) * 24 * 60 * 60 * 1000);\nreturn [{\n  json: {\n    ...cfg,\n    since: since.toISOString(),\n    until: now.toISOString(),\n    sinceDate: since.toISOString().slice(0, 10),\n    untilDate: now.toISOString().slice(0, 10)\n  }\n}];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/commits",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "since",
+              "value": "={{ $json.since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.until }}"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "GET commits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        180
+      ],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/search/issues?q=repo:{{ $('Window').item.json.repo }}+is:pr+is:merged+merged:>={{ $('Window').item.json.sinceDate }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "GET merged PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        340
+      ],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/search/issues?q=repo:{{ $('Window').item.json.repo }}+is:issue+is:closed+closed:>={{ $('Window').item.json.sinceDate }}&per_page=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "GET closed issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        500
+      ],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "jsCode": "// 把三路结果捏成一份给模型的素材，长列表截断，避免 token 爆掉。\n// safe()：某个分支这周没数据、或节点没执行时，不该让整条流挂掉。\n// flatMap：搜索接口会返回多条 item，每条自带 items 数组，要摊平再数。\nconst safe = (nodeName) => {\n  try { return $(nodeName).all().map(i => i.json); } catch (e) { return []; }\n};\n\nconst cfgRaw = safe('Window');\nconst cfg = cfgRaw[0] || { repo: 'unknown', channel: '', language: 'EN', sinceDate: '', untilDate: '' };\n\nconst commits = safe('GET commits');\nconst prs = safe('GET merged PRs').flatMap(r => r.items || []);\nconst issues = safe('GET closed issues').flatMap(r => r.items || []);\n\nconst clean = (s) => String(s || '').replace(/\\s+/g, ' ').trim();\nconst clip = (s, n) => (clean(s).length > n ? clean(s).slice(0, n) + '…' : clean(s));\n\nconst commitLines = commits.slice(0, 60).map(c =>\n  '- ' + (c.commit && c.commit.author ? c.commit.author.name : 'unknown') + ': ' +\n  clip(c.commit && c.commit.message ? c.commit.message.split('\\n')[0] : '', 100)\n);\nconst prLines = prs.slice(0, 40).map(p => '- #' + p.number + ' ' + clip(p.title, 120));\nconst issueLines = issues.slice(0, 40).map(i => '- #' + i.number + ' ' + clip(i.title, 120));\n\nreturn [{\n  json: {\n    repo: cfg.repo,\n    channel: cfg.channel,\n    language: cfg.language,\n    from: cfg.sinceDate,\n    to: cfg.untilDate,\n    commitCount: commits.length,\n    prCount: prs.length,\n    issueCount: issues.length,\n    commits: commitLines.join('\\n') || '- (none)',\n    prs: prLines.join('\\n') || '- (none)',\n    issues: issueLines.join('\\n') || '- (none)'\n  }\n}];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Bundle",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'claude-sonnet-4-20250514',\n  max_tokens: 1200,\n  system: $json.language === 'FR'\n    ? 'Tu écris un résumé hebdomadaire concis de l activite d un depot GitHub. Trois a cinq paragraphes, ton factuel, pas de listes a puces, pas de titres.'\n    : 'You write a concise weekly narrative of a GitHub repository s activity. Three to five paragraphs, factual tone, no bullet lists, no headings.',\n  messages: [{ role: 'user', content: `Repository: ${$json.repo}\\nWindow: ${$json.from} to ${$json.to}\\nCommits: ${$json.commitCount}\\nMerged PRs: ${$json.prCount}\\nClosed issues: ${$json.issueCount}\\n\\nCommits:\\n${$json.commits}\\n\\nMerged PRs:\\n${$json.prs}\\n\\nClosed issues:\\n${$json.issues}` }]\n}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        340
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "notes": "Credential: Header Auth, name x-api-key, value = 你的 Anthropic key"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 拆出正文；如果模型拒答或返回异常，给一条可读的兜底\nconst cfg = $('Bundle').first().json;\nconst raw = $input.first().json;\n\nlet body = '';\ntry {\n  const parts = raw.content || [];\n  body = parts.filter(p => p.type === 'text').map(p => p.text).join('\\n').trim();\n} catch (e) {\n  body = '';\n}\n\nif (!body) {\n  body = `No narrative returned by the model (stop_reason: ${raw.stop_reason || 'unknown'}). Raw keys: ${Object.keys(raw).join(', ')}`;\n}\n\nconst title = cfg.language === 'FR'\n  ? `Resume hebdomadaire — ${cfg.repo} (${cfg.from} → ${cfg.to})`\n  : `Weekly digest — ${cfg.repo} (${cfg.from} → ${cfg.to})`;\n\nreturn [{ json: { channel: cfg.channel, title, body, repo: cfg.repo, from: cfg.from, to: cfg.to,\n  commitCount: cfg.commitCount, prCount: cfg.prCount, issueCount: cfg.issueCount } }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  text: `*${$json.title}*\\n\\n${$json.body}\\n\\n_${$json.commitCount} commits · ${$json.prCount} merged PRs · ${$json.issueCount} closed issues_`\n}) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000010",
+      "name": "Slack webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        740,
+        340
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "notes": "换 Discord 也行：把 URL 换成 DISCORD_WEBHOOK_URL，正文用 { content: ... }"
+    }
+  ],
+  "connections": {
+    "Weekly (Fri 17:00)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Window": {
+      "main": [
+        [
+          {
+            "node": "GET commits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GET merged PRs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GET closed issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET commits": {
+      "main": [
+        [
+          {
+            "node": "Bundle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET merged PRs": {
+      "main": [
+        [
+          {
+            "node": "Bundle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET closed issues": {
+      "main": [
+        [
+          {
+            "node": "Bundle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bundle": {
+      "main": [
+        [
+          {
+            "node": "Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [
+          {
+            "node": "Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format": {
+      "main": [
+        [
+          {
+            "node": "Slack webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
