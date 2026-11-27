@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Claude Code PreToolUse hook: block destructive shell commands.
+
+Reads the hook JSON payload on stdin, inspects tool_input.command, and exits 2
+with a message on stderr when the command is destructive (exit 2 = block).
+
+Guarded:
+  rm -rf / rm -fr / rm -r -f   (recursive + force, in any order/separation)
+  git push --force / -f / --force-with-lease / +refspec
+  DROP TABLE / DROP DATABASE
+  TRUNCATE [TABLE]
+  DELETE FROM ... without WHERE, or with an always-true WHERE (1=1, true)
+  cat file | rm -rf x        (pipe/; /&&/|| chaining is split and each part checked)
+
+Deliberately NOT guarded (no false positives): plain `rm file`, `rm -r dir`,
+`git push`, `DELETE ... WHERE id = 1`, and destructive text inside a quoted
+string for commands that only carry text (echo, printf, git commit -m, grep).
+
+Install:
+  mkdir -p ~/.claude/hooks && cp block-destructive.py ~/.claude/hooks/
+  chmod +x ~/.claude/hooks/block-destructive.py
+"""
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+LOG_PATH = Path.home() / ".claude" / "hooks" / "blocked.log"
+
+# Commands that only carry text: quoted strings inside them are not executable.
+TEXT_ONLY = re.compile(r"^\s*(echo|printf|cat\s*<<|grep|rg|awk|sed\s+-n|git\s+commit)\b", re.I)
+
+RM_REC = re.compile(r"(^|[\s;&|(`])rm\s+(-[A-Za-z]*[rR][A-Za-z]*\s+)?(-[A-Za-z]*[rR][A-Za-z]*\s*)?")
+# Simpler and safer: find every `rm` token, then judge its own flags.
+RM_TOKEN = re.compile(r"(?:^|[\s;&|(`])rm\s+((?:-[A-Za-z-]+\s+)*)(.*)$", re.S)
+FORCE_PUSH = re.compile(
+    r"\bgit\s+push\b[^\n;|&]*(?:--force\b|--force-with-lease\b|(?<!\S)-f(?:\s|$))"
+    r"|\bgit\s+push\s+\S+\s+\+",
+    re.I,
+)
+DROP_TABLE = re.compile(r"\bDROP\s+(TABLE|DATABASE|SCHEMA)\b", re.I)
+TRUNCATE = re.compile(r"\bTRUNCATE\s+(TABLE\s+)?[\w.\"`\[\]]+", re.I)
+DELETE_FROM = re.compile(r"\bDELETE\s+FROM\b.*", re.I | re.S)
+ALWAYS_TRUE_WHERE = re.compile(
+    r"\bWHERE\b\s*(?:1\s*=\s*1|true|'1'\s*=\s*'1'|1\s*LIKE\s*'1')\s*(?:;|--|$)",
+    re.I,
+)
+
+# Split on unquoted shell separators so `a && rm -rf b` and `x | rm -rf y` are seen.
+SEPARATOR = re.compile(r"(?:&&|\|\||;|\||\n|\$\()")
+
+
+def _strip_quoted_text(command: str) -> str:
+    """For text-carrying commands, blank out quoted spans so their contents are ignored."""
+    if not TEXT_ONLY.search(command):
+        return command
+    return re.sub(r"""('[^']*'|"[^"]*"|\\"[^\\"]*\\")""", "''", command)
+
+
+def _rm_is_forced_delete(command: str) -> str | None:
+    """Return a reason if any `rm` invocation combines recursive and force."""
+    for segment in SEPARATOR.split(command):
+        seg = segment.strip()
+        if not seg:
+            continue
+        m = RM_TOKEN.search(seg)
+        if not m:
+            continue
+        flags, rest = m.group(1) or "", m.group(2) or ""
+        flag_text = flags
+        # handle `rm -r -f`, `rm -rf`, `rm --recursive --force`
+        joined = flag_text.replace(" ", "")
+        recursive = bool(re.search(r"[rR]", joined.replace("--recursive", "R"))) or "--recursive" in flag_text
+        force = bool(re.search(r"[fF]", joined.replace("--force", "F"))) or "--force" in flag_text
+        # a bare `rm` with no flags and no target is harmless
+        if recursive and force and rest.strip():
+            return f"recursive force delete (rm {flags.strip()})"
+        # `rm -rfX` single token already covered by regex above
+        if re.search(r"-[A-Za-z-]*r[A-Za-z-]*f|-[A-Za-z-]*f[A-Za-z-]*r", flags):
+            return f"recursive force delete (rm {flags.strip()})"
+    return None
+
+
+def find_violation(raw_command: str) -> str | None:
+    command = _strip_quoted_text(raw_command or "")
+    if not command.strip():
+        return None
+
+    reason = _rm_is_forced_delete(command)
+    if reason:
+        return f"rm_rf: {reason}"
+
+    if FORCE_PUSH.search(command):
+        return "git_force_push: force push rewrites remote history"
+
+    if DROP_TABLE.search(command):
+        return "drop: DROP TABLE/DATABASE/SCHEMA destroys data"
+
+    if TRUNCATE.search(command):
+        return "truncate: TRUNCATE empties a table"
+
+    for match in DELETE_FROM.finditer(command):
+        stmt = match.group(0)
+        stmt = stmt.split(";")[0]
+        if not re.search(r"\bWHERE\b", stmt, re.I):
+            return "delete_no_where: DELETE FROM without a WHERE clause deletes every row"
+        if ALWAYS_TRUE_WHERE.search(stmt):
+            return "delete_always_true: WHERE clause is always true, so it deletes every row"
+
+    return None
+
+
+def log_block(command: str, reason: str, project: str) -> None:
+    try:
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        safe = command.replace("\n", " \\n ")[:500]
+        with open(LOG_PATH, "a", encoding="utf-8") as fh:
+            fh.write(f"{stamp}\t{reason}\t{project}\t{safe}\n")
+    except Exception:
+        pass  # logging must never break the guard
+
+
+def main() -> int:
+    raw = ""
+    try:
+        raw = sys.stdin.read()
+    except Exception:
+        return 0
+
+    payload = {}
+    if raw.strip():
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            # Not JSON: treat stdin as the command itself (handy for manual testing).
+            payload = {"tool_input": {"command": raw}}
+
+    if not isinstance(payload, dict):
+        return 0
+
+    tool = payload.get("tool_name") or ""
+    tool_input = payload.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return 0
+
+    command = tool_input.get("command") or ""
+    if not isinstance(command, str) or not command.strip():
+        return 0
+
+    # Only guard shell execution; never touch Read/Write/Grep/etc.
+    if tool and tool not in ("Bash", "BashOutput", "shell", "run_command"):
+        return 0
+
+    reason = find_violation(command)
+    if not reason:
+        return 0
+
+    project = payload.get("cwd") or os.getcwd()
+    log_block(command, reason, project)
+
+    sys.stderr.write(
+        "BLOCKED by block-destructive hook: " + reason + "\n"
+        "Command: " + command.strip()[:300] + "\n"
+        "This command looks destructive and was not run. If it is genuinely "
+        "intended, narrow it (e.g. drop --force, add a WHERE clause, use "
+        "--force-with-lease) and try a targeted command instead.\n"
+    )
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
