@@ -9,7 +9,7 @@ Copy this file to the root of a greenfield project. Everything below is a decisi
 | Next.js | 15.x, App Router only | `pages/` is legacy; mixing routers doubles the mental model |
 | React | 19 | Required by Next 15; gives `useActionState`, `use` |
 | TypeScript | 5.x, `strict: true`, `noUncheckedIndexedAccess: true` | Catches null rows from DB reads |
-| Node | 22 LTS | better-sqlite3 prebuilds exist; pin in `.nvmrc` and `engines` |
+| Node | 22 LTS (verified on 24.x) | better-sqlite3 prebuilds exist; pin in `.nvmrc` and `engines` |
 | Package manager | pnpm | Strict node_modules, fast CI; commit `pnpm-lock.yaml` |
 | DB | SQLite via `better-sqlite3` (sync driver) | One file, no network hop, trivially testable |
 | Query layer | Hand-written SQL + `zod` row parsing. No ORM | SQL is the schema's source of truth; ORMs hide migrations and N+1s |
@@ -36,6 +36,39 @@ pnpm db:migrate         # apply pending migrations to $DATABASE_PATH
 pnpm db:new <name>      # create migrations/NNNN_<name>.sql
 pnpm db:reset           # dev only: delete the DB file and re-migrate
 ```
+
+### Greenfield bootstrap (once)
+
+`create-next-app` only gives you `dev`, `build`, `start`, `lint`. If `lib/db/client.ts` or the scripts above are missing, create them first (don't ask). Why: every command and path in this file must exist before feature work starts.
+
+```bash
+pnpm add better-sqlite3 zod
+pnpm add -D @types/better-sqlite3 vitest tsx
+# pnpm may report ERR_PNPM_IGNORED_BUILDS for esbuild; the packages are still installed.
+# Run `pnpm approve-builds` if install scripts are required.
+```
+
+`package.json` scripts to add:
+
+```json
+"typecheck": "tsc --noEmit",
+"test": "vitest run",
+"db:migrate": "tsx scripts/migrate.ts",
+"db:new": "tsx scripts/new-migration.ts",
+"db:reset": "tsx scripts/reset-db.ts && tsx scripts/migrate.ts"
+```
+
+Also: add `"noUncheckedIndexedAccess": true` to `tsconfig.json`; add `/data/` and `!.env.example` to `.gitignore` (create-next-app ignores `.env*`); put `22` in `.nvmrc`; create `vitest.config.mts` (`.mts`, not `.ts`, or Vite warns about ESM in CJS) with `resolve.alias['@']` = `import.meta.dirname` (project root; not `__dirname`) and `test.environment: 'node'`.
+
+Files to create, as specified above:
+
+- `lib/env.ts`: `z.object({ DATABASE_PATH: z.string().min(1).default('./data/app.db') }).parse(process.env)`.
+- `lib/db/client.ts`: exports `createDb(file)` (mkdir the parent dir unless `:memory:`, open, set the four PRAGMAs from rules 6-7) and `db = createDb(env.DATABASE_PATH)`.
+- `lib/db/migrate.ts`: `runMigrations(db, dir = <cwd>/migrations)` creates `_migrations`, applies unapplied `*.sql` in filename order inside one `db.transaction`, records each name, returns the applied names. Running it twice applies nothing the second time.
+- `scripts/migrate.ts`: imports `db` and `runMigrations` with relative paths and logs the result. `scripts/new-migration.ts`: next `NNNN` + `<name>` into `migrations/`. `scripts/reset-db.ts`: deletes the DB file plus `-wal`/`-shm`, refuses when `NODE_ENV=production`. No top-level `await` in scripts: tsx compiles them as CJS.
+- One vitest test that calls `runMigrations(createDb(':memory:'))` twice.
+
+Auth doesn't exist in a greenfield project. Until `lib/auth/` is added, skip `requireUser()` in actions and say so in a one-line comment.
 
 Before saying a task is done, run `pnpm typecheck && pnpm lint && pnpm test`. Don't claim success without it.
 
